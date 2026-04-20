@@ -1,0 +1,5 @@
+patient-info/imports/*.csv
+patient-info/tools/node_modules/
+.env
+.env.*
+!.env.example

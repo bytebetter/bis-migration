@@ -1,0 +1,34 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "migrate: patient_info → bisinfo_dev_clone (CSV ค่าเริ่มต้น)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/patient-info/run-migrate-clone.ps1"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "shared", "focus": true }
+    },
+    {
+      "label": "migrate: patient_info (ล้าง clone TRUNCATE CASCADE ก่อน)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/patient-info/run-migrate-clone.ps1",
+        "-TruncateFirst"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "shared", "focus": true }
+    }
+  ]
+}
