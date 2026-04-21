@@ -1,5 +1,9 @@
 patient-info/imports/*.csv
 patient-info/tools/node_modules/
+examination/imports/*.csv
+examination/tools/node_modules/
+examination/reports/*
+!examination/reports/.gitkeep
 .env
 .env.*
 !.env.example

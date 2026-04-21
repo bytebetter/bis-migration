@@ -7,6 +7,15 @@
 
 CREATE SCHEMA IF NOT EXISTS migrate_stg;
 
+-- ใช้จับคู่ pid ระหว่าง staging / public.patient_info (แก้ BOM CSV, whitespace, ชนิดข้อมูล)
+CREATE OR REPLACE FUNCTION migrate_stg.norm_pid(t text)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT btrim(regexp_replace(coalesce($1, ''), '^' || chr(65279), ''))
+$$;
+
 DROP TABLE IF EXISTS migrate_stg.patient_info_mssql;
 
 CREATE TABLE migrate_stg.patient_info_mssql (

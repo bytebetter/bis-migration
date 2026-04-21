@@ -5,7 +5,7 @@
 ```
 patient-info/
 ├── README.md                 ← คู่มือนี้
-├── run-migrate-clone.ps1    ← รันครบ 01 → COPY → 02 → 04 ในครั้งเดียว (Windows / kubectl)
+├── run-migrate-clone.ps1    ← รันครบ 01 → COPY → 02 → 03 → 04 ในครั้งเดียว (Windows / kubectl)
 ├── imports/                  ← วางไฟล์ CSV ที่ export จาก MSSQL (ไม่ commit ไฟล์จริง)
 │   └── .gitkeep
 ├── tools/                    ← แบบไม่ใช้ CSV: อ่าน MSSQL ตรง → Postgres (ดูด้านล่าง)
@@ -15,15 +15,16 @@ patient-info/
     ├── 00_truncate_clone_patient_info.sql   ← ล้างตารางก่อนรันทดสอบซ้ำ (clone เท่านั้น)
     ├── 01_create_staging.sql                  ← สร้าง schema + ตาราง staging
     ├── 02_insert_into_clone_patient_info.sql← แปลง พ.ศ.→ค.ศ. แล้ว insert เข้า public.patient_info
+    ├── 03_insert_addresses_from_staging.sql ← ลบ address เดิมของชุด migrate + sync id → insert ที่อยู่
     ├── 04_verify_clone.sql                  ← ตรวจจำนวนแถว/ตัวอย่าง
     └── export-from-mssql-patient_info.sql   ← รันฝั่ง MSSQL เพื่อ export ให้ลำดับคอลัมน์ตรงกับ staging
 ```
 
 ## หลักการ
 
-- PK ระบบเก่า = `PID` → ใส่ใน `pid` และ `old_db_id` (ข้อความเดียวกัน)
+- PK ระบบเก่า = `PID` → ใส่ใน `pid` และ `old_db_id` (ข้อความเดียวกัน) — ใช้ฟังก์ชัน `migrate_stg.norm_pid()` จับคู่ก่อนลบ/insert กันค่าไม่ตรง (BOM ใน CSV, ช่องว่าง) และ `DISTINCT ON` กัน staging ซ้ำ pid — **รัน migrate ซ้ำจำนวนแถวไม่ควรคูณสอง**
 - วันเกิดใน MSSQL เป็น **พ.ศ.** → เก็บดิบใน staging แล้วแปลงเป็น **ค.ศ.** ตอน insert (`ปี - 543`)
-- ฟิลด์ที่ไม่มีใน `public.patient_info` (เช่น ที่อยู่เต็ม) ไม่ถูกย้ายในขั้นนี้ (ยังอยู่ใน staging ถ้าต้อง audit)
+- ที่อยู่จาก staging ไปยัง **ตาราง Directus `public.address`** (ลูกของ `patient_info`) ผ่าน `sql/03_*.sql` — ก่อน insert จะ **ลบ address เดิมของ patient ที่อยู่ใน staging ชุดนี้** แล้ว **sync sequence `id`** ให้ต่อเนื่อง จากนั้นค่อย insert ใหม่ — แมป: `Address`→`address`, `SubArea`→`sub_district`, `Area`→`district`, `Province`→`province`, `Zip`→`zipcode`, `Address2`→`address2` ถ้า error ชื่อตารางไม่ตรง ให้แก้ใน `03_insert_addresses_from_staging.sql` ให้ตรงกับฐานจริง (บางโปรเจกต์ใช้ชื่ออื่นแทน `address`)
 
 ## แบบอัตโนมัติโดยไม่ต้องวาง CSV ใน `imports/` (แนะนำ)
 
@@ -57,7 +58,7 @@ $env:POSTGRES_DATABASE="bisinfo_dev_clone"
 npm run migrate
 ```
 
-สคริปต์ `tools/migrate-stream.mjs` จะ: สร้าง staging ตาม `sql/01_*.sql` → ดึง `dbo.patient_info` แบบแบ่งหน้า → ใส่ staging → รัน `sql/02_*.sql`
+สคริปต์ `tools/migrate-stream.mjs` จะ: สร้าง staging ตาม `sql/01_*.sql` → ดึง `dbo.patient_info` แบบแบ่งหน้า → ใส่ staging → รัน `sql/02_*.sql` แล้ว `sql/03_*.sql`
 
 ถ้า schema/ชื่อคอลัมน์ใน MSSQL ของคุณไม่ตรงกับในสคริปต์ แก้ query ใน `migrate-stream.mjs` ให้ตรงกับฐานเก่า (ลำดับคอลัมน์ใน PG ต้องตรงกับ `01_create_staging.sql`)
 
@@ -130,7 +131,13 @@ npm run migrate
    Get-Content .\patient-info\sql\02_insert_into_clone_patient_info.sql -Raw | kubectl -n default exec -i postgresql-0 -- psql -U devuser -d bisinfo_dev_clone
    ```
 
-6. **Verify**
+6. **Insert ที่อยู่เข้า `public.address` (Directus)**
+
+   ```powershell
+   Get-Content .\patient-info\sql\03_insert_addresses_from_staging.sql -Raw | kubectl -n default exec -i postgresql-0 -- psql -U devuser -d bisinfo_dev_clone
+   ```
+
+7. **Verify**
 
    ```powershell
    Get-Content .\patient-info\sql\04_verify_clone.sql -Raw | kubectl -n default exec -i postgresql-0 -- psql -U devuser -d bisinfo_dev_clone

@@ -6,16 +6,28 @@
 --
 -- รันกับ DB: bisinfo_dev_clone
 --
--- รันซ้ำได้: ลบเฉพาะแถวที่ pid ตรงกับ staging ก่อน INSERT (แก้ปัญหา dup เมื่อรัน migrate ซ้ำโดยไม่ TRUNCATE)
--- ถ้า DELETE ถูกบล็อกเพราะ FK (RESTRICT): ใช้ -TruncateFirst หรือจัดการตารางลูกก่อน
+-- รันซ้ำได้: ลบ address + patient ที่ pid (หลัง norm) ตรงกับ staging ก่อน INSERT
+-- ใช้ migrate_stg.norm_pid() กันค่าไม่ตรง (BOM/ช่องว่าง/ชนิดข้อมูล) แล้ว DISTINCT ON กัน staging ซ้ำ pid
 
 BEGIN;
 
+-- ลบ address ของ patient ชุดนี้ก่อน (กันไม่ cascade / ค้าง orphan)
+DELETE FROM public.address a
+WHERE a.patient_info IN (
+  SELECT p.id
+  FROM public.patient_info p
+  WHERE migrate_stg.norm_pid(p.pid::text) IN (
+    SELECT migrate_stg.norm_pid(s.pid)
+    FROM migrate_stg.patient_info_mssql s
+    WHERE migrate_stg.norm_pid(s.pid) <> ''
+  )
+);
+
 DELETE FROM public.patient_info p
-WHERE EXISTS (
-  SELECT 1
+WHERE migrate_stg.norm_pid(p.pid::text) IN (
+  SELECT migrate_stg.norm_pid(s.pid)
   FROM migrate_stg.patient_info_mssql s
-  WHERE trim(p.pid) = trim(s.pid)
+  WHERE migrate_stg.norm_pid(s.pid) <> ''
 );
 
 -- sync sequence กับ id ที่เหลือ: ไม่ให้ id ใหม่โดดต่อจากค่า sequence เก่า
@@ -51,8 +63,8 @@ INSERT INTO public.patient_info (
   email
 )
 SELECT
-  trim(s.pid) AS old_db_id,
-  trim(s.pid) AS pid,
+  migrate_stg.norm_pid(s.pid) AS old_db_id,
+  migrate_stg.norm_pid(s.pid) AS pid,
   NULLIF(trim(s.prefix), '') AS prefix_th,
   NULLIF(trim(s.name), '') AS first_name_th,
   NULLIF(trim(s.surname), '') AS last_name_th,
@@ -94,6 +106,12 @@ SELECT
   NULLIF(trim(s.disease), '') AS disease,
   NULLIF(trim(s.mobile_phone), '') AS mobile_phone,
   NULLIF(trim(s.email), '') AS email
-FROM migrate_stg.patient_info_mssql s;
+FROM (
+  SELECT DISTINCT ON (migrate_stg.norm_pid(s.pid))
+    s.*
+  FROM migrate_stg.patient_info_mssql s
+  WHERE migrate_stg.norm_pid(s.pid) <> ''
+  ORDER BY migrate_stg.norm_pid(s.pid)
+) s;
 
 COMMIT;

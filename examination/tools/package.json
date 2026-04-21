@@ -1,0 +1,13 @@
+{
+  "name": "bis-migrate-examination",
+  "private": true,
+  "type": "module",
+  "description": "Stream examination จาก MSSQL เข้า Postgres (bisinfo_dev_clone)",
+  "scripts": {
+    "migrate": "node ./migrate-stream-examination.mjs"
+  },
+  "dependencies": {
+    "mssql": "^11.0.1",
+    "pg": "^8.13.1"
+  }
+}

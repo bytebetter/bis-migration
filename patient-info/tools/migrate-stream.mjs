@@ -1,5 +1,5 @@
 /**
- * อ่านจาก MSSQL (patient_info) แล้วใส่ migrate_stg.patient_info_mssql -> รัน sql/02_insert_into_clone_patient_info.sql
+ * อ่านจาก MSSQL (patient_info) แล้วใส่ migrate_stg.patient_info_mssql -> รัน sql/02, sql/03 (ที่อยู่ Directus)
  * ไม่ต้องวางไฟล์ CSV ใน imports/
  *
  * ต้องการ: Node 20+, ในโฟลเดอร์นี้รัน `npm install`
@@ -57,8 +57,49 @@ function rowToStagingArrays(row, rowIdx, arrays, cols) {
   }
 }
 
+function tsForFile(d = new Date()) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
+function writeMigrationReport(reportDir, summary, missingRows) {
+  fs.mkdirSync(reportDir, { recursive: true });
+  const stamp = tsForFile();
+  const jsonPath = path.join(
+    reportDir,
+    `patient-info-migrate-summary-${stamp}.json`,
+  );
+  const missingPath = path.join(
+    reportDir,
+    `patient-info-migrate-missing-${stamp}.txt`,
+  );
+
+  const jsonPayload = {
+    ...summary,
+    missingRecords: missingRows,
+  };
+  fs.writeFileSync(jsonPath, JSON.stringify(jsonPayload, null, 2), "utf8");
+
+  const missingLines = [
+    "# pid\treason",
+    ...missingRows.map(
+      (r) => `${r.pid ?? ""}\t${r.reason ?? "not_found_in_target"}`,
+    ),
+  ];
+  fs.writeFileSync(missingPath, `${missingLines.join("\n")}\n`, "utf8");
+
+  return { jsonPath, missingPath };
+}
+
 async function main() {
-  const batchSize = Math.max(50, Math.min(5000, Number(env("BATCH_SIZE", "500")) || 500));
+  const batchSize = Math.max(
+    50,
+    Math.min(5000, Number(env("BATCH_SIZE", "500")) || 500),
+  );
+  const reportDir = env(
+    "MIGRATE_REPORT_DIR",
+    path.join(__dirname, "..", "reports"),
+  );
 
   const mssqlConfig = {
     server: env("MSSQL_SERVER"),
@@ -76,13 +117,28 @@ async function main() {
     throw new Error("ตั้ง MSSQL_SERVER และ MSSQL_DATABASE");
   }
   if (!mssqlConfig.user) {
-    throw new Error("ตั้ง MSSQL_USER / MSSQL_PASSWORD (ปรับสคริปต์เองถ้าต้องการ Windows Auth)");
+    throw new Error(
+      "ตั้ง MSSQL_USER / MSSQL_PASSWORD (ปรับสคริปต์เองถ้าต้องการ Windows Auth)",
+    );
   }
 
   const sqlDir = path.join(__dirname, "..", "sql");
-  const ddl = fs.readFileSync(path.join(sqlDir, "01_create_staging.sql"), "utf8");
-  const insertTarget = fs.readFileSync(path.join(sqlDir, "02_insert_into_clone_patient_info.sql"), "utf8");
-  const truncateSql = fs.readFileSync(path.join(sqlDir, "00_truncate_clone_patient_info.sql"), "utf8");
+  const ddl = fs.readFileSync(
+    path.join(sqlDir, "01_create_staging.sql"),
+    "utf8",
+  );
+  const insertTarget = fs.readFileSync(
+    path.join(sqlDir, "02_insert_into_clone_patient_info.sql"),
+    "utf8",
+  );
+  const insertAddresses = fs.readFileSync(
+    path.join(sqlDir, "03_insert_addresses_from_staging.sql"),
+    "utf8",
+  );
+  const truncateSql = fs.readFileSync(
+    path.join(sqlDir, "00_truncate_clone_patient_info.sql"),
+    "utf8",
+  );
 
   const cols = [
     "pid",
@@ -179,7 +235,9 @@ OFFSET @offset ROWS FETCH NEXT @page ROWS ONLY;
       console.error(">>> สร้าง staging (01) ...");
       await client.query(ddl);
 
-      console.error(">>> ดึงจาก MSSQL แบบแบ่งหน้า แล้ว bulk insert staging ...");
+      console.error(
+        ">>> ดึงจาก MSSQL แบบแบ่งหน้า แล้ว bulk insert staging ...",
+      );
       let offset = 0;
       let total = 0;
 
@@ -199,7 +257,9 @@ OFFSET @offset ROWS FETCH NEXT @page ROWS ONLY;
           rowToStagingArrays(rows[i], i, arrays, cols);
         }
 
-        const unnestArgs = arrays.map((_, idx) => `$${idx + 1}::text[]`).join(", ");
+        const unnestArgs = arrays
+          .map((_, idx) => `$${idx + 1}::text[]`)
+          .join(", ");
         const colList = cols.join(", ");
         const insertStaging = `
 INSERT INTO migrate_stg.patient_info_mssql (${colList})
@@ -213,10 +273,88 @@ SELECT * FROM unnest(${unnestArgs});
         offset += batchSize;
       }
 
+      let insertError = null;
       console.error(">>> แปลงเข้า public.patient_info (02) ...");
-      await client.query(insertTarget);
+      try {
+        await client.query(insertTarget);
+        console.error(">>> แปลงเข้า public.address (03) ...");
+        await client.query(insertAddresses);
+      } catch (e) {
+        insertError = e;
+        console.error("!!! insert patient_info / address ไม่สำเร็จ");
+        console.error(String(e?.message || e));
+      }
 
-      console.error(`เสร็จแล้ว รวม ~${total} แถวจาก MSSQL (ตามจำนวนแถวที่อ่านได้ต่อรอบ)`);
+      const stagingCountResult = await client.query(
+        "SELECT COUNT(*)::bigint AS c FROM migrate_stg.patient_info_mssql;",
+      );
+      const targetCountResult = await client.query(
+        "SELECT COUNT(*)::bigint AS c FROM public.patient_info;",
+      );
+      const matchedCountResult = await client.query(`
+SELECT COUNT(DISTINCT migrate_stg.norm_pid(s.pid))::bigint AS c
+FROM migrate_stg.patient_info_mssql s
+JOIN public.patient_info p
+  ON migrate_stg.norm_pid(p.pid::text) = migrate_stg.norm_pid(s.pid)
+WHERE migrate_stg.norm_pid(s.pid) <> '';
+`);
+      const missingResult = await client.query(`
+SELECT s.pid,
+       CASE
+         WHEN migrate_stg.norm_pid(s.pid) = '' THEN 'empty_pid_after_trim'
+         WHEN EXISTS (
+           SELECT 1
+           FROM migrate_stg.patient_info_mssql s2
+           WHERE migrate_stg.norm_pid(s2.pid) = migrate_stg.norm_pid(s.pid)
+             AND s2.pid IS DISTINCT FROM s.pid
+         ) THEN 'duplicate_pid_after_trim'
+         ELSE 'not_found_in_target'
+       END AS reason
+FROM migrate_stg.patient_info_mssql s
+LEFT JOIN public.patient_info p
+  ON migrate_stg.norm_pid(p.pid::text) = migrate_stg.norm_pid(s.pid)
+WHERE p.id IS NULL
+ORDER BY s.pid;
+`);
+
+      const stagingCount = Number(stagingCountResult.rows?.[0]?.c ?? 0);
+      const targetCount = Number(targetCountResult.rows?.[0]?.c ?? 0);
+      const matchedCount = Number(matchedCountResult.rows?.[0]?.c ?? 0);
+      const missingRows = missingResult.rows || [];
+      const missingCount = missingRows.length;
+
+      const summary = {
+        generatedAt: new Date().toISOString(),
+        sourceTable: "dbo.patient_info",
+        targetTable: "public.patient_info",
+        batchSize,
+        totalReadFromMssql: total,
+        stagingCount,
+        targetCount,
+        matchedCount,
+        missingCount,
+        completedFully: missingCount === 0 && !insertError,
+        insertErrorMessage: insertError
+          ? String(insertError?.message || insertError)
+          : null,
+      };
+      const reportPaths = writeMigrationReport(reportDir, summary, missingRows);
+
+      console.error(">>> สรุปผล migrate");
+      console.error(`    - stagingCount: ${stagingCount}`);
+      console.error(`    - matchedCount: ${matchedCount}`);
+      console.error(`    - missingCount: ${missingCount}`);
+      console.error(`    - completedFully: ${summary.completedFully}`);
+      console.error(`    - summaryJson: ${reportPaths.jsonPath}`);
+      console.error(`    - missingList: ${reportPaths.missingPath}`);
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      console.error(
+        `เสร็จแล้ว รวม ~${total} แถวจาก MSSQL (ตามจำนวนแถวที่อ่านได้ต่อรอบ)`,
+      );
     } finally {
       client.release();
     }

@@ -10,5 +10,5 @@ LIMIT 20;
 -- ตัวอย่าง: หาแถวที่วันเกิดว่างทั้งที่ staging มีค่า
 SELECT s.pid
 FROM migrate_stg.patient_info_mssql s
-LEFT JOIN public.patient_info p ON p.pid = trim(s.pid)
+LEFT JOIN public.patient_info p ON migrate_stg.norm_pid(p.pid::text) = migrate_stg.norm_pid(s.pid)
 WHERE p.id IS NULL;
