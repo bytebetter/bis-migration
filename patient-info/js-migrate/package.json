@@ -1,0 +1,13 @@
+{
+  "name": "patient-info-js-migrate",
+  "private": true,
+  "type": "module",
+  "description": "Migrate patient_info from MSSQL URL to bisinfo_dev_clone",
+  "scripts": {
+    "migrate": "node ./migrate-from-mssql.mjs --config ./config.local.json"
+  },
+  "dependencies": {
+    "mssql": "^11.0.1",
+    "pg": "^8.13.1"
+  }
+}

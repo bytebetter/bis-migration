@@ -1,0 +1,78 @@
+{
+  "source": {
+    "server": "node61681-bis-staging.th1.proen.cloud",
+    "port": 11051,
+    "database": "BISInfo",
+    "user": "sa",
+    "password": "YOUR_MSSQL_PASSWORD",
+    "encrypt": true,
+    "trustServerCertificate": true
+  },
+  "target": {
+    "postgresHost": "127.0.0.1",
+    "postgresPort": 5432,
+    "postgresUser": "devuser",
+    "postgresPassword": "dev-postgres-password-2024",
+    "postgresDatabase": "bisinfo_dev_clone"
+  },
+  "migration": {
+    "batchSize": 500,
+    "truncateFirst": false,
+    "enableCheckpoint": true,
+    "checkpointDir": "./checkpoints"
+  },
+  "tables": [
+    {
+      "key": "patient_info",
+      "sourceSchema": "dbo",
+      "sourceTable": "patient_info",
+      "orderBy": "[PID]",
+      "stagingTable": "migrate_stg.patient_info_mssql",
+      "columns": [
+        "pid",
+        "prefix",
+        "name",
+        "surname",
+        "date_of_birth_be",
+        "single",
+        "address",
+        "sub_area",
+        "area",
+        "province",
+        "zip",
+        "phone_biz",
+        "phone_home",
+        "height",
+        "weight",
+        "current_breast_compo",
+        "current_implant_type",
+        "last_exam_date",
+        "mobile",
+        "mobile_updated",
+        "donate_type",
+        "eng_prefix",
+        "eng_name",
+        "eng_surname",
+        "soc_id",
+        "hn",
+        "gender",
+        "address2",
+        "short_note",
+        "disease",
+        "mobile_phone",
+        "email"
+      ],
+      "selectSqlFile": "./sql/patient_info.select.sql",
+      "preLoadSqlFiles": [
+        "../sql/01_create_staging.sql"
+      ],
+      "postLoadSqlFiles": [
+        "../sql/02_insert_into_clone_patient_info.sql",
+        "../sql/03_insert_addresses_from_staging.sql"
+      ],
+      "truncateSqlFiles": [
+        "../sql/00_truncate_clone_patient_info.sql"
+      ]
+    }
+  ]
+}

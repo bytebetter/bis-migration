@@ -1,5 +1,9 @@
 patient-info/imports/*.csv
 patient-info/tools/node_modules/
+patient-info/js-migrate/node_modules/
+patient-info/js-migrate/config.local.json
+patient-info/js-migrate/logs/
+patient-info/js-migrate/checkpoints/
 examination/imports/*.csv
 examination/tools/node_modules/
 examination/reports/*
