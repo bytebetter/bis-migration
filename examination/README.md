@@ -29,6 +29,10 @@ npm run migrate
 
 ค่าเชื่อมต่อใช้ไฟล์กลางที่ root: `migration.config.local.json` (profile: `examination`)
 
+สำหรับงานข้อมูลใหญ่ ปรับ log ราย chunk ได้ใน `profiles.examination.migration`:
+- `chunkLogMode`: `compact` (แนะนำ), `full`, `none`
+- `chunkSampleEvery`: เก็บรายละเอียดทุกๆ N chunk เมื่อใช้โหมด `compact`
+
 ## หมายเหตุ
 
 - Logic แปลงข้อมูลอยู่ใน `examinationMapping.mjs`

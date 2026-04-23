@@ -124,20 +124,29 @@ CREATE TABLE migrate_stg.examination_mssql (
 `.trim();
 
 export async function ensureExaminationStagingDdl(pgClient) {
+  console.error(">>> [examination] ensure: create schema migrate_stg");
   await pgClient.query("CREATE SCHEMA IF NOT EXISTS migrate_stg;");
+  console.error(">>> [examination] ensure: create function migrate_stg.norm_exam_id");
   await pgClient.query(NORM_EXAM_ID_FN);
+  console.error(">>> [examination] ensure: create function migrate_stg.norm_pid");
   await pgClient.query(NORM_PID_FN);
+  console.error(">>> [examination] ensure: drop old staging table (if exists)");
   await pgClient.query("DROP TABLE IF EXISTS migrate_stg.examination_mssql;");
+  console.error(">>> [examination] ensure: create staging table migrate_stg.examination_mssql");
   await pgClient.query(CREATE_EXAMINATION_STAGING_TABLE);
+  console.error(">>> [examination] ensure: comment staging table");
   await pgClient.query(
     "COMMENT ON TABLE migrate_stg.examination_mssql IS 'Staging: examination จาก MSSQL ก่อนแปลงเข้า public.examination';"
   );
+  console.error(">>> [examination] ensure: staging DDL done");
 }
 
 /** ลด O(n) ตอน public.examination โต: DELETE/ JOIN stats ตาม old_exam_id */
 export async function ensureExaminationOldExamIdIndex(pgClient) {
+  console.error(">>> [examination] ensure: create index idx_examination_old_exam_id");
   await pgClient.query(`
     CREATE INDEX IF NOT EXISTS idx_examination_old_exam_id
     ON public.examination (old_exam_id);
   `);
+  console.error(">>> [examination] ensure: index check done");
 }

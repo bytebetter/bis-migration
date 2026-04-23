@@ -27,12 +27,37 @@ function buildMssqlExaminationKeysetSelect() {
     throw new Error("MSSQL_EXAMINATION_SELECT: missing FROM {{sourceObject}}");
   }
   const head = s.slice(0, idx).trimEnd();
-  return `${head},
+  // Use TOP(@page) for keyset pagination to avoid OFFSET/FETCH overhead on large tables.
+  const headWithTop = head.replace(/^SELECT\s*/i, "SELECT TOP (@page) ");
+  return `${headWithTop},
   CAST([Exam_ID] AS BIGINT) AS __mssql_exam_id
 FROM {{sourceObject}}
 WHERE [Exam_ID] > @afterExamId
-ORDER BY [Exam_ID] ASC
-OFFSET 0 ROWS FETCH NEXT @page ROWS ONLY;`;
+ORDER BY [Exam_ID] ASC;`;
+}
+
+function buildMssqlExaminationProbeSelect() {
+  return `
+SELECT TOP (@page)
+  CAST([Exam_ID] AS BIGINT) AS probe_exam_id
+FROM {{sourceObject}}
+WHERE [Exam_ID] > @afterExamId
+ORDER BY [Exam_ID] ASC;`.trim();
+}
+
+function buildMssqlExaminationDetailByIdsSelect(idPlaceholders) {
+  const marker = "FROM {{sourceObject}}";
+  const s = MSSQL_EXAMINATION_SELECT;
+  const idx = s.indexOf(marker);
+  if (idx < 0) {
+    throw new Error("MSSQL_EXAMINATION_SELECT: missing FROM {{sourceObject}}");
+  }
+  const head = s.slice(0, idx).trimEnd();
+  return `${head},
+  CAST([Exam_ID] AS BIGINT) AS __mssql_exam_id
+FROM {{sourceObject}}
+WHERE [Exam_ID] IN (${idPlaceholders})
+ORDER BY [Exam_ID] ASC;`;
 }
 
 function toBigIntish(v) {
@@ -324,6 +349,18 @@ function toArray(value) {
   return Array.isArray(value) ? value : [value];
 }
 
+function shouldKeepChunkDetail({
+  status,
+  chunkIndex,
+  chunkLogMode,
+  chunkSampleEvery,
+}) {
+  if (chunkLogMode === "none") return status === "failed";
+  if (chunkLogMode === "full") return true;
+  if (status === "failed") return true;
+  return chunkIndex === 1 || chunkIndex % chunkSampleEvery === 0;
+}
+
 function buildTableJobs(config) {
   if (Array.isArray(config.tables) && config.tables.length > 0)
     return config.tables;
@@ -382,6 +419,7 @@ async function runTableJob({
   }
 
   const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
+  const sourceObjectNoLock = `${sourceObject} WITH (NOLOCK)`;
   const useMssqlKeysetBase =
     isExaminationBuiltin &&
     !selectSqlFile &&
@@ -413,9 +451,13 @@ async function runTableJob({
         ? buildMssqlExaminationKeysetSelect()
         : MSSQL_EXAMINATION_SELECT;
     return tpl
-      .replaceAll("{{sourceObject}}", sourceObject)
+      .replaceAll("{{sourceObject}}", sourceObjectNoLock)
       .replaceAll("{{orderBy}}", orderBy);
   })();
+  const probeSql = buildMssqlExaminationProbeSelect().replaceAll(
+    "{{sourceObject}}",
+    sourceObjectNoLock,
+  );
 
   let mssqlKeysetAfter = checkpoint.mssqlKeysetAfter;
   if (useMssqlKeyset && mssqlKeysetAfter == null) mssqlKeysetAfter = -1;
@@ -444,20 +486,122 @@ async function runTableJob({
   const failedExamIdSet = new Set();
   const chunkResults = [];
   let chunkIndex = 0;
+  let successChunkCount = 0;
+  let failedChunkCount = 0;
+  const chunkLogMode = String(migrationConfig.chunkLogMode ?? "compact").toLowerCase();
+  const chunkSampleEvery = Math.max(1, Number(migrationConfig.chunkSampleEvery ?? 50));
+  const sourceLimitRaw = migrationConfig.sourceLimit;
+  const sourceLimit =
+    sourceLimitRaw == null ? null : Math.max(1, Number(sourceLimitRaw));
+  const probeTiming = migrationConfig.probeTiming === true;
+  if (sourceLimit != null) {
+    console.error(`>>> [${key}] TEMP sourceLimit enabled: ${sourceLimit} records`);
+  }
+  if (probeTiming) {
+    console.error(`>>> [${key}] probeTiming enabled (MSSQL query latency logs)`);
+  }
 
   while (true) {
-    const r = useMssqlKeyset
-      ? await mssqlPool
-          .request()
-          .input("afterExamId", sql.BigInt, toBigIntish(mssqlKeysetAfter))
-          .input("page", sql.Int, batchSize)
-          .query(selectSql)
-      : await mssqlPool
-          .request()
-          .input("offset", sql.Int, offset)
-          .input("page", sql.Int, batchSize)
-          .query(selectSql);
-    const rows = r.recordset || [];
+    const remaining = sourceLimit == null ? null : sourceLimit - total;
+    if (remaining != null && remaining <= 0) break;
+    const pageSize = remaining == null ? batchSize : Math.min(batchSize, remaining);
+    const nextChunkIndex = chunkIndex + 1;
+    if (useMssqlKeyset) {
+      console.error(
+        `>>> [${key}] fetch chunk ${nextChunkIndex}: afterExamId=${String(mssqlKeysetAfter)} pageSize=${pageSize}`,
+      );
+    } else {
+      console.error(
+        `>>> [${key}] fetch chunk ${nextChunkIndex}: offset=${offset} pageSize=${pageSize}`,
+      );
+    }
+
+    if (probeTiming && useMssqlKeyset) {
+      const probeStartedAt = Date.now();
+      const probe = await mssqlPool
+        .request()
+        .input("afterExamId", sql.BigInt, toBigIntish(mssqlKeysetAfter))
+        .input("page", sql.Int, Math.min(pageSize, 50))
+        .query(probeSql);
+      const probeElapsedMs = Date.now() - probeStartedAt;
+      const probeRows = probe.recordset || [];
+      const probeFirst = probeRows.length > 0 ? String(probeRows[0].probe_exam_id) : "none";
+      const probeLast =
+        probeRows.length > 0 ? String(probeRows[probeRows.length - 1].probe_exam_id) : "none";
+      console.error(
+        `>>> [${key}] probe exam_id ok: rows=${probeRows.length} first=${probeFirst} last=${probeLast} probe_ms=${probeElapsedMs}`,
+      );
+    }
+
+    let rows = [];
+    let fetchElapsedMs = 0;
+    if (isExaminationBuiltin && useMssqlKeyset) {
+      // Step 1: fetch lightweight Exam_ID list (keyset).
+      const idFetchStartedAt = Date.now();
+      const idResp = await mssqlPool
+        .request()
+        .input("afterExamId", sql.BigInt, toBigIntish(mssqlKeysetAfter))
+        .input("page", sql.Int, pageSize)
+        .query(probeSql);
+      const idFetchElapsedMs = Date.now() - idFetchStartedAt;
+      const idRows = idResp.recordset || [];
+      if (probeTiming) {
+        const idFirst = idRows.length > 0 ? String(idRows[0].probe_exam_id) : "none";
+        const idLast =
+          idRows.length > 0 ? String(idRows[idRows.length - 1].probe_exam_id) : "none";
+        console.error(
+          `>>> [${key}] id fetch ok: rows=${idRows.length} first=${idFirst} last=${idLast} id_fetch_ms=${idFetchElapsedMs}`,
+        );
+      }
+      if (idRows.length === 0) {
+        rows = [];
+        fetchElapsedMs = idFetchElapsedMs;
+      } else {
+        // Step 2: fetch full detail for that ID chunk.
+        const idPlaceholders = idRows.map((_, i) => `@id${i}`).join(", ");
+        const detailSql = buildMssqlExaminationDetailByIdsSelect(idPlaceholders).replaceAll(
+          "{{sourceObject}}",
+          sourceObjectNoLock,
+        );
+        const detailReq = mssqlPool.request();
+        idRows.forEach((r, i) => {
+          detailReq.input(`id${i}`, sql.BigInt, toBigIntish(r.probe_exam_id));
+        });
+        const detailFetchStartedAt = Date.now();
+        const detailResp = await detailReq.query(detailSql);
+        const detailFetchElapsedMs = Date.now() - detailFetchStartedAt;
+        rows = detailResp.recordset || [];
+        fetchElapsedMs = idFetchElapsedMs + detailFetchElapsedMs;
+        if (probeTiming) {
+          console.error(
+            `>>> [${key}] detail fetch ok: rows=${rows.length} detail_fetch_ms=${detailFetchElapsedMs}`,
+          );
+        }
+      }
+    } else {
+      const fetchStartedAt = Date.now();
+      const r = useMssqlKeyset
+        ? await mssqlPool
+            .request()
+            .input("afterExamId", sql.BigInt, toBigIntish(mssqlKeysetAfter))
+            .input("page", sql.Int, pageSize)
+            .query(selectSql)
+        : await mssqlPool
+            .request()
+            .input("offset", sql.Int, offset)
+            .input("page", sql.Int, pageSize)
+            .query(selectSql);
+      fetchElapsedMs = Date.now() - fetchStartedAt;
+      rows = r.recordset || [];
+    }
+
+    if (probeTiming) {
+      console.error(
+        `>>> [${key}] fetched rows: ${rows.length} (chunk ${nextChunkIndex}, mssql_query_ms=${fetchElapsedMs})`,
+      );
+    } else {
+      console.error(`>>> [${key}] fetched rows: ${rows.length} (chunk ${nextChunkIndex})`);
+    }
     if (rows.length === 0) break;
 
     const n = rows.length;
@@ -544,7 +688,8 @@ LIMIT 200;
       }
 
       await pgClient.query("COMMIT");
-      chunkResults.push({
+      successChunkCount += 1;
+      const chunkResult = {
         chunkIndex,
         status: "success",
         sourceOffsetStart,
@@ -557,9 +702,20 @@ LIMIT 200;
           chunkStats.examination_success_cases ?? 0,
         ),
         examination_fail_cases: Number(chunkStats.examination_fail_cases ?? 0),
-      });
+      };
+      if (
+        shouldKeepChunkDetail({
+          status: "success",
+          chunkIndex,
+          chunkLogMode,
+          chunkSampleEvery,
+        })
+      ) {
+        chunkResults.push(chunkResult);
+      }
     } catch (err) {
       await pgClient.query("ROLLBACK");
+      failedChunkCount += 1;
       chunkResults.push({
         chunkIndex,
         status: "failed",
@@ -595,8 +751,12 @@ LIMIT 200;
         updatedAt: new Date().toISOString(),
       });
     }
+    const isLastPage = n < pageSize;
     console.error(`... [${key}] processed ${total} rows (offset=${offset})`);
-    if (rows.length < batchSize) break;
+    // Explicitly clear chunk buffers before next iteration.
+    for (let i = 0; i < arrays.length; i++) arrays[i].length = 0;
+    rows.length = 0;
+    if (isLastPage) break;
   }
 
   if (checkpointEnabled) {
@@ -647,6 +807,10 @@ ORDER BY reason;
     missingByReason: missingByReason.rows,
     checkpointPath: checkpointEnabled ? checkpointPath : null,
     chunkCount: chunkIndex,
+    successChunkCount,
+    failedChunkCount,
+    chunkLogMode,
+    chunkSampleEvery,
     chunkResults,
   };
 

@@ -30,7 +30,11 @@
     "patient_info": {},
     "examination": {
       "migration": {
-        "batchSize": 200
+        "batchSize": 2000,
+        "chunkLogMode": "compact",
+        "chunkSampleEvery": 50,
+        "sourceLimit": 4000,
+        "probeTiming": true
       }
     }
   }
