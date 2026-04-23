@@ -17,7 +17,6 @@
   },
   "migration": {
     "batchSize": 500,
-    "truncateFirst": false,
     "enableCheckpoint": true,
     "checkpointDir": "./checkpoints"
   },
@@ -62,17 +61,7 @@
         "mobile_phone",
         "email"
       ],
-      "selectSqlFile": "./sql/patient_info.select.sql",
-      "preLoadSqlFiles": [
-        "../sql/01_create_staging.sql"
-      ],
-      "postLoadSqlFiles": [
-        "../sql/02_insert_into_clone_patient_info.sql",
-        "../sql/03_insert_addresses_from_staging.sql"
-      ],
-      "truncateSqlFiles": [
-        "../sql/00_truncate_clone_patient_info.sql"
-      ]
+      "postLoadSqlFiles": []
     }
   ]
 }

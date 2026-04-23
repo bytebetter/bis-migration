@@ -2,32 +2,15 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "migrate: patient_info → bisinfo_dev_clone (CSV ค่าเริ่มต้น)",
+      "label": "migrate: patient_info → Postgres (js-migrate)",
       "type": "shell",
-      "command": "powershell",
+      "command": "node",
       "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "${workspaceFolder}/patient-info/run-migrate-clone.ps1"
+        "migrate-from-mssql.mjs",
+        "--config",
+        "config.local.json"
       ],
-      "options": { "cwd": "${workspaceFolder}" },
-      "presentation": { "reveal": "always", "panel": "shared", "focus": true }
-    },
-    {
-      "label": "migrate: patient_info (ล้าง clone TRUNCATE CASCADE ก่อน)",
-      "type": "shell",
-      "command": "powershell",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "${workspaceFolder}/patient-info/run-migrate-clone.ps1",
-        "-TruncateFirst"
-      ],
-      "options": { "cwd": "${workspaceFolder}" },
+      "options": { "cwd": "${workspaceFolder}/patient-info/js-migrate" },
       "presentation": { "reveal": "always", "panel": "shared", "focus": true }
     }
   ]

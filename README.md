@@ -7,13 +7,11 @@
 ```powershell
 cd $HOME\Documents   # หรือโฟลเดอร์ที่ทีมกำหนด
 git clone <url> BIS-DB-Migration
-cd BIS-DB-Migration
-# ถ้าใช้ migrate-stream (ไม่ใช้ CSV เท่านั้น):
-cd patient-info\tools
+cd BIS-DB-Migration\patient-info\js-migrate
 npm install
 ```
 
-เปิดโฟลเดอร์นี้เป็น workspace ใน Cursor/VS Code จะใช้ **Tasks** ใน `.vscode/tasks.json` ได้
+เปิดโฟลเดอร์นี้เป็น workspace ใน Cursor/VS Code จะใช้ **Tasks** ใน `.vscode/tasks.json` รัน `patient-info` migrate ได้
 
 ## โครงสร้าง
 
@@ -22,5 +20,5 @@ npm install
 
 ## ความต้องการ
 
-- PowerShell + `kubectl`
-- Node 20+ เมื่อใช้ `patient-info/tools/migrate-stream.mjs`
+- Node 20+ สำหรับ `patient-info/js-migrate`
+- การ port-forward ไป Postgres หรือ network ตามสภาพแวดล้อม

@@ -3,6 +3,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sql from "mssql";
 import pg from "pg";
+import { MSSQL_PATIENT_INFO_SELECT } from "./mssqlPatientInfoSelect.mjs";
+import { ensurePatientInfoStagingDdl } from "./patientInfoPgDdl.mjs";
+import { normPid, runPatientInfoChunkPostLoad } from "./patientInfoMapping.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -58,11 +61,6 @@ function toStr(v) {
     return `${y}-${m}-${d} 00:00:00.000`;
   }
   return String(v);
-}
-
-function normPid(v) {
-  if (v == null) return "";
-  return String(v).replace(/^\uFEFF/, "").trim();
 }
 
 function rowToStagingArrays(row, rowIdx, arrays, cols) {
@@ -121,13 +119,7 @@ function buildTableJobs(config) {
         "short_note", "disease", "mobile_phone", "email"
       ],
       stagingTable: "migrate_stg.patient_info_mssql",
-      selectSqlFile: "./sql/patient_info.select.sql",
-      preLoadSqlFiles: ["../sql/01_create_staging.sql"],
-      postLoadSqlFiles: [
-        "../sql/02_insert_into_clone_patient_info.sql",
-        "../sql/03_insert_addresses_from_staging.sql"
-      ],
-      truncateSqlFiles: ["../sql/00_truncate_clone_patient_info.sql"]
+      postLoadSqlFiles: []
     }
   ];
 }
@@ -138,7 +130,7 @@ async function runTableJob({ mssqlPool, pgClient, sqlBaseDir, migrationConfig, t
   const sourceTable = tableJob.sourceTable;
   const columns = tableJob.columns ?? [];
   const stagingTable = tableJob.stagingTable;
-  const selectSqlFile = tableJob.selectSqlFile;
+  const selectSqlFile = tableJob.selectSqlFile ?? null;
   const orderBy = tableJob.orderBy ?? "[PID]";
   const batchSize = Math.max(50, Math.min(5000, Number(tableJob.batchSize ?? migrationConfig.batchSize ?? 500)));
   const checkpointEnabled = migrationConfig.enableCheckpoint !== false;
@@ -146,12 +138,18 @@ async function runTableJob({ mssqlPool, pgClient, sqlBaseDir, migrationConfig, t
   fs.mkdirSync(checkpointDir, { recursive: true });
   const checkpointPath = path.join(checkpointDir, `${key}.json`);
 
-  if (!sourceTable || !stagingTable || !selectSqlFile || columns.length === 0) {
+  const isPatientInfoBuiltin = key === "patient_info" || (tableJob.sourceTable === "patient_info" && !tableJob.key);
+  if (!sourceTable || !stagingTable || columns.length === 0) {
     throw new Error(`Table job '${key}' is incomplete`);
+  }
+  if (!selectSqlFile && !isPatientInfoBuiltin) {
+    throw new Error(`Table job '${key}' is incomplete: set selectSqlFile or use key/sourceTable patient_info for built-in SELECT`);
   }
 
   const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
-  const selectTemplate = readSql(sqlBaseDir, selectSqlFile);
+  const selectTemplate = selectSqlFile
+    ? readSql(sqlBaseDir, selectSqlFile)
+    : MSSQL_PATIENT_INFO_SELECT;
   const selectSql = selectTemplate
     .replaceAll("{{sourceObject}}", sourceObject)
     .replaceAll("{{orderBy}}", orderBy);
@@ -166,16 +164,13 @@ async function runTableJob({ mssqlPool, pgClient, sqlBaseDir, migrationConfig, t
   if (!Number.isFinite(offset) || offset < 0) offset = 0;
   console.error(`>>> [${key}] start offset: ${offset}`);
 
+  if (isPatientInfoBuiltin && toArray(tableJob.preLoadSqlFiles).length === 0) {
+    console.error(`>>> [${key}] ensure migrate_stg + norm_pid (built-in JS DDL)`);
+    await ensurePatientInfoStagingDdl(pgClient);
+  }
   for (const sqlFile of toArray(tableJob.preLoadSqlFiles)) {
     console.error(`>>> [${key}] run pre-load SQL: ${sqlFile}`);
     await pgClient.query(readSql(sqlBaseDir, sqlFile));
-  }
-
-  if (migrationConfig.truncateFirst === true || tableJob.truncateFirst === true) {
-    for (const sqlFile of toArray(tableJob.truncateSqlFiles)) {
-      console.error(`>>> [${key}] run truncate SQL: ${sqlFile}`);
-      await pgClient.query(readSql(sqlBaseDir, sqlFile));
-    }
   }
 
   let total = 0;
@@ -216,11 +211,17 @@ async function runTableJob({ mssqlPool, pgClient, sqlBaseDir, migrationConfig, t
       const insertStaging = `INSERT INTO ${stagingTable} (${columns.join(", ")}) SELECT * FROM unnest(${unnestArgs});`;
       await pgClient.query(insertStaging, arrays);
 
-      for (const sqlFile of toArray(tableJob.postLoadSqlFiles)) {
-        step = `run post-load SQL: ${sqlFile}`;
-        console.error(`>>> [${key}] run post-load SQL: ${sqlFile}`);
-        const postSql = stripTxWrappers(readSql(sqlBaseDir, sqlFile));
-        await pgClient.query(postSql);
+      if (toArray(tableJob.postLoadSqlFiles).length > 0) {
+        for (const sqlFile of toArray(tableJob.postLoadSqlFiles)) {
+          step = `run post-load SQL: ${sqlFile}`;
+          console.error(`>>> [${key}] run post-load SQL: ${sqlFile}`);
+          const postSql = stripTxWrappers(readSql(sqlBaseDir, sqlFile));
+          await pgClient.query(postSql);
+        }
+      } else if (isPatientInfoBuiltin) {
+        step = "run patient_info JS post-load (map -> public + address)";
+        console.error(`>>> [${key}] runPatientInfoChunkPostLoad`);
+        await runPatientInfoChunkPostLoad(pgClient, rows);
       }
 
       step = "compute chunk stats";

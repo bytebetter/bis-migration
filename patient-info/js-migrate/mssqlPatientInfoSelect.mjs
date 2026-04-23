@@ -1,3 +1,7 @@
+/**
+ * คิวรีอ่าน dbo.patient_info จาก MSSQL แบ่งหน้า (แทนไฟล์ .sql ที่ลบ)
+ */
+export const MSSQL_PATIENT_INFO_SELECT = `
 SELECT
   CAST([PID] AS NVARCHAR(MAX)) AS pid,
   CAST([Prefix] AS NVARCHAR(MAX)) AS prefix,
@@ -34,3 +38,4 @@ SELECT
 FROM {{sourceObject}}
 ORDER BY {{orderBy}}
 OFFSET @offset ROWS FETCH NEXT @page ROWS ONLY;
+`.trim();
