@@ -60,6 +60,11 @@ function toStr(v) {
   return String(v);
 }
 
+function normPid(v) {
+  if (v == null) return "";
+  return String(v).replace(/^\uFEFF/, "").trim();
+}
+
 function rowToStagingArrays(row, rowIdx, arrays, cols) {
   const g = (k) => {
     const v = row[k] ?? row[k.toLowerCase()] ?? row[k.toUpperCase()];
@@ -179,6 +184,8 @@ async function runTableJob({ mssqlPool, pgClient, sqlBaseDir, migrationConfig, t
   let patientFailCases = 0;
   let addressSuccessCases = 0;
   const failedPidSet = new Set();
+  const chunkResults = [];
+  let chunkIndex = 0;
 
   while (true) {
     const r = await mssqlPool
@@ -190,23 +197,33 @@ async function runTableJob({ mssqlPool, pgClient, sqlBaseDir, migrationConfig, t
     if (rows.length === 0) break;
 
     const n = rows.length;
+    chunkIndex += 1;
+    const sourceOffsetStart = offset;
+    const sourceOffsetEnd = offset + n - 1;
+    const firstPid = normPid(rows[0]?.pid);
+    const lastPid = normPid(rows[n - 1]?.pid);
     const arrays = columns.map(() => new Array(n));
     for (let i = 0; i < n; i++) rowToStagingArrays(rows[i], i, arrays, columns);
 
+    let step = "begin chunk transaction";
     try {
       await pgClient.query("BEGIN");
+      step = "truncate staging table";
       await pgClient.query(`TRUNCATE TABLE ${stagingTable};`);
 
+      step = "insert chunk into staging";
       const unnestArgs = arrays.map((_, idx) => `$${idx + 1}::text[]`).join(", ");
       const insertStaging = `INSERT INTO ${stagingTable} (${columns.join(", ")}) SELECT * FROM unnest(${unnestArgs});`;
       await pgClient.query(insertStaging, arrays);
 
       for (const sqlFile of toArray(tableJob.postLoadSqlFiles)) {
+        step = `run post-load SQL: ${sqlFile}`;
         console.error(`>>> [${key}] run post-load SQL: ${sqlFile}`);
         const postSql = stripTxWrappers(readSql(sqlBaseDir, sqlFile));
         await pgClient.query(postSql);
       }
 
+      step = "compute chunk stats";
       const stats = await pgClient.query(`
 WITH src AS (
   SELECT DISTINCT migrate_stg.norm_pid(pid) AS npid
@@ -261,9 +278,37 @@ LIMIT 200;
       }
 
       await pgClient.query("COMMIT");
+      chunkResults.push({
+        chunkIndex,
+        status: "success",
+        sourceOffsetStart,
+        sourceOffsetEnd,
+        rowCount: n,
+        firstPid,
+        lastPid,
+        source_cases: Number(chunkStats.source_cases ?? 0),
+        patient_success_cases: Number(chunkStats.patient_success_cases ?? 0),
+        patient_fail_cases: Number(chunkStats.patient_fail_cases ?? 0),
+        address_success_cases: Number(chunkStats.address_success_cases ?? 0),
+      });
     } catch (err) {
       await pgClient.query("ROLLBACK");
-      throw new Error(`[${key}] failed at source offset ${offset}: ${err instanceof Error ? err.message : String(err)}`);
+      chunkResults.push({
+        chunkIndex,
+        status: "failed",
+        sourceOffsetStart,
+        sourceOffsetEnd,
+        rowCount: n,
+        firstPid,
+        lastPid,
+        failedAtStep: step,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw new Error(
+        `[${key}] failed chunk ${chunkIndex} (offset ${sourceOffsetStart}-${sourceOffsetEnd}, pid ${firstPid}..${lastPid}) at step '${step}': ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
     }
 
     total += n;
@@ -298,6 +343,8 @@ LIMIT 200;
     address_success_cases: addressSuccessCases,
     failedPids: Array.from(failedPidSet),
     checkpointPath: checkpointEnabled ? checkpointPath : null,
+    chunkCount: chunkIndex,
+    chunkResults,
   };
 
   console.error(`>>> [${key}] done, total rows read: ${total}`);

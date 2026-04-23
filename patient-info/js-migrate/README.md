@@ -64,3 +64,4 @@ cd .\patient-info\js-migrate
 - ถ้า chunk ใด fail จะ rollback เฉพาะ chunk นั้น และสามารถ resume ต่อจาก checkpoint ได้
 - มีไฟล์ log ที่ `patient-info/js-migrate/logs/migrate-*.json` ระบุ success/fail cases และรายการ `failedPids` (สูงสุด 200 รายการ)
 - checkpoint อยู่ที่ `patient-info/js-migrate/checkpoints/*.json` (กำหนดได้ด้วย `migration.checkpointDir`)
+- log มี `chunkResults` รายละเอียดระดับ chunk: ลำดับ chunk, offset เริ่ม/จบ, pid แรก/สุดท้าย, จำนวนแถว, สถานะ และ `failedAtStep`/`error` ถ้า fail
