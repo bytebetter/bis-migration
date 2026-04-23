@@ -6,7 +6,7 @@
 
 param(
   [string] $ConfigPath = "..\..\migration.config.local.json",
-  [string] $Profile = "patient_info",
+  [string] $Profile = "examination",
   [switch] $SkipInstall
 )
 

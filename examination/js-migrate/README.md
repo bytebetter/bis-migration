@@ -1,0 +1,32 @@
+# JS migration - `examination`
+
+โฟลเดอร์นี้เป็น flow ใหม่แบบเดียวกับ `patient-info/js-migrate`:
+- ดึงจาก MSSQL แบบแบ่ง chunk
+- ใส่ staging ใน Postgres
+- แมปเข้า `public.examination` ผ่านฟังก์ชัน JS
+- รองรับ checkpoint + rollback ราย chunk
+
+## ไฟล์สำคัญ
+
+- `migrate-from-mssql.mjs` - ตัวรันหลัก
+- `mssqlExaminationSelect.mjs` - SELECT จาก MSSQL
+- `examinationPgDdl.mjs` - สร้าง `migrate_stg` + `norm_exam_id`/`norm_pid` + staging table
+- `examinationMapping.mjs` - logic map จากแถวดิบ -> `public.examination`
+- `run-migrate.ps1` - one-click runner บน PowerShell
+- config กลางที่ root: `migration.config.local.json` (profile `examination`)
+
+## Run
+
+```powershell
+cd .\examination\js-migrate
+npm install
+npm run migrate
+```
+
+## หมายเหตุ
+
+- ถ้าเจอ `ETIMEOUT` / timeout 15 วินาทีจาก MSSQL: ตั้ง `shared.source.requestTimeout` ใน `migration.config.local.json` (มิลลิวินาที) หรืออัปเดตโค้ดให้ใช้ default 5 นาที
+- สคริปต์นี้ไม่ล้าง `public.examination` อัตโนมัติ
+- ถ้าจะรันใหม่แบบฐานว่าง ให้ `TRUNCATE` เองก่อนรัน
+- log อยู่ใน `logs/migrate-*.json`
+- checkpoint อยู่ใน `checkpoints/examination.json`

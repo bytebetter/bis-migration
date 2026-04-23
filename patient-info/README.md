@@ -11,10 +11,9 @@ patient-info/
 └── js-migrate/
     ├── migrate-from-mssql.mjs   ← entry
     ├── patientInfoMapping.mjs   ← แมปฟิลด์ + insert ปลายทาง
-    ├── patientInfoPgDdl.mjs     ← DDL staging + `norm_pid` + TRUNCATE clone (เมื่อตั้งค่า)
+    ├── patientInfoPgDdl.mjs     ← DDL staging + `norm_pid`
     ├── mssqlPatientInfoSelect.mjs ← SELECT จาก MSSQL
-    ├── config.example.json
-    └── config.local.json        ← (gitignore) ใส่ credential
+    └── run-migrate.ps1          ← one-click runner
 ```
 
 ## รัน
@@ -26,6 +25,8 @@ npm run migrate
 ```
 
 หรือใช้ Task ใน VS Code/Cursor: **`migrate: patient_info → Postgres (js-migrate)`** (ดู `.vscode/tasks.json`)
+
+ค่าเชื่อมต่อใช้ไฟล์กลางที่ root: `migration.config.local.json` (profile: `patient_info`)
 
 ## หมายเหตุ
 

@@ -1,13 +1,16 @@
 patient-info/imports/*.csv
 patient-info/tools/node_modules/
 patient-info/js-migrate/node_modules/
-patient-info/js-migrate/config.local.json
 patient-info/js-migrate/logs/
 patient-info/js-migrate/checkpoints/
 examination/imports/*.csv
 examination/tools/node_modules/
+examination/js-migrate/node_modules/
+examination/js-migrate/logs/
+examination/js-migrate/checkpoints/
 examination/reports/*
 !examination/reports/.gitkeep
+migration.config.local.json
 .env
 .env.*
 !.env.example

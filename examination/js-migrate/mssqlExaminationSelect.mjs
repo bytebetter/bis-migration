@@ -1,7 +1,7 @@
--- รันใน SQL Server (SSMS) แล้ว export เป็น CSV UTF-8
--- หัวคอลัมน์ต้องตรงกับ migrate_stg.examination_mssql ใน 01_create_staging.sql
--- แก้ schema/ชื่อตาราง/คอลัมน์ให้ตรงฐานเก่า (เช่น [dbo].[examination])
-
+/**
+ * คิวรีอ่าน dbo.examination จาก MSSQL แบบแบ่งหน้า
+ */
+export const MSSQL_EXAMINATION_SELECT = `
 SELECT
   CAST(CAST([Exam_ID] AS BIGINT) AS NVARCHAR(MAX)) AS exam_id,
   CONVERT(VARCHAR(30), [Exam_date], 126) AS exam_date,
@@ -103,4 +103,7 @@ SELECT
   CONVERT(VARCHAR(30), [fnx_r_date], 126) AS fnx_r_date,
   CAST([sendExam_LoginName] AS NVARCHAR(MAX)) AS send_exam_login_name,
   CAST(CAST([Schedule_ID] AS NVARCHAR(50)) AS NVARCHAR(MAX)) AS schedule_id
-FROM dbo.examination;
+FROM {{sourceObject}}
+ORDER BY {{orderBy}}
+OFFSET @offset ROWS FETCH NEXT @page ROWS ONLY;
+`.trim();

@@ -8,9 +8,25 @@
       "args": [
         "migrate-from-mssql.mjs",
         "--config",
-        "config.local.json"
+        "../../migration.config.local.json",
+        "--profile",
+        "patient_info"
       ],
       "options": { "cwd": "${workspaceFolder}/patient-info/js-migrate" },
+      "presentation": { "reveal": "always", "panel": "shared", "focus": true }
+    },
+    {
+      "label": "migrate: examination → Postgres (js-migrate)",
+      "type": "shell",
+      "command": "node",
+      "args": [
+        "migrate-from-mssql.mjs",
+        "--config",
+        "../../migration.config.local.json",
+        "--profile",
+        "examination"
+      ],
+      "options": { "cwd": "${workspaceFolder}/examination/js-migrate" },
       "presentation": { "reveal": "always", "panel": "shared", "focus": true }
     }
   ]

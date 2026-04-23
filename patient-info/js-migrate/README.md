@@ -11,15 +11,17 @@
 
 ## Checklist
 
-- [ ] คัดลอก `config.example.json` → `config.local.json` แล้วใส่รหัส
+- [ ] คัดลอก `migration.config.example.json` → `migration.config.local.json` (ที่ root repo) แล้วใส่รหัส
 - [ ] เปิด `kubectl port-forward` หรือ network ไปยัง Postgres ปลายทาง
 - [ ] รัน `npm install` ในโฟลเดอร์นี้
 
 ## Config
 
+- ใช้ config กลางที่ root: `migration.config.local.json`
+- ระบุ profile `patient_info` ผ่าน `--profile patient_info`
 - `source`: MSSQL แบบ `mssqlUrl` หรือ `server` / `port` / `database` / `user` / `password`
+- ถ้าเจอ `ETIMEOUT` 15s: ตั้ง `source.requestTimeout` (มิลลิวินาที) ใน `migration.config.local.json` หรือใช้ค่า default ในโค้ด (5 นาที) หลังอัปเดต
 - `target`: Postgres สำหรับ `bisinfo_dev_clone` (หรือฐานที่กำหนด)
-- `tables[]` — งาน `patient_info` ใช้ built-in: **ไม่ต้อง** ใส่ `selectSqlFile` ถ้า `key: "patient_info"`
 
 ### ตารางใหม่ (ยังไม่มี built-in)
 

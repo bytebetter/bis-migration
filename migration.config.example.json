@@ -1,0 +1,37 @@
+{
+  "defaultProfile": "patient_info",
+  "shared": {
+    "source": {
+      "server": "node61681-bis-staging.th1.proen.cloud",
+      "port": 11051,
+      "database": "BISInfo",
+      "user": "sa",
+      "password": "dev@byte123",
+      "encrypt": true,
+      "trustServerCertificate": true,
+      "requestTimeout": 0,
+      "connectTimeout": 60000,
+      "cancelTimeout": 0
+    },
+    "target": {
+      "postgresHost": "127.0.0.1",
+      "postgresPort": 5432,
+      "postgresUser": "devuser",
+      "postgresPassword": "dev-postgres-password-2024",
+      "postgresDatabase": "bisinfo_dev_clone"
+    },
+    "migration": {
+      "batchSize": 500,
+      "enableCheckpoint": true,
+      "checkpointDir": "./checkpoints"
+    }
+  },
+  "profiles": {
+    "patient_info": {},
+    "examination": {
+      "migration": {
+        "batchSize": 200
+      }
+    }
+  }
+}
