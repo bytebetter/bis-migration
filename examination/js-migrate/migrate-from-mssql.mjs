@@ -406,8 +406,11 @@ async function runTableJob({
   );
   fs.mkdirSync(checkpointDir, { recursive: true });
   const checkpointPath = path.join(checkpointDir, `${key}.json`);
-  const isExaminationBuiltin =
-    key === "examination" || tableJob.sourceTable === "examination";
+  const isExaminationBuiltin = (() => {
+    const jobKey = (tableJob.key ?? "").toString().toLowerCase();
+    const st = (tableJob.sourceTable ?? "").toString().toLowerCase();
+    return jobKey === "examination" || st === "examination";
+  })();
 
   if (!sourceTable || !stagingTable || columns.length === 0) {
     throw new Error(`Table job '${key}' is incomplete`);
@@ -417,6 +420,16 @@ async function runTableJob({
       `Table job '${key}' is incomplete: set selectSqlFile or use key/sourceTable examination for built-in SELECT`,
     );
   }
+
+  const stagingFromClause = (() => {
+    const t = String(stagingTable).trim();
+    if (!/^\w+\.\w+$/.test(t)) {
+      throw new Error(
+        `Table job '${key}': stagingTable ต้องเป็นรูป schema.table (a-z, 0-9, _): ได้ "${stagingTable}"`,
+      );
+    }
+    return t;
+  })();
 
   const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
   const sourceObjectNoLock = `${sourceObject} WITH (NOLOCK)`;
@@ -488,23 +501,33 @@ async function runTableJob({
   let chunkIndex = 0;
   let successChunkCount = 0;
   let failedChunkCount = 0;
-  const chunkLogMode = String(migrationConfig.chunkLogMode ?? "compact").toLowerCase();
-  const chunkSampleEvery = Math.max(1, Number(migrationConfig.chunkSampleEvery ?? 50));
+  const chunkLogMode = String(
+    migrationConfig.chunkLogMode ?? "compact",
+  ).toLowerCase();
+  const chunkSampleEvery = Math.max(
+    1,
+    Number(migrationConfig.chunkSampleEvery ?? 50),
+  );
   const sourceLimitRaw = migrationConfig.sourceLimit;
   const sourceLimit =
     sourceLimitRaw == null ? null : Math.max(1, Number(sourceLimitRaw));
   const probeTiming = migrationConfig.probeTiming === true;
   if (sourceLimit != null) {
-    console.error(`>>> [${key}] TEMP sourceLimit enabled: ${sourceLimit} records`);
+    console.error(
+      `>>> [${key}] TEMP sourceLimit enabled: ${sourceLimit} records`,
+    );
   }
   if (probeTiming) {
-    console.error(`>>> [${key}] probeTiming enabled (MSSQL query latency logs)`);
+    console.error(
+      `>>> [${key}] probeTiming enabled (MSSQL query latency logs)`,
+    );
   }
 
   while (true) {
     const remaining = sourceLimit == null ? null : sourceLimit - total;
     if (remaining != null && remaining <= 0) break;
-    const pageSize = remaining == null ? batchSize : Math.min(batchSize, remaining);
+    const pageSize =
+      remaining == null ? batchSize : Math.min(batchSize, remaining);
     const nextChunkIndex = chunkIndex + 1;
     if (useMssqlKeyset) {
       console.error(
@@ -525,9 +548,12 @@ async function runTableJob({
         .query(probeSql);
       const probeElapsedMs = Date.now() - probeStartedAt;
       const probeRows = probe.recordset || [];
-      const probeFirst = probeRows.length > 0 ? String(probeRows[0].probe_exam_id) : "none";
+      const probeFirst =
+        probeRows.length > 0 ? String(probeRows[0].probe_exam_id) : "none";
       const probeLast =
-        probeRows.length > 0 ? String(probeRows[probeRows.length - 1].probe_exam_id) : "none";
+        probeRows.length > 0
+          ? String(probeRows[probeRows.length - 1].probe_exam_id)
+          : "none";
       console.error(
         `>>> [${key}] probe exam_id ok: rows=${probeRows.length} first=${probeFirst} last=${probeLast} probe_ms=${probeElapsedMs}`,
       );
@@ -546,9 +572,12 @@ async function runTableJob({
       const idFetchElapsedMs = Date.now() - idFetchStartedAt;
       const idRows = idResp.recordset || [];
       if (probeTiming) {
-        const idFirst = idRows.length > 0 ? String(idRows[0].probe_exam_id) : "none";
+        const idFirst =
+          idRows.length > 0 ? String(idRows[0].probe_exam_id) : "none";
         const idLast =
-          idRows.length > 0 ? String(idRows[idRows.length - 1].probe_exam_id) : "none";
+          idRows.length > 0
+            ? String(idRows[idRows.length - 1].probe_exam_id)
+            : "none";
         console.error(
           `>>> [${key}] id fetch ok: rows=${idRows.length} first=${idFirst} last=${idLast} id_fetch_ms=${idFetchElapsedMs}`,
         );
@@ -559,10 +588,9 @@ async function runTableJob({
       } else {
         // Step 2: fetch full detail for that ID chunk.
         const idPlaceholders = idRows.map((_, i) => `@id${i}`).join(", ");
-        const detailSql = buildMssqlExaminationDetailByIdsSelect(idPlaceholders).replaceAll(
-          "{{sourceObject}}",
-          sourceObjectNoLock,
-        );
+        const detailSql = buildMssqlExaminationDetailByIdsSelect(
+          idPlaceholders,
+        ).replaceAll("{{sourceObject}}", sourceObjectNoLock);
         const detailReq = mssqlPool.request();
         idRows.forEach((r, i) => {
           detailReq.input(`id${i}`, sql.BigInt, toBigIntish(r.probe_exam_id));
@@ -600,7 +628,9 @@ async function runTableJob({
         `>>> [${key}] fetched rows: ${rows.length} (chunk ${nextChunkIndex}, mssql_query_ms=${fetchElapsedMs})`,
       );
     } else {
-      console.error(`>>> [${key}] fetched rows: ${rows.length} (chunk ${nextChunkIndex})`);
+      console.error(
+        `>>> [${key}] fetched rows: ${rows.length} (chunk ${nextChunkIndex})`,
+      );
     }
     if (rows.length === 0) break;
 
@@ -627,6 +657,11 @@ async function runTableJob({
       await pgClient.query(insertStaging, arrays);
 
       if (toArray(tableJob.postLoadSqlFiles).length > 0) {
+        if (isExaminationBuiltin) {
+          console.error(
+            `>>> [${key}] คำเตือน: ตั้ง postLoadSqlFiles แล้ว จะไม่รันแมป JS ไป public.examination; เอา postLoadSqlFiles ออกถ้าต้องการแมปแบบ built-in`,
+          );
+        }
         for (const sqlFile of toArray(tableJob.postLoadSqlFiles)) {
           step = `run post-load SQL: ${sqlFile}`;
           console.error(`>>> [${key}] run post-load SQL: ${sqlFile}`);
@@ -636,14 +671,14 @@ async function runTableJob({
       } else if (isExaminationBuiltin) {
         step = "run examination JS post-load (map -> public.examination)";
         console.error(`>>> [${key}] runExaminationChunkPostLoad`);
-        await runExaminationChunkPostLoad(pgClient, rows);
+        await runExaminationChunkPostLoad(pgClient, rows, stagingFromClause);
       }
 
       step = "compute chunk stats";
       const stats = await pgClient.query(`
 WITH src AS (
   SELECT DISTINCT migrate_stg.norm_exam_id(exam_id) AS nexam
-  FROM migrate_stg.examination_mssql
+  FROM ${stagingFromClause}
   WHERE NULLIF(migrate_stg.norm_exam_id(exam_id), '') ~ '^[0-9]+$'
 ),
 matched AS (
@@ -660,7 +695,7 @@ SELECT
       const failedRows = await pgClient.query(`
 WITH src AS (
   SELECT DISTINCT migrate_stg.norm_exam_id(exam_id) AS nexam
-  FROM migrate_stg.examination_mssql
+  FROM ${stagingFromClause}
   WHERE NULLIF(migrate_stg.norm_exam_id(exam_id), '') ~ '^[0-9]+$'
 ),
 matched AS (
@@ -784,7 +819,7 @@ FROM (
       ) THEN 'patient_not_found'
       ELSE 'unknown'
     END AS reason
-  FROM migrate_stg.examination_mssql s
+  FROM ${stagingFromClause} s
   LEFT JOIN public.examination e
     ON e.old_exam_id = CASE
       WHEN NULLIF(migrate_stg.norm_exam_id(s.exam_id), '') ~ '^[0-9]+$'

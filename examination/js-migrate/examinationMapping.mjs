@@ -193,7 +193,52 @@ const INSERT_DEFS = [
   ["appointment", "int4", (_row, ctx) => ctx.appointmentId],
 ];
 
-export async function runExaminationChunkPostLoad(pgClient, mssqlRows) {
+function assertStagingFromClause(stagingFromClause) {
+  const t = String(stagingFromClause ?? "").trim();
+  if (!/^\w+\.\w+$/.test(t)) {
+    throw new Error(
+      `examination post-load: staging ต้องเป็น schema.table (a-z, 0-9, _): ได้ "${stagingFromClause}"`,
+    );
+  }
+  return t;
+}
+
+let cachedPublicExaminationPatientCol = null;
+
+/**
+ * Django/Postgres มักใช้ patient_id; โมเดลเก่าใช้ patient — สอบถาม information_schema
+ */
+export async function resolvePublicExaminationPatientColumn(pgClient) {
+  if (cachedPublicExaminationPatientCol) return cachedPublicExaminationPatientCol;
+  const r = await pgClient.query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'examination'
+       AND column_name IN ('patient_id', 'patient')
+     ORDER BY CASE column_name
+       WHEN 'patient_id' THEN 0
+       WHEN 'patient' THEN 1
+     END
+     LIMIT 1`,
+  );
+  if (r.rows.length === 0) {
+    cachedPublicExaminationPatientCol = "patient";
+  } else {
+    cachedPublicExaminationPatientCol = r.rows[0].column_name;
+  }
+  return cachedPublicExaminationPatientCol;
+}
+
+/**
+ * จับ patient จากข้อมูลบน staging ที่ load ลง PG จริง (ตรงกับ unnest) แทน in-memory จาก mssql
+ * เพื่อไม่เสีย key เวลา pid รูปแบบ/ชนิดต่างจาก getField+String
+ */
+export async function runExaminationChunkPostLoad(
+  pgClient,
+  mssqlRows,
+  stagingFromClause = "migrate_stg.examination_mssql",
+) {
+  const stg = assertStagingFromClause(stagingFromClause);
   const rows = distinctOnNormExamId(mssqlRows);
   if (rows.length === 0) return;
 
@@ -203,9 +248,50 @@ export async function runExaminationChunkPostLoad(pgClient, mssqlRows) {
 
   if (examIds.length === 0) return;
 
-  const normPids = Array.from(
-    new Set(rows.map((r) => normPid(getField(r, "pid"))).filter((pid) => pid !== ""))
+  const mssqlExamU = rows.map((r) => String(getField(r, "exam_id") ?? ""));
+  const { rows: stgCountRow } = await pgClient.query(
+    `SELECT count(*)::int AS c FROM ${stg} s`,
   );
+  const stgC = stgCountRow[0]?.c ?? 0;
+
+  /**
+   * unnest(ค่า exam จาก mssql) JOIN staging ด้วย norm_exam_id — รองรับกรณี String(mssql) กับ s.exam_id
+   * (หลัง toStr ใน migrate) ไม่เหมือนกันทีละอักขระ
+   */
+  const bridgeRes = await pgClient.query(
+    `SELECT DISTINCT ON (m.u)
+       m.u::text AS u,
+       p.id AS patient_id
+     FROM unnest($1::text[]) AS m(u)
+     INNER JOIN ${stg} s
+       ON NULLIF(migrate_stg.norm_exam_id(m.u::text), '')::text
+          = NULLIF(migrate_stg.norm_exam_id(s.exam_id::text), '')::text
+     LEFT JOIN public.patient_info p
+       ON migrate_stg.norm_pid(p.pid::text) = migrate_stg.norm_pid(s.pid)
+     WHERE NULLIF(migrate_stg.norm_exam_id(m.u::text), '')::text ~ '^[0-9]+$'
+     ORDER BY m.u, s.exam_id`,
+    [mssqlExamU],
+  );
+  const mssqlUToPatient = new Map(bridgeRes.rows.map((r) => [r.u, r.patient_id]));
+  const withPatient = bridgeRes.rows.filter((r) => r.patient_id != null).length;
+  const withoutPatient = mssqlUToPatient.size - withPatient;
+  if (mssqlUToPatient.size === 0 && stgC > 0) {
+    console.error(
+      `>>> [examination] post-load: มี staging ${stgC} แต่ bridge mssql↔stg ไม่ได้ mapping (ตรวจ exam_id ตรง staging หรือยัง)`,
+    );
+  } else {
+    console.error(
+      `>>> [examination] post-load: staging ${stgC} แถว, bridge ได้ ${mssqlUToPatient.size} ราย (patient_info ตรง ${withPatient} ราย, ไม่ตรง/ว่าง ${withoutPatient} ราย — ยัง insert examination โดย patient=null ได้)`,
+    );
+  }
+
+  const patientCol = await resolvePublicExaminationPatientColumn(pgClient);
+  if (patientCol !== "patient") {
+    console.error(
+      `>>> [examination] post-load: ตาราง public.examination ใช้คอลัมน์ \`${patientCol}\` แทน \`patient\` — insert อัปเดตให้ตรงฐาน`,
+    );
+  }
+
   const scheduleIds = Array.from(
     new Set(
       rows
@@ -213,19 +299,6 @@ export async function runExaminationChunkPostLoad(pgClient, mssqlRows) {
         .filter((id) => Number.isInteger(id))
     )
   );
-
-  const patientRows =
-    normPids.length > 0
-      ? await pgClient.query(
-          `
-          SELECT id, migrate_stg.norm_pid(pid::text) AS npid
-          FROM public.patient_info
-          WHERE migrate_stg.norm_pid(pid::text) = ANY($1::text[])
-          `,
-          [normPids]
-        )
-      : { rows: [] };
-  const patientIdByPid = new Map(patientRows.rows.map((r) => [r.npid, r.id]));
 
   const appointmentRows =
     scheduleIds.length > 0
@@ -247,11 +320,8 @@ export async function runExaminationChunkPostLoad(pgClient, mssqlRows) {
     const examId = normExamId(getField(row, "exam_id"));
     if (examId === "" || !isDigitsOnly(examId)) continue;
 
-    const npid = normPid(getField(row, "pid"));
-    if (npid === "") continue;
-
-    const patientId = patientIdByPid.get(npid);
-    if (patientId == null) continue;
+    const u = String(getField(row, "exam_id") ?? "");
+    const patientId = mssqlUToPatient.get(u) ?? null;
 
     const scheduleId = toStrictInt(getField(row, "schedule_id"));
     const appointmentId = scheduleId != null && appointmentSet.has(scheduleId) ? scheduleId : null;
@@ -262,16 +332,26 @@ export async function runExaminationChunkPostLoad(pgClient, mssqlRows) {
     }
   }
 
-  if (arrays[0].length === 0) return;
+  if (arrays[0].length === 0) {
+    console.error(
+      `>>> [examination] post-load: จะ insert 0 แถว (map patient ${mssqlUToPatient.size} ราย; กรอง exam/schedule)`,
+    );
+    return;
+  }
 
-  const colList = INSERT_DEFS.map(([name]) => name).join(", ");
+  const colList = INSERT_DEFS.map(([name], idx) =>
+    idx === 2 ? patientCol : name,
+  ).join(", ");
   const unnestArgs = INSERT_DEFS.map(([, type], idx) => `$${idx + 1}::${type}[]`).join(", ");
 
-  await pgClient.query(
+  const ins = await pgClient.query(
     `
     INSERT INTO public.examination (${colList})
     SELECT * FROM unnest(${unnestArgs});
     `,
-    arrays
+    arrays,
+  );
+  console.error(
+    `>>> [examination] post-load: insert public.examination แล้ว ${ins.rowCount ?? arrays[0].length} แถว (คอลัมน์ patient → ${patientCol})`,
   );
 }
