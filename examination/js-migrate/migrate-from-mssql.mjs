@@ -14,6 +14,8 @@ import {
 } from "./examinationMapping.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const MSSQL_EXAM_ID_NUMERIC_EXPR =
+  "CASE WHEN LTRIM(RTRIM([Exam_ID])) <> '' AND LTRIM(RTRIM([Exam_ID])) NOT LIKE '%[^0-9]%' THEN CONVERT(BIGINT, LTRIM(RTRIM([Exam_ID]))) ELSE NULL END";
 
 /**
  * อ่าน dbo.examination แบบ keyset: `WHERE [Exam_ID] > @after` แทน `OFFSET` — OFFSET นับแถว O(n) พอ data เยอะ
@@ -30,19 +32,19 @@ function buildMssqlExaminationKeysetSelect() {
   // Use TOP(@page) for keyset pagination to avoid OFFSET/FETCH overhead on large tables.
   const headWithTop = head.replace(/^SELECT\s*/i, "SELECT TOP (@page) ");
   return `${headWithTop},
-  CAST([Exam_ID] AS BIGINT) AS __mssql_exam_id
+  ${MSSQL_EXAM_ID_NUMERIC_EXPR} AS __mssql_exam_id
 FROM {{sourceObject}}
-WHERE [Exam_ID] > @afterExamId
-ORDER BY [Exam_ID] ASC;`;
+WHERE ${MSSQL_EXAM_ID_NUMERIC_EXPR} > @afterExamId
+ORDER BY ${MSSQL_EXAM_ID_NUMERIC_EXPR} ASC, [Exam_ID] ASC;`;
 }
 
 function buildMssqlExaminationProbeSelect() {
   return `
 SELECT TOP (@page)
-  CAST([Exam_ID] AS BIGINT) AS probe_exam_id
+  ${MSSQL_EXAM_ID_NUMERIC_EXPR} AS probe_exam_id
 FROM {{sourceObject}}
-WHERE [Exam_ID] > @afterExamId
-ORDER BY [Exam_ID] ASC;`.trim();
+WHERE ${MSSQL_EXAM_ID_NUMERIC_EXPR} > @afterExamId
+ORDER BY ${MSSQL_EXAM_ID_NUMERIC_EXPR} ASC, [Exam_ID] ASC;`.trim();
 }
 
 function buildMssqlExaminationDetailByIdsSelect(idPlaceholders) {
@@ -54,10 +56,10 @@ function buildMssqlExaminationDetailByIdsSelect(idPlaceholders) {
   }
   const head = s.slice(0, idx).trimEnd();
   return `${head},
-  CAST([Exam_ID] AS BIGINT) AS __mssql_exam_id
+  ${MSSQL_EXAM_ID_NUMERIC_EXPR} AS __mssql_exam_id
 FROM {{sourceObject}}
 WHERE [Exam_ID] IN (${idPlaceholders})
-ORDER BY [Exam_ID] ASC;`;
+ORDER BY ${MSSQL_EXAM_ID_NUMERIC_EXPR} ASC, [Exam_ID] ASC;`;
 }
 
 function toBigIntish(v) {
@@ -369,7 +371,7 @@ function buildTableJobs(config) {
       key: "examination",
       sourceSchema: config.source?.schema ?? "dbo",
       sourceTable: config.source?.table ?? "examination",
-      orderBy: "[Exam_ID]",
+      orderBy: `${MSSQL_EXAM_ID_NUMERIC_EXPR} ASC, [Exam_ID] ASC`,
       stagingTable: "migrate_stg.examination_mssql",
       columns: EXAMINATION_COLUMNS,
       postLoadSqlFiles: [],
