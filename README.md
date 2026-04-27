@@ -11,9 +11,11 @@ cd BIS-DB-Migration\patient-info\js-migrate
 npm install
 cd ..\..\examination\js-migrate
 npm install
+cd ..\..\appointment\js-migrate
+npm install
 ```
 
-เปิดโฟลเดอร์นี้เป็น workspace ใน Cursor/VS Code จะใช้ **Tasks** ใน `.vscode/tasks.json` รันได้ทั้ง `patient-info` และ `examination`
+เปิดโฟลเดอร์นี้เป็น workspace ใน Cursor/VS Code จะใช้ **Tasks** ใน `.vscode/tasks.json` รันได้ `patient-info`, `examination`, `appointment`
 
 ตั้งค่าเชื่อมต่อจากไฟล์กลางที่ root:
 - `migration.config.example.json` (template)
@@ -23,9 +25,10 @@ npm install
 
 - **`patient-info/`** — migrate `patient_info` → [patient-info/README.md](patient-info/README.md)
 - **`examination/`** — migrate `examination` → [examination/README.md](examination/README.md)
+- **`appointment/`** — migrate `schedule` → `appointment` → [appointment/js-migrate/README.md](appointment/js-migrate/README.md)
 - ตารางอื่นเพิ่มเป็นโฟลเดอร์ระดับเดียวกับ `patient-info/` ได้
 
 ## ความต้องการ
 
-- Node 20+ สำหรับ `patient-info/js-migrate` และ `examination/js-migrate`
+- Node 20+ สำหรับ `patient-info/js-migrate`, `examination/js-migrate`, `appointment/js-migrate`
 - การ port-forward ไป Postgres หรือ network ตามสภาพแวดล้อม

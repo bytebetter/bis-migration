@@ -35,6 +35,17 @@
         "chunkSampleEvery": 50,
         "probeTiming": true
       }
+    },
+    "appointment": {
+      "source": {
+        "table": "schedule"
+      },
+      "migration": {
+        "batchSize": 2000,
+        "chunkLogMode": "compact",
+        "chunkSampleEvery": 50,
+        "probeTiming": false
+      }
     }
   }
 }

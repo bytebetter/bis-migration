@@ -28,6 +28,20 @@
       ],
       "options": { "cwd": "${workspaceFolder}/examination/js-migrate" },
       "presentation": { "reveal": "always", "panel": "shared", "focus": true }
+    },
+    {
+      "label": "migrate: appointment → Postgres (js-migrate)",
+      "type": "shell",
+      "command": "node",
+      "args": [
+        "migrate-from-mssql.mjs",
+        "--config",
+        "../../migration.config.local.json",
+        "--profile",
+        "appointment"
+      ],
+      "options": { "cwd": "${workspaceFolder}/appointment/js-migrate" },
+      "presentation": { "reveal": "always", "panel": "shared", "focus": true }
     }
   ]
 }

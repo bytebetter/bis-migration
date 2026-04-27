@@ -7,8 +7,6 @@ Flow หลักอยู่ที่ **`examination/js-migrate/`** — อ่�
 ```
 examination/
 ├── README.md              ← คู่มือนี้
-├── imports/               ← (ทางเลือก) ไฟล์นำเข้าเก่า
-├── reports/               ← เก็บรายงานประกอบ (ถ้ามี)
 └── js-migrate/
     ├── migrate-from-mssql.mjs      ← entry
     ├── examinationMapping.mjs      ← แมปฟิลด์ + insert ปลายทาง

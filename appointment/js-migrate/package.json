@@ -1,0 +1,13 @@
+{
+  "name": "appointment-js-migrate",
+  "private": true,
+  "type": "module",
+  "description": "Migrate appointment (schedule) from MSSQL to PostgreSQL",
+  "scripts": {
+    "migrate": "node ./migrate-from-mssql.mjs --config ../../migration.config.local.json --profile appointment"
+  },
+  "dependencies": {
+    "mssql": "^11.0.1",
+    "pg": "^8.13.1"
+  }
+}
