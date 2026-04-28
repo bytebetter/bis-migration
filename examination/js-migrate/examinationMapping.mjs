@@ -237,7 +237,12 @@ export async function runExaminationChunkPostLoad(
   pgClient,
   mssqlRows,
   stagingFromClause = "migrate_stg.examination_mssql",
+  options = {},
 ) {
+  const verbose = options.verbose === true;
+  const log = (msg) => {
+    if (verbose) console.error(msg);
+  };
   const stg = assertStagingFromClause(stagingFromClause);
   const rows = distinctOnNormExamId(mssqlRows);
   if (rows.length === 0) return;
@@ -276,18 +281,18 @@ export async function runExaminationChunkPostLoad(
   const withPatient = bridgeRes.rows.filter((r) => r.patient_id != null).length;
   const withoutPatient = mssqlUToPatient.size - withPatient;
   if (mssqlUToPatient.size === 0 && stgC > 0) {
-    console.error(
+    log(
       `>>> [examination] post-load: มี staging ${stgC} แต่ bridge mssql↔stg ไม่ได้ mapping (ตรวจ exam_id ตรง staging หรือยัง)`,
     );
   } else {
-    console.error(
+    log(
       `>>> [examination] post-load: staging ${stgC} แถว, bridge ได้ ${mssqlUToPatient.size} ราย (patient_info ตรง ${withPatient} ราย, ไม่ตรง/ว่าง ${withoutPatient} ราย — ยัง insert examination โดย patient=null ได้)`,
     );
   }
 
   const patientCol = await resolvePublicExaminationPatientColumn(pgClient);
   if (patientCol !== "patient") {
-    console.error(
+    log(
       `>>> [examination] post-load: ตาราง public.examination ใช้คอลัมน์ \`${patientCol}\` แทน \`patient\` — insert อัปเดตให้ตรงฐาน`,
     );
   }
@@ -333,7 +338,7 @@ export async function runExaminationChunkPostLoad(
   }
 
   if (arrays[0].length === 0) {
-    console.error(
+    log(
       `>>> [examination] post-load: จะ insert 0 แถว (map patient ${mssqlUToPatient.size} ราย; กรอง exam/schedule)`,
     );
     return;
@@ -351,7 +356,7 @@ export async function runExaminationChunkPostLoad(
     `,
     arrays,
   );
-  console.error(
+  log(
     `>>> [examination] post-load: insert public.examination แล้ว ${ins.rowCount ?? arrays[0].length} แถว (คอลัมน์ patient → ${patientCol})`,
   );
 }

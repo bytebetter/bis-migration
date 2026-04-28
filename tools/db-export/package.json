@@ -1,0 +1,9 @@
+{
+  "name": "db-export-tools",
+  "private": true,
+  "type": "module",
+  "description": "Generic MSSQL table export utility",
+  "dependencies": {
+    "mssql": "^11.0.1"
+  }
+}

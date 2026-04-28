@@ -10,6 +10,7 @@ examination/js-migrate/checkpoints/
 appointment/js-migrate/node_modules/
 appointment/js-migrate/logs/
 appointment/js-migrate/checkpoints/
+exports/*.json
 migration.config.local.json
 .env
 .env.*

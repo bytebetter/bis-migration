@@ -197,6 +197,36 @@ function nowStamp() {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
+function renderProgress(current, total, startedAtMs) {
+  const width = 28;
+  const elapsedSec = ((Date.now() - startedAtMs) / 1000).toFixed(1).padStart(6, " ");
+  if (total == null || total <= 0) {
+    process.stdout.write(
+      `\r[${"#".repeat(width)}]  -----%  rows ${current}  elapsed ${elapsedSec}s`,
+    );
+    return;
+  }
+  const ratio = Math.max(0, Math.min(1, current / total));
+  const filled = Math.round(width * ratio);
+  const bar = `${"#".repeat(filled)}${"-".repeat(Math.max(0, width - filled))}`;
+  const pct = (ratio * 100).toFixed(1).padStart(5, " ");
+  process.stdout.write(
+    `\r[${bar}] ${pct}%  rows ${current}/${total}  elapsed ${elapsedSec}s`,
+  );
+}
+
+function formatSec(ms) {
+  return `${(ms / 1000).toFixed(2)}s`;
+}
+
+function writeOutLine(msg, state) {
+  if (state?.progressInline) {
+    process.stdout.write("\n");
+    state.progressInline = false;
+  }
+  process.stdout.write(`${msg}\n`);
+}
+
 function parseMssqlUrl(rawUrl) {
   const normalized = rawUrl.replace(/^microsoftsqlserver:\/\//i, "mssql://");
   const u = new URL(normalized);
@@ -513,11 +543,32 @@ async function runTableJob({
   const sourceLimitRaw = migrationConfig.sourceLimit;
   const sourceLimit =
     sourceLimitRaw == null ? null : Math.max(1, Number(sourceLimitRaw));
+  const progressEnabled = migrationConfig.progressUi !== false;
+  const progressStartedAt = Date.now();
   const probeTiming = migrationConfig.probeTiming === true;
+  const debugLogs = migrationConfig.debugLogs === true || probeTiming;
+  const uiState = { progressInline: false };
+  let plannedRows = sourceLimit;
+  if (plannedRows == null && progressEnabled) {
+    try {
+      const countRes = await mssqlPool
+        .request()
+        .query(`SELECT COUNT_BIG(1) AS total FROM ${sourceObjectNoLock};`);
+      plannedRows = Number(countRes.recordset?.[0]?.total ?? 0);
+    } catch {
+      plannedRows = null;
+    }
+  }
+  const progressTotal = plannedRows ?? null;
+  const plannedChunks =
+    plannedRows != null && plannedRows > 0 ? Math.ceil(plannedRows / batchSize) : null;
   if (sourceLimit != null) {
     console.error(
       `>>> [${key}] TEMP sourceLimit enabled: ${sourceLimit} records`,
     );
+  }
+  if (plannedChunks != null) {
+    console.error(`>>> [${key}] plan: ${plannedRows} rows, ~${plannedChunks} chunks`);
   }
   if (probeTiming) {
     console.error(
@@ -531,13 +582,15 @@ async function runTableJob({
     const pageSize =
       remaining == null ? batchSize : Math.min(batchSize, remaining);
     const nextChunkIndex = chunkIndex + 1;
-    if (useMssqlKeyset) {
-      console.error(
+    if (debugLogs && useMssqlKeyset) {
+      writeOutLine(
         `>>> [${key}] fetch chunk ${nextChunkIndex}: afterExamId=${String(mssqlKeysetAfter)} pageSize=${pageSize}`,
+        uiState,
       );
-    } else {
-      console.error(
+    } else if (debugLogs) {
+      writeOutLine(
         `>>> [${key}] fetch chunk ${nextChunkIndex}: offset=${offset} pageSize=${pageSize}`,
+        uiState,
       );
     }
 
@@ -563,6 +616,8 @@ async function runTableJob({
 
     let rows = [];
     let fetchElapsedMs = 0;
+    let idFetchElapsedMs = 0;
+    let detailFetchElapsedMs = 0;
     if (isExaminationBuiltin && useMssqlKeyset) {
       // Step 1: fetch lightweight Exam_ID list (keyset).
       const idFetchStartedAt = Date.now();
@@ -571,7 +626,7 @@ async function runTableJob({
         .input("afterExamId", sql.BigInt, toBigIntish(mssqlKeysetAfter))
         .input("page", sql.Int, pageSize)
         .query(probeSql);
-      const idFetchElapsedMs = Date.now() - idFetchStartedAt;
+      idFetchElapsedMs = Date.now() - idFetchStartedAt;
       const idRows = idResp.recordset || [];
       if (probeTiming) {
         const idFirst =
@@ -580,8 +635,9 @@ async function runTableJob({
           idRows.length > 0
             ? String(idRows[idRows.length - 1].probe_exam_id)
             : "none";
-        console.error(
+        writeOutLine(
           `>>> [${key}] id fetch ok: rows=${idRows.length} first=${idFirst} last=${idLast} id_fetch_ms=${idFetchElapsedMs}`,
+          uiState,
         );
       }
       if (idRows.length === 0) {
@@ -599,12 +655,13 @@ async function runTableJob({
         });
         const detailFetchStartedAt = Date.now();
         const detailResp = await detailReq.query(detailSql);
-        const detailFetchElapsedMs = Date.now() - detailFetchStartedAt;
+        detailFetchElapsedMs = Date.now() - detailFetchStartedAt;
         rows = detailResp.recordset || [];
         fetchElapsedMs = idFetchElapsedMs + detailFetchElapsedMs;
         if (probeTiming) {
-          console.error(
+          writeOutLine(
             `>>> [${key}] detail fetch ok: rows=${rows.length} detail_fetch_ms=${detailFetchElapsedMs}`,
+            uiState,
           );
         }
       }
@@ -625,19 +682,17 @@ async function runTableJob({
       rows = r.recordset || [];
     }
 
-    if (probeTiming) {
-      console.error(
+    if (debugLogs) {
+      writeOutLine(
         `>>> [${key}] fetched rows: ${rows.length} (chunk ${nextChunkIndex}, mssql_query_ms=${fetchElapsedMs})`,
-      );
-    } else {
-      console.error(
-        `>>> [${key}] fetched rows: ${rows.length} (chunk ${nextChunkIndex})`,
+        uiState,
       );
     }
     if (rows.length === 0) break;
 
     const n = rows.length;
     chunkIndex += 1;
+    const chunkStartedAt = Date.now();
     const sourceOffsetStart = offset;
     const sourceOffsetEnd = offset + n - 1;
     const firstExamId = normExamId(rows[0]?.exam_id);
@@ -646,19 +701,32 @@ async function runTableJob({
     for (let i = 0; i < n; i++) rowToStagingArrays(rows[i], i, arrays, columns);
 
     let step = "begin chunk transaction";
+    let txBeginMs = 0;
+    let truncateMs = 0;
+    let stagingInsertMs = 0;
+    let postLoadMs = 0;
+    let statsMs = 0;
+    let commitMs = 0;
     try {
+      const txBeginStartedAt = Date.now();
       await pgClient.query("BEGIN");
+      txBeginMs = Date.now() - txBeginStartedAt;
       step = "truncate staging table";
+      const truncateStartedAt = Date.now();
       await pgClient.query(`TRUNCATE TABLE ${stagingTable};`);
+      truncateMs = Date.now() - truncateStartedAt;
 
       step = "insert chunk into staging";
+      const stagingInsertStartedAt = Date.now();
       const unnestArgs = arrays
         .map((_, idx) => `$${idx + 1}::text[]`)
         .join(", ");
       const insertStaging = `INSERT INTO ${stagingTable} (${columns.join(", ")}) SELECT * FROM unnest(${unnestArgs});`;
       await pgClient.query(insertStaging, arrays);
+      stagingInsertMs = Date.now() - stagingInsertStartedAt;
 
       if (toArray(tableJob.postLoadSqlFiles).length > 0) {
+        const postLoadStartedAt = Date.now();
         if (isExaminationBuiltin) {
           console.error(
             `>>> [${key}] คำเตือน: ตั้ง postLoadSqlFiles แล้ว จะไม่รันแมป JS ไป public.examination; เอา postLoadSqlFiles ออกถ้าต้องการแมปแบบ built-in`,
@@ -670,13 +738,21 @@ async function runTableJob({
           const postSql = stripTxWrappers(readSql(sqlBaseDir, sqlFile));
           await pgClient.query(postSql);
         }
+        postLoadMs = Date.now() - postLoadStartedAt;
       } else if (isExaminationBuiltin) {
         step = "run examination JS post-load (map -> public.examination)";
-        console.error(`>>> [${key}] runExaminationChunkPostLoad`);
-        await runExaminationChunkPostLoad(pgClient, rows, stagingFromClause);
+        if (debugLogs) {
+          console.error(`>>> [${key}] runExaminationChunkPostLoad`);
+        }
+        const postLoadStartedAt = Date.now();
+        await runExaminationChunkPostLoad(pgClient, rows, stagingFromClause, {
+          verbose: debugLogs,
+        });
+        postLoadMs = Date.now() - postLoadStartedAt;
       }
 
       step = "compute chunk stats";
+      const statsStartedAt = Date.now();
       const stats = await pgClient.query(`
 WITH src AS (
   SELECT DISTINCT migrate_stg.norm_exam_id(exam_id) AS nexam
@@ -712,6 +788,7 @@ WHERE m.nexam IS NULL
 ORDER BY s.nexam
 LIMIT 200;
 `);
+      statsMs = Date.now() - statsStartedAt;
 
       const chunkStats = stats.rows[0] ?? {};
       sourceCases += Number(chunkStats.source_cases ?? 0);
@@ -724,8 +801,11 @@ LIMIT 200;
         failedExamIdSet.add(row.exam_id);
       }
 
+      const commitStartedAt = Date.now();
       await pgClient.query("COMMIT");
+      commitMs = Date.now() - commitStartedAt;
       successChunkCount += 1;
+      const totalChunkMs = Date.now() - chunkStartedAt;
       const chunkResult = {
         chunkIndex,
         status: "success",
@@ -739,6 +819,20 @@ LIMIT 200;
           chunkStats.examination_success_cases ?? 0,
         ),
         examination_fail_cases: Number(chunkStats.examination_fail_cases ?? 0),
+        timings: {
+          fetchMs: fetchElapsedMs,
+          idFetchMs: idFetchElapsedMs,
+          detailFetchMs: detailFetchElapsedMs,
+          txBeginMs,
+          truncateMs,
+          stagingInsertMs,
+          postLoadMs,
+          statsMs,
+          commitMs,
+          totalChunkMs,
+          rowsPerSec:
+            totalChunkMs > 0 ? Number(((n * 1000) / totalChunkMs).toFixed(2)) : null,
+        },
       };
       if (
         shouldKeepChunkDetail({
@@ -763,6 +857,18 @@ LIMIT 200;
         lastExamId,
         failedAtStep: step,
         error: err instanceof Error ? err.message : String(err),
+        timings: {
+          fetchMs: fetchElapsedMs,
+          idFetchMs: idFetchElapsedMs,
+          detailFetchMs: detailFetchElapsedMs,
+          txBeginMs,
+          truncateMs,
+          stagingInsertMs,
+          postLoadMs,
+          statsMs,
+          commitMs,
+          totalChunkMs: Date.now() - chunkStartedAt,
+        },
       });
       throw new Error(
         `[${key}] failed chunk ${chunkIndex} (offset ${sourceOffsetStart}-${sourceOffsetEnd}, exam_id ${firstExamId}..${lastExamId}) at step '${step}': ${
@@ -789,11 +895,27 @@ LIMIT 200;
       });
     }
     const isLastPage = n < pageSize;
-    console.error(`... [${key}] processed ${total} rows (offset=${offset})`);
+    if (debugLogs) {
+      writeOutLine(
+        `>>> [${key}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(
+          Date.now() - chunkStartedAt,
+        )} (fetch ${formatSec(fetchElapsedMs)}, post ${formatSec(postLoadMs)}) rows ${n}, total ${total}/${plannedRows ?? "?"}`,
+        uiState,
+      );
+    }
+    if (progressEnabled) {
+      renderProgress(total, progressTotal, progressStartedAt);
+      uiState.progressInline = true;
+    }
     // Explicitly clear chunk buffers before next iteration.
     for (let i = 0; i < arrays.length; i++) arrays[i].length = 0;
     rows.length = 0;
     if (isLastPage) break;
+  }
+
+  if (progressEnabled) {
+    process.stdout.write("\n");
+    uiState.progressInline = false;
   }
 
   if (checkpointEnabled) {
