@@ -48,6 +48,108 @@ function parseDonateTypeInt(s) {
   return Number.parseInt(t, 10);
 }
 
+function normSocId(v) {
+  const t = nullIfTrimEmpty(v);
+  if (t == null) return null;
+  const digits = String(t).replace(/\D/g, "");
+  return digits === "" ? null : digits;
+}
+
+function isHomePrefix(p2) {
+  return p2 === "02" || p2 === "03" || p2 === "04";
+}
+
+function isBizPrefix(p2) {
+  return p2 === "06" || p2 === "07" || p2 === "08" || p2 === "09";
+}
+
+/**
+ * Extract Thai phone-like numbers from a raw chunk.
+ * - Ignore non-digits.
+ * - Prefer well-formed patterns:
+ *   - home: 0[2-4] + 7 digits (9 total)
+ *   - biz/mobile: 0[6-9] + 8 digits (10 total)
+ */
+function extractThaiPhonesFromChunk(rawChunk) {
+  if (rawChunk == null) return [];
+  const digits = String(rawChunk).replace(/\D/g, "");
+  if (digits === "") return [];
+
+  /** @type {string[]} */
+  const out = [];
+
+  // Prefer explicit matches inside longer digit strings (handles stray characters/ext).
+  for (const m of digits.matchAll(/0[234]\d{7}/g)) out.push(m[0]);
+  for (const m of digits.matchAll(/0[6789]\d{8}/g)) out.push(m[0]);
+
+  if (out.length > 0) return out;
+
+  // Fallback: if it's a single number-like, keep a reasonable length.
+  const p2 = digits.slice(0, 2);
+  if (isBizPrefix(p2) && digits.length >= 10) return [digits.slice(0, 10)];
+  if (isHomePrefix(p2) && digits.length >= 9) return [digits.slice(0, 9)];
+  if (digits.length === 10 || digits.length === 9) return [digits];
+  if (digits.length > 10) return [digits.slice(0, 10)];
+  if (digits.length > 9) return [digits.slice(0, 9)];
+  return [];
+}
+
+function splitAndExtractThaiPhones(raw) {
+  if (raw == null) return [];
+  const t = String(raw).trim();
+  if (t === "") return [];
+
+  // Split by "/" first (per requirement), but still robust if multiple slashes/spaces exist.
+  const parts = t.split("/").map((p) => p.trim()).filter((p) => p !== "");
+  if (parts.length === 0) return [];
+
+  /** @type {string[]} */
+  const out = [];
+  for (const p of parts) out.push(...extractThaiPhonesFromChunk(p));
+  return out;
+}
+
+function normalizeAndDistributePhones(rawBiz, rawHome) {
+  const bizExisting = nullIfTrimEmpty(rawBiz);
+  const homeExisting = nullIfTrimEmpty(rawHome);
+
+  // If nothing suggests splitting/re-mapping, keep original behavior.
+  const needsReMap =
+    (bizExisting != null && String(bizExisting).includes("/")) ||
+    (homeExisting != null && String(homeExisting).includes("/"));
+
+  if (!needsReMap) {
+    return { phone_biz: bizExisting, phone_home: homeExisting };
+  }
+
+  const candidates = [
+    ...splitAndExtractThaiPhones(bizExisting),
+    ...splitAndExtractThaiPhones(homeExisting),
+  ];
+
+  let biz = null;
+  let home = null;
+
+  for (const ph of candidates) {
+    if (ph.length < 2) continue;
+    const p2 = ph.slice(0, 2);
+    if (home == null && isHomePrefix(p2)) {
+      home = ph;
+      continue;
+    }
+    if (biz == null && isBizPrefix(p2)) {
+      biz = ph;
+      continue;
+    }
+  }
+
+  // If we couldn't classify, fall back to original values.
+  return {
+    phone_biz: biz ?? bizExisting,
+    phone_home: home ?? homeExisting,
+  };
+}
+
 /**
  * คัดแถวซ้ำ pid (เทียบ norm_pid) ให้ลำดับแรกชนะ — เทียบ DISTINCT ON
  */
@@ -144,8 +246,12 @@ export async function runPatientInfoChunkPostLoad(pgClient, mssqlRows) {
     const d = parseDateOfBirthBe(getField(r, "date_of_birth_be"));
     aDob.push(d);
     aMar.push(nullIfTrimEmpty(getField(r, "single")));
-    aPhBiz.push(nullIfTrimEmpty(getField(r, "phone_biz")));
-    aPhHome.push(nullIfTrimEmpty(getField(r, "phone_home")));
+    const { phone_biz, phone_home } = normalizeAndDistributePhones(
+      getField(r, "phone_biz"),
+      getField(r, "phone_home")
+    );
+    aPhBiz.push(phone_biz);
+    aPhHome.push(phone_home);
     const h = parseReal(getField(r, "height"));
     aH.push(h == null || Number.isNaN(h) ? null : h);
     const w = parseReal(getField(r, "weight"));
@@ -155,7 +261,7 @@ export async function runPatientInfoChunkPostLoad(pgClient, mssqlRows) {
     aPreEn.push(nullIfTrimEmpty(getField(r, "eng_prefix")));
     aFnEn.push(nullIfTrimEmpty(getField(r, "eng_name")));
     aLnEn.push(nullIfTrimEmpty(getField(r, "eng_surname")));
-    aSoc.push(nullIfTrimEmpty(getField(r, "soc_id")));
+    aSoc.push(normSocId(getField(r, "soc_id")));
     aHn.push(nullIfTrimEmpty(getField(r, "hn")));
     aGen.push(nullIfTrimEmpty(getField(r, "gender")));
     aNote.push(nullIfTrimEmpty(getField(r, "short_note")));
