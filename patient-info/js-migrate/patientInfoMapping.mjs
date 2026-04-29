@@ -375,7 +375,7 @@ export async function runPatientInfoChunkPostLoad(pgClient, mssqlRows) {
   const st = Array(n).fill("published");
   const fromOld = Array(n).fill(true);
 
-  await pgClient.query(
+  const insAddress = await pgClient.query(
     `
     INSERT INTO public.address (
       status,
@@ -394,7 +394,36 @@ export async function runPatientInfoChunkPostLoad(pgClient, mssqlRows) {
     ) AS t(
       status, address, sub_district, district, province, zipcode, address2, patient_info, from_old_db
     )
+    RETURNING id, patient_info
     `,
     [st, adAddr, adSub, adDist, adProv, adZip, ad2, adPat, fromOld]
   );
+
+  // If patient_info has a FK back to address (e.g. address_id), populate it.
+  // This keeps relations usable in apps/ORMs that model it bidirectionally.
+  const piHasAddressId = await pgClient.query(
+    `
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'patient_info'
+      AND column_name = 'address_id'
+    LIMIT 1
+    `,
+  );
+  if (piHasAddressId.rowCount > 0 && insAddress.rows.length > 0) {
+    const addrIds = insAddress.rows.map((r) => r.id);
+    const piIds = insAddress.rows.map((r) => r.patient_info);
+    await pgClient.query(
+      `
+      UPDATE public.patient_info p
+      SET address_id = x.address_id
+      FROM (
+        SELECT * FROM unnest($1::int[], $2::int[]) AS t(address_id, patient_info_id)
+      ) x
+      WHERE p.id = x.patient_info_id
+      `,
+      [addrIds, piIds],
+    );
+  }
 }
