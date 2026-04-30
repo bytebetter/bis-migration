@@ -42,6 +42,20 @@
       ],
       "options": { "cwd": "${workspaceFolder}/appointment/js-migrate" },
       "presentation": { "reveal": "always", "panel": "shared", "focus": true }
+    },
+    {
+      "label": "migrate: procedure (biopsy) → Postgres (js-migrate)",
+      "type": "shell",
+      "command": "node",
+      "args": [
+        "migrate-from-mssql.mjs",
+        "--config",
+        "../../migration.config.local.json",
+        "--profile",
+        "procedure"
+      ],
+      "options": { "cwd": "${workspaceFolder}/procedure/js-migrate" },
+      "presentation": { "reveal": "always", "panel": "shared", "focus": true }
     }
   ]
 }

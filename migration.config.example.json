@@ -45,6 +45,19 @@
         "batchSize": 2000,
         "chunkLogMode": "compact",
         "chunkSampleEvery": 50,
+        "progressUi": true,
+        "probeTiming": false
+      }
+    },
+    "procedure": {
+      "source": {
+        "schema": "dbo",
+        "table": "biopsy"
+      },
+      "migration": {
+        "batchSize": 2000,
+        "chunkLogMode": "compact",
+        "chunkSampleEvery": 50,
         "probeTiming": false
       }
     }

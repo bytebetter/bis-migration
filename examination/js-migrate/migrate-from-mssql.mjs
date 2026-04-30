@@ -12,6 +12,14 @@ import {
   normExamId,
   runExaminationChunkPostLoad,
 } from "./examinationMapping.mjs";
+import {
+  createUiState,
+  endProgress,
+  formatSec,
+  markProgressInline,
+  renderProgress,
+  writeOutLine,
+} from "../../shared/js-migrate/progressUi.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MSSQL_EXAM_ID_NUMERIC_EXPR =
@@ -195,36 +203,6 @@ function getProfileName() {
 
 function nowStamp() {
   return new Date().toISOString().replace(/[:.]/g, "-");
-}
-
-function renderProgress(current, total, startedAtMs) {
-  const width = 28;
-  const elapsedSec = ((Date.now() - startedAtMs) / 1000).toFixed(1).padStart(6, " ");
-  if (total == null || total <= 0) {
-    process.stdout.write(
-      `\r[${"#".repeat(width)}]  -----%  rows ${current}  elapsed ${elapsedSec}s`,
-    );
-    return;
-  }
-  const ratio = Math.max(0, Math.min(1, current / total));
-  const filled = Math.round(width * ratio);
-  const bar = `${"#".repeat(filled)}${"-".repeat(Math.max(0, width - filled))}`;
-  const pct = (ratio * 100).toFixed(1).padStart(5, " ");
-  process.stdout.write(
-    `\r[${bar}] ${pct}%  rows ${current}/${total}  elapsed ${elapsedSec}s`,
-  );
-}
-
-function formatSec(ms) {
-  return `${(ms / 1000).toFixed(2)}s`;
-}
-
-function writeOutLine(msg, state) {
-  if (state?.progressInline) {
-    process.stdout.write("\n");
-    state.progressInline = false;
-  }
-  process.stdout.write(`${msg}\n`);
 }
 
 function parseMssqlUrl(rawUrl) {
@@ -547,7 +525,7 @@ async function runTableJob({
   const progressStartedAt = Date.now();
   const probeTiming = migrationConfig.probeTiming === true;
   const debugLogs = migrationConfig.debugLogs === true || probeTiming;
-  const uiState = { progressInline: false };
+  const uiState = createUiState();
   let plannedRows = sourceLimit;
   if (plannedRows == null && progressEnabled) {
     try {
@@ -904,8 +882,14 @@ LIMIT 200;
       );
     }
     if (progressEnabled) {
-      renderProgress(total, progressTotal, progressStartedAt);
-      uiState.progressInline = true;
+      renderProgress(
+        total,
+        progressTotal,
+        progressStartedAt,
+        chunkIndex,
+        plannedChunks,
+      );
+      markProgressInline(uiState);
     }
     // Explicitly clear chunk buffers before next iteration.
     for (let i = 0; i < arrays.length; i++) arrays[i].length = 0;
@@ -913,10 +897,7 @@ LIMIT 200;
     if (isLastPage) break;
   }
 
-  if (progressEnabled) {
-    process.stdout.write("\n");
-    uiState.progressInline = false;
-  }
+  if (progressEnabled) endProgress(uiState);
 
   if (checkpointEnabled) {
     writeJson(checkpointPath, {

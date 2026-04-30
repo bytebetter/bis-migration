@@ -6,6 +6,12 @@ import pg from "pg";
 import { MSSQL_PATIENT_INFO_SELECT } from "./mssqlPatientInfoSelect.mjs";
 import { ensurePatientInfoStagingDdl } from "./patientInfoPgDdl.mjs";
 import { normPid, runPatientInfoChunkPostLoad } from "./patientInfoMapping.mjs";
+import {
+  createUiState,
+  endProgress,
+  markProgressInline,
+  renderProgress,
+} from "../../shared/js-migrate/progressUi.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -51,10 +57,17 @@ function tediousOptionsFromSource(sourceConfig = {}) {
     encrypt: sourceConfig.encrypt !== false,
     trustServerCertificate: sourceConfig.trustServerCertificate !== false,
     requestTimeout:
-      sourceConfig.requestTimeout == null ? 0 : Number(sourceConfig.requestTimeout),
+      sourceConfig.requestTimeout == null
+        ? 0
+        : Number(sourceConfig.requestTimeout),
     connectTimeout:
-      sourceConfig.connectTimeout == null ? 60000 : Number(sourceConfig.connectTimeout),
-    cancelTimeout: sourceConfig.cancelTimeout == null ? 0 : Number(sourceConfig.cancelTimeout),
+      sourceConfig.connectTimeout == null
+        ? 60000
+        : Number(sourceConfig.connectTimeout),
+    cancelTimeout:
+      sourceConfig.cancelTimeout == null
+        ? 0
+        : Number(sourceConfig.cancelTimeout),
   };
 }
 
@@ -283,6 +296,24 @@ async function runTableJob({
   );
   if (!Number.isFinite(offset) || offset < 0) offset = 0;
   console.error(`>>> [${key}] start offset: ${offset}`);
+  const progressEnabled = migrationConfig.progressUi !== false;
+  const progressStartedAt = Date.now();
+  const uiState = createUiState();
+  let plannedRows = null;
+  if (progressEnabled) {
+    try {
+      const countRes = await mssqlPool
+        .request()
+        .query(`SELECT COUNT_BIG(1) AS total FROM ${sourceObject};`);
+      plannedRows = Number(countRes.recordset?.[0]?.total ?? 0);
+    } catch {
+      plannedRows = null;
+    }
+  }
+  const plannedChunks =
+    plannedRows != null && plannedRows > 0
+      ? Math.ceil(plannedRows / batchSize)
+      : null;
 
   if (isPatientInfoBuiltin && toArray(tableJob.preLoadSqlFiles).length === 0) {
     console.error(
@@ -446,9 +477,22 @@ LIMIT 200;
         updatedAt: new Date().toISOString(),
       });
     }
-    console.error(`... [${key}] processed ${total} rows (offset=${offset})`);
+    if (progressEnabled) {
+      renderProgress(
+        total,
+        plannedRows,
+        progressStartedAt,
+        chunkIndex,
+        plannedChunks,
+      );
+      markProgressInline(uiState);
+    } else {
+      console.error(`... [${key}] processed ${total} rows (offset=${offset})`);
+    }
     if (rows.length < batchSize) break;
   }
+
+  if (progressEnabled) endProgress(uiState);
 
   if (checkpointEnabled) {
     writeJson(checkpointPath, {

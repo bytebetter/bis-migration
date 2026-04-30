@@ -6,6 +6,14 @@ import pg from "pg";
 import { MSSQL_APPOINTMENT_SELECT } from "./mssqlAppointmentSelect.mjs";
 import { ensureAppointmentStagingDdl } from "./appointmentPgDdl.mjs";
 import { runAppointmentChunkPostLoad } from "./appointmentMapping.mjs";
+import {
+  createUiState,
+  endProgress,
+  formatSec,
+  markProgressInline,
+  renderProgress,
+  writeOutLine,
+} from "../../shared/js-migrate/progressUi.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KEY = "appointment";
@@ -249,11 +257,12 @@ async function runAppointmentTableJob({
   const sourceSchema = source?.schema ?? "dbo";
   const sourceTable = source?.table ?? "schedule";
   const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
+  const sourceObjectNoLock = `${sourceObject} WITH (NOLOCK)`;
   const scheduleIdNumericOrderExpr =
     "CASE WHEN LTRIM(RTRIM([Schedule_ID])) <> '' AND LTRIM(RTRIM([Schedule_ID])) NOT LIKE '%[^0-9]%' THEN CONVERT(BIGINT, LTRIM(RTRIM([Schedule_ID]))) ELSE NULL END ASC, [Schedule_ID] ASC";
   const selectSql = MSSQL_APPOINTMENT_SELECT.replaceAll(
     "{{sourceObject}}",
-    sourceObject,
+    sourceObjectNoLock,
   ).replaceAll("{{orderBy}}", scheduleIdNumericOrderExpr);
 
   const chunkLogMode = String(
@@ -266,11 +275,32 @@ async function runAppointmentTableJob({
   const sourceLimitRaw = migrationConfig.sourceLimit;
   const sourceLimit =
     sourceLimitRaw == null ? null : Math.max(1, Number(sourceLimitRaw));
+  const progressEnabled = migrationConfig.progressUi !== false;
+  const progressStartedAt = Date.now();
+  let plannedRows = sourceLimit;
+  if (plannedRows == null && progressEnabled) {
+    try {
+      const countRes = await mssqlPool
+        .request()
+        .query(`SELECT COUNT_BIG(1) AS total FROM ${sourceObjectNoLock};`);
+      plannedRows = Number(countRes.recordset?.[0]?.total ?? 0);
+    } catch {
+      plannedRows = null;
+    }
+  }
+  const progressTotal = plannedRows ?? null;
+  const plannedChunks =
+    plannedRows != null && plannedRows > 0 ? Math.ceil(plannedRows / batchSize) : null;
   const probeTiming = migrationConfig.probeTiming === true;
+  const debugLogs = migrationConfig.debugLogs === true || probeTiming;
+  const uiState = createUiState();
   if (sourceLimit != null) {
     console.error(
       `>>> [${key}] TEMP sourceLimit enabled: ${sourceLimit} records`,
     );
+  }
+  if (plannedChunks != null) {
+    console.error(`>>> [${key}] plan: ${plannedRows} rows, ~${plannedChunks} chunks`);
   }
   if (probeTiming) {
     console.error(`>>> [${key}] probeTiming enabled (MSSQL query latency logs)`);
@@ -286,15 +316,17 @@ async function runAppointmentTableJob({
   let failedChunkCount = 0;
 
   while (true) {
-    const chunkT0 = Date.now();
     const remaining = sourceLimit == null ? null : sourceLimit - total;
     if (remaining != null && remaining <= 0) break;
     const pageSize =
       remaining == null ? batchSize : Math.min(batchSize, remaining);
     const nextChunkIndex = chunkIndex + 1;
-    console.error(
-      `>>> [${key}] fetch chunk ${nextChunkIndex}: offset=${offset} pageSize=${pageSize}`,
-    );
+    if (debugLogs) {
+      writeOutLine(
+        `>>> [${key}] fetch chunk ${nextChunkIndex}: offset=${offset} pageSize=${pageSize}`,
+        uiState,
+      );
+    }
 
     const fetchStartedAt = Date.now();
     const r = await mssqlPool
@@ -303,26 +335,21 @@ async function runAppointmentTableJob({
       .input("page", sql.Int, pageSize)
       .query(selectSql);
     const fetchElapsedMs = Date.now() - fetchStartedAt;
-    if (probeTiming) {
-      console.error(
-        `>>> [${key}] fetched rows: ${(r.recordset || []).length} (chunk ${nextChunkIndex}, mssql_query_ms=${fetchElapsedMs})`,
-      );
-    } else {
-      console.error(
-        `>>> [${key}] fetched rows: ${(r.recordset || []).length} (chunk ${nextChunkIndex})`,
-      );
-    }
 
     const rows = r.recordset || [];
-    if (rows.length === 0) {
-      console.error(
-        `>>> [${key}] no more rows (mssql ${Date.now() - fetchStartedAt}ms); chunk wall ${Date.now() - chunkT0}ms`,
+    if (debugLogs) {
+      writeOutLine(
+        `>>> [${key}] fetched rows: ${rows.length} (chunk ${nextChunkIndex}, mssql_query_ms=${fetchElapsedMs})`,
+        uiState,
       );
+    }
+    if (rows.length === 0) {
       break;
     }
 
     const n = rows.length;
     chunkIndex += 1;
+    const chunkStartedAt = Date.now();
     const sourceOffsetStart = offset;
     const sourceOffsetEnd = offset + n - 1;
     const firstScheduleId = getScheduleIdForLog(rows[0]);
@@ -334,6 +361,7 @@ async function runAppointmentTableJob({
 
     let step = "begin chunk transaction";
     let lastChunkProcessMs = 0;
+    let postLoadMs = 0;
     try {
       await pgClient.query("BEGIN");
       step = "truncate staging";
@@ -347,9 +375,11 @@ async function runAppointmentTableJob({
         arrays,
       );
       step = "run appointment post-load (map -> public.appointment)";
+      const postLoadStartedAt = Date.now();
       await runAppointmentChunkPostLoad(pgClient, rows);
+      postLoadMs = Date.now() - postLoadStartedAt;
       await pgClient.query("COMMIT");
-      lastChunkProcessMs = Date.now() - chunkT0;
+      lastChunkProcessMs = Date.now() - chunkStartedAt;
       successChunkCount += 1;
       const chunkResult = {
         chunkIndex,
@@ -375,9 +405,10 @@ async function runAppointmentTableJob({
     } catch (err) {
       await pgClient.query("ROLLBACK");
       failedChunkCount += 1;
-      const chunkTotalMs = Date.now() - chunkT0;
-      console.error(
+      const chunkTotalMs = Date.now() - chunkStartedAt;
+      writeOutLine(
         `>>> [${key}] chunk ${chunkIndex} failed after ${chunkTotalMs}ms (mssql_fetch ${fetchElapsedMs}ms) at step: ${step}`,
+        uiState,
       );
       chunkResults.push({
         chunkIndex,
@@ -401,6 +432,20 @@ async function runAppointmentTableJob({
 
     total += n;
     offset += n;
+    if (progressEnabled) {
+      writeOutLine(
+        `... [${key}] chunk ${chunkIndex} ใช้เวลา ${formatSec(lastChunkProcessMs)} (fetch ${formatSec(fetchElapsedMs)}, post ${formatSec(postLoadMs)})`,
+        uiState,
+      );
+    }
+    if (debugLogs) {
+      writeOutLine(
+        `>>> [${key}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(
+          Date.now() - chunkStartedAt,
+        )} (fetch ${formatSec(fetchElapsedMs)}, post ${formatSec(postLoadMs)}) rows ${n}, total ${total}/${plannedRows ?? "?"}`,
+        uiState,
+      );
+    }
     if (checkpointEnabled) {
       writeJson(checkpointPath, {
         key,
@@ -410,13 +455,26 @@ async function runAppointmentTableJob({
       });
     }
     const isLastPage = n < pageSize;
-    console.error(
-      `... [${key}] chunk ${chunkIndex} ok: ${n} rows, total ${total} (offset=${offset}) | chunk_ms=${lastChunkProcessMs} mssql_fetch_ms=${fetchElapsedMs}`,
-    );
+    if (progressEnabled) {
+      renderProgress(
+        total,
+        progressTotal,
+        progressStartedAt,
+        chunkIndex,
+        plannedChunks,
+      );
+      markProgressInline(uiState);
+    } else {
+      console.error(
+        `... [${key}] chunk ${chunkIndex} ok: ${n} rows, total ${total} (offset=${offset}) | chunk_ms=${lastChunkProcessMs} mssql_fetch_ms=${fetchElapsedMs}`,
+      );
+    }
     for (let i = 0; i < arrays.length; i++) arrays[i].length = 0;
     rows.length = 0;
     if (isLastPage) break;
   }
+
+  if (progressEnabled) endProgress(uiState);
 
   if (checkpointEnabled) {
     writeJson(checkpointPath, {
