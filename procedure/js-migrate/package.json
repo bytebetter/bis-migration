@@ -1,0 +1,13 @@
+{
+  "name": "procedure-js-migrate",
+  "private": true,
+  "type": "module",
+  "description": "Migrate dbo.biopsy from MSSQL to PostgreSQL public.procedure",
+  "scripts": {
+    "migrate": "node ./migrate-from-mssql.mjs --config ../../migration.config.local.json --profile procedure"
+  },
+  "dependencies": {
+    "mssql": "^11.0.1",
+    "pg": "^8.13.1"
+  }
+}
