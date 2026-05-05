@@ -27,7 +27,12 @@
     }
   },
   "profiles": {
-    "patient_info": {},
+    "patient_info": {
+      "migration": {
+        "progressUi": true,
+        "debugLogs": false
+      }
+    },
     "examination": {
       "migration": {
         "batchSize": 2000,

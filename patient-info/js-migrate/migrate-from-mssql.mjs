@@ -5,12 +5,17 @@ import sql from "mssql";
 import pg from "pg";
 import { MSSQL_PATIENT_INFO_SELECT } from "./mssqlPatientInfoSelect.mjs";
 import { ensurePatientInfoStagingDdl } from "./patientInfoPgDdl.mjs";
-import { normPid, runPatientInfoChunkPostLoad } from "./patientInfoMapping.mjs";
+import {
+  distinctOnNormPid,
+  normPid,
+  runPatientInfoChunkPostLoad,
+} from "./patientInfoMapping.mjs";
 import {
   createUiState,
   endProgress,
   markProgressInline,
   renderProgress,
+  writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -154,6 +159,94 @@ function rowToStagingArrays(row, rowIdx, arrays, cols) {
   for (let c = 0; c < cols.length; c++) arrays[c][rowIdx] = g(cols[c]);
 }
 
+function pidFromMssqlRow(r) {
+  if (r == null) return "";
+  return normPid(r.pid ?? r.PID ?? r.Pid);
+}
+
+/**
+ * ทดลอง post-load ชุดย่อยใน txn แล้ว ROLLBACK เสมอ — ใช้หา PID ที่ทำให้ INSERT พัง
+ */
+async function dryRunPatientInfoPostLoadSubset(
+  pgClient,
+  stagingTable,
+  columns,
+  subsetRows,
+  rowToStagingArraysFn,
+) {
+  const n = subsetRows.length;
+  await pgClient.query("BEGIN");
+  try {
+    await pgClient.query(`TRUNCATE TABLE ${stagingTable};`);
+    if (n === 0) {
+      await pgClient.query("ROLLBACK");
+      return true;
+    }
+    const arrays = columns.map(() => new Array(n));
+    for (let i = 0; i < n; i++) {
+      rowToStagingArraysFn(subsetRows[i], i, arrays, columns);
+    }
+    const unnestArgs = arrays
+      .map((_, idx) => `$${idx + 1}::text[]`)
+      .join(", ");
+    const insertStaging = `INSERT INTO ${stagingTable} (${columns.join(", ")}) SELECT * FROM unnest(${unnestArgs});`;
+    await pgClient.query(insertStaging, arrays);
+    await runPatientInfoChunkPostLoad(pgClient, subsetRows);
+    await pgClient.query("ROLLBACK");
+    return true;
+  } catch {
+    try {
+      await pgClient.query("ROLLBACK");
+    } catch {
+      /* ignore */
+    }
+    return false;
+  }
+}
+
+async function bisectPatientInfoPostLoadOffenders(
+  pgClient,
+  stagingTable,
+  columns,
+  dedupedRows,
+  rowToStagingArraysFn,
+) {
+  if (dedupedRows.length === 0) return [];
+  const fails = async (subset) =>
+    !(await dryRunPatientInfoPostLoadSubset(
+      pgClient,
+      stagingTable,
+      columns,
+      subset,
+      rowToStagingArraysFn,
+    ));
+  if (dedupedRows.length === 1) {
+    return (await fails(dedupedRows)) ? dedupedRows : [];
+  }
+  const mid = Math.floor(dedupedRows.length / 2);
+  const left = dedupedRows.slice(0, mid);
+  const right = dedupedRows.slice(mid);
+  if (await fails(left)) {
+    return bisectPatientInfoPostLoadOffenders(
+      pgClient,
+      stagingTable,
+      columns,
+      left,
+      rowToStagingArraysFn,
+    );
+  }
+  if (await fails(right)) {
+    return bisectPatientInfoPostLoadOffenders(
+      pgClient,
+      stagingTable,
+      columns,
+      right,
+      rowToStagingArraysFn,
+    );
+  }
+  return [];
+}
+
 function readSql(baseDir, relativePath) {
   const fullPath = path.resolve(baseDir, relativePath);
   return fs.readFileSync(fullPath, "utf8");
@@ -295,10 +388,11 @@ async function runTableJob({
     tableJob.startOffset ?? (checkpointEnabled ? checkpoint.offset : 0),
   );
   if (!Number.isFinite(offset) || offset < 0) offset = 0;
-  console.error(`>>> [${key}] start offset: ${offset}`);
   const progressEnabled = migrationConfig.progressUi !== false;
+  const debugLogs = migrationConfig.debugLogs === true;
   const progressStartedAt = Date.now();
   const uiState = createUiState();
+  if (debugLogs) writeOutLine(`>>> [${key}] start offset: ${offset}`, uiState);
   let plannedRows = null;
   if (progressEnabled) {
     try {
@@ -314,15 +408,19 @@ async function runTableJob({
     plannedRows != null && plannedRows > 0
       ? Math.ceil(plannedRows / batchSize)
       : null;
+  if (debugLogs && plannedRows != null && plannedChunks != null) {
+    writeOutLine(
+      `>>> [${key}] plan: ~${plannedRows} rows, ~${plannedChunks} chunks`,
+      uiState,
+    );
+  }
 
   if (isPatientInfoBuiltin && toArray(tableJob.preLoadSqlFiles).length === 0) {
-    console.error(
-      `>>> [${key}] ensure migrate_stg + norm_pid (built-in JS DDL)`,
-    );
+    writeOutLine(`>>> [${key}] ensure migrate_stg + norm_pid (DDL)`, uiState);
     await ensurePatientInfoStagingDdl(pgClient);
   }
   for (const sqlFile of toArray(tableJob.preLoadSqlFiles)) {
-    console.error(`>>> [${key}] run pre-load SQL: ${sqlFile}`);
+    if (debugLogs) writeOutLine(`>>> [${key}] run pre-load SQL: ${sqlFile}`, uiState);
     await pgClient.query(readSql(sqlBaseDir, sqlFile));
   }
 
@@ -369,13 +467,17 @@ async function runTableJob({
       if (toArray(tableJob.postLoadSqlFiles).length > 0) {
         for (const sqlFile of toArray(tableJob.postLoadSqlFiles)) {
           step = `run post-load SQL: ${sqlFile}`;
-          console.error(`>>> [${key}] run post-load SQL: ${sqlFile}`);
+          if (debugLogs) {
+            writeOutLine(`>>> [${key}] run post-load SQL: ${sqlFile}`, uiState);
+          }
           const postSql = stripTxWrappers(readSql(sqlBaseDir, sqlFile));
           await pgClient.query(postSql);
         }
       } else if (isPatientInfoBuiltin) {
         step = "run patient_info JS post-load (map -> public + address)";
-        console.error(`>>> [${key}] runPatientInfoChunkPostLoad`);
+        if (debugLogs) {
+          writeOutLine(`>>> [${key}] runPatientInfoChunkPostLoad`, uiState);
+        }
         await runPatientInfoChunkPostLoad(pgClient, rows);
       }
 
@@ -449,6 +551,33 @@ LIMIT 200;
       });
     } catch (err) {
       await pgClient.query("ROLLBACK");
+      const detail = err instanceof Error ? err.message : String(err);
+      const postLoadStep =
+        "run patient_info JS post-load (map -> public + address)";
+      /** @type {string[]} */
+      let bisectOffendingPids = [];
+      if (
+        isPatientInfoBuiltin &&
+        step === postLoadStep &&
+        columns.length > 0 &&
+        stagingTable
+      ) {
+        try {
+          const workRows = distinctOnNormPid(rows);
+          const badRows = await bisectPatientInfoPostLoadOffenders(
+            pgClient,
+            stagingTable,
+            columns,
+            workRows,
+            rowToStagingArrays,
+          );
+          bisectOffendingPids = badRows
+            .map((r) => pidFromMssqlRow(r))
+            .filter((p) => p !== "");
+        } catch {
+          /* ignore bisect errors */
+        }
+      }
       chunkResults.push({
         chunkIndex,
         status: "failed",
@@ -458,13 +587,59 @@ LIMIT 200;
         firstPid,
         lastPid,
         failedAtStep: step,
-        error: err instanceof Error ? err.message : String(err),
+        error: detail,
+        bisectOffendingPids,
       });
-      throw new Error(
-        `[${key}] failed chunk ${chunkIndex} (offset ${sourceOffsetStart}-${sourceOffsetEnd}, pid ${firstPid}..${lastPid}) at step '${step}': ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+
+      const migrationFailure = {
+        tableKey: key,
+        chunkIndex,
+        sourceOffsetStart,
+        sourceOffsetEnd,
+        firstPid,
+        lastPid,
+        bisectOffendingPids,
+        failedAtStep: step,
+        postgresDetail: detail,
+      };
+
+      writeOutLine(
+        `>>> [${key}] FAILED chunk ${chunkIndex} | step: ${step}`,
+        uiState,
       );
+      const focusPidStr =
+        bisectOffendingPids.length === 1
+          ? bisectOffendingPids[0]
+          : bisectOffendingPids.length > 1
+            ? bisectOffendingPids.join(", ")
+            : "";
+      writeOutLine(
+        `>>> [${key}] WHERE_TO_FIX แก้ข้อมูล MSSQL PID=${focusPidStr || `(ช่วง ${firstPid}..${lastPid} — bisect ไม่ชี้แถวเดียว)`} | pid_range ${firstPid}..${lastPid} | row_offset ${sourceOffsetStart}-${sourceOffsetEnd}`,
+        uiState,
+      );
+      writeOutLine(`>>> [${key}] postgres: ${detail}`, uiState);
+      if (
+        bisectOffendingPids.length === 0 &&
+        step === postLoadStep &&
+        distinctOnNormPid(rows).length > 1
+      ) {
+        writeOutLine(
+          `>>> [${key}] hint: ค้นใน dbo.patient_info WHERE PID อยู่ระหว่างช่วงด้านบน หรือใช้ row_offset เทียบ ORDER BY ใน migrate`,
+          uiState,
+        );
+      }
+
+      let suffix = "";
+      if (bisectOffendingPids.length === 1) {
+        suffix = ` | offending PID: ${bisectOffendingPids[0]}`;
+      } else if (bisectOffendingPids.length > 1) {
+        suffix = ` | offending PIDs: ${bisectOffendingPids.join(",")}`;
+      }
+      const message = `[${key}] failed chunk ${chunkIndex} (offset ${sourceOffsetStart}-${sourceOffsetEnd}, pid ${firstPid}..${lastPid}) at step '${step}': ${detail}${suffix}`;
+      /** @type {Error & { migrationFailure?: object }} */
+      const migrationErr = new Error(message);
+      migrationErr.migrationFailure = migrationFailure;
+      throw migrationErr;
     }
 
     total += n;
@@ -486,8 +661,11 @@ LIMIT 200;
         plannedChunks,
       );
       markProgressInline(uiState);
-    } else {
-      console.error(`... [${key}] processed ${total} rows (offset=${offset})`);
+    } else if (debugLogs) {
+      writeOutLine(
+        `... [${key}] processed ${total} rows (offset=${offset})`,
+        uiState,
+      );
     }
     if (rows.length < batchSize) break;
   }
@@ -516,7 +694,9 @@ LIMIT 200;
     chunkResults,
   };
 
-  console.error(`>>> [${key}] done, total rows read: ${total}`);
+  if (debugLogs) {
+    writeOutLine(`>>> [${key}] done, total rows read: ${total}`, uiState);
+  }
   return summary;
 }
 
@@ -531,8 +711,9 @@ async function main() {
   if (!config?.target) {
     throw new Error("Missing target config");
   }
+  const bootUi = createUiState();
   if (config.__profileName) {
-    console.error(`>>> using config profile: ${config.__profileName}`);
+    writeOutLine(`>>> using config profile: ${config.__profileName}`, bootUi);
   }
   assertMssqlSourceReady(config.source);
 
@@ -584,6 +765,17 @@ async function main() {
   } catch (err) {
     runLog.status = "failed";
     runLog.error = err instanceof Error ? err.message : String(err);
+    if (
+      err &&
+      typeof err === "object" &&
+      "migrationFailure" in err &&
+      /** @type {{ migrationFailure?: object }} */ (err).migrationFailure !=
+        null
+    ) {
+      runLog.failureContext = /** @type {{ migrationFailure: object }} */ (
+        err
+      ).migrationFailure;
+    }
     throw err;
   } finally {
     await pool.close();
@@ -591,11 +783,13 @@ async function main() {
     runLog.finishedAt = new Date().toISOString();
     const logPath = path.join(logsDir, `migrate-${nowStamp()}.json`);
     fs.writeFileSync(logPath, `${JSON.stringify(runLog, null, 2)}\n`, "utf8");
-    console.error(`>>> migration log saved: ${logPath}`);
+    writeOutLine(`>>> migration log saved: ${logPath}`, bootUi);
   }
 }
 
 main().catch((err) => {
-  console.error(err);
+  // stdout อาจมีบรรทัด FAILED จาก runTableJob แล้ว — stderr เหลือแค่ stack
+  if (err instanceof Error && err.stack) console.error(err.stack);
+  else console.error(err);
   process.exit(1);
 });

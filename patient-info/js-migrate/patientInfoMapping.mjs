@@ -3,7 +3,8 @@
  * (รูปแบบเดิมจาก sql/02, sql/03 — ย้ายมา JS เพื่อขยาย logic ต่อ)
  */
 
-const DATE_BE_DMY = /^[0-9]{4}-[0-9]{2}-[0-9]{2}/;
+/** MSSQL `CONVERT(..., 126)` → ISO prefix `YYYY-MM-DD` (Gregorian / ค.ศ.) */
+const DATE_ISO_YMD_PREFIX = /^[0-9]{4}-[0-9]{2}-[0-9]{2}/;
 const NUM_RE = /^-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$/;
 const INT_RE = /^[0-9]+$/;
 
@@ -23,11 +24,19 @@ function nullIfTrimEmpty(v) {
   return t === "" ? null : t;
 }
 
-function parseDateOfBirthBe(raw) {
+/** public.patient_info / public.address ใช้ varchar(255) — MSSQL text ยาวกว่าได้ */
+function clampText255(v) {
+  const t = nullIfTrimEmpty(v);
+  if (t == null) return null;
+  return t.length <= 255 ? t : t.slice(0, 255);
+}
+
+/** วันเกิดจากต้นทางเป็น ค.ศ. แล้ว — ส่งต่อเป็น `YYYY-MM-DD` สำหรับ `::date` โดยไม่แปลง พ.ศ. */
+function parseDateOfBirthGregorian(raw) {
   if (raw == null) return null;
   const t = String(raw).trim();
-  if (t === "" || !DATE_BE_DMY.test(t)) return null;
-  const y = Number.parseInt(t.slice(0, 4), 10) - 543;
+  if (t === "" || !DATE_ISO_YMD_PREFIX.test(t)) return null;
+  const y = Number.parseInt(t.slice(0, 4), 10);
   const m = Number.parseInt(t.slice(5, 7), 10);
   const d = Number.parseInt(t.slice(8, 10), 10);
   if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
@@ -240,34 +249,34 @@ export async function runPatientInfoChunkPostLoad(pgClient, mssqlRows) {
     const np = normPid(getField(r, "pid"));
     aOld.push(np);
     aPid.push(np);
-    aPreTh.push(nullIfTrimEmpty(getField(r, "prefix")));
-    aFnTh.push(nullIfTrimEmpty(getField(r, "name")));
-    aLnTh.push(nullIfTrimEmpty(getField(r, "surname")));
-    const d = parseDateOfBirthBe(getField(r, "date_of_birth_be"));
+    aPreTh.push(clampText255(getField(r, "prefix")));
+    aFnTh.push(clampText255(getField(r, "name")));
+    aLnTh.push(clampText255(getField(r, "surname")));
+    const d = parseDateOfBirthGregorian(getField(r, "date_of_birth_be"));
     aDob.push(d);
-    aMar.push(nullIfTrimEmpty(getField(r, "single")));
+    aMar.push(clampText255(getField(r, "single")));
     const { phone_biz, phone_home } = normalizeAndDistributePhones(
       getField(r, "phone_biz"),
       getField(r, "phone_home")
     );
-    aPhBiz.push(phone_biz);
-    aPhHome.push(phone_home);
+    aPhBiz.push(clampText255(phone_biz));
+    aPhHome.push(clampText255(phone_home));
     const h = parseReal(getField(r, "height"));
     aH.push(h == null || Number.isNaN(h) ? null : h);
     const w = parseReal(getField(r, "weight"));
     aW.push(w == null || Number.isNaN(w) ? null : w);
     const dnt = parseDonateTypeInt(getField(r, "donate_type"));
     aDon.push(dnt);
-    aPreEn.push(nullIfTrimEmpty(getField(r, "eng_prefix")));
-    aFnEn.push(nullIfTrimEmpty(getField(r, "eng_name")));
-    aLnEn.push(nullIfTrimEmpty(getField(r, "eng_surname")));
-    aSoc.push(normSocId(getField(r, "soc_id")));
-    aHn.push(nullIfTrimEmpty(getField(r, "hn")));
-    aGen.push(nullIfTrimEmpty(getField(r, "gender")));
-    aNote.push(nullIfTrimEmpty(getField(r, "short_note")));
-    aDis.push(nullIfTrimEmpty(getField(r, "disease")));
-    aMobile.push(nullIfTrimEmpty(getField(r, "mobile_phone")));
-    aEmail.push(nullIfTrimEmpty(getField(r, "email")));
+    aPreEn.push(clampText255(getField(r, "eng_prefix")));
+    aFnEn.push(clampText255(getField(r, "eng_name")));
+    aLnEn.push(clampText255(getField(r, "eng_surname")));
+    aSoc.push(clampText255(normSocId(getField(r, "soc_id"))));
+    aHn.push(clampText255(getField(r, "hn")));
+    aGen.push(clampText255(getField(r, "gender")));
+    aNote.push(clampText255(getField(r, "short_note")));
+    aDis.push(clampText255(getField(r, "disease")));
+    aMobile.push(clampText255(getField(r, "mobile_phone")));
+    aEmail.push(clampText255(getField(r, "email")));
   }
 
   const ins = await pgClient.query(
@@ -352,12 +361,12 @@ export async function runPatientInfoChunkPostLoad(pgClient, mssqlRows) {
     const np = normPid(getField(r, "pid"));
     const id = idByNpid.get(np);
     if (id == null) continue;
-    adAddr.push(nullIfTrimEmpty(getField(r, "address")));
-    adSub.push(nullIfTrimEmpty(getField(r, "sub_area")));
-    adDist.push(nullIfTrimEmpty(getField(r, "area")));
-    adProv.push(nullIfTrimEmpty(getField(r, "province")));
-    adZip.push(nullIfTrimEmpty(getField(r, "zip")));
-    ad2.push(nullIfTrimEmpty(getField(r, "address2")));
+    adAddr.push(clampText255(getField(r, "address")));
+    adSub.push(clampText255(getField(r, "sub_area")));
+    adDist.push(clampText255(getField(r, "area")));
+    adProv.push(clampText255(getField(r, "province")));
+    adZip.push(clampText255(getField(r, "zip")));
+    ad2.push(clampText255(getField(r, "address2")));
     adPat.push(id);
   }
 

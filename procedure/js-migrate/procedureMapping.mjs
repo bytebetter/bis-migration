@@ -390,6 +390,8 @@ export async function runProcedureChunkPostLoad(pgClient, mssqlRows) {
   const examMap = await getOldExamToPgExamMap(pgClient);
   const seen = new Map();
   const rowsIn = [];
+  let missingExamCount = 0;
+  const missingExamSamples = [];
 
   for (const row of mssqlRows) {
     const key = normProcedureDbId(row);
@@ -399,12 +401,32 @@ export async function runProcedureChunkPostLoad(pgClient, mssqlRows) {
 
     const oldExam = normExamId(getField(row, "exam_id"));
     const pgExam = examMap.get(oldExam);
-    if (pgExam == null) continue;
+    if (pgExam == null) {
+      missingExamCount += 1;
+      if (missingExamSamples.length < 10) {
+        const oldDbId = normProcedureDbId(row);
+        missingExamSamples.push({
+          old_db_id: oldDbId,
+          exam_id: oldExam,
+        });
+      }
+      continue;
+    }
 
     rowsIn.push({
       raw: row,
       examPgId: pgExam,
     });
+  }
+
+  if (missingExamCount > 0) {
+    const sampleText =
+      missingExamSamples.length > 0
+        ? ` sample=${JSON.stringify(missingExamSamples)}`
+        : "";
+    throw new Error(
+      `[procedure] missing mapped examination for ${missingExamCount} row(s); abort chunk.${sampleText}`,
+    );
   }
 
   if (rowsIn.length === 0) return;

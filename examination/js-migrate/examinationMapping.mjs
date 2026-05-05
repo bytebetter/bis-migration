@@ -49,7 +49,9 @@ function toBool01(v) {
 /**
  * เทียบกับ mssql_be_datetime_to_timestamp:
  * - รับรูป "YYYY-MM-DD..." จาก MSSQL
- * - ถ้าปี >= 2200 ถือว่าเป็น พ.ศ. แล้วลบ 543
+ * - ถ้าปีเป็น พ.ศ. (ช่วง 2400+) ให้ลบ 543 -> ค.ศ.
+ * - ถ้าปีเป็น ค.ศ. อยู่แล้ว ให้คงเดิม
+ * - ถ้าวันที่ไม่ valid (เช่น 29 ก.พ. ในปีไม่ leap) ให้คืน null
  * - คืนค่า "YYYY-MM-DD HH:mm:ss" หรือ null
  */
 function toPgTimestamp(v) {
@@ -62,7 +64,17 @@ function toPgTimestamp(v) {
   if (!Number.isFinite(y) || !/^\d{2}$/.test(m) || !/^\d{2}$/.test(d))
     return null;
 
-  const yyyy = y >= 2200 ? y - 543 : y;
+  const yyyy = y >= 2400 ? y - 543 : y;
+  // Validate Gregorian date before formatting for PostgreSQL timestamp.
+  const dt = new Date(Date.UTC(yyyy, Number.parseInt(m, 10) - 1, Number.parseInt(d, 10)));
+  if (
+    Number.isNaN(dt.getTime()) ||
+    dt.getUTCFullYear() !== yyyy ||
+    dt.getUTCMonth() !== Number.parseInt(m, 10) - 1 ||
+    dt.getUTCDate() !== Number.parseInt(d, 10)
+  ) {
+    return null;
+  }
   const timeRaw = t.slice(10).trim();
   if (timeRaw === "") return `${yyyy}-${m}-${d} 00:00:00`;
 
