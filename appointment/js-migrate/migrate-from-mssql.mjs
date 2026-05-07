@@ -3,9 +3,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sql from "mssql";
 import pg from "pg";
-import { MSSQL_APPOINTMENT_SELECT } from "./mssqlAppointmentSelect.mjs";
+import {
+  MSSQL_APPOINTMENT_DETAIL_BY_IDS_SELECT,
+  MSSQL_APPOINTMENT_ID_SELECT,
+  MSSQL_APPOINTMENT_SELECT,
+} from "./mssqlAppointmentSelect.mjs";
 import { ensureAppointmentStagingDdl } from "./appointmentPgDdl.mjs";
-import { runAppointmentChunkPostLoad } from "./appointmentMapping.mjs";
+import {
+  resetAppointmentIdSequenceIfEmpty,
+  runAppointmentChunkPostLoad,
+  syncAppointmentIdSequence,
+} from "./appointmentMapping.mjs";
 import {
   createUiState,
   endProgress,
@@ -17,9 +25,10 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KEY = "appointment";
-/** ลำดับ keyset — TRY_CONVERT สั้นกว่า CASE+LIKE และช่วยให้ optimizer/plan ไม่หนักเท่า (ยังไม่ทำให้ index seek ได้ถ้าไม่มี index สนับสนุน) */
+/** fallback keyset เดิม (expression-based) ใช้เมื่อเปิดโหมด compatibility */
 const MSSQL_SCHEDULE_ID_NUMERIC_EXPR =
   "TRY_CONVERT(BIGINT, NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(50), [Schedule_ID]))), ''))";
+const MSSQL_SCHEDULE_ID_NATIVE_EXPR = "[Schedule_ID]";
 
 const APPOINTMENT_COLUMNS = [
   "schedule_datetime",
@@ -210,7 +219,9 @@ function getScheduleIdForLog(row) {
   if (!row) return "";
   const v = row.schedule_id ?? row.SCHEDULE_ID ?? row.Schedule_ID;
   if (v == null) return "";
-  return String(v).replace(/^\uFEFF/, "").trim();
+  return String(v)
+    .replace(/^\uFEFF/, "")
+    .trim();
 }
 
 function shouldKeepChunkDetail({
@@ -255,6 +266,21 @@ function buildMssqlAppointmentKeysetSelect() {
 FROM {{sourceObject}}
 WHERE ${MSSQL_SCHEDULE_ID_NUMERIC_EXPR} > @afterScheduleId
 ORDER BY ${MSSQL_SCHEDULE_ID_NUMERIC_EXPR} ASC, [Schedule_ID] ASC;`;
+}
+
+function buildMssqlAppointmentNativeKeysetSelect() {
+  const marker = "FROM {{sourceObject}}";
+  const s = MSSQL_APPOINTMENT_SELECT;
+  const idx = s.indexOf(marker);
+  if (idx < 0) {
+    throw new Error("MSSQL_APPOINTMENT_SELECT: missing FROM {{sourceObject}}");
+  }
+  const head = s.slice(0, idx).trimEnd();
+  const headWithTop = head.replace(/^SELECT\s*/i, "SELECT TOP (@page) ");
+  return `${headWithTop}
+FROM {{sourceObject}}
+WHERE ${MSSQL_SCHEDULE_ID_NATIVE_EXPR} > @afterScheduleId
+ORDER BY ${MSSQL_SCHEDULE_ID_NATIVE_EXPR} ASC;`;
 }
 
 /**
@@ -304,13 +330,33 @@ async function runAppointmentTableJob({
       `>>> [${key}] resume: ใช้ OFFSET (checkpoint เก่า) — ลบ checkpoint แล้วรันใหม่จะกลับไป keyset`,
     );
   }
-  const scheduleIdNumericOrderExpr = `${MSSQL_SCHEDULE_ID_NUMERIC_EXPR} ASC, [Schedule_ID] ASC`;
-  const selectSql = (useMssqlKeyset
-    ? buildMssqlAppointmentKeysetSelect()
-    : MSSQL_APPOINTMENT_SELECT
+  const mssqlKeysetMode = String(
+    migrationConfig.mssqlKeysetMode ?? "native",
+  ).toLowerCase();
+  const useTwoStepFetch =
+    migrationConfig.mssqlTwoStepFetch === undefined ||
+    migrationConfig.mssqlTwoStepFetch === true;
+  const useNativeKeyset = mssqlKeysetMode !== "compat";
+  const scheduleIdOrderExpr = useNativeKeyset
+    ? `${MSSQL_SCHEDULE_ID_NATIVE_EXPR} ASC`
+    : `${MSSQL_SCHEDULE_ID_NUMERIC_EXPR} ASC, [Schedule_ID] ASC`;
+  const idProbeSql = MSSQL_APPOINTMENT_ID_SELECT.replaceAll(
+    "{{sourceObject}}",
+    sourceObjectNoLock,
+  );
+  const detailSqlTemplate = MSSQL_APPOINTMENT_DETAIL_BY_IDS_SELECT.replaceAll(
+    "{{sourceObject}}",
+    sourceObjectNoLock,
+  );
+  const selectSql = (
+    useMssqlKeyset
+      ? useNativeKeyset
+        ? buildMssqlAppointmentNativeKeysetSelect()
+        : buildMssqlAppointmentKeysetSelect()
+      : MSSQL_APPOINTMENT_SELECT
   )
     .replaceAll("{{sourceObject}}", sourceObjectNoLock)
-    .replaceAll("{{orderBy}}", scheduleIdNumericOrderExpr);
+    .replaceAll("{{orderBy}}", scheduleIdOrderExpr);
   let mssqlKeysetAfter = checkpoint.mssqlKeysetAfter;
   if (useMssqlKeyset && mssqlKeysetAfter == null) mssqlKeysetAfter = -1;
   if (!useMssqlKeyset) mssqlKeysetAfter = null;
@@ -326,6 +372,7 @@ async function runAppointmentTableJob({
   const sourceLimit =
     sourceLimitRaw == null ? null : Math.max(1, Number(sourceLimitRaw));
   const progressEnabled = migrationConfig.progressUi !== false;
+  const singleLineUi = migrationConfig.singleLineUi !== false;
   const progressStartedAt = Date.now();
   let plannedRows = sourceLimit;
   if (plannedRows == null && progressEnabled) {
@@ -340,7 +387,9 @@ async function runAppointmentTableJob({
   }
   const progressTotal = plannedRows ?? null;
   const plannedChunks =
-    plannedRows != null && plannedRows > 0 ? Math.ceil(plannedRows / batchSize) : null;
+    plannedRows != null && plannedRows > 0
+      ? Math.ceil(plannedRows / batchSize)
+      : null;
   const probeTiming = migrationConfig.probeTiming === true;
   const debugLogs = migrationConfig.debugLogs === true || probeTiming;
   const uiState = createUiState();
@@ -350,16 +399,35 @@ async function runAppointmentTableJob({
     );
   }
   if (plannedChunks != null) {
-    console.error(`>>> [${key}] plan: ${plannedRows} rows, ~${plannedChunks} chunks`);
+    console.error(
+      `>>> [${key}] plan: ${plannedRows} rows, ~${plannedChunks} chunks`,
+    );
   }
   if (probeTiming) {
-    console.error(`>>> [${key}] probeTiming enabled (MSSQL query latency logs)`);
+    console.error(
+      `>>> [${key}] probeTiming enabled (MSSQL query latency logs)`,
+    );
   }
 
   console.error(
-    `>>> [${key}] start offset: ${offset}${useMssqlKeyset ? " (MSSQL keyset ตาม [Schedule_ID])" : " (MSSQL OFFSET ตาม [Schedule_ID] order)"}`,
+    `>>> [${key}] start offset: ${offset}${useMssqlKeyset ? ` (MSSQL keyset:${useNativeKeyset ? "native" : "compat"} ตาม [Schedule_ID], twoStep=${useTwoStepFetch})` : " (MSSQL OFFSET ตาม [Schedule_ID] order)"}`,
   );
   await ensureAppointmentStagingDdl(pgClient);
+  await resetAppointmentIdSequenceIfEmpty(pgClient);
+  await pgClient.query(`
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'appointment'
+      AND column_name = 'old_db_id'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS idx_appointment_old_db_id
+      ON public.appointment (old_db_id);
+  END IF;
+END $$;
+  `);
 
   let total = 0;
   const chunkResults = [];
@@ -373,29 +441,60 @@ async function runAppointmentTableJob({
     const pageSize =
       remaining == null ? batchSize : Math.min(batchSize, remaining);
     const nextChunkIndex = chunkIndex + 1;
-    if (debugLogs) {
+    if (debugLogs && !singleLineUi) {
       writeOutLine(
         `>>> [${key}] fetch chunk ${nextChunkIndex}: offset=${offset} pageSize=${pageSize}`,
         uiState,
       );
     }
 
-    const fetchStartedAt = Date.now();
-    const r = useMssqlKeyset
-      ? await mssqlPool
-          .request()
-          .input("afterScheduleId", sql.BigInt, toBigIntish(mssqlKeysetAfter))
-          .input("page", sql.Int, pageSize)
-          .query(selectSql)
-      : await mssqlPool
-          .request()
-          .input("offset", sql.Int, offset)
-          .input("page", sql.Int, pageSize)
-          .query(selectSql);
-    const fetchElapsedMs = Date.now() - fetchStartedAt;
-
-    const rows = r.recordset || [];
-    if (debugLogs) {
+    let fetchElapsedMs = 0;
+    let rows = [];
+    if (useMssqlKeyset && useNativeKeyset && useTwoStepFetch) {
+      const probeStartedAt = Date.now();
+      const idRes = await mssqlPool
+        .request()
+        .input("afterScheduleId", sql.BigInt, toBigIntish(mssqlKeysetAfter))
+        .input("page", sql.Int, pageSize)
+        .query(idProbeSql);
+      const probeMs = Date.now() - probeStartedAt;
+      const ids = (idRes.recordset || [])
+        .map((x) => Number.parseInt(x?.schedule_id ?? "", 10))
+        .filter((v) => Number.isFinite(v));
+      if (ids.length === 0) {
+        rows = [];
+        fetchElapsedMs = probeMs;
+      } else {
+        const placeholders = ids.map((_, i) => `@id${i}`).join(", ");
+        const detailSql = detailSqlTemplate.replace(
+          "{{idPlaceholders}}",
+          placeholders,
+        );
+        const detailReq = mssqlPool.request();
+        ids.forEach((id, i) => detailReq.input(`id${i}`, sql.BigInt, id));
+        const detailStartedAt = Date.now();
+        const detailRes = await detailReq.query(detailSql);
+        const detailMs = Date.now() - detailStartedAt;
+        rows = detailRes.recordset || [];
+        fetchElapsedMs = probeMs + detailMs;
+      }
+    } else {
+      const fetchStartedAt = Date.now();
+      const r = useMssqlKeyset
+        ? await mssqlPool
+            .request()
+            .input("afterScheduleId", sql.BigInt, toBigIntish(mssqlKeysetAfter))
+            .input("page", sql.Int, pageSize)
+            .query(selectSql)
+        : await mssqlPool
+            .request()
+            .input("offset", sql.Int, offset)
+            .input("page", sql.Int, pageSize)
+            .query(selectSql);
+      fetchElapsedMs = Date.now() - fetchStartedAt;
+      rows = r.recordset || [];
+    }
+    if (debugLogs && !singleLineUi) {
       writeOutLine(
         `>>> [${key}] fetched rows: ${rows.length} (chunk ${nextChunkIndex}, mssql_query_ms=${fetchElapsedMs})`,
         uiState,
@@ -491,15 +590,17 @@ async function runAppointmentTableJob({
     total += n;
     offset += n;
     if (useMssqlKeyset) {
-      mssqlKeysetAfter = rows[n - 1].__mssql_schedule_id;
+      mssqlKeysetAfter = useNativeKeyset
+        ? rows[n - 1].schedule_id
+        : rows[n - 1].__mssql_schedule_id;
     }
-    if (progressEnabled) {
+    if (progressEnabled && !singleLineUi) {
       writeOutLine(
         `... [${key}] chunk ${chunkIndex} ใช้เวลา ${formatSec(lastChunkProcessMs)} (fetch ${formatSec(fetchElapsedMs)}, post ${formatSec(postLoadMs)})`,
         uiState,
       );
     }
-    if (debugLogs) {
+    if (debugLogs && !singleLineUi) {
       writeOutLine(
         `>>> [${key}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(
           Date.now() - chunkStartedAt,
@@ -540,6 +641,8 @@ async function runAppointmentTableJob({
 
   if (progressEnabled) endProgress(uiState);
 
+  await syncAppointmentIdSequence(pgClient);
+
   if (checkpointEnabled) {
     writeJson(checkpointPath, {
       key,
@@ -572,8 +675,10 @@ async function main() {
   const rawConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
   const config = resolveRuntimeConfig(rawConfig, "appointment");
 
-  const selectedProfile = getProfileName() ?? rawConfig.defaultProfile ?? "appointment";
-  const batchFromProfile = rawConfig.profiles?.[selectedProfile]?.migration?.batchSize;
+  const selectedProfile =
+    getProfileName() ?? rawConfig.defaultProfile ?? "appointment";
+  const batchFromProfile =
+    rawConfig.profiles?.[selectedProfile]?.migration?.batchSize;
   const migrationForJob = {
     ...(config.migration ?? {}),
     batchSize:

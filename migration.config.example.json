@@ -2,11 +2,11 @@
   "defaultProfile": "patient_info",
   "shared": {
     "source": {
-      "server": "node61681-bis-staging.th1.proen.cloud",
-      "port": 11051,
+      "server": "dark-songbird-708.fly.dev",
+      "port": 1433,
       "database": "BISInfo",
       "user": "sa",
-      "password": "dev@byte123",
+      "password": "Thanya@sj1",
       "encrypt": true,
       "trustServerCertificate": true,
       "requestTimeout": 0,
@@ -29,8 +29,7 @@
   "profiles": {
     "patient_info": {
       "migration": {
-        "progressUi": true,
-        "debugLogs": false
+        "batchSize": 2000
       }
     },
     "examination": {
@@ -39,30 +38,6 @@
         "chunkLogMode": "compact",
         "chunkSampleEvery": 50,
         "progressUi": true,
-        "probeTiming": true
-      }
-    },
-    "appointment": {
-      "source": {
-        "table": "schedule"
-      },
-      "migration": {
-        "batchSize": 2000,
-        "chunkLogMode": "compact",
-        "chunkSampleEvery": 50,
-        "progressUi": true,
-        "probeTiming": false
-      }
-    },
-    "procedure": {
-      "source": {
-        "schema": "dbo",
-        "table": "biopsy"
-      },
-      "migration": {
-        "batchSize": 2000,
-        "chunkLogMode": "compact",
-        "chunkSampleEvery": 50,
         "probeTiming": false
       }
     }

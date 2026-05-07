@@ -1,0 +1,11 @@
+{
+  "startedAt": "2026-05-07T09:14:00.410Z",
+  "status": "success",
+  "sourceObject": "dbo.examination_general",
+  "batchSize": 2000,
+  "rowsLoadedToStaging": 1174952,
+  "rowsUpserted": 1174952,
+  "skipped": 0,
+  "error": null,
+  "finishedAt": "2026-05-07T09:32:04.844Z"
+}

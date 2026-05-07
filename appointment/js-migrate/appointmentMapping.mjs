@@ -98,6 +98,7 @@ export function mapScheduleRowToAppointment(row) {
     have_cd: toIntFlag(getField(row, "HaveCD")),
     right_id: toInt(getField(row, "Right_ID")),
     location: toInt(getField(row, "Location_ID")),
+    patient: null,
     /** Directus มักเก็บ old_db_id เป็น string (varchar) */
     old_db_id: normScheduleId(getField(row, "Schedule_ID")),
   };
@@ -110,6 +111,9 @@ export function normScheduleId(v) {
 
 /** cache metadata FK ต่อ process — ไม่เก็บ PK ทั้งตาราง parent (โหลดแค่ครั้งเดียว มีแค่ชื่อตาราง/คอลัมน์) */
 let cachedAppointmentFkMeta = null;
+let cachedOldDbIdIsTextLike = null;
+let cachedAppointmentPatientColumn = undefined;
+const cachedAllowedFkSetByKey = new Map();
 
 function valueInFkSet(set, v) {
   if (v == null) return true;
@@ -170,35 +174,31 @@ async function getAppointmentForeignKeyMeta(pgClient) {
 }
 
 /**
- * ค่าในชุดแถวที่ปรากฏใน chunk ว่ามีจริงในตาราง parent หรือไม่ — JOIN กับ unnest ใช้ index บน parent ได้
+ * โหลดชุดค่า FK ที่อนุญาตจาก parent table แค่ครั้งเดียวต่อ process
+ * ช่วยลดคอขวดจากการ query ซ้ำทุก chunk.
  */
-async function fetchAllowedFkParentsForChunk(pgClient, { sch, rel, pcol }, distinctValues) {
-  const uniqTexts = [...new Set(distinctValues.map((v) => String(v)))];
-  if (uniqTexts.length === 0) return new Set();
+async function getCachedAllowedFkSet(pgClient, { sch, rel, pcol }) {
+  const key = `${sch}.${rel}.${pcol}`;
+  if (cachedAllowedFkSetByKey.has(key)) {
+    return cachedAllowedFkSetByKey.get(key);
+  }
 
   const res = await pgClient.query(
-    `
-    SELECT r."${pcol}" AS v
-    FROM unnest($1::text[]) AS x(txt)
-    INNER JOIN "${sch}"."${rel}" r ON r."${pcol}"::text = x.txt
-    `,
-    [uniqTexts],
+    `SELECT "${pcol}" AS v FROM "${sch}"."${rel}"`,
   );
-
   const set = new Set();
   for (const row of res.rows) {
     const x = row.v;
     if (x == null) continue;
     set.add(x);
     set.add(String(x));
-    if (
-      typeof x === "number" ||
-      (typeof x === "string" && /^-?\d+$/.test(x))
-    ) {
+    if (typeof x === "number" || (typeof x === "string" && /^-?\d+$/.test(x))) {
       set.add(Number.parseInt(String(x), 10));
       set.add(Number(x));
     }
   }
+
+  cachedAllowedFkSetByKey.set(key, set);
   return set;
 }
 
@@ -215,13 +215,98 @@ function nullOutInvalidForeignKeysForChunk(payloads, col, allowedSet) {
 }
 
 export function distinctOnScheduleId(mssqlRows) {
+  const rowsSorted = [...mssqlRows].sort((a, b) => {
+    const ai = toInt(getField(a, "schedule_id"));
+    const bi = toInt(getField(b, "schedule_id"));
+    if (ai == null && bi == null) return 0;
+    if (ai == null) return 1;
+    if (bi == null) return -1;
+    return ai - bi;
+  });
   const seen = new Map();
-  for (const row of mssqlRows) {
+  for (const row of rowsSorted) {
     const scheduleId = normScheduleId(getField(row, "schedule_id"));
     if (scheduleId == null) continue;
     if (!seen.has(scheduleId)) seen.set(scheduleId, row);
   }
   return Array.from(seen.values());
+}
+
+function normPid(v) {
+  const t = nullIfTrimEmpty(v);
+  return t == null ? null : t;
+}
+
+async function resolvePatientIdByPidMap(pgClient, rows) {
+  const pids = Array.from(
+    new Set(
+      rows
+        .map((r) => normPid(getField(r, "pid") ?? getField(r, "PID")))
+        .filter((v) => v != null),
+    ),
+  );
+  if (pids.length === 0) return new Map();
+
+  const res = await pgClient.query(
+    `
+    SELECT
+      id,
+      NULLIF(btrim(pid::text), '') AS pid_text,
+      NULLIF(btrim(old_db_id::text), '') AS old_db_id_text
+    FROM public.patient_info
+    WHERE pid::text = ANY($1::text[])
+       OR old_db_id::text = ANY($1::text[])
+    `,
+    [pids],
+  );
+
+  const map = new Map();
+  for (const row of res.rows) {
+    if (row.pid_text != null && !map.has(row.pid_text)) {
+      map.set(row.pid_text, row.id);
+    }
+    if (row.old_db_id_text != null && !map.has(row.old_db_id_text)) {
+      map.set(row.old_db_id_text, row.id);
+    }
+  }
+  return map;
+}
+
+async function isOldDbIdTextLike(pgClient) {
+  if (cachedOldDbIdIsTextLike != null) return cachedOldDbIdIsTextLike;
+  const r = await pgClient.query(`
+    SELECT data_type
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'appointment'
+      AND column_name = 'old_db_id'
+    LIMIT 1
+  `);
+  const dt = r.rows?.[0]?.data_type ?? "";
+  cachedOldDbIdIsTextLike = dt === "character varying" || dt === "text";
+  return cachedOldDbIdIsTextLike;
+}
+
+async function resolveAppointmentPatientColumn(pgClient) {
+  if (cachedAppointmentPatientColumn !== undefined) {
+    return cachedAppointmentPatientColumn;
+  }
+  const r = await pgClient.query(`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'appointment'
+      AND column_name IN ('patient', 'patient_info', 'patient_id')
+    ORDER BY CASE column_name
+      WHEN 'patient_info' THEN 0
+      WHEN 'patient' THEN 1
+      WHEN 'patient_id' THEN 2
+      ELSE 99
+    END
+    LIMIT 1
+  `);
+  cachedAppointmentPatientColumn = r.rows?.[0]?.column_name ?? null;
+  return cachedAppointmentPatientColumn;
 }
 
 /**
@@ -235,20 +320,27 @@ export async function runAppointmentChunkPostLoad(pgClient, mssqlRows) {
     .map((r) => normScheduleId(getField(r, "schedule_id")))
     .filter((v) => v != null);
 
+  const oldDbIdTextLike = await isOldDbIdTextLike(pgClient);
   await pgClient.query(
-    "DELETE FROM public.appointment WHERE old_db_id::text = ANY($1::text[])",
+    oldDbIdTextLike
+      ? "DELETE FROM public.appointment WHERE old_db_id = ANY($1::text[])"
+      : "DELETE FROM public.appointment WHERE old_db_id::text = ANY($1::text[])",
     [oldDbIds],
   );
-  await pgClient.query(`
-    SELECT setval(
-      pg_get_serial_sequence('public.appointment', 'id'),
-      COALESCE((SELECT MAX(id) + 1 FROM public.appointment), 1),
-      false
-    );
-  `);
 
   const fkMeta = await getAppointmentForeignKeyMeta(pgClient);
+  const patientColumn = await resolveAppointmentPatientColumn(pgClient);
   const payloads = rows.map((r) => mapScheduleRowToAppointment(r));
+  const patientIdByPid = await resolvePatientIdByPidMap(pgClient, rows);
+  for (let i = 0; i < rows.length; i++) {
+    const pid = normPid(getField(rows[i], "pid") ?? getField(rows[i], "PID"));
+    const patientId = pid == null ? null : (patientIdByPid.get(pid) ?? null);
+    if (patientColumn) {
+      payloads[i][patientColumn] =
+        patientId == null || Number(patientId) === 0 ? null : Number(patientId);
+    }
+    delete payloads[i].patient;
+  }
 
   if (payloads.length > 0 && fkMeta.size > 0) {
     const sample = payloads[0];
@@ -265,11 +357,7 @@ export async function runAppointmentChunkPostLoad(pgClient, mssqlRows) {
         distinct.push(v);
       }
       if (distinct.length === 0) continue;
-      const allowed = await fetchAllowedFkParentsForChunk(
-        pgClient,
-        meta,
-        distinct,
-      );
+      const allowed = await getCachedAllowedFkSet(pgClient, meta);
       nullOutInvalidForeignKeysForChunk(payloads, col, allowed);
     }
   }
@@ -299,6 +387,7 @@ export async function runAppointmentChunkPostLoad(pgClient, mssqlRows) {
     location: [],
     old_db_id: [],
   };
+  if (patientColumn) arrays[patientColumn] = [];
 
   for (const item of payloads) {
     arrays.appointment_datetime.push(item.appointment_datetime);
@@ -324,72 +413,78 @@ export async function runAppointmentChunkPostLoad(pgClient, mssqlRows) {
     arrays.have_cd.push(item.have_cd);
     arrays.right_id.push(item.right_id);
     arrays.location.push(item.location);
+    if (patientColumn) arrays[patientColumn].push(item[patientColumn] ?? null);
     arrays.old_db_id.push(item.old_db_id);
   }
 
+  const insertDefs = [
+    ["appointment_datetime", "timestamp[]", arrays.appointment_datetime],
+    ["appointment_no", "int4[]", arrays.appointment_no],
+    ["prefix", "text[]", arrays.prefix],
+    ["first_name", "text[]", arrays.first_name],
+    ["last_name", "text[]", arrays.last_name],
+    ["payment_type", "int4[]", arrays.payment_type],
+    ["patient_type", "int4[]", arrays.patient_type],
+    ["receive_date", "timestamp[]", arrays.receive_date],
+    ["old_login_name", "text[]", arrays.old_login_name],
+    ["memo_detail", "text[]", arrays.memo_detail],
+    ["fail", "int4[]", arrays.fail],
+    ["telephone", "text[]", arrays.telephone],
+    ["inventional", "int4[]", arrays.inventional],
+    ["biopsy_proc", "text[]", arrays.biopsy_proc],
+    ["referring_md", "int4[]", arrays.referring_md],
+    ["biopsy_comment", "text[]", arrays.biopsy_comment],
+    ["biopsy_radiologistg", "text[]", arrays.biopsy_radiologistg],
+    ["mobile", "text[]", arrays.mobile],
+    ["is_online", "int4[]", arrays.is_online],
+    ["have_doc", "int4[]", arrays.have_doc],
+    ["have_cd", "int4[]", arrays.have_cd],
+    ["right_id", "int4[]", arrays.right_id],
+    ["location", "int4[]", arrays.location],
+    ...(patientColumn
+      ? [[patientColumn, "int4[]", arrays[patientColumn]]]
+      : []),
+    ["old_db_id", "text[]", arrays.old_db_id],
+  ];
+  const colList = insertDefs.map(([col]) => col).join(", ");
+  const unnestList = insertDefs
+    .map(([, pgType], idx) => `$${idx + 1}::${pgType}`)
+    .join(", ");
+  const params = insertDefs.map(([, , arr]) => arr);
   await pgClient.query(
     `
-    INSERT INTO public.appointment (
-      appointment_datetime,
-      appointment_no,
-      prefix,
-      first_name,
-      last_name,
-      payment_type,
-      patient_type,
-      receive_date,
-      old_login_name,
-      memo_detail,
-      fail,
-      telephone,
-      inventional,
-      biopsy_proc,
-      referring_md,
-      biopsy_comment,
-      biopsy_radiologistg,
-      mobile,
-      is_online,
-      have_doc,
-      have_cd,
-      right_id,
-      location,
-      old_db_id
-    )
-    SELECT * FROM unnest(
-      $1::timestamp[], $2::int4[], $3::text[], $4::text[], $5::text[],
-      $6::int4[], $7::int4[], $8::timestamp[], $9::text[], $10::text[],
-      $11::int4[], $12::text[], $13::int4[], $14::text[], $15::int4[],
-      $16::text[], $17::text[], $18::text[], $19::int4[], $20::int4[],
-      $21::int4[], $22::int4[], $23::int4[], $24::text[]
-    )
+    INSERT INTO public.appointment (${colList})
+    SELECT * FROM unnest(${unnestList})
     `,
-    [
-      arrays.appointment_datetime,
-      arrays.appointment_no,
-      arrays.prefix,
-      arrays.first_name,
-      arrays.last_name,
-      arrays.payment_type,
-      arrays.patient_type,
-      arrays.receive_date,
-      arrays.old_login_name,
-      arrays.memo_detail,
-      arrays.fail,
-      arrays.telephone,
-      arrays.inventional,
-      arrays.biopsy_proc,
-      arrays.referring_md,
-      arrays.biopsy_comment,
-      arrays.biopsy_radiologistg,
-      arrays.mobile,
-      arrays.is_online,
-      arrays.have_doc,
-      arrays.have_cd,
-      arrays.right_id,
-      arrays.location,
-      arrays.old_db_id,
-    ],
+    params,
   );
+}
+
+export async function syncAppointmentIdSequence(pgClient) {
+  await pgClient.query(`
+    SELECT setval(
+      pg_get_serial_sequence('public.appointment', 'id'),
+      COALESCE((SELECT MAX(id) + 1 FROM public.appointment), 1),
+      false
+    )
+    WHERE pg_get_serial_sequence('public.appointment', 'id') IS NOT NULL;
+  `);
+}
+
+export async function resetAppointmentIdSequenceIfEmpty(pgClient) {
+  await pgClient.query(`
+    WITH cnt AS (
+      SELECT COUNT(*)::bigint AS c FROM public.appointment
+    )
+    SELECT setval(
+      pg_get_serial_sequence('public.appointment', 'id'),
+      1,
+      false
+    )
+    FROM cnt
+    WHERE cnt.c = 0
+      AND pg_get_serial_sequence('public.appointment', 'id') IS NOT NULL;
+  `);
 }
 
 export const SCHEDULE_TO_APPOINTMENT_FIELD_MAP = [
@@ -416,5 +511,6 @@ export const SCHEDULE_TO_APPOINTMENT_FIELD_MAP = [
   ["HaveCD", "have_cd"],
   ["Right_ID", "right_id"],
   ["Location_ID", "location"],
+  ["PID", "patient"],
   ["Schedule_ID", "old_db_id"],
 ];
