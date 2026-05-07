@@ -1,0 +1,14 @@
+{
+  "name": "examination-general-js-migrate",
+  "private": true,
+  "type": "module",
+  "description": "Migrate examination_general from MSSQL to bisinfo_dev_clone",
+  "scripts": {
+    "migrate": "node ./migrate-from-mssql.mjs --config ../../migration.config.local.json --profile examination_general"
+  },
+  "dependencies": {
+    "mssql": "^11.0.1",
+    "pg": "^8.13.1"
+  }
+}
+

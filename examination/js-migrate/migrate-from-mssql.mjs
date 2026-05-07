@@ -3,7 +3,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sql from "mssql";
 import pg from "pg";
-import { MSSQL_EXAMINATION_SELECT } from "./mssqlExaminationSelect.mjs";
+import {
+  MSSQL_EXAMINATION_DETAIL_BY_IDS_SELECT,
+  MSSQL_EXAMINATION_ID_SELECT,
+  MSSQL_EXAMINATION_SELECT,
+} from "./mssqlExaminationSelect.mjs";
 import {
   ensureExaminationOldExamIdIndex,
   ensureExaminationStagingDdl,
@@ -22,8 +26,7 @@ import {
 } from "../../shared/js-migrate/progressUi.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const MSSQL_EXAM_ID_NUMERIC_EXPR =
-  "CASE WHEN LTRIM(RTRIM([Exam_ID])) <> '' AND LTRIM(RTRIM([Exam_ID])) NOT LIKE '%[^0-9]%' THEN CONVERT(BIGINT, LTRIM(RTRIM([Exam_ID]))) ELSE NULL END";
+const MSSQL_EXAM_ID_NUMERIC_EXPR = "[Exam_ID]";
 
 /**
  * อ่าน dbo.examination แบบ keyset: `WHERE [Exam_ID] > @after` แทน `OFFSET` — OFFSET นับแถว O(n) พอ data เยอะ
@@ -43,31 +46,18 @@ function buildMssqlExaminationKeysetSelect() {
   ${MSSQL_EXAM_ID_NUMERIC_EXPR} AS __mssql_exam_id
 FROM {{sourceObject}}
 WHERE ${MSSQL_EXAM_ID_NUMERIC_EXPR} > @afterExamId
-ORDER BY ${MSSQL_EXAM_ID_NUMERIC_EXPR} ASC, [Exam_ID] ASC;`;
+ORDER BY ${MSSQL_EXAM_ID_NUMERIC_EXPR} ASC;`;
 }
 
 function buildMssqlExaminationProbeSelect() {
-  return `
-SELECT TOP (@page)
-  ${MSSQL_EXAM_ID_NUMERIC_EXPR} AS probe_exam_id
-FROM {{sourceObject}}
-WHERE ${MSSQL_EXAM_ID_NUMERIC_EXPR} > @afterExamId
-ORDER BY ${MSSQL_EXAM_ID_NUMERIC_EXPR} ASC, [Exam_ID] ASC;`.trim();
+  return MSSQL_EXAMINATION_ID_SELECT.replace("AS exam_id", "AS probe_exam_id");
 }
 
 function buildMssqlExaminationDetailByIdsSelect(idPlaceholders) {
-  const marker = "FROM {{sourceObject}}";
-  const s = MSSQL_EXAMINATION_SELECT;
-  const idx = s.indexOf(marker);
-  if (idx < 0) {
-    throw new Error("MSSQL_EXAMINATION_SELECT: missing FROM {{sourceObject}}");
-  }
-  const head = s.slice(0, idx).trimEnd();
-  return `${head},
-  ${MSSQL_EXAM_ID_NUMERIC_EXPR} AS __mssql_exam_id
-FROM {{sourceObject}}
-WHERE [Exam_ID] IN (${idPlaceholders})
-ORDER BY ${MSSQL_EXAM_ID_NUMERIC_EXPR} ASC, [Exam_ID] ASC;`;
+  return MSSQL_EXAMINATION_DETAIL_BY_IDS_SELECT.replace(
+    "{{idPlaceholders}}",
+    idPlaceholders,
+  );
 }
 
 function toBigIntish(v) {
@@ -379,7 +369,7 @@ function buildTableJobs(config) {
       key: "examination",
       sourceSchema: config.source?.schema ?? "dbo",
       sourceTable: config.source?.table ?? "examination",
-      orderBy: `${MSSQL_EXAM_ID_NUMERIC_EXPR} ASC, [Exam_ID] ASC`,
+      orderBy: "[Exam_ID] ASC",
       stagingTable: "migrate_stg.examination_mssql",
       columns: EXAMINATION_COLUMNS,
       postLoadSqlFiles: [],
@@ -522,6 +512,7 @@ async function runTableJob({
   const sourceLimit =
     sourceLimitRaw == null ? null : Math.max(1, Number(sourceLimitRaw));
   const progressEnabled = migrationConfig.progressUi !== false;
+  const singleLineUi = migrationConfig.singleLineUi !== false;
   const progressStartedAt = Date.now();
   const probeTiming = migrationConfig.probeTiming === true;
   const debugLogs = migrationConfig.debugLogs === true || probeTiming;
@@ -539,14 +530,18 @@ async function runTableJob({
   }
   const progressTotal = plannedRows ?? null;
   const plannedChunks =
-    plannedRows != null && plannedRows > 0 ? Math.ceil(plannedRows / batchSize) : null;
+    plannedRows != null && plannedRows > 0
+      ? Math.ceil(plannedRows / batchSize)
+      : null;
   if (sourceLimit != null) {
     console.error(
       `>>> [${key}] TEMP sourceLimit enabled: ${sourceLimit} records`,
     );
   }
   if (plannedChunks != null) {
-    console.error(`>>> [${key}] plan: ${plannedRows} rows, ~${plannedChunks} chunks`);
+    console.error(
+      `>>> [${key}] plan: ${plannedRows} rows, ~${plannedChunks} chunks`,
+    );
   }
   if (probeTiming) {
     console.error(
@@ -560,12 +555,12 @@ async function runTableJob({
     const pageSize =
       remaining == null ? batchSize : Math.min(batchSize, remaining);
     const nextChunkIndex = chunkIndex + 1;
-    if (debugLogs && useMssqlKeyset) {
+    if (debugLogs && !singleLineUi && useMssqlKeyset) {
       writeOutLine(
         `>>> [${key}] fetch chunk ${nextChunkIndex}: afterExamId=${String(mssqlKeysetAfter)} pageSize=${pageSize}`,
         uiState,
       );
-    } else if (debugLogs) {
+    } else if (debugLogs && !singleLineUi) {
       writeOutLine(
         `>>> [${key}] fetch chunk ${nextChunkIndex}: offset=${offset} pageSize=${pageSize}`,
         uiState,
@@ -587,12 +582,15 @@ async function runTableJob({
         probeRows.length > 0
           ? String(probeRows[probeRows.length - 1].probe_exam_id)
           : "none";
-      console.error(
-        `>>> [${key}] probe exam_id ok: rows=${probeRows.length} first=${probeFirst} last=${probeLast} probe_ms=${probeElapsedMs}`,
-      );
+      if (!singleLineUi) {
+        console.error(
+          `>>> [${key}] probe exam_id ok: rows=${probeRows.length} first=${probeFirst} last=${probeLast} probe_ms=${probeElapsedMs}`,
+        );
+      }
     }
 
     let rows = [];
+    let lastExamIdFromProbe = null;
     let fetchElapsedMs = 0;
     let idFetchElapsedMs = 0;
     let detailFetchElapsedMs = 0;
@@ -606,7 +604,10 @@ async function runTableJob({
         .query(probeSql);
       idFetchElapsedMs = Date.now() - idFetchStartedAt;
       const idRows = idResp.recordset || [];
-      if (probeTiming) {
+      if (idRows.length > 0) {
+        lastExamIdFromProbe = idRows[idRows.length - 1].probe_exam_id;
+      }
+      if (probeTiming && !singleLineUi) {
         const idFirst =
           idRows.length > 0 ? String(idRows[0].probe_exam_id) : "none";
         const idLast =
@@ -636,7 +637,7 @@ async function runTableJob({
         detailFetchElapsedMs = Date.now() - detailFetchStartedAt;
         rows = detailResp.recordset || [];
         fetchElapsedMs = idFetchElapsedMs + detailFetchElapsedMs;
-        if (probeTiming) {
+        if (probeTiming && !singleLineUi) {
           writeOutLine(
             `>>> [${key}] detail fetch ok: rows=${rows.length} detail_fetch_ms=${detailFetchElapsedMs}`,
             uiState,
@@ -660,7 +661,7 @@ async function runTableJob({
       rows = r.recordset || [];
     }
 
-    if (debugLogs) {
+    if (debugLogs && !singleLineUi) {
       writeOutLine(
         `>>> [${key}] fetched rows: ${rows.length} (chunk ${nextChunkIndex}, mssql_query_ms=${fetchElapsedMs})`,
         uiState,
@@ -719,12 +720,12 @@ async function runTableJob({
         postLoadMs = Date.now() - postLoadStartedAt;
       } else if (isExaminationBuiltin) {
         step = "run examination JS post-load (map -> public.examination)";
-        if (debugLogs) {
+        if (debugLogs && !singleLineUi) {
           console.error(`>>> [${key}] runExaminationChunkPostLoad`);
         }
         const postLoadStartedAt = Date.now();
         await runExaminationChunkPostLoad(pgClient, rows, stagingFromClause, {
-          verbose: debugLogs,
+          verbose: debugLogs && !singleLineUi,
         });
         postLoadMs = Date.now() - postLoadStartedAt;
       }
@@ -809,7 +810,9 @@ LIMIT 200;
           commitMs,
           totalChunkMs,
           rowsPerSec:
-            totalChunkMs > 0 ? Number(((n * 1000) / totalChunkMs).toFixed(2)) : null,
+            totalChunkMs > 0
+              ? Number(((n * 1000) / totalChunkMs).toFixed(2))
+              : null,
         },
       };
       if (
@@ -858,8 +861,8 @@ LIMIT 200;
     total += n;
     offset += n;
     if (useMssqlKeyset) {
-      const lastId = rows[n - 1].__mssql_exam_id;
-      mssqlKeysetAfter = lastId;
+      mssqlKeysetAfter =
+        lastExamIdFromProbe ?? toBigIntish(normExamId(rows[n - 1]?.exam_id));
     }
     if (checkpointEnabled) {
       writeJson(checkpointPath, {
@@ -873,7 +876,7 @@ LIMIT 200;
       });
     }
     const isLastPage = n < pageSize;
-    if (debugLogs) {
+    if (debugLogs && !singleLineUi) {
       writeOutLine(
         `>>> [${key}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(
           Date.now() - chunkStartedAt,

@@ -66,7 +66,9 @@ function toPgTimestamp(v) {
 
   const yyyy = y >= 2400 ? y - 543 : y;
   // Validate Gregorian date before formatting for PostgreSQL timestamp.
-  const dt = new Date(Date.UTC(yyyy, Number.parseInt(m, 10) - 1, Number.parseInt(d, 10)));
+  const dt = new Date(
+    Date.UTC(yyyy, Number.parseInt(m, 10) - 1, Number.parseInt(d, 10)),
+  );
   if (
     Number.isNaN(dt.getTime()) ||
     dt.getUTCFullYear() !== yyyy ||
@@ -97,8 +99,16 @@ function toUnixEpochSeconds(v) {
 }
 
 export function distinctOnNormExamId(mssqlRows) {
+  const rowsSorted = [...mssqlRows].sort((a, b) => {
+    const ai = toStrictInt(getField(a, "exam_id"));
+    const bi = toStrictInt(getField(b, "exam_id"));
+    if (ai == null && bi == null) return 0;
+    if (ai == null) return 1;
+    if (bi == null) return -1;
+    return ai - bi;
+  });
   const seen = new Map();
-  for (const row of mssqlRows) {
+  for (const row of rowsSorted) {
     const nExamId = normExamId(getField(row, "exam_id"));
     if (nExamId === "") continue;
     if (!seen.has(nExamId)) seen.set(nExamId, row);
