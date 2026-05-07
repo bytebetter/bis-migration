@@ -1,0 +1,31 @@
+{
+  "startedAt": "2026-05-07T03:56:06.448Z",
+  "status": "success",
+  "tableResults": [
+    {
+      "key": "procedure",
+      "totalRowsRead": 60310,
+      "checkpointPath": "C:\\Projects\\bis-migration\\procedure\\js-migrate\\checkpoints\\procedure.json",
+      "chunkCount": 31,
+      "successChunkCount": 31,
+      "failedChunkCount": 0,
+      "chunkLogMode": "compact",
+      "chunkSampleEvery": 50,
+      "chunkResults": [
+        {
+          "chunkIndex": 1,
+          "status": "success",
+          "sourceOffsetStart": 0,
+          "sourceOffsetEnd": 1999,
+          "rowCount": 2000,
+          "firstKey": "17378:1",
+          "lastKey": "88320:1",
+          "mssqlFetchMs": 2159,
+          "chunkTotalMs": 9983
+        }
+      ]
+    }
+  ],
+  "error": null,
+  "finishedAt": "2026-05-07T03:57:03.666Z"
+}

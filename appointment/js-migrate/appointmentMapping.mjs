@@ -108,8 +108,8 @@ export function normScheduleId(v) {
   return n == null ? null : String(n);
 }
 
-/** cache ต่อ process (แต่ละครั้งรัน node ใหม่) */
-let cachedAppointmentFkSets = null;
+/** cache metadata FK ต่อ process — ไม่เก็บ PK ทั้งตาราง parent (โหลดแค่ครั้งเดียว มีแค่ชื่อตาราง/คอลัมน์) */
+let cachedAppointmentFkMeta = null;
 
 function valueInFkSet(set, v) {
   if (v == null) return true;
@@ -121,10 +121,9 @@ function valueInFkSet(set, v) {
 }
 
 /**
- * โหลดค่า PK ฝั่ง parent ของทุก FK แบบคอลัมน์เดียวบน public.appointment
- * ใช้ null แทนค่าที่ละเมิด FK (เช่น MSSQL ส่ง 0 แต่ไม่มี id=0 ใน lookup)
+ * คืน Map<child_col, { sch, rel, pcol }> สำหรับ FK คอลัมน์เดียวบน public.appointment
  */
-async function loadAppointmentForeignKeyAllowedSets(pgClient) {
+async function loadAppointmentForeignKeyMeta(pgClient) {
   const cons = await pgClient.query(`
     SELECT c.conname
     FROM pg_constraint c
@@ -133,7 +132,7 @@ async function loadAppointmentForeignKeyAllowedSets(pgClient) {
       AND array_length(c.conkey, 1) = 1
   `);
 
-  const colToSet = new Map();
+  const colToMeta = new Map();
 
   for (const { conname } of cons.rows) {
     const meta = await pgClient.query(
@@ -158,43 +157,58 @@ async function loadAppointmentForeignKeyAllowedSets(pgClient) {
       continue;
     }
 
-    const data = await pgClient.query(
-      `SELECT "${pcol}" AS v FROM "${sch}"."${rel}" WHERE "${pcol}" IS NOT NULL`,
-    );
-    if (data.rows.length === 0) continue;
-
-    const set = new Set();
-    for (const row of data.rows) {
-      const x = row.v;
-      if (x == null) continue;
-      set.add(x);
-      if (
-        typeof x === "number" ||
-        (typeof x === "string" && /^-?\d+$/.test(x))
-      ) {
-        set.add(Number(x));
-        set.add(String(x));
-      }
-    }
-    colToSet.set(child_col, set);
+    colToMeta.set(child_col, { sch, rel, pcol });
   }
 
-  return colToSet;
+  return colToMeta;
 }
 
-async function getAppointmentForeignKeyAllowedSets(pgClient) {
-  if (cachedAppointmentFkSets) return cachedAppointmentFkSets;
-  cachedAppointmentFkSets =
-    await loadAppointmentForeignKeyAllowedSets(pgClient);
-  return cachedAppointmentFkSets;
+async function getAppointmentForeignKeyMeta(pgClient) {
+  if (cachedAppointmentFkMeta) return cachedAppointmentFkMeta;
+  cachedAppointmentFkMeta = await loadAppointmentForeignKeyMeta(pgClient);
+  return cachedAppointmentFkMeta;
 }
 
-function nullOutInvalidForeignKeys(mapped, colToSet) {
-  for (const [col, set] of colToSet) {
+/**
+ * ค่าในชุดแถวที่ปรากฏใน chunk ว่ามีจริงในตาราง parent หรือไม่ — JOIN กับ unnest ใช้ index บน parent ได้
+ */
+async function fetchAllowedFkParentsForChunk(pgClient, { sch, rel, pcol }, distinctValues) {
+  const uniqTexts = [...new Set(distinctValues.map((v) => String(v)))];
+  if (uniqTexts.length === 0) return new Set();
+
+  const res = await pgClient.query(
+    `
+    SELECT r."${pcol}" AS v
+    FROM unnest($1::text[]) AS x(txt)
+    INNER JOIN "${sch}"."${rel}" r ON r."${pcol}"::text = x.txt
+    `,
+    [uniqTexts],
+  );
+
+  const set = new Set();
+  for (const row of res.rows) {
+    const x = row.v;
+    if (x == null) continue;
+    set.add(x);
+    set.add(String(x));
+    if (
+      typeof x === "number" ||
+      (typeof x === "string" && /^-?\d+$/.test(x))
+    ) {
+      set.add(Number.parseInt(String(x), 10));
+      set.add(Number(x));
+    }
+  }
+  return set;
+}
+
+/** null ฟิลด์ที่ค่าไม่อยู่ใน parent ตาม FK (ใช้ชุด allowed ต่อ chunk) */
+function nullOutInvalidForeignKeysForChunk(payloads, col, allowedSet) {
+  for (const mapped of payloads) {
     if (!Object.hasOwn(mapped, col)) continue;
     const v = mapped[col];
     if (v == null) continue;
-    if (!valueInFkSet(set, v)) {
+    if (!valueInFkSet(allowedSet, v)) {
       mapped[col] = null;
     }
   }
@@ -233,12 +247,32 @@ export async function runAppointmentChunkPostLoad(pgClient, mssqlRows) {
     );
   `);
 
-  const fkSets = await getAppointmentForeignKeyAllowedSets(pgClient);
-  const payloads = rows.map((r) => {
-    const m = mapScheduleRowToAppointment(r);
-    nullOutInvalidForeignKeys(m, fkSets);
-    return m;
-  });
+  const fkMeta = await getAppointmentForeignKeyMeta(pgClient);
+  const payloads = rows.map((r) => mapScheduleRowToAppointment(r));
+
+  if (payloads.length > 0 && fkMeta.size > 0) {
+    const sample = payloads[0];
+    for (const [col, meta] of fkMeta) {
+      if (!Object.hasOwn(sample, col)) continue;
+      const distinct = [];
+      const seen = new Set();
+      for (const p of payloads) {
+        const v = p[col];
+        if (v == null) continue;
+        const key = typeof v === "number" ? `n:${v}` : `s:${String(v)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        distinct.push(v);
+      }
+      if (distinct.length === 0) continue;
+      const allowed = await fetchAllowedFkParentsForChunk(
+        pgClient,
+        meta,
+        distinct,
+      );
+      nullOutInvalidForeignKeysForChunk(payloads, col, allowed);
+    }
+  }
   const arrays = {
     appointment_datetime: [],
     appointment_no: [],
