@@ -1,0 +1,13 @@
+{
+  "name": "pacs-sync-info-js-migrate",
+  "private": true,
+  "type": "module",
+  "description": "Migrate pacs_sync_info from MSSQL to PostgreSQL (Directus)",
+  "scripts": {
+    "migrate": "node ./migrate-from-mssql.mjs --config ../../migration.config.local.json --profile pacs_sync_info"
+  },
+  "dependencies": {
+    "mssql": "^11.0.1",
+    "pg": "^8.13.1"
+  }
+}
