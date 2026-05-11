@@ -180,24 +180,20 @@ function bracketIdent(value) {
   return `[${String(value).replace(/]/g, "]]")}]`;
 }
 
-/** bind ตามชนิดจริงของ [Accession_ID] (ตัวเลข → BigInt, ไม่ใช่ → NVarChar) */
+/**
+ * bind เป็น NVarChar เสมอสำหรับคีย์เซ็ต —
+ * ถ้าส่ง BigInt เมื่อคอลัมน์เป็น varchar/nvarchar แล้วใช้กับ `Accession_ID > @p`
+ * SQL Server จะเทียบแบบตัวเลขหลัง implicit cast ไม่ตรงกับ ORDER BY แบบจัดเรียงสตริง
+ * (เช่น "594341000" ลำดับสตริงใหญ่กว่า "5943407001" แต่ค่าตัวเลขกลับน้อยกว่า → แถวหาย ~1M)
+ */
 function mssqlParamForAccessionKey(value) {
   if (value == null) {
     return { type: sql.NVarChar(sql.MAX), val: "" };
   }
-  if (typeof value === "bigint") {
-    return { type: sql.BigInt, val: value };
-  }
-  const s = String(value)
-    .replace(/^\uFEFF/, "")
-    .trimEnd();
-  if (s !== "" && /^-?\d+$/.test(s)) {
-    try {
-      return { type: sql.BigInt, val: BigInt(s) };
-    } catch {
-      /* fallthrough */
-    }
-  }
+  const s =
+    typeof value === "bigint"
+      ? value.toString()
+      : String(value).replace(/^\uFEFF/, "").trimEnd();
   return { type: sql.NVarChar(sql.MAX), val: s };
 }
 

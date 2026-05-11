@@ -1,0 +1,13 @@
+{
+  "key": "pacs_sync_info",
+  "offset": 2339491,
+  "afterAccessionId": null,
+  "mssqlPagination": "keyset_plus_null",
+  "migrationLeg": "done",
+  "nullTailCursor": null,
+  "accLegCursor": null,
+  "accFingerprintVersion": 3,
+  "nullTailDone": true,
+  "completed": true,
+  "updatedAt": "2026-05-11T15:28:01.993Z"
+}

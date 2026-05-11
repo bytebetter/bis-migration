@@ -1,0 +1,20 @@
+{
+  "startedAt": "2026-05-11T12:44:01.963Z",
+  "status": "success",
+  "sourceObject": "dbo.pacs_sync_info",
+  "batchSize": 2000,
+  "studyDescriptionMaxChars": 8192,
+  "mssqlDetailInChunkSize": 2000,
+  "mssqlOptimizeSingleQuery": true,
+  "mssqlPagination": "keyset_plus_null",
+  "mssqlAccComposite": true,
+  "migrationLeg": "done",
+  "nullTailDone": true,
+  "rowsLoadedToStaging": 2339491,
+  "rowsUpserted": 2339491,
+  "skipped": 0,
+  "error": null,
+  "plannedRows": 2338322,
+  "plannedChunks": 1170,
+  "finishedAt": "2026-05-11T15:28:01.997Z"
+}
