@@ -457,9 +457,10 @@ async function main() {
     config?.migration?.mssqlOptimizeSingleQuery !== false;
 
   /**
-   * "keyset_plus_null" = TOP+JOIN แถวที่มี Accession_ID แล้วต่อด้วย keyset แถว Accession_ID NULL (เร็ว + ครบ)
-   * "keyset" = เฉพาะมี Accession_ID (เดิม)
-   * "offset" = ดึงทั้งตารางด้วย OFFSET (ช้าเมื่อ offset สูง แต่ลำดับตรงทุกกรณี)
+   * "keyset_plus_null" (default) = เฟสมี Accession_ID + เฟส NULL — เร็วกว่า offset
+   * "offset" = ดึงทั้งตารางด้วย ORDER BY + OFFSET/FETCH (ช้าเมื่อ offset สูง แต่ลำดับชัด/callback ได้ครบแถว)
+   * "keyset" = เฉพาะแถวที่มี Accession_ID
+   * อ่านเฉพาะสคริปต์ pacs — แนะนำใส่ใน profiles.pacs_sync_info.migration ไม่ใช่ shared
    */
   const mssqlPagination =
     config?.migration?.mssqlPagination ?? "keyset_plus_null";

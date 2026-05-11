@@ -21,41 +21,18 @@
       "postgresDatabase": "bisinfo_dev_clone"
     },
     "migration": {
-      "batchSize": 500,
-      "enableCheckpoint": true,
-      "checkpointDir": "./checkpoints"
+      "batchSize": 2000
     }
   },
   "profiles": {
-    "patient_info": {
-      "migration": {
-        "batchSize": 2000
-      }
-    },
-    "examination": {
-      "migration": {
-        "batchSize": 2000,
-        "chunkLogMode": "compact",
-        "chunkSampleEvery": 50,
-        "progressUi": true,
-        "probeTiming": false
-      }
-    },
+    "patient_info": {},
+    "examination": {},
+    "examination_general": {},
+    "appointment": {},
+    "procedure": {},
     "pacs_sync_info": {
-      "source": {
-        "schema": "dbo",
-        "table": "pacs_sync_info"
-      },
       "migration": {
-        "mssqlPagination": "keyset_plus_null",
-        "batchSize": 2000,
-        "mssqlOptimizeSingleQuery": true,
-        "studyDescriptionMaxChars": 8192,
-        "progressUi": true,
-        "singleLineUi": true,
-        "enableCheckpoint": true,
-        "checkpointDir": "./checkpoints",
-        "debugLogs": false
+        "mssqlPagination": "keyset_plus_null"
       }
     }
   }

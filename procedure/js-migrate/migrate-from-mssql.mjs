@@ -553,15 +553,12 @@ async function main() {
   const rawConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
   const config = resolveRuntimeConfig(rawConfig, "procedure");
 
-  const selectedProfile =
-    getProfileName() ?? rawConfig.defaultProfile ?? "procedure";
-  const batchFromProfile =
-    rawConfig.profiles?.[selectedProfile]?.migration?.batchSize;
   const migrationForJob = {
     ...(config.migration ?? {}),
     batchSize:
-      batchFromProfile != null && String(batchFromProfile).trim() !== ""
-        ? Number(batchFromProfile)
+      config.migration?.batchSize != null &&
+      String(config.migration.batchSize).trim() !== ""
+        ? Number(config.migration.batchSize)
         : 2000,
   };
 
