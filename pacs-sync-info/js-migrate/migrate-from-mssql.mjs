@@ -732,9 +732,6 @@ async function main() {
         afterAccessionId = null;
         accLegCursor = null;
         nullTailCursor = null;
-        console.error(
-          `>>> [${KEY}] fingerprint v${PACSSYNC_ROW_FINGERPRINT_VERSION}: checkpoint เวอร์ชันเก่า (${ckFpVer ?? "ไม่มี"}) — รีเซ็ตเฟส 1`,
-        );
       }
 
       if (
@@ -1218,12 +1215,6 @@ async function main() {
       }
 
       await syncPacsSyncInfoIdSequence(client);
-
-      if (plannedRows != null && plannedRows > 0 && offset !== plannedRows) {
-        console.error(
-          `>>> [${KEY}] คำเตือน: ประมวลผลแล้ว ${offset} แถว แต่ MSSQL COUNT_BIG = ${plannedRows} — ถ้าต้องการครบทุกแถว ให้ลบ checkpoint แล้วรันใหม่หลังอัปเดตสคริปต์ หรือตั้ง migration.mssqlPagination เป็น "offset" (ช้าแต่ครบ)`,
-        );
-      }
 
       if (checkpointEnabled) {
         writeJson(checkpointPath, {

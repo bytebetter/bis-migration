@@ -1,5 +1,5 @@
 {
-  "startedAt": "2026-05-11T12:44:01.963Z",
+  "startedAt": "2026-05-12T05:49:03.378Z",
   "status": "success",
   "sourceObject": "dbo.pacs_sync_info",
   "batchSize": 2000,
@@ -16,5 +16,5 @@
   "error": null,
   "plannedRows": 2338322,
   "plannedChunks": 1170,
-  "finishedAt": "2026-05-11T15:28:01.997Z"
+  "finishedAt": "2026-05-12T06:24:41.401Z"
 }

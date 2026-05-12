@@ -592,22 +592,31 @@ export async function runExaminationChunkPostLoad(
     );
   }
 
-  const scheduleIds = Array.from(
+  /** Schedule_ID จาก MSSQL อยู่ที่ appointment.old_db_id; id เป็น serial ไม่เท่า schedule เสมอ */
+  const scheduleKeys = Array.from(
     new Set(
       rows
-        .map((r) => toStrictInt(getField(r, "schedule_id")))
-        .filter((id) => Number.isInteger(id)),
+        .map((r) => {
+          const n = toStrictInt(getField(r, "schedule_id"));
+          return n == null ? null : String(n);
+        })
+        .filter((k) => k != null),
     ),
   );
 
-  const appointmentRows =
-    scheduleIds.length > 0
-      ? await pgClient.query(
-          "SELECT id FROM public.appointment WHERE id = ANY($1::int[])",
-          [scheduleIds],
-        )
-      : { rows: [] };
-  const appointmentSet = new Set(appointmentRows.rows.map((r) => r.id));
+  const scheduleKeyToAppointmentId = new Map();
+  if (scheduleKeys.length > 0) {
+    const { rows: apptRows } = await pgClient.query(
+      `SELECT id, btrim(old_db_id::text) AS k
+       FROM public.appointment
+       WHERE btrim(old_db_id::text) = ANY($1::text[])`,
+      [scheduleKeys],
+    );
+    for (const r of apptRows) {
+      if (r.k != null && r.k !== "")
+        scheduleKeyToAppointmentId.set(String(r.k), r.id);
+    }
+  }
 
   await pgClient.query(
     "DELETE FROM public.examination WHERE old_exam_id = ANY($1::text[])",
@@ -660,8 +669,11 @@ export async function runExaminationChunkPostLoad(
     const patientId = mssqlUToPatient.get(u) ?? null;
 
     const scheduleId = toStrictInt(getField(row, "schedule_id"));
+    const scheduleKey = scheduleId == null ? null : String(scheduleId);
     const appointmentId =
-      scheduleId != null && appointmentSet.has(scheduleId) ? scheduleId : null;
+      scheduleKey == null
+        ? null
+        : (scheduleKeyToAppointmentId.get(scheduleKey) ?? null);
     const context = { patientId, appointmentId };
 
     for (let i = 0; i < INSERT_DEFS.length; i++) {
