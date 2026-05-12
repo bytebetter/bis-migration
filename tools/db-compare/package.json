@@ -1,0 +1,13 @@
+{
+  "name": "db-compare",
+  "private": true,
+  "type": "module",
+  "description": "Compare table data between MSSQL and Postgres",
+  "scripts": {
+    "compare": "node ./compare-table.mjs"
+  },
+  "dependencies": {
+    "mssql": "^11.0.1",
+    "pg": "^8.13.1"
+  }
+}
