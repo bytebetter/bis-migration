@@ -8,7 +8,7 @@
 
 ```bash
 cd /path/to/bis-migration/db-selective-migration
-cp docker/.env.postgres.example .env.postgres
+cp docker/postgres.env.example .env.postgres
 # แก้ POSTGRES_PASSWORD และชื่อฐาน POSTGRES_DB ให้ตรงกับที่ต้องการ
 
 docker compose --env-file .env.postgres -f docker/docker-compose.postgres.yml up -d

@@ -1,7 +1,7 @@
 # PostgreSQL 16 for production-style host (align with pg_dump 16 + psql \restrict in selective dumps).
 #
 # From db-selective-migration/ (repo root of this package):
-#   cp docker/.env.postgres.example .env.postgres   # edit secrets
+#   cp docker/postgres.env.example .env.postgres   # edit secrets
 #   docker compose --env-file .env.postgres -f docker/docker-compose.postgres.yml up -d
 
 services:
