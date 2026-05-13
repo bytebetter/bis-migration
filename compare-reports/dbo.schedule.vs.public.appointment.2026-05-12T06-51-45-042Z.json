@@ -1,0 +1,3521 @@
+{
+  "comparedAt": "2026-05-12T06:51:54.411Z",
+  "profile": "patient_info",
+  "table": "dbo.schedule",
+  "resolvedTable": {
+    "mssql": "dbo.schedule",
+    "postgres": "public.appointment",
+    "postgresRequested": "dbo.appointment"
+  },
+  "source": {
+    "mssql": {
+      "server": "dark-songbird-708.fly.dev",
+      "database": "BISInfo",
+      "totalRows": 49776,
+      "columns": [
+        "schedule_datetime",
+        "schedule_number",
+        "prefix",
+        "name",
+        "surname",
+        "payment_type",
+        "patient_type",
+        "pid",
+        "age",
+        "receive_date",
+        "loginname",
+        "memodetail",
+        "fail",
+        "telephone",
+        "inventional",
+        "modifieddate",
+        "modifieduser",
+        "biopsyproc",
+        "referringmd",
+        "biopsycomment",
+        "biopsyradiologist",
+        "schedule_id",
+        "mobile",
+        "location_id",
+        "isonline",
+        "havedoc",
+        "havecd",
+        "right_id"
+      ]
+    },
+    "postgres": {
+      "host": "127.0.0.1",
+      "database": "bisinfo_dev_clone",
+      "totalRows": 49776,
+      "columns": [
+        "id",
+        "user_created",
+        "date_created",
+        "user_updated",
+        "date_updated",
+        "appointment_datetime",
+        "appointment_no",
+        "prefix",
+        "first_name",
+        "last_name",
+        "is_new_patient",
+        "care_type",
+        "patient_type",
+        "patient_info",
+        "old_login_name",
+        "memo_detail",
+        "fail",
+        "inventional",
+        "biopsy_proc",
+        "referring_md",
+        "biopsy_comment",
+        "biopsy_radiologistg",
+        "mobile",
+        "is_online",
+        "have_doc",
+        "have_cd",
+        "right_id",
+        "telephone",
+        "receive_date",
+        "in_patient_an",
+        "in_patient_room",
+        "in_patient_building",
+        "request",
+        "date_lastcheck",
+        "old_db_id",
+        "appointment_channels",
+        "issue_an_invoice",
+        "room",
+        "an",
+        "appointment_status",
+        "time_slot",
+        "building",
+        "front_note_1",
+        "front_note_2",
+        "request_female_doctor",
+        "follow_up_date",
+        "surgeon_appointment",
+        "new_memo",
+        "is_follow_up_call",
+        "outpatient",
+        "is_change_time_slot",
+        "is_insert_queue",
+        "reason_discard_appointment",
+        "reason_other",
+        "requested_doctor",
+        "teaching_case",
+        "infectious_disease",
+        "location",
+        "department_bx",
+        "bx_status",
+        "appointment_bx_id",
+        "bx_created_by",
+        "payment_type",
+        "previous_result_from",
+        "previous_result_uploaded_by",
+        "assessment_birads_des",
+        "us_mass"
+      ]
+    }
+  },
+  "options": {
+    "length": 2000,
+    "includeSample": true,
+    "includeMissingDetails": false,
+    "orderBy": "Schedule_ID",
+    "orderByPostgresInput": null,
+    "orderByPostgresEffective": "old_db_id",
+    "orderByPostgresKeySubstitutions": [
+      {
+        "from": "schedule_id",
+        "to": "old_db_id"
+      }
+    ],
+    "keyColumn": "schedule_id",
+    "mssqlKeyColumn": "schedule_id",
+    "pgKeyColumn": "old_db_id",
+    "maxDiffRows": 200,
+    "keyRange": {
+      "start": "1",
+      "end": "50000"
+    },
+    "postgresTable": "appointment"
+  },
+  "comparison": {
+    "rowCountDiff": 0,
+    "sameRowCount": true,
+    "columnCountDiff": -39,
+    "columnsOnlyInMssql": [
+      "schedule_datetime",
+      "schedule_number",
+      "name",
+      "surname",
+      "pid",
+      "age",
+      "loginname",
+      "memodetail",
+      "modifieddate",
+      "modifieduser",
+      "biopsyproc",
+      "referringmd",
+      "biopsycomment",
+      "biopsyradiologist",
+      "schedule_id",
+      "location_id",
+      "isonline",
+      "havedoc",
+      "havecd"
+    ],
+    "columnsOnlyInPostgres": [
+      "id",
+      "user_created",
+      "date_created",
+      "user_updated",
+      "date_updated",
+      "appointment_datetime",
+      "appointment_no",
+      "first_name",
+      "last_name",
+      "is_new_patient",
+      "care_type",
+      "patient_info",
+      "old_login_name",
+      "memo_detail",
+      "biopsy_proc",
+      "referring_md",
+      "biopsy_comment",
+      "biopsy_radiologistg",
+      "is_online",
+      "have_doc",
+      "have_cd",
+      "in_patient_an",
+      "in_patient_room",
+      "in_patient_building",
+      "request",
+      "date_lastcheck",
+      "old_db_id",
+      "appointment_channels",
+      "issue_an_invoice",
+      "room",
+      "an",
+      "appointment_status",
+      "time_slot",
+      "building",
+      "front_note_1",
+      "front_note_2",
+      "request_female_doctor",
+      "follow_up_date",
+      "surgeon_appointment",
+      "new_memo",
+      "is_follow_up_call",
+      "outpatient",
+      "is_change_time_slot",
+      "is_insert_queue",
+      "reason_discard_appointment",
+      "reason_other",
+      "requested_doctor",
+      "teaching_case",
+      "infectious_disease",
+      "location",
+      "department_bx",
+      "bx_status",
+      "appointment_bx_id",
+      "bx_created_by",
+      "previous_result_from",
+      "previous_result_uploaded_by",
+      "assessment_birads_des",
+      "us_mass"
+    ],
+    "sampleCompared": 2000,
+    "sampleOverlap": 0,
+    "keyMatchedComparison": {
+      "mssqlKeyColumn": "schedule_id",
+      "postgresKeyColumn": "old_db_id",
+      "comparedKeys": 201,
+      "exactMatchRows": 0,
+      "fieldMismatchRows": 201,
+      "fieldMismatchCountByField": {
+        "patient_type": 201,
+        "receive_date": 201,
+        "payment_type": 14
+      },
+      "missingInPostgres": 1799,
+      "missingInMssql": 1799,
+      "mismatchRowsTotal": 3799,
+      "detailLimit": 200,
+      "rowDiffs": [
+        {
+          "key": 1,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "payment_type",
+              "mssql": 0,
+              "postgres": null
+            },
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2003-02-26T00:00:00.000Z",
+              "postgres": "2003-02-25T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 10,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "payment_type",
+              "mssql": 0,
+              "postgres": null
+            },
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-01-15T00:00:00.000Z",
+              "postgres": "2013-01-14T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 11,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-11-01T00:00:00.000Z",
+              "postgres": "2013-10-31T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 100,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "payment_type",
+              "mssql": 0,
+              "postgres": null
+            },
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-10-07T00:00:00.000Z",
+              "postgres": "2014-10-06T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 101,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "payment_type",
+              "mssql": 0,
+              "postgres": null
+            },
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-06-15T00:00:00.000Z",
+              "postgres": "2015-06-14T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 102,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2005-06-14T00:00:00.000Z",
+              "postgres": "2005-06-13T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 103,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-03-12T00:00:00.000Z",
+              "postgres": "2013-03-11T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 104,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "payment_type",
+              "mssql": 0,
+              "postgres": null
+            },
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2005-08-30T00:00:00.000Z",
+              "postgres": "2005-08-29T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 105,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2003-07-28T00:00:00.000Z",
+              "postgres": "2003-07-27T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 106,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2000-10-20T00:00:00.000Z",
+              "postgres": "2000-10-19T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 107,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "payment_type",
+              "mssql": 0,
+              "postgres": null
+            },
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2007-02-27T00:00:00.000Z",
+              "postgres": "2007-02-26T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 108,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2002-02-28T00:00:00.000Z",
+              "postgres": "2002-02-27T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 109,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-04-18T00:00:00.000Z",
+              "postgres": "2012-04-17T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 110,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-04-24T00:00:00.000Z",
+              "postgres": "2012-04-23T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 111,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-01-24T00:00:00.000Z",
+              "postgres": "2013-01-23T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 112,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2005-06-09T00:00:00.000Z",
+              "postgres": "2005-06-08T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 113,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "payment_type",
+              "mssql": 0,
+              "postgres": null
+            },
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-06-26T00:00:00.000Z",
+              "postgres": "2015-06-25T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 114,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2007-04-24T00:00:00.000Z",
+              "postgres": "2007-04-23T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 115,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2007-10-01T00:00:00.000Z",
+              "postgres": "2007-09-30T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 116,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2008-06-03T00:00:00.000Z",
+              "postgres": "2008-06-02T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 117,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2008-12-15T00:00:00.000Z",
+              "postgres": "2008-12-14T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 118,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-11-13T00:00:00.000Z",
+              "postgres": "2013-11-12T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1000,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2010-11-26T00:00:00.000Z",
+              "postgres": "2010-11-25T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1001,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2010-11-11T00:00:00.000Z",
+              "postgres": "2010-11-10T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1002,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2010-12-27T00:00:00.000Z",
+              "postgres": "2010-12-26T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1003,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2010-11-25T00:00:00.000Z",
+              "postgres": "2010-11-24T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1004,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-04-27T00:00:00.000Z",
+              "postgres": "2011-04-26T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1005,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-06-27T00:00:00.000Z",
+              "postgres": "2011-06-26T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1006,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-06-01T00:00:00.000Z",
+              "postgres": "2011-05-31T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1007,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-11-24T00:00:00.000Z",
+              "postgres": "2011-11-23T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1008,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-09-05T00:00:00.000Z",
+              "postgres": "2011-09-04T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1009,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-09-20T00:00:00.000Z",
+              "postgres": "2011-09-19T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1010,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-12-15T00:00:00.000Z",
+              "postgres": "2011-12-14T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1011,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-05-30T00:00:00.000Z",
+              "postgres": "2011-05-29T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1012,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-10-04T00:00:00.000Z",
+              "postgres": "2011-10-03T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1013,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-12-08T00:00:00.000Z",
+              "postgres": "2011-12-07T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1014,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-12-08T00:00:00.000Z",
+              "postgres": "2011-12-07T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1015,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-12-29T00:00:00.000Z",
+              "postgres": "2011-12-28T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1016,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-01-05T00:00:00.000Z",
+              "postgres": "2012-01-04T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1017,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-02-16T00:00:00.000Z",
+              "postgres": "2012-02-15T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1018,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-03-05T00:00:00.000Z",
+              "postgres": "2012-03-04T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1019,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "payment_type",
+              "mssql": 0,
+              "postgres": null
+            },
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-03-26T00:00:00.000Z",
+              "postgres": "2012-03-25T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1020,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-01-21T00:00:00.000Z",
+              "postgres": "2012-01-20T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1021,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "payment_type",
+              "mssql": 0,
+              "postgres": null
+            },
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-08-24T00:00:00.000Z",
+              "postgres": "2012-08-23T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1022,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-06-12T00:00:00.000Z",
+              "postgres": "2012-06-11T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1023,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-07-31T00:00:00.000Z",
+              "postgres": "2012-07-30T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1024,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-08-24T00:00:00.000Z",
+              "postgres": "2012-08-23T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1025,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-08-20T00:00:00.000Z",
+              "postgres": "2012-08-19T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1026,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-09-14T00:00:00.000Z",
+              "postgres": "2012-09-13T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1027,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-09-26T00:00:00.000Z",
+              "postgres": "2012-09-25T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1028,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-07-21T00:00:00.000Z",
+              "postgres": "2012-07-20T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1029,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-09-06T00:00:00.000Z",
+              "postgres": "2012-09-05T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1030,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-06-21T00:00:00.000Z",
+              "postgres": "2012-06-20T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1031,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-07-18T00:00:00.000Z",
+              "postgres": "2012-07-17T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1032,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-03-26T00:00:00.000Z",
+              "postgres": "2013-03-25T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1033,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-01-09T00:00:00.000Z",
+              "postgres": "2013-01-08T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1034,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-01-17T00:00:00.000Z",
+              "postgres": "2013-01-16T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1035,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-11-06T00:00:00.000Z",
+              "postgres": "2012-11-05T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1036,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-03-20T00:00:00.000Z",
+              "postgres": "2013-03-19T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1037,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-04-01T00:00:00.000Z",
+              "postgres": "2013-03-31T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1038,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-06-03T00:00:00.000Z",
+              "postgres": "2013-06-02T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1039,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-04-18T00:00:00.000Z",
+              "postgres": "2013-04-17T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1040,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-06-21T00:00:00.000Z",
+              "postgres": "2013-06-20T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1041,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-02-28T00:00:00.000Z",
+              "postgres": "2013-02-27T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1042,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-08-29T00:00:00.000Z",
+              "postgres": "2013-08-28T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1043,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-11-01T00:00:00.000Z",
+              "postgres": "2012-10-31T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1044,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-10-11T00:00:00.000Z",
+              "postgres": "2013-10-10T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1045,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-08-02T00:00:00.000Z",
+              "postgres": "2013-08-01T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1046,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-01-12T00:00:00.000Z",
+              "postgres": "2013-01-11T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1047,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-08-26T00:00:00.000Z",
+              "postgres": "2013-08-25T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1048,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-08-15T00:00:00.000Z",
+              "postgres": "2013-08-14T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1049,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-11-15T00:00:00.000Z",
+              "postgres": "2013-11-14T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1050,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-12-21T00:00:00.000Z",
+              "postgres": "2013-12-20T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1051,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-05-28T00:00:00.000Z",
+              "postgres": "2013-05-27T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1052,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-03-14T00:00:00.000Z",
+              "postgres": "2013-03-13T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1053,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-12-09T00:00:00.000Z",
+              "postgres": "2013-12-08T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1054,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-07-17T00:00:00.000Z",
+              "postgres": "2013-07-16T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1055,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-10-18T00:00:00.000Z",
+              "postgres": "2013-10-17T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1056,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-03-13T00:00:00.000Z",
+              "postgres": "2014-03-12T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1057,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-03-04T00:00:00.000Z",
+              "postgres": "2014-03-03T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1058,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-01-08T00:00:00.000Z",
+              "postgres": "2014-01-07T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1059,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-07-22T00:00:00.000Z",
+              "postgres": "2014-07-21T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1060,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-02-13T00:00:00.000Z",
+              "postgres": "2014-02-12T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1061,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-02-17T00:00:00.000Z",
+              "postgres": "2014-02-16T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1062,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-04-04T00:00:00.000Z",
+              "postgres": "2014-04-03T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1063,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-09-15T00:00:00.000Z",
+              "postgres": "2014-09-14T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1064,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-10-24T00:00:00.000Z",
+              "postgres": "2013-10-23T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1065,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-07-08T00:00:00.000Z",
+              "postgres": "2014-07-07T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1066,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-12-24T00:00:00.000Z",
+              "postgres": "2014-12-23T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1067,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-07-29T00:00:00.000Z",
+              "postgres": "2014-07-28T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1068,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-10-22T00:00:00.000Z",
+              "postgres": "2014-10-21T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1069,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-01-17T00:00:00.000Z",
+              "postgres": "2014-01-16T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1070,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-08-18T00:00:00.000Z",
+              "postgres": "2014-08-17T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1071,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-08-07T00:00:00.000Z",
+              "postgres": "2014-08-06T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1072,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-02-12T00:00:00.000Z",
+              "postgres": "2015-02-11T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1073,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-05-31T00:00:00.000Z",
+              "postgres": "2014-05-30T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1074,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-03-20T00:00:00.000Z",
+              "postgres": "2014-03-19T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1075,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-10-22T00:00:00.000Z",
+              "postgres": "2014-10-21T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1076,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "payment_type",
+              "mssql": 0,
+              "postgres": null
+            },
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-02-26T00:00:00.000Z",
+              "postgres": "2015-02-25T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1077,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-10-07T00:00:00.000Z",
+              "postgres": "2014-10-06T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1078,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-03-18T00:00:00.000Z",
+              "postgres": "2015-03-17T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1079,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-03-18T00:00:00.000Z",
+              "postgres": "2015-03-17T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1080,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-03-10T00:00:00.000Z",
+              "postgres": "2015-03-09T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1081,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-01-26T00:00:00.000Z",
+              "postgres": "2015-01-25T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1082,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "payment_type",
+              "mssql": 0,
+              "postgres": null
+            },
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-06-12T00:00:00.000Z",
+              "postgres": "2015-06-11T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1083,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-07-30T00:00:00.000Z",
+              "postgres": "2014-07-29T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1084,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-03-12T00:00:00.000Z",
+              "postgres": "2015-03-11T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1085,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "payment_type",
+              "mssql": 0,
+              "postgres": null
+            },
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-05-08T00:00:00.000Z",
+              "postgres": "2015-05-07T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1086,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-04-08T00:00:00.000Z",
+              "postgres": "2015-04-07T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1087,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-11-06T00:00:00.000Z",
+              "postgres": "2014-11-05T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1088,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-01-17T00:00:00.000Z",
+              "postgres": "2015-01-16T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1089,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-01-30T00:00:00.000Z",
+              "postgres": "2015-01-29T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1090,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-03-26T00:00:00.000Z",
+              "postgres": "2015-03-25T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1091,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-04-28T00:00:00.000Z",
+              "postgres": "2015-04-27T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1092,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-07-20T00:00:00.000Z",
+              "postgres": "2015-07-19T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1093,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2001-02-06T00:00:00.000Z",
+              "postgres": "2001-02-05T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1094,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "payment_type",
+              "mssql": 0,
+              "postgres": null
+            },
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2004-01-14T00:00:00.000Z",
+              "postgres": "2004-01-13T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1095,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2004-05-10T00:00:00.000Z",
+              "postgres": "2004-05-09T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1096,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2004-11-22T00:00:00.000Z",
+              "postgres": "2004-11-21T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1097,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2005-04-01T00:00:00.000Z",
+              "postgres": "2005-03-31T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1098,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2005-02-07T00:00:00.000Z",
+              "postgres": "2005-02-06T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1099,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2005-12-13T00:00:00.000Z",
+              "postgres": "2005-12-12T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1100,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2006-01-20T00:00:00.000Z",
+              "postgres": "2006-01-19T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1101,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2006-02-25T00:00:00.000Z",
+              "postgres": "2006-02-24T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1102,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2006-07-12T00:00:00.000Z",
+              "postgres": "2006-07-11T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1103,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2006-10-14T00:00:00.000Z",
+              "postgres": "2006-10-13T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1104,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2006-12-21T00:00:00.000Z",
+              "postgres": "2006-12-20T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1105,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2007-01-24T00:00:00.000Z",
+              "postgres": "2007-01-23T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1106,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2007-08-06T00:00:00.000Z",
+              "postgres": "2007-08-05T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1107,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2007-12-11T00:00:00.000Z",
+              "postgres": "2007-12-10T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1108,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2007-12-15T00:00:00.000Z",
+              "postgres": "2007-12-14T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1109,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2007-11-07T00:00:00.000Z",
+              "postgres": "2007-11-06T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1110,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2008-01-30T00:00:00.000Z",
+              "postgres": "2008-01-29T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1111,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2008-01-18T00:00:00.000Z",
+              "postgres": "2008-01-17T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1112,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2008-10-20T00:00:00.000Z",
+              "postgres": "2008-10-19T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1113,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2009-01-17T00:00:00.000Z",
+              "postgres": "2009-01-16T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1114,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2008-11-28T00:00:00.000Z",
+              "postgres": "2008-11-27T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1115,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2009-01-22T00:00:00.000Z",
+              "postgres": "2009-01-21T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1116,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2009-12-16T00:00:00.000Z",
+              "postgres": "2009-12-15T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1117,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2010-01-30T00:00:00.000Z",
+              "postgres": "2010-01-29T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1118,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2009-12-29T00:00:00.000Z",
+              "postgres": "2009-12-28T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1119,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2010-02-08T00:00:00.000Z",
+              "postgres": "2010-02-07T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1120,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2009-11-21T00:00:00.000Z",
+              "postgres": "2009-11-20T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1121,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2010-04-05T00:00:00.000Z",
+              "postgres": "2010-04-04T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1122,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2010-07-03T00:00:00.000Z",
+              "postgres": "2010-07-02T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1123,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2010-09-17T00:00:00.000Z",
+              "postgres": "2010-09-16T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1124,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2010-11-27T00:00:00.000Z",
+              "postgres": "2010-11-26T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1125,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-01-15T00:00:00.000Z",
+              "postgres": "2011-01-14T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1126,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-01-07T00:00:00.000Z",
+              "postgres": "2011-01-06T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1127,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-05-18T00:00:00.000Z",
+              "postgres": "2011-05-17T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1128,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-01-24T00:00:00.000Z",
+              "postgres": "2011-01-23T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1129,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2010-06-25T00:00:00.000Z",
+              "postgres": "2010-06-24T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1130,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-05-28T00:00:00.000Z",
+              "postgres": "2011-05-27T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1131,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-12-17T00:00:00.000Z",
+              "postgres": "2011-12-16T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1132,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-12-30T00:00:00.000Z",
+              "postgres": "2011-12-29T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1133,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2011-12-07T00:00:00.000Z",
+              "postgres": "2011-12-06T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1134,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-10-02T00:00:00.000Z",
+              "postgres": "2012-10-01T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1135,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-06-09T00:00:00.000Z",
+              "postgres": "2012-06-08T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1136,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-10-17T00:00:00.000Z",
+              "postgres": "2012-10-16T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1137,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-12-13T00:00:00.000Z",
+              "postgres": "2012-12-12T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1138,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-11-17T00:00:00.000Z",
+              "postgres": "2012-11-16T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1139,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-06-21T00:00:00.000Z",
+              "postgres": "2012-06-20T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1140,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-04-25T00:00:00.000Z",
+              "postgres": "2013-04-24T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1141,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2012-07-31T00:00:00.000Z",
+              "postgres": "2012-07-30T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1142,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-06-20T00:00:00.000Z",
+              "postgres": "2013-06-19T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1143,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-06-18T00:00:00.000Z",
+              "postgres": "2013-06-17T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1144,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-06-15T00:00:00.000Z",
+              "postgres": "2013-06-14T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1145,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-10-17T00:00:00.000Z",
+              "postgres": "2013-10-16T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1146,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-05-03T00:00:00.000Z",
+              "postgres": "2013-05-02T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1147,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-03-10T00:00:00.000Z",
+              "postgres": "2014-03-09T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1148,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-06-19T00:00:00.000Z",
+              "postgres": "2013-06-18T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1149,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-07-30T00:00:00.000Z",
+              "postgres": "2013-07-29T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1150,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-07-07T00:00:00.000Z",
+              "postgres": "2014-07-06T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1151,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-04-08T00:00:00.000Z",
+              "postgres": "2014-04-07T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1152,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-04-10T00:00:00.000Z",
+              "postgres": "2014-04-09T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1153,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "payment_type",
+              "mssql": 0,
+              "postgres": null
+            },
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-10-06T00:00:00.000Z",
+              "postgres": "2014-10-05T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1154,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-05-02T00:00:00.000Z",
+              "postgres": "2014-05-01T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1155,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2013-12-17T00:00:00.000Z",
+              "postgres": "2013-12-16T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1156,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-07-18T00:00:00.000Z",
+              "postgres": "2014-07-17T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1157,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": true,
+              "postgres": 1
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-10-27T00:00:00.000Z",
+              "postgres": "2014-10-26T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1158,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-10-06T00:00:00.000Z",
+              "postgres": "2014-10-05T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1159,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-01-06T00:00:00.000Z",
+              "postgres": "2015-01-05T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1160,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-11-15T00:00:00.000Z",
+              "postgres": "2014-11-14T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1161,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-02-26T00:00:00.000Z",
+              "postgres": "2015-02-25T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1162,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-01-12T00:00:00.000Z",
+              "postgres": "2015-01-11T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1163,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-04-27T00:00:00.000Z",
+              "postgres": "2015-04-26T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1164,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-06-18T00:00:00.000Z",
+              "postgres": "2014-06-17T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1165,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2014-07-15T00:00:00.000Z",
+              "postgres": "2014-07-14T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1166,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-08-28T00:00:00.000Z",
+              "postgres": "2015-08-27T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1167,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-03-16T00:00:00.000Z",
+              "postgres": "2015-03-15T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1169,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-06-16T00:00:00.000Z",
+              "postgres": "2015-06-15T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1170,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-07-25T00:00:00.000Z",
+              "postgres": "2015-07-24T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1171,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-05-09T00:00:00.000Z",
+              "postgres": "2015-05-08T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1173,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-07-06T00:00:00.000Z",
+              "postgres": "2015-07-05T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1174,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2015-07-16T00:00:00.000Z",
+              "postgres": "2015-07-15T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1175,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2001-05-21T00:00:00.000Z",
+              "postgres": "2001-05-20T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1176,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2004-05-11T00:00:00.000Z",
+              "postgres": "2004-05-10T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1177,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2005-03-07T00:00:00.000Z",
+              "postgres": "2005-03-06T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1178,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2005-10-05T00:00:00.000Z",
+              "postgres": "2005-10-04T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 1179,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "patient_type",
+              "mssql": false,
+              "postgres": null
+            },
+            {
+              "field": "receive_date",
+              "mssql": "2006-04-05T00:00:00.000Z",
+              "postgres": "2006-04-04T17:00:00.000Z"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "elapsedMs": 8928
+}

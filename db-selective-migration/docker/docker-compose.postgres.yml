@@ -1,0 +1,26 @@
+# PostgreSQL 16 for production-style host (align with pg_dump 16 + psql \restrict in selective dumps).
+#
+# From db-selective-migration/ (repo root of this package):
+#   cp docker/postgres.env.example .env.postgres   # edit secrets
+#   docker compose --env-file .env.postgres -f docker/docker-compose.postgres.yml up -d
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bis}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.postgres or environment}
+      POSTGRES_DB: ${POSTGRES_DB:-bisinfo}
+    volumes:
+      - bis_pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  bis_pgdata:
