@@ -89,6 +89,27 @@ function parseTable(inputTable) {
   return { schema: parts[0], table: parts[1] };
 }
 
+/**
+ * Postgres table may differ from MSSQL after migration (e.g. schedule -> appointment).
+ * `--pg-table appointment` uses MSSQL schema from --table for the first lookup (often dbo),
+ * then auto-resolve finds public.appointment if needed.
+ * `--pg-table public.appointment` pins schema + table.
+ */
+function parsePgTableRef(raw, mssqlSchema, mssqlTable) {
+  const t = String(raw ?? "").trim();
+  if (!t) {
+    return { schema: mssqlSchema, table: mssqlTable };
+  }
+  const parts = t.split(".");
+  if (parts.length === 1) {
+    return { schema: mssqlSchema, table: parts[0].trim() };
+  }
+  const sch = parts[0].trim();
+  const tbl = parts.slice(1).join(".").trim();
+  if (!sch || !tbl) throw new Error(`Invalid --pg-table: "${raw}"`);
+  return { schema: sch, table: tbl };
+}
+
 function mssqlIdent(value) {
   return `[${String(value).replace(/]/g, "]]")}]`;
 }
@@ -102,13 +123,7 @@ function normalizeRow(row) {
   for (const key of Object.keys(row).sort((a, b) => a.localeCompare(b))) {
     const lowered = key.toLowerCase();
     const value = row[key];
-    if (value instanceof Date) {
-      obj[lowered] = value.toISOString();
-    } else if (Buffer.isBuffer(value)) {
-      obj[lowered] = value.toString("hex");
-    } else {
-      obj[lowered] = value;
-    }
+    obj[lowered] = canonicalScalarForHash(value);
   }
   return obj;
 }
@@ -143,12 +158,142 @@ function normalizeValue(value) {
   return value;
 }
 
+/** MSSQL often uses ''; Postgres may use NULL — treat as the same for compare + hashes. */
+function isSqlEmpty(value) {
+  if (value == null) return true;
+  if (typeof value === "string" && value.trim() === "") return true;
+  return false;
+}
+
+/** True if value is an integer in a form we can compare exactly (incl. large ints via BigInt). */
+function toBigIntOrNull(value) {
+  if (typeof value === "bigint") return value;
+  if (typeof value === "number" && Number.isFinite(value) && Number.isInteger(value)) {
+    return BigInt(value);
+  }
+  if (typeof value === "string") {
+    const t = value.trim();
+    if (t === "" || !/^-?\d+$/.test(t)) return null;
+    try {
+      return BigInt(t);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/** Finite numeric parse for decimals / scientific notation (after trim). */
+function toFiniteNumberOrNull(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "string") {
+    const t = value.trim();
+    if (t === "" || !/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(t)) return null;
+    const n = Number(t);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+/**
+ * MSSQL often returns numeric-looking data as varchar; Postgres may use numeric types.
+ * Treat semantically equal scalars as equal for row diff + hash overlap.
+ */
+function valuesEqualForCompare(a, b) {
+  const na = normalizeValue(a);
+  const nb = normalizeValue(b);
+  if (na === nb) return true;
+  if (isSqlEmpty(a) && isSqlEmpty(b)) return true;
+  if (isSqlEmpty(a) || isSqlEmpty(b)) return false;
+
+  const ba = toBigIntOrNull(na);
+  const bb = toBigIntOrNull(nb);
+  if (ba != null && bb != null) return ba === bb;
+
+  const fa = toFiniteNumberOrNull(na);
+  const fb = toFiniteNumberOrNull(nb);
+  if (fa != null && fb != null && fa === fb) return true;
+
+  return false;
+}
+
+/** JSON-safe canonical form so hashes match across string vs number for the same numeric value. */
+function canonicalScalarForHash(value) {
+  if (value instanceof Date) return value.toISOString();
+  if (Buffer.isBuffer(value)) return value.toString("hex");
+  if (isSqlEmpty(value)) return null;
+
+  const bi = toBigIntOrNull(value);
+  if (bi != null) return { __n: bi.toString() };
+
+  const fn = toFiniteNumberOrNull(value);
+  if (fn != null) return { __f: fn };
+
+  return value;
+}
+
 function lowerKeyRecord(row) {
   const obj = {};
   for (const key of Object.keys(row ?? {})) {
     obj[String(key).toLowerCase()] = row[key];
   }
   return obj;
+}
+
+/** Digits-only string for phone compare; null if no digits (incl. SQL-empty). */
+function digitStringOnly(value) {
+  if (isSqlEmpty(value)) return null;
+  const d = String(value).replace(/\D/g, "");
+  return d === "" ? null : d;
+}
+
+function multisetEqualDigitStrings(a, b) {
+  if (a.length !== b.length) return false;
+  const cmp = (x, y) => x.localeCompare(y, undefined, { numeric: true });
+  const sa = [...a].sort(cmp);
+  const sb = [...b].sort(cmp);
+  for (let i = 0; i < sa.length; i++) if (sa[i] !== sb[i]) return false;
+  return true;
+}
+
+/**
+ * Migration: MSSQL may store "biz1 / biz2" in phone_biz; Postgres splits into phone_home + phone_biz
+ * (dashes etc. stripped). When phone_biz contains "/", treat only those slash segments as the source
+ * of numbers — ignore MSSQL phone_home (often partial/stale vs the split parts).
+ * Without "/", use phone_home + phone_biz as two values. Compare multiset of digit strings.
+ */
+function mssqlPhoneHomeBizDigitParts(row) {
+  const homeRaw = row.phone_home;
+  const bizRaw = row.phone_biz;
+  const bizStr = isSqlEmpty(bizRaw) ? "" : String(bizRaw);
+  if (bizStr.includes("/")) {
+    return bizStr
+      .split("/")
+      .map((seg) => digitStringOnly(String(seg).trim()))
+      .filter(Boolean);
+  }
+  const h = digitStringOnly(homeRaw);
+  const b = digitStringOnly(bizRaw);
+  const parts = [];
+  if (h) parts.push(h);
+  if (b) parts.push(b);
+  return parts;
+}
+
+function postgresPhoneHomeBizDigitParts(row) {
+  const parts = [];
+  const h = digitStringOnly(row.phone_home);
+  const b = digitStringOnly(row.phone_biz);
+  if (h) parts.push(h);
+  if (b) parts.push(b);
+  return parts;
+}
+
+function phoneHomeBizPairMatch(mssqlRow, pgRow) {
+  const m = mssqlPhoneHomeBizDigitParts(mssqlRow);
+  const p = postgresPhoneHomeBizDigitParts(pgRow);
+  return multisetEqualDigitStrings(m, p);
 }
 
 function compareRowsByKey({
@@ -158,6 +303,7 @@ function compareRowsByKey({
   pgKeyColumn,
   sharedColumns,
   maxDiffRows,
+  includeMissingDetails = false,
 }) {
   const mssqlKeyLower = String(mssqlKeyColumn).toLowerCase();
   const pgKeyLower = String(pgKeyColumn).toLowerCase();
@@ -174,6 +320,7 @@ function compareRowsByKey({
   let missingInPostgres = 0;
   let fieldMismatchRows = 0;
   let exactMatchRows = 0;
+  const fieldMismatchCounts = new Map();
 
   for (const mssqlRaw of mssqlRows) {
     const mssql = lowerKeyRecord(mssqlRaw);
@@ -182,7 +329,7 @@ function compareRowsByKey({
     const candidates = pgMap.get(String(keyValue)) ?? [];
     if (candidates.length === 0) {
       missingInPostgres += 1;
-      if (details.length < maxDiffRows) {
+      if (includeMissingDetails && details.length < maxDiffRows) {
         details.push({
           key: keyValue,
           status: "missing_in_postgres",
@@ -193,18 +340,26 @@ function compareRowsByKey({
     }
 
     const pgMatch = candidates.shift();
+    const hasPhonePair =
+      sharedColumns.includes("phone_home") && sharedColumns.includes("phone_biz");
+    const phonePairMatch = hasPhonePair && phoneHomeBizPairMatch(mssql, pgMatch);
+
     let rowHasMismatch = false;
     const fieldDiffs = [];
     for (const col of sharedColumns) {
+      if (phonePairMatch && (col === "phone_home" || col === "phone_biz")) continue;
       const a = normalizeValue(mssql[col]);
       const b = normalizeValue(pgMatch[col]);
-      if (a !== b) {
+      if (!valuesEqualForCompare(mssql[col], pgMatch[col])) {
         rowHasMismatch = true;
         fieldDiffs.push({ field: col, mssql: a, postgres: b });
       }
     }
     if (rowHasMismatch) {
       fieldMismatchRows += 1;
+      for (const d of fieldDiffs) {
+        fieldMismatchCounts.set(d.field, (fieldMismatchCounts.get(d.field) ?? 0) + 1);
+      }
       if (details.length < maxDiffRows) {
         details.push({
           key: keyValue,
@@ -221,7 +376,7 @@ function compareRowsByKey({
   for (const [k, remain] of pgMap.entries()) {
     for (let i = 0; i < remain.length; i++) {
       missingInMssql += 1;
-      if (details.length < maxDiffRows) {
+      if (includeMissingDetails && details.length < maxDiffRows) {
         details.push({
           key: k,
           status: "missing_in_mssql",
@@ -231,12 +386,19 @@ function compareRowsByKey({
     }
   }
 
+  const fieldMismatchCountByField = Object.fromEntries(
+    [...fieldMismatchCounts.entries()].sort(
+      (a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])),
+    ),
+  );
+
   return {
     mssqlKeyColumn: mssqlKeyLower,
     postgresKeyColumn: pgKeyLower,
     comparedKeys: exactMatchRows + fieldMismatchRows,
     exactMatchRows,
     fieldMismatchRows,
+    fieldMismatchCountByField,
     missingInPostgres,
     missingInMssql,
     mismatchRowsTotal: fieldMismatchRows + missingInPostgres + missingInMssql,
@@ -293,6 +455,80 @@ function toSafeOrderByPg(raw) {
 
 function isIntegerLike(value) {
   return /^-?\d+$/.test(String(value ?? "").trim());
+}
+
+function formatColumnHint(cols, max = 40) {
+  const arr = [...cols].sort((a, b) => a.localeCompare(b));
+  const s = arr.slice(0, max).join(", ");
+  return arr.length > max ? `${s}, … (+${arr.length - max} more)` : s;
+}
+
+function assertColumnExists(label, columnName, colSet) {
+  const c = String(columnName || "").toLowerCase();
+  if (!c || colSet.has(c)) return;
+  throw new Error(
+    `${label}: column "${columnName}" does not exist. ` +
+      `Use ${label.includes("Postgres") ? "`--pg-key-column`" : "`--mssql-key-column`"} or \`--key-column\` if names differ after migration. ` +
+      `Known columns: ${formatColumnHint(colSet)}`,
+  );
+}
+
+function assertOrderByColumnsExist(orderByRaw, colSet, label) {
+  if (!orderByRaw?.trim()) return;
+  const names = String(orderByRaw)
+    .split(",")
+    .map((x) => x.trim().toLowerCase())
+    .filter(Boolean);
+  for (const n of names) {
+    if (!colSet.has(n)) {
+      throw new Error(
+        `${label}: ORDER BY references unknown column "${n}". ` +
+          (label.startsWith("Postgres")
+            ? "Pass `--order-by-pg` with column names that exist on Postgres."
+            : "Fix `--order-by` for MSSQL.") +
+          ` Known columns: ${formatColumnHint(colSet)}`,
+      );
+    }
+  }
+}
+
+/**
+ * Postgres ORDER BY may use different names after migration (e.g. Exam_id -> old_exam_id).
+ * For each segment: use as-is if it exists; if it matches MSSQL key column name only, substitute pg key column.
+ */
+function mapPostgresOrderByColumns(orderByRaw, pgColSet, mssqlKeyColumn, pgKeyColumn) {
+  if (!orderByRaw?.trim()) {
+    return { mappedCsv: "", substitutions: [] };
+  }
+  const mssqlKeyLower = String(mssqlKeyColumn || "").toLowerCase();
+  const pgKeyLower = String(pgKeyColumn || "").toLowerCase();
+  const substitutions = [];
+  const out = [];
+  const parts = String(orderByRaw)
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  for (const p of parts) {
+    const lower = p.toLowerCase();
+    if (pgColSet.has(lower)) {
+      out.push(lower);
+      continue;
+    }
+    if (lower === mssqlKeyLower && pgKeyLower && pgColSet.has(pgKeyLower)) {
+      out.push(pgKeyLower);
+      substitutions.push({ from: lower, to: pgKeyLower });
+      continue;
+    }
+    throw new Error(
+      `Postgres: ORDER BY references unknown column "${lower}". ` +
+        (lower === mssqlKeyLower && !pgColSet.has(pgKeyLower)
+          ? `Ensure \`--pg-key-column\` names an existing Postgres column (replacing MSSQL "${mssqlKeyLower}"). `
+          : "") +
+        `Or pass \`--order-by-pg\` with columns that exist on Postgres. ` +
+        `Known columns: ${formatColumnHint(pgColSet)}`,
+    );
+  }
+  return { mappedCsv: out.join(", "), substitutions };
 }
 
 function buildRangeWhereMssql({ keyColumn, keyStart, keyEnd }) {
@@ -381,7 +617,9 @@ async function main() {
     Number(arg("--length", arg("--limit", String(config?.migration?.batchSize ?? 1000)))),
   );
   const includeSample = parseBoolArg("--include-sample", true);
+  const includeMissingDetails = parseBoolArg("--include-missing-details", false);
   const orderByArg = arg("--order-by", "");
+  const orderByPgArg = arg("--order-by-pg", orderByArg);
   const keyColumnArg = arg("--key-column", "");
   const mssqlKeyColumnArg = arg("--mssql-key-column", "");
   const pgKeyColumnArg = arg("--pg-key-column", "");
@@ -390,7 +628,6 @@ async function main() {
   const keyEndArg = arg("--key-end", null);
 
   const mssqlOrderBy = toSafeOrderByMssql(orderByArg);
-  const pgOrderBy = toSafeOrderByPg(orderByArg);
   const fallbackKeyFromOrderBy = orderByArg
     ? String(orderByArg)
         .split(",")
@@ -405,7 +642,7 @@ async function main() {
   const reportDir = path.resolve(process.cwd(), "./compare-reports");
   fs.mkdirSync(reportDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const reportPath = path.join(reportDir, `${schema}.${table}.${stamp}.json`);
+  const pgTableArg = arg("--pg-table", "").trim();
 
   const mssqlConfig = buildMssqlConfig(config.source);
   const pgConfig = buildPgConfig(config.target);
@@ -415,8 +652,40 @@ async function main() {
 
   try {
     const started = Date.now();
-    const pgResolved = await resolvePgTableLocation(pgClient, schema, table);
+    const pgTableRequested = parsePgTableRef(pgTableArg, schema, table);
+    const pgResolved = await resolvePgTableLocation(
+      pgClient,
+      pgTableRequested.schema,
+      pgTableRequested.table,
+    );
     const pgSchema = pgResolved.schema;
+    const pgTable = pgResolved.table;
+
+    const reportFileBase =
+      pgTableArg !== "" || pgTable !== table
+        ? `${schema}.${table}.vs.${pgSchema}.${pgTable}`
+        : `${schema}.${table}`;
+    const reportPath = path.join(reportDir, `${reportFileBase}.${stamp}.json`);
+
+    const [mssqlCols, pgCols] = await Promise.all([
+      readMssqlColumns(mssqlPool, schema, table),
+      readPgColumns(pgClient, pgSchema, pgTable),
+    ]);
+    const mssqlColSet = new Set(mssqlCols);
+    const pgColSet = new Set(pgCols);
+
+    assertColumnExists("MSSQL", mssqlKeyColumn, mssqlColSet);
+    assertColumnExists("Postgres", pgKeyColumn, pgColSet);
+    assertOrderByColumnsExist(orderByArg, mssqlColSet, "MSSQL");
+
+    const pgOrderMapped = mapPostgresOrderByColumns(
+      orderByPgArg,
+      pgColSet,
+      mssqlKeyColumn,
+      pgKeyColumn,
+    );
+    const pgOrderBy = toSafeOrderByPg(pgOrderMapped.mappedCsv);
+
     const mssqlRange = buildRangeWhereMssql({
       keyColumn: mssqlKeyColumn,
       keyStart: keyStartArg,
@@ -429,7 +698,7 @@ async function main() {
       firstParamIndex: 1,
     });
     const mssqlCountQ = `SELECT COUNT_BIG(1) AS total FROM ${mssqlIdent(schema)}.${mssqlIdent(table)} WITH (NOLOCK) ${mssqlRange.sql};`;
-    const pgCountQ = `SELECT COUNT(*)::bigint AS total FROM ${pgIdent(pgSchema)}.${pgIdent(table)} ${pgRange.sql};`;
+    const pgCountQ = `SELECT COUNT(*)::bigint AS total FROM ${pgIdent(pgSchema)}.${pgIdent(pgTable)} ${pgRange.sql};`;
     const mssqlCountReq = mssqlPool.request();
     for (const p of mssqlRange.params) mssqlCountReq.input(p.name, p.type, p.value);
     const pgCountParams = pgRange.params;
@@ -440,11 +709,6 @@ async function main() {
 
     const mssqlTotal = Number(mssqlCountRes.recordset?.[0]?.total ?? 0);
     const pgTotal = Number(pgCountRes.rows?.[0]?.total ?? 0);
-
-    const [mssqlCols, pgCols] = await Promise.all([
-      readMssqlColumns(mssqlPool, schema, table),
-      readPgColumns(pgClient, pgSchema, table),
-    ]);
 
     const mssqlOnlyColumns = mssqlCols.filter((c) => !pgCols.includes(c));
     const pgOnlyColumns = pgCols.filter((c) => !mssqlCols.includes(c));
@@ -469,7 +733,7 @@ ${orderMssql};
       });
       const pgSampleQFixed = `
 SELECT *
-FROM ${pgIdent(pgSchema)}.${pgIdent(table)}
+FROM ${pgIdent(pgSchema)}.${pgIdent(pgTable)}
 ${pgRangeForSample.sql}
 ${orderPg}
 LIMIT $1;
@@ -496,6 +760,7 @@ LIMIT $1;
           pgKeyColumn,
           sharedColumns,
           maxDiffRows,
+          includeMissingDetails,
         })
       : null;
 
@@ -505,7 +770,8 @@ LIMIT $1;
       table: `${schema}.${table}`,
       resolvedTable: {
         mssql: `${schema}.${table}`,
-        postgres: `${pgSchema}.${table}`,
+        postgres: `${pgSchema}.${pgTable}`,
+        postgresRequested: `${pgTableRequested.schema}.${pgTableRequested.table}`,
       },
       source: {
         mssql: {
@@ -524,7 +790,12 @@ LIMIT $1;
       options: {
         length: limit,
         includeSample,
+        includeMissingDetails,
         orderBy: orderByArg || null,
+        orderByPostgresInput: orderByPgArg !== orderByArg ? orderByPgArg || null : null,
+        orderByPostgresEffective: pgOrderMapped.mappedCsv || null,
+        orderByPostgresKeySubstitutions:
+          pgOrderMapped.substitutions.length > 0 ? pgOrderMapped.substitutions : undefined,
         keyColumn: commonKeyColumn,
         mssqlKeyColumn,
         pgKeyColumn,
@@ -535,6 +806,7 @@ LIMIT $1;
               end: keyEndArg,
             }
           : null,
+        postgresTable: pgTableArg || null,
       },
       comparison: {
         rowCountDiff: mssqlTotal - pgTotal,
@@ -551,10 +823,15 @@ LIMIT $1;
 
     fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 
-    console.log(`Compared table: ${schema}.${table}`);
+    console.log(`Compared: MSSQL ${schema}.${table} <-> Postgres ${pgSchema}.${pgTable}`);
+    if (pgOrderMapped.substitutions.length > 0) {
+      for (const s of pgOrderMapped.substitutions) {
+        console.log(`Postgres ORDER BY: mapped "${s.from}" -> "${s.to}" (MSSQL key -> Postgres key)`);
+      }
+    }
     if (pgResolved.autoResolved) {
       console.log(
-        `Postgres target resolved: requested ${schema}.${table} -> using ${pgSchema}.${table}`,
+        `Postgres target resolved: requested ${pgTableRequested.schema}.${pgTableRequested.table} -> using ${pgSchema}.${pgTable}`,
       );
       if (pgResolved.candidates.length > 1) {
         console.log(`Found in schemas: ${pgResolved.candidates.join(", ")}`);
@@ -570,6 +847,16 @@ LIMIT $1;
       console.log(
         `Key compare (mssql.${mssqlKeyColumn} = postgres.${pgKeyColumn}): mismatched=${keyCompare?.mismatchRowsTotal ?? 0}, exact=${keyCompare?.exactMatchRows ?? 0}`,
       );
+      const fmc = keyCompare?.fieldMismatchCountByField ?? {};
+      const fmcKeys = Object.keys(fmc);
+      if (fmcKeys.length > 0) {
+        console.log("Field mismatch counts (rows with that column differing):");
+        for (const field of fmcKeys) {
+          console.log(`  ${field}: ${fmc[field]}`);
+        }
+      } else if ((keyCompare?.fieldMismatchRows ?? 0) === 0) {
+        console.log("Field mismatch counts: (none)");
+      }
     }
     if (hasKeyRange) {
       console.log(

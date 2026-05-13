@@ -1,0 +1,1571 @@
+{
+  "comparedAt": "2026-05-12T06:25:55.153Z",
+  "profile": "patient_info",
+  "table": "dbo.examination",
+  "resolvedTable": {
+    "mssql": "dbo.examination",
+    "postgres": "public.examination"
+  },
+  "source": {
+    "mssql": {
+      "server": "dark-songbird-708.fly.dev",
+      "database": "BISInfo",
+      "totalRows": 47607,
+      "columns": [
+        "exam_id",
+        "exam_date",
+        "pid",
+        "tech_loginname",
+        "mobile",
+        "mobile_update",
+        "menstruation_age",
+        "menopause_age",
+        "first_pregnancy_age",
+        "num_pregnancy",
+        "cont_use",
+        "cont_yrs",
+        "hormone_use",
+        "hormone_yrs",
+        "hysterectomy",
+        "ovaries_removed",
+        "pragnant",
+        "referring_md",
+        "referring_hospital",
+        "prev_mammo_date",
+        "prev_mammo_loc",
+        "sister_cancer_age",
+        "mother_cancer_age",
+        "grandmother_cancer_age",
+        "other_cancer_age",
+        "biopsy_l_date",
+        "biopsy_r_date",
+        "chemo_l_date",
+        "chemo_r_date",
+        "cyst_l_date",
+        "cyst_r_date",
+        "irr_l_date",
+        "irr_r_date",
+        "lump_l_date",
+        "lump_r_date",
+        "mast_l_date",
+        "mast_r_date",
+        "rad_l_date",
+        "rad_r_date",
+        "num_left_mass",
+        "num_right_mass",
+        "lnwn",
+        "lnww",
+        "ln",
+        "lnen",
+        "lnee",
+        "le",
+        "lm",
+        "lw",
+        "lsws",
+        "lsww",
+        "ls",
+        "lses",
+        "lsee",
+        "rnwn",
+        "rnww",
+        "rn",
+        "rnen",
+        "rnee",
+        "re",
+        "rm",
+        "rw",
+        "rsws",
+        "rsww",
+        "rs",
+        "rses",
+        "rsee",
+        "lother",
+        "rother",
+        "laxillar",
+        "raxillar",
+        "exam_reason",
+        "exam_reason_text",
+        "exam_reason_memotext",
+        "pain_l_duration",
+        "pain_r_duration",
+        "mobileupdated",
+        "mobile_loc",
+        "bct_r_date",
+        "bct_l_date",
+        "patient_cancer_age",
+        "daughter_cancer_age",
+        "daughter_cancer_age_more",
+        "sister_cancer_age_more",
+        "other_cancer_age_more",
+        "stophormone_yrs",
+        "cahormone_use",
+        "cahormone_yrs",
+        "stopcahormone_yrs",
+        "stopcontr_yrs",
+        "rm_l_date",
+        "rm_r_date",
+        "ri_l_date",
+        "ri_r_date",
+        "fna_l_date",
+        "fna_r_date",
+        "fnx_l_date",
+        "fnx_r_date",
+        "sendexam_loginname",
+        "schedule_id"
+      ]
+    },
+    "postgres": {
+      "host": "127.0.0.1",
+      "database": "bisinfo_dev_clone",
+      "totalRows": 47607,
+      "columns": [
+        "id",
+        "user_created",
+        "date_created",
+        "user_updated",
+        "date_updated",
+        "exam_date",
+        "patient",
+        "tech_login_name",
+        "mobile",
+        "mobile_update",
+        "cont_use",
+        "cont_yrs",
+        "hormone_use",
+        "hormone_yrs",
+        "hysterectomy",
+        "ovaries_removed",
+        "pregnant",
+        "referring_md",
+        "referring_hospital",
+        "prev_mammo_date",
+        "prev_mammo_loc",
+        "biopsy_l_date",
+        "biopsy_r_date",
+        "chemo_l_date",
+        "chemo_r_date",
+        "cyst_l_date",
+        "cyst_r_date",
+        "irr_l_date",
+        "irr_r_date",
+        "lump_l_date",
+        "lump_r_date",
+        "mast_l_date",
+        "mast_r_date",
+        "rad_l_date",
+        "rad_r_date",
+        "lnwn",
+        "lnww",
+        "ln",
+        "lnen",
+        "lnee",
+        "le",
+        "lm",
+        "lw",
+        "lsws",
+        "lsww",
+        "ls",
+        "lses",
+        "lsee",
+        "rnwn",
+        "rnww",
+        "rn",
+        "rnen",
+        "rnee",
+        "re",
+        "rm",
+        "rw",
+        "rsws",
+        "rsww",
+        "rs",
+        "rses",
+        "rsee",
+        "lother",
+        "rother",
+        "l_axillar",
+        "r_axillar",
+        "exam_reason_text",
+        "pain_l_duration",
+        "pain_r_duration",
+        "mobile_updated",
+        "mobile_loc",
+        "bct_l_date",
+        "bct_r_date",
+        "patient_cancer_age",
+        "daughter_cancer_age_more",
+        "sister_cancer_age_more",
+        "other_cancer_age_more",
+        "stophormone_yrs",
+        "ca_hormone_use",
+        "ca_hormone_yrs",
+        "stop_ca_hormone_yrs",
+        "stop_contr_yrs",
+        "rm_l_date",
+        "rm_r_date",
+        "ri_l_date",
+        "ri_r_date",
+        "fna_l_date",
+        "fna_r_date",
+        "fnx_l_date",
+        "fnx_r_date",
+        "send_exam_login_name",
+        "appointment",
+        "old_exam_id",
+        "old_pid",
+        "id_l_date",
+        "id_r_date",
+        "mother_cancer",
+        "daughter_cancer",
+        "sister_cancer",
+        "grandmother_cancer",
+        "other_cancer",
+        "status",
+        "no_cd_and_previous_result",
+        "pacs_uploaded",
+        "have_revious_result",
+        "have_infectious_disease",
+        "have_cd",
+        "exam_reason_type",
+        "exam_reason",
+        "case_owner_doctor",
+        "case_owner_tech",
+        "l_side_mass",
+        "r_side_mass",
+        "menstruation_age",
+        "menopause_age",
+        "first_pregnancy_age",
+        "num_pregnancy",
+        "mother_cancer_age",
+        "daughter_cancer_age",
+        "sister_cancer_age",
+        "grandmother_cancer_age",
+        "other_cancer_age",
+        "num_left_mass",
+        "num_right_mass",
+        "last_saved_at",
+        "limitation",
+        "exam_reason_memotext",
+        "consult_reason",
+        "doctor_comment_detail",
+        "consult_detail",
+        "cancel_reason",
+        "cancel_detail",
+        "doctor_comment",
+        "us_bed_id",
+        "location",
+        "is_us_done",
+        "is_mam_after_us_done",
+        "is_mam_done",
+        "has_recommend_bx_form",
+        "previous_result_from",
+        "nurse_work"
+      ]
+    }
+  },
+  "options": {
+    "length": 2000,
+    "includeSample": true,
+    "orderBy": "Exam_id",
+    "orderByPostgresInput": null,
+    "orderByPostgresEffective": "old_exam_id",
+    "orderByPostgresKeySubstitutions": [
+      {
+        "from": "exam_id",
+        "to": "old_exam_id"
+      }
+    ],
+    "keyColumn": "exam_id",
+    "mssqlKeyColumn": "exam_id",
+    "pgKeyColumn": "old_exam_id",
+    "maxDiffRows": 200,
+    "keyRange": {
+      "start": "1",
+      "end": "50000"
+    }
+  },
+  "comparison": {
+    "rowCountDiff": 0,
+    "sameRowCount": true,
+    "columnCountDiff": -40,
+    "columnsOnlyInMssql": [
+      "exam_id",
+      "pid",
+      "tech_loginname",
+      "pragnant",
+      "laxillar",
+      "raxillar",
+      "mobileupdated",
+      "cahormone_use",
+      "cahormone_yrs",
+      "stopcahormone_yrs",
+      "stopcontr_yrs",
+      "sendexam_loginname",
+      "schedule_id"
+    ],
+    "columnsOnlyInPostgres": [
+      "id",
+      "user_created",
+      "date_created",
+      "user_updated",
+      "date_updated",
+      "patient",
+      "tech_login_name",
+      "pregnant",
+      "l_axillar",
+      "r_axillar",
+      "mobile_updated",
+      "ca_hormone_use",
+      "ca_hormone_yrs",
+      "stop_ca_hormone_yrs",
+      "stop_contr_yrs",
+      "send_exam_login_name",
+      "appointment",
+      "old_exam_id",
+      "old_pid",
+      "id_l_date",
+      "id_r_date",
+      "mother_cancer",
+      "daughter_cancer",
+      "sister_cancer",
+      "grandmother_cancer",
+      "other_cancer",
+      "status",
+      "no_cd_and_previous_result",
+      "pacs_uploaded",
+      "have_revious_result",
+      "have_infectious_disease",
+      "have_cd",
+      "exam_reason_type",
+      "case_owner_doctor",
+      "case_owner_tech",
+      "l_side_mass",
+      "r_side_mass",
+      "last_saved_at",
+      "limitation",
+      "consult_reason",
+      "doctor_comment_detail",
+      "consult_detail",
+      "cancel_reason",
+      "cancel_detail",
+      "doctor_comment",
+      "us_bed_id",
+      "location",
+      "is_us_done",
+      "is_mam_after_us_done",
+      "is_mam_done",
+      "has_recommend_bx_form",
+      "previous_result_from",
+      "nurse_work"
+    ],
+    "sampleCompared": 2000,
+    "sampleOverlap": 0,
+    "keyMatchedComparison": {
+      "mssqlKeyColumn": "exam_id",
+      "postgresKeyColumn": "old_exam_id",
+      "comparedKeys": 201,
+      "exactMatchRows": 0,
+      "fieldMismatchRows": 201,
+      "fieldMismatchCountByField": {
+        "exam_date": 201,
+        "prev_mammo_date": 75,
+        "referring_md": 34,
+        "cyst_l_date": 19,
+        "fna_l_date": 19,
+        "lump_l_date": 9,
+        "lump_r_date": 8,
+        "cyst_r_date": 7,
+        "fna_r_date": 7,
+        "mast_r_date": 4,
+        "chemo_r_date": 2,
+        "irr_l_date": 2,
+        "irr_r_date": 2,
+        "biopsy_l_date": 1,
+        "biopsy_r_date": 1,
+        "chemo_l_date": 1,
+        "exam_reason_memotext": 1,
+        "rad_r_date": 1
+      },
+      "missingInPostgres": 1799,
+      "missingInMssql": 1799,
+      "mismatchRowsTotal": 3799,
+      "detailLimit": 200,
+      "rowDiffs": [
+        {
+          "key": 1,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1997-11-20T00:00:00.000Z",
+              "postgres": "1997-11-19T17:00:00.000Z"
+            },
+            {
+              "field": "prev_mammo_date",
+              "mssql": "1995-03-07T00:00:00.000Z",
+              "postgres": "1995-03-06T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 2,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 3,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 4,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 5,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 6,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 7,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 8,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 9,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 12,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 13,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 14,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 15,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 16,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 18,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 19,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 20,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 21,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 22,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 23,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 24,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 25,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 26,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 27,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 28,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 30,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 31,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 33,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 34,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 35,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 36,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 37,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 38,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 39,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 40,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 41,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 42,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 43,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 44,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 45,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 46,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 47,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 48,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 49,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 50,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 51,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 52,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 53,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 54,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 56,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 57,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 58,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 59,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 60,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 61,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 62,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 64,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 65,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 66,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 68,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 70,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 71,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 72,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 74,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 75,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 76,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 77,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 78,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 79,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 81,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 83,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 84,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 85,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 86,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 87,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 88,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 89,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 90,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 91,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 92,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 93,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 94,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 95,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 96,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 97,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 98,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 99,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 100,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1995-06-02T00:00:00.000Z",
+              "postgres": "1995-06-01T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 101,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1995-06-23T00:00:00.000Z",
+              "postgres": "1995-06-22T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 102,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1997-05-13T00:00:00.000Z",
+              "postgres": "1997-05-12T17:00:00.000Z"
+            },
+            {
+              "field": "prev_mammo_date",
+              "mssql": "1995-04-25T00:00:00.000Z",
+              "postgres": "1995-04-24T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 103,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1995-04-25T00:00:00.000Z",
+              "postgres": "1995-04-24T17:00:00.000Z"
+            },
+            {
+              "field": "prev_mammo_date",
+              "mssql": "1994-11-15T00:00:00.000Z",
+              "postgres": "1994-11-14T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 104,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1995-04-25T00:00:00.000Z",
+              "postgres": "1995-04-24T17:00:00.000Z"
+            },
+            {
+              "field": "prev_mammo_date",
+              "mssql": "1993-01-01T00:00:00.000Z",
+              "postgres": "1992-12-31T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 105,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1995-04-25T00:00:00.000Z",
+              "postgres": "1995-04-24T17:00:00.000Z"
+            },
+            {
+              "field": "prev_mammo_date",
+              "mssql": "1994-10-01T00:00:00.000Z",
+              "postgres": "1994-09-30T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 106,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1998-10-29T00:00:00.000Z",
+              "postgres": "1998-10-28T17:00:00.000Z"
+            },
+            {
+              "field": "prev_mammo_date",
+              "mssql": "1995-04-26T00:00:00.000Z",
+              "postgres": "1995-04-25T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 107,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1995-07-21T00:00:00.000Z",
+              "postgres": "1995-07-20T17:00:00.000Z"
+            },
+            {
+              "field": "prev_mammo_date",
+              "mssql": "1989-01-01T00:00:00.000Z",
+              "postgres": "1988-12-31T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 108,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1995-04-27T00:00:00.000Z",
+              "postgres": "1995-04-26T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 109,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1995-04-27T00:00:00.000Z",
+              "postgres": "1995-04-26T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 110,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1995-04-27T00:00:00.000Z",
+              "postgres": "1995-04-26T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 111,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1997-01-08T00:00:00.000Z",
+              "postgres": "1997-01-07T17:00:00.000Z"
+            },
+            {
+              "field": "prev_mammo_date",
+              "mssql": "1995-04-27T00:00:00.000Z",
+              "postgres": "1995-04-26T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 112,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1996-05-27T00:00:00.000Z",
+              "postgres": "1996-05-26T17:00:00.000Z"
+            },
+            {
+              "field": "prev_mammo_date",
+              "mssql": "1995-04-27T00:00:00.000Z",
+              "postgres": "1995-04-26T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 113,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1995-05-28T00:00:00.000Z",
+              "postgres": "1995-05-27T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 115,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1997-03-12T00:00:00.000Z",
+              "postgres": "1997-03-11T17:00:00.000Z"
+            },
+            {
+              "field": "prev_mammo_date",
+              "mssql": "1995-03-07T00:00:00.000Z",
+              "postgres": "1995-03-06T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 116,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1996-10-24T00:00:00.000Z",
+              "postgres": "1996-10-23T17:00:00.000Z"
+            },
+            {
+              "field": "prev_mammo_date",
+              "mssql": "1995-03-07T00:00:00.000Z",
+              "postgres": "1995-03-06T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 117,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1996-06-04T00:00:00.000Z",
+              "postgres": "1996-06-03T17:00:00.000Z"
+            },
+            {
+              "field": "prev_mammo_date",
+              "mssql": "1995-05-11T00:00:00.000Z",
+              "postgres": "1995-05-10T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 118,
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "exam_date",
+              "mssql": "1995-05-17T00:00:00.000Z",
+              "postgres": "1995-05-16T17:00:00.000Z"
+            }
+          ]
+        },
+        {
+          "key": 119,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 120,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 121,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 122,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 123,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 124,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 125,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 126,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 127,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 128,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 129,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 130,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 131,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 132,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 133,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 135,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 136,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 138,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 139,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 140,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 141,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 142,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 143,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 144,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 145,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 146,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 147,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 148,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 149,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 150,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 151,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 152,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 153,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 154,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 155,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 157,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 158,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 159,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 160,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 161,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 162,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 163,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 164,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 165,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 166,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 167,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 168,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 169,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 170,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 172,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 173,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 174,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 175,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 176,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 177,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 178,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 179,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 180,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 181,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 182,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 183,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 184,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 185,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 186,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 187,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 189,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 190,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 191,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 192,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 193,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 194,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 195,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 196,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 197,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 198,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 199,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 200,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 203,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 204,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 205,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 207,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 208,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 209,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 211,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 212,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 213,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 214,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 215,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 216,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 217,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 218,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 219,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 221,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 222,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        },
+        {
+          "key": 223,
+          "status": "missing_in_postgres",
+          "fieldDiffs": []
+        }
+      ]
+    }
+  },
+  "elapsedMs": 5008
+}

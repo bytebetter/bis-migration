@@ -1,10 +1,12 @@
 #Requires -Version 5.1
 param(
   [Parameter(Mandatory = $true)][string] $Table,
+  [string] $PgTable = "",
   [string] $Profile = "patient_info",
   [string] $ConfigPath = ".\migration.config.local.json",
   [int] $Length = 1000,
   [string] $OrderBy = "",
+  [string] $OrderByPg = "",
   [string] $KeyColumn = "",
   [string] $MssqlKeyColumn = "",
   [string] $PgKeyColumn = "",
@@ -41,8 +43,15 @@ $args = @(
   "--length", "$Length"
 )
 
+if ($PgTable -ne "") {
+  $args += @("--pg-table", $PgTable)
+}
+
 if ($OrderBy -ne "") {
   $args += @("--order-by", $OrderBy)
+}
+if ($OrderByPg -ne "") {
+  $args += @("--order-by-pg", $OrderByPg)
 }
 
 if ($KeyColumn -ne "") {

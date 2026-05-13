@@ -1,0 +1,2671 @@
+{
+  "comparedAt": "2026-05-12T06:26:11.984Z",
+  "profile": "patient_info",
+  "table": "dbo.patient_info",
+  "resolvedTable": {
+    "mssql": "dbo.patient_info",
+    "postgres": "public.patient_info"
+  },
+  "source": {
+    "mssql": {
+      "server": "dark-songbird-708.fly.dev",
+      "database": "BISInfo",
+      "totalRows": 214944,
+      "columns": [
+        "pid",
+        "prefix",
+        "name",
+        "surname",
+        "dateofbirth",
+        "single",
+        "address",
+        "subarea",
+        "area",
+        "province",
+        "zip",
+        "phone_biz",
+        "phone_home",
+        "height",
+        "weight",
+        "current_breast_compo",
+        "current_implant_type",
+        "lastexamdate",
+        "mobile",
+        "mobileupdated",
+        "donate_type",
+        "engprefix",
+        "engname",
+        "engsurname",
+        "socid",
+        "hn",
+        "gender",
+        "address2",
+        "shortnote",
+        "disease",
+        "mobile_phone",
+        "email",
+        "pdpa_consent",
+        "pdpa_consent_timestamp"
+      ]
+    },
+    "postgres": {
+      "host": "127.0.0.1",
+      "database": "bisinfo_dev_clone",
+      "totalRows": 214941,
+      "columns": [
+        "id",
+        "user_created",
+        "date_created",
+        "user_updated",
+        "date_updated",
+        "old_db_id",
+        "prefix_th",
+        "first_name_th",
+        "last_name_th",
+        "prefix_en",
+        "first_name_en",
+        "last_name_en",
+        "marital_status",
+        "phone_biz",
+        "phone_home",
+        "height",
+        "weight",
+        "pid",
+        "donate_type",
+        "soc_id",
+        "hn",
+        "gender",
+        "short_note",
+        "mobile_phone",
+        "email",
+        "disease",
+        "contagious_disease",
+        "status",
+        "date_of_birth",
+        "photo",
+        "patient_category",
+        "created_by_queue_type",
+        "passport_no",
+        "nationality_type",
+        "d"
+      ]
+    }
+  },
+  "options": {
+    "length": 2000,
+    "includeSample": true,
+    "orderBy": "pid",
+    "orderByPostgresInput": null,
+    "orderByPostgresEffective": "pid",
+    "keyColumn": "pid",
+    "mssqlKeyColumn": "pid",
+    "pgKeyColumn": "old_db_id",
+    "maxDiffRows": 200,
+    "keyRange": {
+      "start": "0000",
+      "end": "T998"
+    }
+  },
+  "comparison": {
+    "rowCountDiff": 3,
+    "sameRowCount": false,
+    "columnCountDiff": -1,
+    "columnsOnlyInMssql": [
+      "prefix",
+      "name",
+      "surname",
+      "dateofbirth",
+      "single",
+      "address",
+      "subarea",
+      "area",
+      "province",
+      "zip",
+      "current_breast_compo",
+      "current_implant_type",
+      "lastexamdate",
+      "mobile",
+      "mobileupdated",
+      "engprefix",
+      "engname",
+      "engsurname",
+      "socid",
+      "address2",
+      "shortnote",
+      "pdpa_consent",
+      "pdpa_consent_timestamp"
+    ],
+    "columnsOnlyInPostgres": [
+      "id",
+      "user_created",
+      "date_created",
+      "user_updated",
+      "date_updated",
+      "old_db_id",
+      "prefix_th",
+      "first_name_th",
+      "last_name_th",
+      "prefix_en",
+      "first_name_en",
+      "last_name_en",
+      "marital_status",
+      "soc_id",
+      "short_note",
+      "contagious_disease",
+      "status",
+      "date_of_birth",
+      "photo",
+      "patient_category",
+      "created_by_queue_type",
+      "passport_no",
+      "nationality_type",
+      "d"
+    ],
+    "sampleCompared": 2000,
+    "sampleOverlap": 0,
+    "keyMatchedComparison": {
+      "mssqlKeyColumn": "pid",
+      "postgresKeyColumn": "old_db_id",
+      "comparedKeys": 2000,
+      "exactMatchRows": 1645,
+      "fieldMismatchRows": 355,
+      "fieldMismatchCountByField": {
+        "phone_home": 259,
+        "phone_biz": 202,
+        "disease": 1
+      },
+      "missingInPostgres": 0,
+      "missingInMssql": 0,
+      "mismatchRowsTotal": 355,
+      "detailLimit": 200,
+      "rowDiffs": [
+        {
+          "key": "100015",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-247-9411/082-963-5754",
+              "postgres": "0812479411"
+            }
+          ]
+        },
+        {
+          "key": "100020",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "034-712038/086-8032399",
+              "postgres": "034712038"
+            }
+          ]
+        },
+        {
+          "key": "100021",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "056-611-584/085-106-3426",
+              "postgres": "0851063426"
+            }
+          ]
+        },
+        {
+          "key": "100027",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-8424286 ",
+              "postgres": "0818424286"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "032-601948/02-6899500 ต่อ 2283,2128",
+              "postgres": "032601948"
+            }
+          ]
+        },
+        {
+          "key": "100031",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "",
+              "postgres": "0818555016"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-4335677/081-8555016",
+              "postgres": "024335677"
+            }
+          ]
+        },
+        {
+          "key": "100035",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "034-331156 *3201/081-1783003",
+              "postgres": "0811783003"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "089-1580346",
+              "postgres": "034331156"
+            }
+          ]
+        },
+        {
+          "key": "100039",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "086-014-0751/089-537-3753",
+              "postgres": "0860140751"
+            }
+          ]
+        },
+        {
+          "key": "100052",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "02-2750046*505 / 094-5649561",
+              "postgres": "0945649561"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-6902022",
+              "postgres": "022750046"
+            }
+          ]
+        },
+        {
+          "key": "100057",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-8833257/093-6274050",
+              "postgres": "028833257"
+            }
+          ]
+        },
+        {
+          "key": "100061",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "034-426777/02-5471577",
+              "postgres": "034426777"
+            }
+          ]
+        },
+        {
+          "key": "100065",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "038-286594/086-8429300",
+              "postgres": "038286594"
+            }
+          ]
+        },
+        {
+          "key": "100070",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-639-8891 / 081-425-8895",
+              "postgres": "0816398891"
+            }
+          ]
+        },
+        {
+          "key": "100079",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-866-5790/086-016-5939",
+              "postgres": "028665790"
+            }
+          ]
+        },
+        {
+          "key": "100083",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-5617276/086-3803638",
+              "postgres": "0815617276"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-4636382",
+              "postgres": "024636382"
+            }
+          ]
+        },
+        {
+          "key": "100090",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-4335831/02-6695454",
+              "postgres": "024335831"
+            }
+          ]
+        },
+        {
+          "key": "100112",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "089-0644665/02-4207439-40*2251",
+              "postgres": "0890644665"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "",
+              "postgres": "024207439"
+            }
+          ]
+        },
+        {
+          "key": "100114",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "086-7553055/081-3789574",
+              "postgres": "0867553055"
+            }
+          ]
+        },
+        {
+          "key": "100118",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "034-225432 / 02-4201592",
+              "postgres": "034225432"
+            }
+          ]
+        },
+        {
+          "key": "100123",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "083-704-5564 / 02-895-8878",
+              "postgres": "028958878"
+            }
+          ]
+        },
+        {
+          "key": "100125",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "7110,9194/086-0731950",
+              "postgres": "0860731950"
+            }
+          ]
+        },
+        {
+          "key": "100126",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "088-481-0048/086-648-6098",
+              "postgres": "0884810048"
+            }
+          ]
+        },
+        {
+          "key": "100127",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "034-599765 / 092-807-5074",
+              "postgres": "034599765"
+            }
+          ]
+        },
+        {
+          "key": "100139",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "089-2247608 / 086-3437900",
+              "postgres": "0892247608"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-1951707",
+              "postgres": "021951707"
+            }
+          ]
+        },
+        {
+          "key": "100141",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "091-8790051/ 081-8357310",
+              "postgres": "0918790051"
+            }
+          ]
+        },
+        {
+          "key": "100145",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-4130717/02-4553953",
+              "postgres": "024130717"
+            }
+          ]
+        },
+        {
+          "key": "100149",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-7767640 / 081-8423085sms",
+              "postgres": "0817767640"
+            }
+          ]
+        },
+        {
+          "key": "100154",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "02-4197000*9932/7008",
+              "postgres": "0814457334"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "081-4457334/02-8070861",
+              "postgres": "024197000"
+            }
+          ]
+        },
+        {
+          "key": "100161",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "088-847-9100/080-6425833วสันต์",
+              "postgres": "0888479100"
+            }
+          ]
+        },
+        {
+          "key": "100163",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "089-4500215/02-4361214-5",
+              "postgres": "0894500215"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-5840342",
+              "postgres": "024361214"
+            }
+          ]
+        },
+        {
+          "key": "100166",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "086-175-3425 / 081-805-5931",
+              "postgres": "0861753425"
+            }
+          ]
+        },
+        {
+          "key": "100168",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-6270817/081-2992043",
+              "postgres": "0816270817"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-7094201",
+              "postgres": "027094201"
+            }
+          ]
+        },
+        {
+          "key": "100175",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-4577892/081-9357359",
+              "postgres": "024577892"
+            }
+          ]
+        },
+        {
+          "key": "100179",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "045-613696/045-611503*2142",
+              "postgres": "045613696"
+            }
+          ]
+        },
+        {
+          "key": "100183",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-4249871/084-0995710",
+              "postgres": "024249871"
+            }
+          ]
+        },
+        {
+          "key": "100185",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "089-112-2739/089-923-2173",
+              "postgres": "0891122739"
+            }
+          ]
+        },
+        {
+          "key": "100202",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "089-448-2294/085-0488536",
+              "postgres": "0894482294"
+            }
+          ]
+        },
+        {
+          "key": "100204",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "",
+              "postgres": "0858685679"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-2244991/085-8685679",
+              "postgres": "022244991"
+            }
+          ]
+        },
+        {
+          "key": "100206",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-4573230/084-6995797",
+              "postgres": "024573230"
+            }
+          ]
+        },
+        {
+          "key": "100211",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "",
+              "postgres": "0897777583"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-2595034/089-7777583",
+              "postgres": "022595034"
+            }
+          ]
+        },
+        {
+          "key": "100213",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "083-9288428 / 089-9253915",
+              "postgres": "0839288428"
+            }
+          ]
+        },
+        {
+          "key": "100219",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-4218882/02-2916772-6",
+              "postgres": "024218882"
+            }
+          ]
+        },
+        {
+          "key": "100227",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "088-919-8711 / 081-5599-424ลูก",
+              "postgres": "0889198711"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-411-1038 / 081-5599-424ลูก",
+              "postgres": "024111038"
+            }
+          ]
+        },
+        {
+          "key": "100244",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "089-124-5655 / 02-815-4454",
+              "postgres": "028154454"
+            }
+          ]
+        },
+        {
+          "key": "100248",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-893-0681",
+              "postgres": "028930681"
+            }
+          ]
+        },
+        {
+          "key": "100250",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "034-399216/ / 034-399123",
+              "postgres": "034399216"
+            }
+          ]
+        },
+        {
+          "key": "100255",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-5644058",
+              "postgres": "0815644058"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-4545331/081-8299272",
+              "postgres": "024545331"
+            }
+          ]
+        },
+        {
+          "key": "100256",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "084-021-3317 / 086-6060-776ญาติ",
+              "postgres": "0840213317"
+            }
+          ]
+        },
+        {
+          "key": "100260",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "090-2265892/02-4197257 ",
+              "postgres": "024197257"
+            }
+          ]
+        },
+        {
+          "key": "100261",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-5711244 / 035-863078",
+              "postgres": "025711244"
+            }
+          ]
+        },
+        {
+          "key": "100267",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "086-805-3408 / 032-413766",
+              "postgres": "032413766"
+            }
+          ]
+        },
+        {
+          "key": "100269",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "032-428073",
+              "postgres": "0815723214"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "032-781089/081-5723214",
+              "postgres": "032428073"
+            }
+          ]
+        },
+        {
+          "key": "100275",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "081-400-1969 / 081-424-8030ญาติ095-4414301",
+              "postgres": "030095441"
+            }
+          ]
+        },
+        {
+          "key": "100277",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "02-4761839",
+              "postgres": "0818243971"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-4875540/081-8243971",
+              "postgres": "024761839"
+            }
+          ]
+        },
+        {
+          "key": "100279",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "089-660-1144 / 02-2947441",
+              "postgres": "022947441"
+            }
+          ]
+        },
+        {
+          "key": "100284",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-404-1063/081-907-0044",
+              "postgres": "024041063"
+            }
+          ]
+        },
+        {
+          "key": "100285",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "02-3744406",
+              "postgres": "0888961252"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-3744406/088-8961252",
+              "postgres": "023744406"
+            }
+          ]
+        },
+        {
+          "key": "100290",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "086-033-5011 / 083-901-8977",
+              "postgres": "0860335011"
+            }
+          ]
+        },
+        {
+          "key": "100292",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "034-695638 / 02-4197399",
+              "postgres": "034695638"
+            }
+          ]
+        },
+        {
+          "key": "100297",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "089-677-8761 / 02-398-5036*121",
+              "postgres": "0896778761"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "089-677-8761 / 02-461-5137",
+              "postgres": "023985036"
+            }
+          ]
+        },
+        {
+          "key": "100301",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "086-048-2166 / 02-282-8258",
+              "postgres": "022828258"
+            }
+          ]
+        },
+        {
+          "key": "100314",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-8670859/087-1004449",
+              "postgres": "028670859"
+            }
+          ]
+        },
+        {
+          "key": "100323",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-363-2646/092-1082465",
+              "postgres": "0813632646"
+            }
+          ]
+        },
+        {
+          "key": "100324",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-9233059/02-6235500*1120-11",
+              "postgres": "0819233059"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-6235418",
+              "postgres": "026235500"
+            }
+          ]
+        },
+        {
+          "key": "100328",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-3947192/082-3943154",
+              "postgres": "0813947192"
+            }
+          ]
+        },
+        {
+          "key": "100330",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "0971234774/0956924297",
+              "postgres": "0971234774"
+            }
+          ]
+        },
+        {
+          "key": "100335",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-8766718/087-3251794",
+              "postgres": "028766718"
+            }
+          ]
+        },
+        {
+          "key": "100336",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "084-132-9367 / 02-807-0732",
+              "postgres": "028070732"
+            }
+          ]
+        },
+        {
+          "key": "10034",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "5904000",
+              "postgres": "092236942"
+            }
+          ]
+        },
+        {
+          "key": "100342",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "034-219097 / 034-273451",
+              "postgres": "034219097"
+            }
+          ]
+        },
+        {
+          "key": "100345",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-4103184/0853180318",
+              "postgres": "024103184"
+            }
+          ]
+        },
+        {
+          "key": "100351",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "0953989462 ลูกชาย / 02-9634147",
+              "postgres": "029634147"
+            }
+          ]
+        },
+        {
+          "key": "100352",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "081-755-3995 / 036-461223",
+              "postgres": "036461223"
+            }
+          ]
+        },
+        {
+          "key": "100356",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-4195675 / 02-8804731",
+              "postgres": "024195675"
+            }
+          ]
+        },
+        {
+          "key": "100358",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-4772154 / 089-4471152แม่",
+              "postgres": "024772154"
+            }
+          ]
+        },
+        {
+          "key": "100363",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-4542094/02-4543326",
+              "postgres": "024542094"
+            }
+          ]
+        },
+        {
+          "key": "100367",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-692-6117 / 081-910-8225ญาต",
+              "postgres": "0816926117"
+            }
+          ]
+        },
+        {
+          "key": "100370",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "089-311-7093 / 02-444-2228 / 081-504-1965",
+              "postgres": "024442228"
+            }
+          ]
+        },
+        {
+          "key": "100373",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-3553527 / 090-9711917",
+              "postgres": "0813553527"
+            }
+          ]
+        },
+        {
+          "key": "100378",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-434-5011/ 02-553-8263",
+              "postgres": "024345011"
+            }
+          ]
+        },
+        {
+          "key": "100379",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "02-437-0123*1645/089-2128086",
+              "postgres": "0892128086"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-8710-682",
+              "postgres": "024370123"
+            }
+          ]
+        },
+        {
+          "key": "100383",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "086-564-5615sms/091-741-4856",
+              "postgres": "0865645615"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-417-6244 ",
+              "postgres": "024176244"
+            }
+          ]
+        },
+        {
+          "key": "100384",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "087-338-4954 / 034-323839",
+              "postgres": "034323839"
+            }
+          ]
+        },
+        {
+          "key": "100385",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "034-481058",
+              "postgres": "0817360469"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "034-850710/081-7360469",
+              "postgres": "034481058"
+            }
+          ]
+        },
+        {
+          "key": "100388",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-6403941/081-4045001",
+              "postgres": "0816403941"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-4383017/02-4382381",
+              "postgres": "024383017"
+            }
+          ]
+        },
+        {
+          "key": "100398",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "082-2871288/075-486498",
+              "postgres": "0822871288"
+            }
+          ]
+        },
+        {
+          "key": "100400",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "02-9759377-8/081-9071636",
+              "postgres": "0819071636"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-9759377-8/081-9071636",
+              "postgres": "029759377"
+            }
+          ]
+        },
+        {
+          "key": "100407",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "081-849-5197 / 02-447-2502",
+              "postgres": "024472502"
+            }
+          ]
+        },
+        {
+          "key": "100409",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "089-2905159/ 087-103-6265ญาต",
+              "postgres": "0892905159"
+            }
+          ]
+        },
+        {
+          "key": "100420",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-482-7005 / 086-808-8432",
+              "postgres": "0814827005"
+            }
+          ]
+        },
+        {
+          "key": "100424",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "089-1593711",
+              "postgres": "0891593711"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-8643286/089-1593711",
+              "postgres": "028643286"
+            }
+          ]
+        },
+        {
+          "key": "10043",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-8170121 ลูกชาย / 087-3723104 สามี",
+              "postgres": "0818170121"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "034-331290",
+              "postgres": "034331290"
+            }
+          ]
+        },
+        {
+          "key": "100439",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "081-173-8403 / 02-510-6068",
+              "postgres": "025106068"
+            }
+          ]
+        },
+        {
+          "key": "100440",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "055-710327/089-7041596",
+              "postgres": "0897041596"
+            }
+          ]
+        },
+        {
+          "key": "100443",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-4314232sms/089-4479755",
+              "postgres": "0814314232"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-4506892",
+              "postgres": "024506892"
+            }
+          ]
+        },
+        {
+          "key": "100449",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-8809399 /  02-222-9433",
+              "postgres": "028809399"
+            }
+          ]
+        },
+        {
+          "key": "100455",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "",
+              "postgres": "024287334"
+            }
+          ]
+        },
+        {
+          "key": "100460",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-1392383/082-4657007",
+              "postgres": "0811392383"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-9319656",
+              "postgres": "029319656"
+            }
+          ]
+        },
+        {
+          "key": "100463",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "089-4806187/096-2592781",
+              "postgres": "0894806187"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-7287780",
+              "postgres": "027287780"
+            }
+          ]
+        },
+        {
+          "key": "100469",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "056-944575/081-2807741",
+              "postgres": "0812807741"
+            }
+          ]
+        },
+        {
+          "key": "100471",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "081-837-7309 / 02-960-2532",
+              "postgres": "029602532"
+            }
+          ]
+        },
+        {
+          "key": "100481",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "035-535176/035-599666/",
+              "postgres": "035535176"
+            }
+          ]
+        },
+        {
+          "key": "100484",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "085-1736417sms / 081-9418644",
+              "postgres": "0851736417"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "034-468522",
+              "postgres": "034468522"
+            }
+          ]
+        },
+        {
+          "key": "100486",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "02-299-8000*020314/081-2538665",
+              "postgres": "0812538665"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-411-3986",
+              "postgres": "022998000"
+            }
+          ]
+        },
+        {
+          "key": "100498",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "085-151-8999 / 081-808-5587",
+              "postgres": "0851518999"
+            }
+          ]
+        },
+        {
+          "key": "100501",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-4419777 / 5842,5645",
+              "postgres": "024419777"
+            }
+          ]
+        },
+        {
+          "key": "100502",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "091-7380363",
+              "postgres": "0917380363"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-4058632/089-0320622",
+              "postgres": "024058632"
+            }
+          ]
+        },
+        {
+          "key": "100503",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "087-5400776/080-5951791",
+              "postgres": "0875400776"
+            }
+          ]
+        },
+        {
+          "key": "100511",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "087-3437099/02-3314332-3",
+              "postgres": "0873437099"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "",
+              "postgres": "023314332"
+            }
+          ]
+        },
+        {
+          "key": "100515",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-205-5937/081-205-5937",
+              "postgres": "0812055937"
+            }
+          ]
+        },
+        {
+          "key": "100517",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "081-8440928/02-4362019/",
+              "postgres": "024362019"
+            }
+          ]
+        },
+        {
+          "key": "100521",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-8858189/02-2243030/",
+              "postgres": "028858189"
+            }
+          ]
+        },
+        {
+          "key": "100522",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "02-8662056",
+              "postgres": "0867008959"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-4112236/086-7008959",
+              "postgres": "028662056"
+            }
+          ]
+        },
+        {
+          "key": "100523",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "02-2761225*7918/095-1416565",
+              "postgres": "0951416565"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-8662454",
+              "postgres": "022761225"
+            }
+          ]
+        },
+        {
+          "key": "100524",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "083-068-5419 / 02-685-7245-6",
+              "postgres": "0830685419"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "083-068-5419 / 02-418-3249",
+              "postgres": "026857245"
+            }
+          ]
+        },
+        {
+          "key": "100525",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "044-513-327/044-511-757*316/",
+              "postgres": "044513327"
+            }
+          ]
+        },
+        {
+          "key": "100541",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-4353891 / 02-4194333",
+              "postgres": "024353891"
+            }
+          ]
+        },
+        {
+          "key": "100542",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "085-020-4176 / 084-1573901",
+              "postgres": "0850204176"
+            }
+          ]
+        },
+        {
+          "key": "100543",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "090-6380195/084-3159774",
+              "postgres": "0906380195"
+            }
+          ]
+        },
+        {
+          "key": "100555",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "034-718-616 / 034-726-625",
+              "postgres": "034718616"
+            }
+          ]
+        },
+        {
+          "key": "100556",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "",
+              "postgres": "0859779773"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-8893217/085-9779773",
+              "postgres": "028893217"
+            }
+          ]
+        },
+        {
+          "key": "100557",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-5896316 / 084-9191566",
+              "postgres": "025896316"
+            }
+          ]
+        },
+        {
+          "key": "100570",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-4035134 / 5/02-283951",
+              "postgres": "024035134"
+            }
+          ]
+        },
+        {
+          "key": "100575",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": " / 080-269-0487/ 02-752-7642",
+              "postgres": "027527642"
+            }
+          ]
+        },
+        {
+          "key": "100579",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-8079555-63 / ",
+              "postgres": "028079555"
+            }
+          ]
+        },
+        {
+          "key": "100588",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "094-5531873 / 02-3128167-9",
+              "postgres": "0945531873"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-3604133",
+              "postgres": "023128167"
+            }
+          ]
+        },
+        {
+          "key": "100606",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "077-571123/080-3275587",
+              "postgres": "077571123"
+            }
+          ]
+        },
+        {
+          "key": "100613",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-4553295 / 02-4197685 / 7685 /9650-3",
+              "postgres": "024553295"
+            }
+          ]
+        },
+        {
+          "key": "100614",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "034-288848/087-8921061",
+              "postgres": "034288848"
+            }
+          ]
+        },
+        {
+          "key": "100616",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "02-8155-888*114/089-0129867",
+              "postgres": "0890129867"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "",
+              "postgres": "028155888"
+            }
+          ]
+        },
+        {
+          "key": "100619",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-4571950 / 02-4283994 ",
+              "postgres": "024571950"
+            }
+          ]
+        },
+        {
+          "key": "100620",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "086-8452165",
+              "postgres": "0868452165"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-6624459/086-8452165",
+              "postgres": "026624459"
+            }
+          ]
+        },
+        {
+          "key": "100631",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "034-284181 / 034-305642 / 086-3453051",
+              "postgres": "034284181"
+            }
+          ]
+        },
+        {
+          "key": "100632",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "",
+              "postgres": "0831235636"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-5899222/083-1235636",
+              "postgres": "025899222"
+            }
+          ]
+        },
+        {
+          "key": "100636",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-615-1920 / 081-853-9909",
+              "postgres": "0816151920"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "081-615-1920 / 035-251334",
+              "postgres": "035251334"
+            }
+          ]
+        },
+        {
+          "key": "100646",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-5611294/081-6240033",
+              "postgres": "025611294"
+            }
+          ]
+        },
+        {
+          "key": "100647",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "",
+              "postgres": "0817217461"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-4112238/081-7217461",
+              "postgres": "024112238"
+            }
+          ]
+        },
+        {
+          "key": "100650",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-688-6379 / 02-722-6742-4 ",
+              "postgres": "026886379"
+            }
+          ]
+        },
+        {
+          "key": "100656",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "086-016-5115 / 077-591000",
+              "postgres": "0860165115"
+            }
+          ]
+        },
+        {
+          "key": "100657",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "081-928-4099 / 02-448-1215",
+              "postgres": "024481215"
+            }
+          ]
+        },
+        {
+          "key": "100668",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-733-2329 /086-062-0083ญาติ",
+              "postgres": "0817332329"
+            }
+          ]
+        },
+        {
+          "key": "100669",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "081-280-4514 / 02-984-1992 ",
+              "postgres": "029841992"
+            }
+          ]
+        },
+        {
+          "key": "100675",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-589-2107 / 02-905-5560-1",
+              "postgres": "025892107"
+            }
+          ]
+        },
+        {
+          "key": "100679",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "034-257952/081-6683265",
+              "postgres": "034257952"
+            }
+          ]
+        },
+        {
+          "key": "10068",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "2586637/089-4559489",
+              "postgres": "0894559489"
+            }
+          ]
+        },
+        {
+          "key": "100685",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-578-1874/ 089-489-4699",
+              "postgres": "0815781874"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "038-239025 / 089-489-4699",
+              "postgres": "038239025"
+            }
+          ]
+        },
+        {
+          "key": "100691",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-7954515/089-1063979สามี",
+              "postgres": "0817954515"
+            }
+          ]
+        },
+        {
+          "key": "100694",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "086-6034659",
+              "postgres": "0866034659"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-9207064/086-6034659",
+              "postgres": "029207064"
+            }
+          ]
+        },
+        {
+          "key": "100695",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "5822-3/091-029-2886",
+              "postgres": "0910292886"
+            }
+          ]
+        },
+        {
+          "key": "100717",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "089-6518380/085-3595336",
+              "postgres": "0896518380"
+            }
+          ]
+        },
+        {
+          "key": "100721",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-802-3667 / 086-339-0136",
+              "postgres": "0818023667"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "081-802-3667 / 02-800-2189",
+              "postgres": "028002189"
+            }
+          ]
+        },
+        {
+          "key": "100725",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-7017133 / 02-7039947-8",
+              "postgres": "027017133"
+            }
+          ]
+        },
+        {
+          "key": "100729",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "02-4685219",
+              "postgres": "0891293122"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-4179965/089-1293122",
+              "postgres": "024685219"
+            }
+          ]
+        },
+        {
+          "key": "10073",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "4258622/02-4258251/",
+              "postgres": "024258251"
+            }
+          ]
+        },
+        {
+          "key": "100731",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "086-311-5966 / 02-464-1859",
+              "postgres": "024641859"
+            }
+          ]
+        },
+        {
+          "key": "100732",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-8880028/02-5290674*416 ",
+              "postgres": "028880028"
+            }
+          ]
+        },
+        {
+          "key": "100745",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "034-339140-5/081-9956262",
+              "postgres": "0819956262"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "",
+              "postgres": "034339140"
+            }
+          ]
+        },
+        {
+          "key": "100747",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-9360935 / 97120,7122 ",
+              "postgres": "029360935"
+            }
+          ]
+        },
+        {
+          "key": "100749",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-802-7305 / 0912169407",
+              "postgres": "028027305"
+            }
+          ]
+        },
+        {
+          "key": "100750",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "081-558-7751 / 02-437-1489",
+              "postgres": "024371489"
+            }
+          ]
+        },
+        {
+          "key": "100751",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-8105283/086-9759882",
+              "postgres": "028105283"
+            }
+          ]
+        },
+        {
+          "key": "100752",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "087-266-9099ลูก/081-705-7306",
+              "postgres": "0872669099"
+            }
+          ]
+        },
+        {
+          "key": "100756",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-437-1987 / 6025-8",
+              "postgres": "024371987"
+            }
+          ]
+        },
+        {
+          "key": "100759",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-271-7673 / 089-934-5045",
+              "postgres": "0812717673"
+            }
+          ]
+        },
+        {
+          "key": "100763",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-2839486 / 02-2839486",
+              "postgres": "022839486"
+            }
+          ]
+        },
+        {
+          "key": "100765",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-8666364 / 02-419-7115",
+              "postgres": "028666364"
+            }
+          ]
+        },
+        {
+          "key": "100769",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "087-063-1184/089-525-5536",
+              "postgres": "0870631184"
+            }
+          ]
+        },
+        {
+          "key": "100774",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "085-6772-953 / 081-923-4402",
+              "postgres": "0856772953"
+            }
+          ]
+        },
+        {
+          "key": "100782",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "02-325-0388-9/081-441-6063",
+              "postgres": "0814416063"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "",
+              "postgres": "023250388"
+            }
+          ]
+        },
+        {
+          "key": "100785",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "089-724-2868 / 075-620482",
+              "postgres": "0897242868"
+            }
+          ]
+        },
+        {
+          "key": "100790",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "089-287-1846 / 085-785-2796ญาต",
+              "postgres": "0892871846"
+            }
+          ]
+        },
+        {
+          "key": "100794",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "085-050-3707 / 085-737-3956 ",
+              "postgres": "0850503707"
+            }
+          ]
+        },
+        {
+          "key": "100797",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "086-3889820/ 081-7004988แม่",
+              "postgres": "0863889820"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "034-425467-8",
+              "postgres": "034425467"
+            }
+          ]
+        },
+        {
+          "key": "100799",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-281-6672/082-626-9654",
+              "postgres": "022816672"
+            }
+          ]
+        },
+        {
+          "key": "100801",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-4461046/081-4043074",
+              "postgres": "024461046"
+            }
+          ]
+        },
+        {
+          "key": "100806",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "034-211359 / 034-270-425",
+              "postgres": "034211359"
+            }
+          ]
+        },
+        {
+          "key": "100808",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "055-799-285/081-953-4360",
+              "postgres": "0819534360"
+            }
+          ]
+        },
+        {
+          "key": "100811",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "076-313456/081-8945899",
+              "postgres": "076313456"
+            }
+          ]
+        },
+        {
+          "key": "100817",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-5897505//0814909480",
+              "postgres": "025897505"
+            }
+          ]
+        },
+        {
+          "key": "100818",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-4122117/089-6767003",
+              "postgres": "024122117"
+            }
+          ]
+        },
+        {
+          "key": "100823",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "",
+              "postgres": "0854882922"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-9943149/085-4882922",
+              "postgres": "029943149"
+            }
+          ]
+        },
+        {
+          "key": "100826",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "080-473-1876/044-821678 / 044-821678",
+              "postgres": "044821678"
+            }
+          ]
+        },
+        {
+          "key": "100829",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "032-354600 / 032-355300*562",
+              "postgres": "032354600"
+            }
+          ]
+        },
+        {
+          "key": "100847",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "7062 / 091-7223352",
+              "postgres": "0917223352"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "045-638241/082-8801193",
+              "postgres": "045638241"
+            }
+          ]
+        },
+        {
+          "key": "100852",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "",
+              "postgres": "0909784428"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-4295455/090-9784428",
+              "postgres": "024295455"
+            }
+          ]
+        },
+        {
+          "key": "100855",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "02-592-4493-4*15/083-9994396",
+              "postgres": "0839994396"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "",
+              "postgres": "025924493"
+            }
+          ]
+        },
+        {
+          "key": "100858",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "038-213-032*200/081-723-4635",
+              "postgres": "0817234635"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "02-236-3631",
+              "postgres": "038213032"
+            }
+          ]
+        },
+        {
+          "key": "100860",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "084-056-5432 / 081-415-3333",
+              "postgres": "0840565432"
+            }
+          ]
+        },
+        {
+          "key": "100861",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-882-0796 / 02-433-1596",
+              "postgres": "028820796"
+            }
+          ]
+        },
+        {
+          "key": "100864",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "034-382119 /034-381129*102",
+              "postgres": "034382119"
+            }
+          ]
+        },
+        {
+          "key": "100866",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "061-9038923 / 063-1146383สามี",
+              "postgres": "0619038923"
+            }
+          ]
+        },
+        {
+          "key": "100869",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "056-499-453 / 087-811-5826",
+              "postgres": "0878115826"
+            }
+          ]
+        },
+        {
+          "key": "100873",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "02-629-8000*1119/087-030-6531",
+              "postgres": "0870306531"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "",
+              "postgres": "026298000"
+            }
+          ]
+        },
+        {
+          "key": "100878",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-889-5375/ 0852915764 ลูก",
+              "postgres": "028895375"
+            }
+          ]
+        },
+        {
+          "key": "100880",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "081-491-8452 / 081-407-5868",
+              "postgres": "0814918452"
+            }
+          ]
+        },
+        {
+          "key": "100882",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "089-417-7253 / 042-160108",
+              "postgres": "042160108"
+            }
+          ]
+        },
+        {
+          "key": "100886",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "02-3417888*1533/081-6405334",
+              "postgres": "0816405334"
+            },
+            {
+              "field": "phone_home",
+              "mssql": "",
+              "postgres": "023417888"
+            }
+          ]
+        },
+        {
+          "key": "100890",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "disease",
+              "mssql": "HBV ",
+              "postgres": "HBV"
+            }
+          ]
+        },
+        {
+          "key": "100896",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-468-0040/ 4090-1ตึกฉก ",
+              "postgres": "024680040"
+            }
+          ]
+        },
+        {
+          "key": "100897",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_home",
+              "mssql": "02-8070353 / 0814480662",
+              "postgres": "028070353"
+            }
+          ]
+        },
+        {
+          "key": "100898",
+          "status": "field_mismatch",
+          "fieldDiffs": [
+            {
+              "field": "phone_biz",
+              "mssql": "083-502-4788/088-7682644ลูก",
+              "postgres": "0835024788"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "elapsedMs": 1648
+}
