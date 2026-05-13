@@ -34,6 +34,7 @@
       "migration": {
         "mssqlPagination": "keyset_plus_null"
       }
-    }
+    },
+    "ultrasound": {}
   }
 }
