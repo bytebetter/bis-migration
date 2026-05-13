@@ -1,2 +1,5 @@
 # Local SQL dumps may contain sensitive data
 /backups/
+
+# production Docker secrets (copy from docker/.env.postgres.example)
+.env.postgres

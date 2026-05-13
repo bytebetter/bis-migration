@@ -8,6 +8,8 @@
 - `scripts/db-migrate-selective.sh` — migrate จาก DB ต้นทางไป DB ปลายทางผ่าน `kubectl exec`
 - `scripts/db-dump-selective-backup.sh` — สร้างไฟล์ `.sql` สำหรับ restore บนเครื่องอื่น
 - `docs/db-migration-selective-runbook.md` — คู่มือรันจริงและ restore
+- `docs/production-docker-restore.md` — ติดตั้ง Postgres 16 ด้วย Docker + restore dump บน production server
+- `docker/docker-compose.postgres.yml` — compose ตัวอย่างสำหรับ Postgres 16
 
 ไฟล์ dump จะถูกเขียนลง `backups/` (โฟลเดอร์นี้ถูก ignore โดย `.gitignore` ของแพ็กเกจนี้)
 
