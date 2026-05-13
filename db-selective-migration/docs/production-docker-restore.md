@@ -2,6 +2,20 @@
 
 ไฟล์ dump จาก `db-dump-selective-backup.sh` ถูกสร้างด้วย **PostgreSQL 16** และอาจมีคำสั่ง `\restrict` ใน `psql` — ควร restore ด้วย **image `postgres:16`** (หรือ client 16+)
 
+## ไฟล์ตั้งต้นใน Git (baseline)
+
+ไฟล์ **`baseline/bisinfo_selective_initial.sql`** ใน repo เป็น snapshot ตั้งต้นของระบบ (track ใน Git) — ใช้เป็นค่าเริ่มตอนติดตั้ง Postgres ใหม่ได้เลย โดยไม่ต้องหาไฟล์จากเครื่องอื่น
+
+ตัวอย่าง restore จาก repo clone แล้ว:
+
+```bash
+cd /path/to/bis-migration/db-selective-migration
+set -a && source .env.postgres && set +a
+docker compose --env-file .env.postgres -f docker/docker-compose.postgres.yml exec -T postgres \
+  psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 \
+  < baseline/bisinfo_selective_initial.sql
+```
+
 ## 1) ติดตั้ง PostgreSQL ผ่าน Docker
 
 รันบน production server จากโฟลเดอร์ `db-selective-migration/` ของ repo นี้

@@ -10,8 +10,9 @@
 - `docs/db-migration-selective-runbook.md` — คู่มือรันจริงและ restore
 - `docs/production-docker-restore.md` — ติดตั้ง Postgres 16 ด้วย Docker + restore dump บน production server
 - `docker/docker-compose.postgres.yml` — compose ตัวอย่างสำหรับ Postgres 16
+- `baseline/bisinfo_selective_initial.sql` — **ไฟล์ dump ตั้งต้นของระบบ** (track ใน Git) ดู [baseline/README.md](baseline/README.md)
 
-ไฟล์ dump จะถูกเขียนลง `backups/` (โฟลเดอร์นี้ถูก ignore โดย `.gitignore` ของแพ็กเกจนี้)
+ไฟล์ dump ชั่วคราวจากสคริปต์จะถูกเขียนลง `backups/` (โฟลเดอร์นี้ถูก ignore โดย `.gitignore`)
 
 ## ใช้งาน
 
