@@ -40,18 +40,44 @@ function resolveRuntimeConfig(rawConfig, fallbackProfile) {
   };
 }
 
+function tediousOptionsFromSource(sourceConfig = {}) {
+  return {
+    encrypt: sourceConfig.encrypt !== false,
+    trustServerCertificate: sourceConfig.trustServerCertificate !== false,
+    requestTimeout:
+      sourceConfig.requestTimeout == null
+        ? 0
+        : Number(sourceConfig.requestTimeout),
+    connectTimeout:
+      sourceConfig.connectTimeout == null
+        ? 60000
+        : Number(sourceConfig.connectTimeout),
+    cancelTimeout:
+      sourceConfig.cancelTimeout == null
+        ? 0
+        : Number(sourceConfig.cancelTimeout),
+  };
+}
+
 function buildMssqlConfig(sourceConfig = {}) {
-  if (sourceConfig.mssqlUrl) return parseMssqlUrl(sourceConfig.mssqlUrl);
+  const timeouts = tediousOptionsFromSource(sourceConfig);
+  if (sourceConfig.mssqlUrl) {
+    const base = parseMssqlUrl(sourceConfig.mssqlUrl);
+    return {
+      ...base,
+      options: {
+        ...base.options,
+        ...timeouts,
+      },
+    };
+  }
   return {
     server: sourceConfig.server,
     port: Number(sourceConfig.port ?? 1433),
     database: sourceConfig.database,
     user: sourceConfig.user,
     password: sourceConfig.password,
-    options: {
-      encrypt: sourceConfig.encrypt !== false,
-      trustServerCertificate: sourceConfig.trustServerCertificate !== false,
-    },
+    options: timeouts,
     pool: { max: 5, min: 0 },
   };
 }

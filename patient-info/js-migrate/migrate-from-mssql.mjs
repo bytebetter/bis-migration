@@ -659,8 +659,8 @@ LIMIT 200;
         progressStartedAt,
         chunkIndex,
         plannedChunks,
+        uiState,
       );
-      markProgressInline(uiState);
     } else if (debugLogs) {
       writeOutLine(
         `... [${key}] processed ${total} rows (offset=${offset})`,

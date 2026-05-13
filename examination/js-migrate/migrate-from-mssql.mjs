@@ -891,8 +891,8 @@ LIMIT 200;
         progressStartedAt,
         chunkIndex,
         plannedChunks,
+        uiState,
       );
-      markProgressInline(uiState);
     }
     // Explicitly clear chunk buffers before next iteration.
     for (let i = 0; i < arrays.length; i++) arrays[i].length = 0;

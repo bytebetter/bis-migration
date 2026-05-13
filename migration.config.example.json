@@ -35,6 +35,9 @@
         "mssqlPagination": "keyset_plus_null"
       }
     },
-    "ultrasound": {}
+    "ultrasound": {},
+    "mam": {},
+    "mam_mass": {},
+    "mam_cal": {}
   }
 }

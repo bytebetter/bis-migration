@@ -627,8 +627,8 @@ END $$;
         progressStartedAt,
         chunkIndex,
         plannedChunks,
+        uiState,
       );
-      markProgressInline(uiState);
     } else {
       console.error(
         `... [${key}] chunk ${chunkIndex} ok: ${n} rows, total ${total} (offset=${offset}) | chunk_ms=${lastChunkProcessMs} mssql_fetch_ms=${fetchElapsedMs}`,

@@ -3,26 +3,23 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sql from "mssql";
 import pg from "pg";
+import { MSSQL_MAM_MASS_KEYSET_SELECT } from "./mssqlMamMassSelect.mjs";
+import { ensureMamMassPipelineDdl } from "./mamMassPgDdl.mjs";
 import {
-  MSSQL_ULTRASOUND_DETAIL_BY_IDS_SELECT,
-  MSSQL_ULTRASOUND_ID_SELECT,
-} from "./mssqlUltrasoundSelect.mjs";
-import { ensureUltrasoundPipelineDdl } from "./ultrasoundPgDdl.mjs";
-import {
+  MAM_MASS_STAGING_COLUMNS,
   normalizeMssqlRow,
-  runUltrasoundChunkPostLoad,
-} from "./ultrasoundMapping.mjs";
+  runMamMassChunkPostLoad,
+} from "./mamMassMapping.mjs";
 import {
   createUiState,
   endProgress,
   formatSec,
-  markProgressInline,
   renderProgress,
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const KEY = "ultrasound";
+const KEY = "mam_mass";
 
 function getConfigPath() {
   const idx = process.argv.indexOf("--config");
@@ -137,31 +134,7 @@ function writeJson(filePath, value) {
 }
 
 async function loadChunkToStaging(pgClient, normalizedRows) {
-  const cols = [
-    "exam_id",
-    "exam_date",
-    "pid",
-    "mass",
-    "mass_des",
-    "num_of_mass_found",
-    "num_of_mass_actualfound",
-    "cyst",
-    "cyst_des",
-    "num_of_cyst_found",
-    "num_of_cyst_actualfound",
-    "tissuecomposition",
-    "tissuecomposition_des",
-    "r_associatedfeatures",
-    "r_associatedfeatures_des",
-    "l_associatedfeatures",
-    "l_associatedfeatures_des",
-    "r_specialcase",
-    "r_specialcase_des",
-    "l_specialcase",
-    "l_specialcase_des",
-    "technique",
-    "technique_des",
-  ];
+  const cols = MAM_MASS_STAGING_COLUMNS;
   const arrays = cols.map(() => []);
   for (const r of normalizedRows) {
     if (!r) continue;
@@ -170,11 +143,11 @@ async function loadChunkToStaging(pgClient, normalizedRows) {
     }
   }
   if (arrays[0].length === 0) return 0;
-  await pgClient.query("TRUNCATE TABLE migrate_stg.ultrasound_mssql;");
+  await pgClient.query("TRUNCATE TABLE migrate_stg.mammogram_mass_mssql;");
   const castArgs = cols.map((_, i) => `$${i + 1}::text[]`).join(", ");
   await pgClient.query(
     `
-INSERT INTO migrate_stg.ultrasound_mssql (${cols.join(", ")})
+INSERT INTO migrate_stg.mammogram_mass_mssql (${cols.join(", ")})
 SELECT * FROM unnest(${castArgs});
 `.trim(),
     arrays,
@@ -185,20 +158,17 @@ SELECT * FROM unnest(${castArgs});
 async function main() {
   const configPath = path.resolve(process.cwd(), getConfigPath());
   const rawConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
-  const config = resolveRuntimeConfig(rawConfig, "ultrasound");
+  const config = resolveRuntimeConfig(rawConfig, "mam_mass");
+  const uiState = createUiState();
   if (config.__profileName) {
-    console.error(`>>> using config profile: ${config.__profileName}`);
+    writeOutLine(`>>> using config profile: ${config.__profileName}`, uiState);
   }
 
   const sourceSchema = config.source?.schema ?? "dbo";
-  const sourceTable = config.source?.table ?? "ultrasound";
+  const sourceTable = config.source?.table ?? "mammogram_mass";
   const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
   const sourceObjectNoLock = `${sourceObject} WITH (NOLOCK)`;
-  const probeSql = MSSQL_ULTRASOUND_ID_SELECT.replaceAll(
-    "{{sourceObject}}",
-    sourceObjectNoLock,
-  );
-  const detailSqlTemplate = MSSQL_ULTRASOUND_DETAIL_BY_IDS_SELECT.replaceAll(
+  const keysetSql = MSSQL_MAM_MASS_KEYSET_SELECT.replaceAll(
     "{{sourceObject}}",
     sourceObjectNoLock,
   );
@@ -210,7 +180,6 @@ async function main() {
   const progressEnabled = config?.migration?.progressUi !== false;
   const singleLineUi = config?.migration?.singleLineUi !== false;
   const debugLogs = config?.migration?.debugLogs === true;
-  const uiState = createUiState();
 
   const pgPool = new pg.Pool({
     host: config.target.postgresHost,
@@ -245,6 +214,7 @@ async function main() {
     key: KEY,
     offset: 0,
     afterExamId: 0,
+    afterChildId: 0,
     completed: false,
     updatedAt: null,
   });
@@ -259,7 +229,7 @@ async function main() {
     );
   }
   try {
-    const probeTableSql = `SELECT TOP 1 [Exam_ID] FROM ${sourceObjectNoLock} ORDER BY [Exam_ID] ASC;`;
+    const probeTableSql = `SELECT TOP 1 [Exam_ID], [Described_Mass_ID] FROM ${sourceObjectNoLock} ORDER BY [Exam_ID] ASC, [Described_Mass_ID] ASC;`;
     const probeStartedAt = Date.now();
     await pool.request().query(probeTableSql);
     if (debugLogs) {
@@ -279,7 +249,7 @@ async function main() {
     }
     try {
       const ensureDdlStartedAt = Date.now();
-      await ensureUltrasoundPipelineDdl(client);
+      await ensureMamMassPipelineDdl(client);
       if (debugLogs) {
         writeOutLine(
           `>>> [${KEY}] ensure pipeline DDL in ${formatSec(Date.now() - ensureDdlStartedAt)}`,
@@ -288,13 +258,15 @@ async function main() {
       }
       console.error(`>>> [${KEY}] source: ${sourceObject}`);
       console.error(
-        `>>> [${KEY}] target: ${config.target.postgresDatabase} public.ultrasound (batchSize=${batchSize})`,
+        `>>> [${KEY}] target: ${config.target.postgresDatabase} public.mammogram_mass (batchSize=${batchSize})`,
       );
 
       let offset = Number(checkpointEnabled ? checkpoint.offset : 0);
       if (!Number.isFinite(offset) || offset < 0) offset = 0;
       let afterExamId = Number(checkpointEnabled ? checkpoint.afterExamId : 0);
       if (!Number.isFinite(afterExamId) || afterExamId < 0) afterExamId = 0;
+      let afterChildId = Number(checkpointEnabled ? checkpoint.afterChildId : 0);
+      if (!Number.isFinite(afterChildId) || afterChildId < 0) afterChildId = 0;
       let chunkIndex = 0;
       let plannedRows = null;
       if (progressEnabled) {
@@ -319,7 +291,7 @@ async function main() {
       }
       if (debugLogs) {
         writeOutLine(
-          `>>> [${KEY}] checkpoint start: offset=${offset}, afterExamId=${afterExamId}, enabled=${checkpointEnabled}`,
+          `>>> [${KEY}] checkpoint start: offset=${offset}, afterExamId=${afterExamId}, afterChildId=${afterChildId}, enabled=${checkpointEnabled}`,
           uiState,
         );
       }
@@ -328,44 +300,22 @@ async function main() {
         const chunkStartedAt = Date.now();
         if (debugLogs && !singleLineUi) {
           writeOutLine(
-            `>>> [${KEY}] fetch chunk ${chunkIndex + 1}: afterExamId=${afterExamId}, page=${batchSize}`,
+            `>>> [${KEY}] fetch chunk ${chunkIndex + 1}: afterExamId=${afterExamId}, afterChildId=${afterChildId}, page=${batchSize}`,
             uiState,
           );
         }
-        const idProbeStartedAt = Date.now();
-        const idRes = await pool
+        const fetchStartedAt = Date.now();
+        const res = await pool
           .request()
           .input("afterExamId", sql.BigInt, afterExamId)
+          .input("afterChildId", sql.Int, afterChildId)
           .input("page", sql.Int, batchSize)
-          .query(probeSql);
-        const probeMs = Date.now() - idProbeStartedAt;
-        const idRows = idRes.recordset || [];
-        const ids = idRows
-          .map((r) => Number.parseInt(r?.exam_id ?? "", 10))
-          .filter((v) => Number.isFinite(v));
+          .query(keysetSql);
+        const fetchMs = Date.now() - fetchStartedAt;
+        const rows = res.recordset || [];
         if (debugLogs && !singleLineUi) {
           writeOutLine(
-            `>>> [${KEY}] probe chunk ${chunkIndex + 1} done: ids=${ids.length}, ms=${probeMs}`,
-            uiState,
-          );
-        }
-        if (ids.length === 0) break;
-
-        const idPlaceholders = ids.map((_, i) => `@id${i}`).join(", ");
-        const detailSql = detailSqlTemplate.replace(
-          "{{idPlaceholders}}",
-          idPlaceholders,
-        );
-        const detailReq = pool.request();
-        ids.forEach((id, i) => detailReq.input(`id${i}`, sql.BigInt, id));
-        const detailStartedAt = Date.now();
-        const detailRes = await detailReq.query(detailSql);
-        const detailMs = Date.now() - detailStartedAt;
-        const fetchMs = probeMs + detailMs;
-        const rows = detailRes.recordset || [];
-        if (debugLogs && !singleLineUi) {
-          writeOutLine(
-            `>>> [${KEY}] fetch chunk ${chunkIndex + 1} done: rows=${rows.length}, ms=${fetchMs} (probe=${probeMs}, detail=${detailMs})`,
+            `>>> [${KEY}] fetch chunk ${chunkIndex + 1} done: rows=${rows.length}, ms=${fetchMs}`,
             uiState,
           );
         }
@@ -393,7 +343,7 @@ async function main() {
           runLog.skipped += skipped;
           step = "post-load mapping (upsert)";
           const postLoadStartedAt = Date.now();
-          await runUltrasoundChunkPostLoad(client);
+          await runMamMassChunkPostLoad(client);
           postLoadMs = Date.now() - postLoadStartedAt;
           runLog.rowsUpserted += loaded;
           step = "COMMIT";
@@ -410,14 +360,17 @@ async function main() {
         }
 
         offset += rows.length;
-        if (ids.length > 0) {
-          afterExamId = ids[ids.length - 1];
-        }
+        const last = rows[rows.length - 1];
+        afterExamId = Number.parseInt(last?.exam_id ?? "", 10);
+        afterChildId = Number.parseInt(last?.described_mass_id ?? "", 10);
+        if (!Number.isFinite(afterExamId)) afterExamId = 0;
+        if (!Number.isFinite(afterChildId)) afterChildId = 0;
         if (checkpointEnabled) {
           writeJson(checkpointPath, {
             key: KEY,
             offset,
             afterExamId,
+            afterChildId,
             completed: false,
             updatedAt: new Date().toISOString(),
           });
@@ -453,6 +406,7 @@ async function main() {
           key: KEY,
           offset,
           afterExamId,
+          afterChildId,
           completed: true,
           updatedAt: new Date().toISOString(),
         });
@@ -471,7 +425,7 @@ async function main() {
     await pgPool.end();
     runLog.finishedAt = new Date().toISOString();
     fs.writeFileSync(logPath, `${JSON.stringify(runLog, null, 2)}\n`, "utf8");
-    console.error(`>>> migration log saved: ${logPath}`);
+    writeOutLine(`>>> migration log saved: ${logPath}`, uiState);
   }
 }
 

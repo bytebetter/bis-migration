@@ -12,6 +12,15 @@ appointment/js-migrate/logs/
 appointment/js-migrate/checkpoints/
 ultrasound/js-migrate/node_modules/
 ultrasound/js-migrate/logs/
+mam/js-migrate/node_modules/
+mam/js-migrate/logs/
+mam/js-migrate/checkpoints/
+mam-mass/js-migrate/node_modules/
+mam-mass/js-migrate/logs/
+mam-mass/js-migrate/checkpoints/
+mam-cal/js-migrate/node_modules/
+mam-cal/js-migrate/logs/
+mam-cal/js-migrate/checkpoints/
 exports/*.json
 migration.config.local.json
 .env

@@ -481,8 +481,8 @@ async function main() {
             startedAt,
             chunkIndex,
             plannedChunks,
+            uiState,
           );
-          markProgressInline(uiState);
         }
 
         if (rows.length < batchSize) break;

@@ -4,14 +4,17 @@ import { fileURLToPath } from "node:url";
 import sql from "mssql";
 import pg from "pg";
 import {
-  MSSQL_ULTRASOUND_DETAIL_BY_IDS_SELECT,
-  MSSQL_ULTRASOUND_ID_SELECT,
-} from "./mssqlUltrasoundSelect.mjs";
-import { ensureUltrasoundPipelineDdl } from "./ultrasoundPgDdl.mjs";
+  MSSQL_MAM_DETAIL_BY_IDS_SELECT,
+  MSSQL_MAM_ID_SELECT,
+} from "./mssqlMamSelect.mjs";
+import { ensureMamPipelineDdl } from "./mamPgDdl.mjs";
 import {
+  applyMamSummaryFromChildCounts,
+  fetchMamChildCountsByExamIds,
+  MAM_STAGING_COLUMNS,
   normalizeMssqlRow,
-  runUltrasoundChunkPostLoad,
-} from "./ultrasoundMapping.mjs";
+  runMamChunkPostLoad,
+} from "./mamMapping.mjs";
 import {
   createUiState,
   endProgress,
@@ -22,7 +25,7 @@ import {
 } from "../../shared/js-migrate/progressUi.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const KEY = "ultrasound";
+const KEY = "mam";
 
 function getConfigPath() {
   const idx = process.argv.indexOf("--config");
@@ -137,31 +140,7 @@ function writeJson(filePath, value) {
 }
 
 async function loadChunkToStaging(pgClient, normalizedRows) {
-  const cols = [
-    "exam_id",
-    "exam_date",
-    "pid",
-    "mass",
-    "mass_des",
-    "num_of_mass_found",
-    "num_of_mass_actualfound",
-    "cyst",
-    "cyst_des",
-    "num_of_cyst_found",
-    "num_of_cyst_actualfound",
-    "tissuecomposition",
-    "tissuecomposition_des",
-    "r_associatedfeatures",
-    "r_associatedfeatures_des",
-    "l_associatedfeatures",
-    "l_associatedfeatures_des",
-    "r_specialcase",
-    "r_specialcase_des",
-    "l_specialcase",
-    "l_specialcase_des",
-    "technique",
-    "technique_des",
-  ];
+  const cols = MAM_STAGING_COLUMNS;
   const arrays = cols.map(() => []);
   for (const r of normalizedRows) {
     if (!r) continue;
@@ -170,11 +149,11 @@ async function loadChunkToStaging(pgClient, normalizedRows) {
     }
   }
   if (arrays[0].length === 0) return 0;
-  await pgClient.query("TRUNCATE TABLE migrate_stg.ultrasound_mssql;");
+  await pgClient.query("TRUNCATE TABLE migrate_stg.mam_mssql;");
   const castArgs = cols.map((_, i) => `$${i + 1}::text[]`).join(", ");
   await pgClient.query(
     `
-INSERT INTO migrate_stg.ultrasound_mssql (${cols.join(", ")})
+INSERT INTO migrate_stg.mam_mssql (${cols.join(", ")})
 SELECT * FROM unnest(${castArgs});
 `.trim(),
     arrays,
@@ -185,20 +164,24 @@ SELECT * FROM unnest(${castArgs});
 async function main() {
   const configPath = path.resolve(process.cwd(), getConfigPath());
   const rawConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
-  const config = resolveRuntimeConfig(rawConfig, "ultrasound");
+  const config = resolveRuntimeConfig(rawConfig, "mam");
   if (config.__profileName) {
     console.error(`>>> using config profile: ${config.__profileName}`);
   }
 
   const sourceSchema = config.source?.schema ?? "dbo";
-  const sourceTable = config.source?.table ?? "ultrasound";
+  const sourceTable = config.source?.table ?? "mammogram";
   const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
   const sourceObjectNoLock = `${sourceObject} WITH (NOLOCK)`;
-  const probeSql = MSSQL_ULTRASOUND_ID_SELECT.replaceAll(
+  const massSourceTable = config.source?.massTable ?? "mammogram_mass";
+  const calSourceTable = config.source?.calTable ?? "mammogram_cal";
+  const massSourceObjectNoLock = `${bracketIdent(sourceSchema)}.${bracketIdent(massSourceTable)} WITH (NOLOCK)`;
+  const calSourceObjectNoLock = `${bracketIdent(sourceSchema)}.${bracketIdent(calSourceTable)} WITH (NOLOCK)`;
+  const probeSql = MSSQL_MAM_ID_SELECT.replaceAll(
     "{{sourceObject}}",
     sourceObjectNoLock,
   );
-  const detailSqlTemplate = MSSQL_ULTRASOUND_DETAIL_BY_IDS_SELECT.replaceAll(
+  const detailSqlTemplate = MSSQL_MAM_DETAIL_BY_IDS_SELECT.replaceAll(
     "{{sourceObject}}",
     sourceObjectNoLock,
   );
@@ -279,7 +262,7 @@ async function main() {
     }
     try {
       const ensureDdlStartedAt = Date.now();
-      await ensureUltrasoundPipelineDdl(client);
+      await ensureMamPipelineDdl(client);
       if (debugLogs) {
         writeOutLine(
           `>>> [${KEY}] ensure pipeline DDL in ${formatSec(Date.now() - ensureDdlStartedAt)}`,
@@ -288,7 +271,7 @@ async function main() {
       }
       console.error(`>>> [${KEY}] source: ${sourceObject}`);
       console.error(
-        `>>> [${KEY}] target: ${config.target.postgresDatabase} public.ultrasound (batchSize=${batchSize})`,
+        `>>> [${KEY}] target: ${config.target.postgresDatabase} public.mammogram (batchSize=${batchSize})`,
       );
 
       let offset = Number(checkpointEnabled ? checkpoint.offset : 0);
@@ -371,8 +354,27 @@ async function main() {
         }
         if (rows.length === 0) break;
 
+        const childCounts = await fetchMamChildCountsByExamIds(
+          pool,
+          {
+            massTableNoLock: massSourceObjectNoLock,
+            calTableNoLock: calSourceObjectNoLock,
+          },
+          ids,
+        );
+
         chunkIndex += 1;
-        const normalized = rows.map(normalizeMssqlRow).filter(Boolean);
+        const normalized = rows
+          .map((raw) => {
+            const row = normalizeMssqlRow(raw);
+            if (!row) return null;
+            const examId = Number.parseInt(row.exam_id, 10);
+            return applyMamSummaryFromChildCounts(row, {
+              massCount: childCounts.massCounts.get(examId) ?? 0,
+              calCount: childCounts.calCounts.get(examId) ?? 0,
+            });
+          })
+          .filter(Boolean);
         const skipped = rows.length - normalized.length;
 
         let step = "begin";
@@ -393,7 +395,7 @@ async function main() {
           runLog.skipped += skipped;
           step = "post-load mapping (upsert)";
           const postLoadStartedAt = Date.now();
-          await runUltrasoundChunkPostLoad(client);
+          await runMamChunkPostLoad(client);
           postLoadMs = Date.now() - postLoadStartedAt;
           runLog.rowsUpserted += loaded;
           step = "COMMIT";

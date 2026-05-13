@@ -1,0 +1,13 @@
+{
+  "name": "mam-cal-js-migrate",
+  "private": true,
+  "type": "module",
+  "description": "Migrate mammogram_cal from MSSQL to bisinfo_dev_clone (Directus)",
+  "scripts": {
+    "migrate": "node ./migrate-from-mssql.mjs --config ../../migration.config.local.json --profile mam_cal"
+  },
+  "dependencies": {
+    "mssql": "^11.0.1",
+    "pg": "^8.13.1"
+  }
+}

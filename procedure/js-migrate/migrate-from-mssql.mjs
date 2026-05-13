@@ -514,8 +514,8 @@ async function runProcedureTableJob({
         progressStartedAt,
         chunkIndex,
         plannedChunks,
+        uiState,
       );
-      markProgressInline(uiState);
     }
     for (let i = 0; i < arrays.length; i++) arrays[i].length = 0;
     rows.length = 0;
