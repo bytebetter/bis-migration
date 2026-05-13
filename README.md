@@ -26,6 +26,7 @@ npm install
 - **`patient-info/`** — migrate `patient_info` → [patient-info/README.md](patient-info/README.md)
 - **`examination/`** — migrate `examination` → [examination/README.md](examination/README.md)
 - **`appointment/`** — migrate `schedule` → `appointment` → [appointment/js-migrate/README.md](appointment/js-migrate/README.md)
+- **`db-selective-migration/`** — clone schema + เลือกตาราง (Directus + whitelist) ผ่าน `kubectl` / `pg_dump` → [db-selective-migration/README.md](db-selective-migration/README.md)
 - ตารางอื่นเพิ่มเป็นโฟลเดอร์ระดับเดียวกับ `patient-info/` ได้
 
 ## ความต้องการ
