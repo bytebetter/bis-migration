@@ -36,6 +36,8 @@
       }
     },
     "ultrasound": {},
+    "ultrasound_mass": {},
+    "ultrasound_cyst": {},
     "mam": {},
     "mam_mass": {},
     "mam_cal": {}
