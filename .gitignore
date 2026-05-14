@@ -12,6 +12,12 @@ appointment/js-migrate/logs/
 appointment/js-migrate/checkpoints/
 ultrasound/js-migrate/node_modules/
 ultrasound/js-migrate/logs/
+ultrasound-mass/js-migrate/node_modules/
+ultrasound-mass/js-migrate/logs/
+ultrasound-mass/js-migrate/checkpoints/
+ultrasound-cyst/js-migrate/node_modules/
+ultrasound-cyst/js-migrate/logs/
+ultrasound-cyst/js-migrate/checkpoints/
 mam/js-migrate/node_modules/
 mam/js-migrate/logs/
 mam/js-migrate/checkpoints/

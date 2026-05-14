@@ -1,0 +1,435 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import sql from "mssql";
+import pg from "pg";
+import { MSSQL_ULTRASOUND_MASS_KEYSET_SELECT } from "./mssqlUltrasoundMassSelect.mjs";
+import { ensureUltrasoundMassPipelineDdl } from "./ultrasoundMassPgDdl.mjs";
+import {
+  ULTRASOUND_MASS_STAGING_COLUMNS,
+  normalizeMssqlRow,
+  runUltrasoundMassChunkPostLoad,
+} from "./ultrasoundMassMapping.mjs";
+import {
+  createUiState,
+  endProgress,
+  formatSec,
+  renderProgress,
+  writeOutLine,
+} from "../../shared/js-migrate/progressUi.mjs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const KEY = "ultrasound_mass";
+
+function getConfigPath() {
+  const idx = process.argv.indexOf("--config");
+  if (idx >= 0 && process.argv[idx + 1]) return process.argv[idx + 1];
+  return "../../migration.config.local.json";
+}
+
+function getProfileName() {
+  const idx = process.argv.indexOf("--profile");
+  if (idx >= 0 && process.argv[idx + 1]) return process.argv[idx + 1];
+  return process.env.MIGRATION_PROFILE || null;
+}
+
+function nowStamp() {
+  return new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
+}
+
+function parseMssqlUrl(rawUrl) {
+  const normalized = rawUrl.replace(/^microsoftsqlserver:\/\//i, "mssql://");
+  const u = new URL(normalized);
+  return {
+    server: u.hostname,
+    port: u.port ? Number(u.port) : 1433,
+    database: u.pathname.replace(/^\/+/, ""),
+    user: decodeURIComponent(u.username || ""),
+    password: decodeURIComponent(u.password || ""),
+    options: {
+      encrypt: true,
+      trustServerCertificate: true,
+    },
+    pool: { max: 5, min: 0 },
+  };
+}
+
+function tediousOptionsFromSource(sourceConfig = {}) {
+  return {
+    encrypt: sourceConfig.encrypt !== false,
+    trustServerCertificate: sourceConfig.trustServerCertificate !== false,
+    requestTimeout:
+      sourceConfig.requestTimeout == null
+        ? 0
+        : Number(sourceConfig.requestTimeout),
+    connectTimeout:
+      sourceConfig.connectTimeout == null
+        ? 60000
+        : Number(sourceConfig.connectTimeout),
+    cancelTimeout:
+      sourceConfig.cancelTimeout == null
+        ? 0
+        : Number(sourceConfig.cancelTimeout),
+  };
+}
+
+function buildMssqlConfig(sourceConfig = {}) {
+  const timeouts = tediousOptionsFromSource(sourceConfig);
+  if (sourceConfig.mssqlUrl) {
+    const base = parseMssqlUrl(sourceConfig.mssqlUrl);
+    return {
+      ...base,
+      options: {
+        ...base.options,
+        ...timeouts,
+      },
+    };
+  }
+  return {
+    server: sourceConfig.server,
+    port: Number(sourceConfig.port ?? 1433),
+    database: sourceConfig.database,
+    user: sourceConfig.user,
+    password: sourceConfig.password,
+    options: timeouts,
+    pool: { max: 5, min: 0 },
+  };
+}
+
+function resolveRuntimeConfig(rawConfig, fallbackProfile) {
+  if (!rawConfig?.profiles) return rawConfig;
+  const selectedProfile =
+    getProfileName() ?? rawConfig.defaultProfile ?? fallbackProfile;
+  const profileConfig = rawConfig.profiles[selectedProfile];
+  if (!profileConfig) {
+    throw new Error(
+      `Profile '${selectedProfile}' not found in config.profiles`,
+    );
+  }
+  const shared = rawConfig.shared ?? {};
+  return {
+    ...shared,
+    ...profileConfig,
+    source: { ...(shared.source ?? {}), ...(profileConfig.source ?? {}) },
+    target: { ...(shared.target ?? {}), ...(profileConfig.target ?? {}) },
+    migration: {
+      ...(shared.migration ?? {}),
+      ...(profileConfig.migration ?? {}),
+    },
+    __profileName: selectedProfile,
+  };
+}
+
+function bracketIdent(value) {
+  return `[${String(value).replace(/]/g, "]]")}]`;
+}
+
+function readJsonIfExists(filePath, fallbackValue) {
+  if (!fs.existsSync(filePath)) return fallbackValue;
+  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+}
+
+function writeJson(filePath, value) {
+  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+async function loadChunkToStaging(pgClient, normalizedRows) {
+  const cols = ULTRASOUND_MASS_STAGING_COLUMNS;
+  const arrays = cols.map(() => []);
+  for (const r of normalizedRows) {
+    if (!r) continue;
+    for (let i = 0; i < cols.length; i++) {
+      arrays[i].push(r[cols[i]] ?? "");
+    }
+  }
+  if (arrays[0].length === 0) return 0;
+  await pgClient.query("TRUNCATE TABLE migrate_stg.ultrasound_mass_mssql;");
+  const castArgs = cols.map((_, i) => `$${i + 1}::text[]`).join(", ");
+  await pgClient.query(
+    `
+INSERT INTO migrate_stg.ultrasound_mass_mssql (${cols.join(", ")})
+SELECT * FROM unnest(${castArgs});
+`.trim(),
+    arrays,
+  );
+  return arrays[0].length;
+}
+
+async function main() {
+  const configPath = path.resolve(process.cwd(), getConfigPath());
+  const rawConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  const config = resolveRuntimeConfig(rawConfig, "ultrasound_mass");
+  const uiState = createUiState();
+  if (config.__profileName) {
+    writeOutLine(`>>> using config profile: ${config.__profileName}`, uiState);
+  }
+
+  const sourceSchema = config.source?.schema ?? "dbo";
+  const sourceTable = config.source?.table ?? "ultrasound_mass";
+  const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
+  const sourceObjectNoLock = `${sourceObject} WITH (NOLOCK)`;
+  const keysetSql = MSSQL_ULTRASOUND_MASS_KEYSET_SELECT.replaceAll(
+    "{{sourceObject}}",
+    sourceObjectNoLock,
+  );
+
+  const batchSize = Math.max(
+    100,
+    Math.min(5000, Number(config?.migration?.batchSize ?? 2000)),
+  );
+  const progressEnabled = config?.migration?.progressUi !== false;
+  const singleLineUi = config?.migration?.singleLineUi !== false;
+  const debugLogs = config?.migration?.debugLogs === true;
+
+  const pgPool = new pg.Pool({
+    host: config.target.postgresHost,
+    port: Number(config.target.postgresPort ?? 5432),
+    user: config.target.postgresUser,
+    password: config.target.postgresPassword,
+    database: config.target.postgresDatabase ?? "bisinfo_dev_clone",
+    max: 3,
+  });
+
+  const logsDir = path.resolve(__dirname, "logs");
+  fs.mkdirSync(logsDir, { recursive: true });
+  const logPath = path.join(logsDir, `migrate-${nowStamp()}.json`);
+  const runLog = {
+    startedAt: new Date().toISOString(),
+    status: "running",
+    sourceObject: `${sourceSchema}.${sourceTable}`,
+    batchSize,
+    rowsLoadedToStaging: 0,
+    rowsUpserted: 0,
+    skipped: 0,
+    error: null,
+  };
+  const checkpointEnabled = config?.migration?.enableCheckpoint !== false;
+  const checkpointDir = path.resolve(
+    __dirname,
+    config?.migration?.checkpointDir ?? "./checkpoints",
+  );
+  fs.mkdirSync(checkpointDir, { recursive: true });
+  const checkpointPath = path.join(checkpointDir, `${KEY}.json`);
+  const checkpoint = readJsonIfExists(checkpointPath, {
+    key: KEY,
+    offset: 0,
+    afterExamId: 0,
+    afterChildId: 0,
+    completed: false,
+    updatedAt: null,
+  });
+
+  const mssqlConfig = buildMssqlConfig(config.source);
+  const mssqlConnectStartedAt = Date.now();
+  const pool = await sql.connect(mssqlConfig);
+  if (debugLogs) {
+    writeOutLine(
+      `>>> [${KEY}] MSSQL connected in ${formatSec(Date.now() - mssqlConnectStartedAt)}`,
+      uiState,
+    );
+  }
+  try {
+    const probeTableSql = `SELECT TOP 1 [Exam_ID], [Described_Mass_ID] FROM ${sourceObjectNoLock} ORDER BY [Exam_ID] ASC, [Described_Mass_ID] ASC;`;
+    const probeStartedAt = Date.now();
+    await pool.request().query(probeTableSql);
+    if (debugLogs) {
+      writeOutLine(
+        `>>> [${KEY}] MSSQL probe done in ${formatSec(Date.now() - probeStartedAt)}`,
+        uiState,
+      );
+    }
+
+    const pgConnectStartedAt = Date.now();
+    const client = await pgPool.connect();
+    if (debugLogs) {
+      writeOutLine(
+        `>>> [${KEY}] Postgres connected in ${formatSec(Date.now() - pgConnectStartedAt)}`,
+        uiState,
+      );
+    }
+    try {
+      const ensureDdlStartedAt = Date.now();
+      await ensureUltrasoundMassPipelineDdl(client);
+      if (debugLogs) {
+        writeOutLine(
+          `>>> [${KEY}] ensure pipeline DDL in ${formatSec(Date.now() - ensureDdlStartedAt)}`,
+          uiState,
+        );
+      }
+      console.error(`>>> [${KEY}] source: ${sourceObject}`);
+      console.error(
+        `>>> [${KEY}] target: ${config.target.postgresDatabase} public.ultrasound_mass (batchSize=${batchSize})`,
+      );
+
+      let offset = Number(checkpointEnabled ? checkpoint.offset : 0);
+      if (!Number.isFinite(offset) || offset < 0) offset = 0;
+      let afterExamId = Number(checkpointEnabled ? checkpoint.afterExamId : 0);
+      if (!Number.isFinite(afterExamId) || afterExamId < 0) afterExamId = 0;
+      let afterChildId = Number(checkpointEnabled ? checkpoint.afterChildId : 0);
+      if (!Number.isFinite(afterChildId) || afterChildId < 0) afterChildId = 0;
+      let chunkIndex = 0;
+      let plannedRows = null;
+      if (progressEnabled) {
+        try {
+          const countRes = await pool
+            .request()
+            .query(`SELECT COUNT_BIG(1) AS total FROM ${sourceObjectNoLock};`);
+          plannedRows = Number(countRes.recordset?.[0]?.total ?? 0);
+        } catch {
+          plannedRows = null;
+        }
+      }
+      const progressTotal = plannedRows ?? null;
+      const plannedChunks =
+        plannedRows != null && plannedRows > 0
+          ? Math.ceil(plannedRows / batchSize)
+          : null;
+      if (plannedChunks != null) {
+        console.error(
+          `>>> [${KEY}] plan: ${plannedRows} rows, ~${plannedChunks} chunks`,
+        );
+      }
+      if (debugLogs) {
+        writeOutLine(
+          `>>> [${KEY}] checkpoint start: offset=${offset}, afterExamId=${afterExamId}, afterChildId=${afterChildId}, enabled=${checkpointEnabled}`,
+          uiState,
+        );
+      }
+      const startedAt = Date.now();
+      while (true) {
+        const chunkStartedAt = Date.now();
+        if (debugLogs && !singleLineUi) {
+          writeOutLine(
+            `>>> [${KEY}] fetch chunk ${chunkIndex + 1}: afterExamId=${afterExamId}, afterChildId=${afterChildId}, page=${batchSize}`,
+            uiState,
+          );
+        }
+        const fetchStartedAt = Date.now();
+        const res = await pool
+          .request()
+          .input("afterExamId", sql.BigInt, afterExamId)
+          .input("afterChildId", sql.Int, afterChildId)
+          .input("page", sql.Int, batchSize)
+          .query(keysetSql);
+        const fetchMs = Date.now() - fetchStartedAt;
+        const rows = res.recordset || [];
+        if (debugLogs && !singleLineUi) {
+          writeOutLine(
+            `>>> [${KEY}] fetch chunk ${chunkIndex + 1} done: rows=${rows.length}, ms=${fetchMs}`,
+            uiState,
+          );
+        }
+        if (rows.length === 0) break;
+
+        chunkIndex += 1;
+        const normalized = rows.map(normalizeMssqlRow).filter(Boolean);
+        const skipped = rows.length - normalized.length;
+
+        let step = "begin";
+        let txBeginMs = 0;
+        let stagingMs = 0;
+        let postLoadMs = 0;
+        let commitMs = 0;
+        try {
+          step = "BEGIN";
+          const txBeginStartedAt = Date.now();
+          await client.query("BEGIN");
+          txBeginMs = Date.now() - txBeginStartedAt;
+          step = "load to staging";
+          const stagingStartedAt = Date.now();
+          const loaded = await loadChunkToStaging(client, normalized);
+          stagingMs = Date.now() - stagingStartedAt;
+          runLog.rowsLoadedToStaging += loaded;
+          runLog.skipped += skipped;
+          step = "post-load mapping (upsert)";
+          const postLoadStartedAt = Date.now();
+          await runUltrasoundMassChunkPostLoad(client);
+          postLoadMs = Date.now() - postLoadStartedAt;
+          runLog.rowsUpserted += loaded;
+          step = "COMMIT";
+          const commitStartedAt = Date.now();
+          await client.query("COMMIT");
+          commitMs = Date.now() - commitStartedAt;
+        } catch (err) {
+          await client.query("ROLLBACK");
+          throw new Error(
+            `[${KEY}] failed chunk ${chunkIndex} at step '${step}': ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+
+        offset += rows.length;
+        const last = rows[rows.length - 1];
+        afterExamId = Number.parseInt(last?.exam_id ?? "", 10);
+        afterChildId = Number.parseInt(last?.described_mass_id ?? "", 10);
+        if (!Number.isFinite(afterExamId)) afterExamId = 0;
+        if (!Number.isFinite(afterChildId)) afterChildId = 0;
+        if (checkpointEnabled) {
+          writeJson(checkpointPath, {
+            key: KEY,
+            offset,
+            afterExamId,
+            afterChildId,
+            completed: false,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+        if (debugLogs && !singleLineUi) {
+          writeOutLine(
+            `>>> [${KEY}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(
+              Date.now() - chunkStartedAt,
+            )} rows=${rows.length} total=${offset}/${plannedRows ?? "?"} (fetch=${formatSec(
+              fetchMs,
+            )}, begin=${formatSec(txBeginMs)}, staging=${formatSec(
+              stagingMs,
+            )}, post=${formatSec(postLoadMs)}, commit=${formatSec(commitMs)})`,
+            uiState,
+          );
+        }
+        if (progressEnabled) {
+          renderProgress(
+            offset,
+            progressTotal,
+            startedAt,
+            chunkIndex,
+            plannedChunks,
+            uiState,
+          );
+        }
+
+        if (rows.length < batchSize) break;
+      }
+
+      if (checkpointEnabled) {
+        writeJson(checkpointPath, {
+          key: KEY,
+          offset,
+          afterExamId,
+          afterChildId,
+          completed: true,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      if (progressEnabled) endProgress(uiState);
+      runLog.status = "success";
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    runLog.status = "failed";
+    runLog.error = err instanceof Error ? err.message : String(err);
+    throw err;
+  } finally {
+    await pool.close();
+    await pgPool.end();
+    runLog.finishedAt = new Date().toISOString();
+    fs.writeFileSync(logPath, `${JSON.stringify(runLog, null, 2)}\n`, "utf8");
+    writeOutLine(`>>> migration log saved: ${logPath}`, uiState);
+  }
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
