@@ -2,11 +2,11 @@
   "defaultProfile": "patient_info",
   "shared": {
     "source": {
-      "server": "dark-songbird-708.fly.dev",
+      "server": "10.12.10.104",
       "port": 1433,
       "database": "BISInfo",
-      "user": "sa",
-      "password": "Thanya@sj1",
+      "user": "bisdev",
+      "password": "Thanya1234",
       "encrypt": true,
       "trustServerCertificate": true,
       "requestTimeout": 0,
@@ -16,9 +16,9 @@
     "target": {
       "postgresHost": "127.0.0.1",
       "postgresPort": 5432,
-      "postgresUser": "devuser",
-      "postgresPassword": "dev-postgres-password-2024",
-      "postgresDatabase": "bisinfo_dev_clone"
+      "postgresUser": "bis",
+      "postgresPassword": "Thanya@sj1",
+      "postgresDatabase": "bisinfo"
     },
     "migration": {
       "batchSize": 2000
