@@ -15,7 +15,9 @@ function getField(row, key) {
 /** เทียบเท่า migrate_stg.norm_pid: trim + ตัด BOM */
 export function normPid(v) {
   if (v == null) return "";
-  return String(v).replace(/^\uFEFF/, "").trim();
+  return String(v)
+    .replace(/^\uFEFF/, "")
+    .trim();
 }
 
 function nullIfTrimEmpty(v) {
@@ -39,15 +41,35 @@ function parseDateOfBirthGregorian(raw) {
   const y = Number.parseInt(t.slice(0, 4), 10);
   const m = Number.parseInt(t.slice(5, 7), 10);
   const d = Number.parseInt(t.slice(8, 10), 10);
-  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d))
+    return null;
   return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/**
+ * ทำความสะอาด height/weight จาก legacy MSSQL ก่อน parse
+ * - "58." / "152." → ตัดจุดท้ายที่ไม่มีทศนิยม
+ * - "151, 5" / "151,5" → จุลภาคทศนิยมแบบยุโรป
+ */
+function normalizeRealString(s) {
+  let t = String(s).trim();
+  if (t === "") return "";
+  t = t.replace(/\s+/g, "");
+  if (/^-?\d+,\d+$/.test(t)) {
+    t = t.replace(",", ".");
+  }
+  if (/^-?\d+\.$/.test(t)) {
+    t = t.slice(0, -1);
+  }
+  return t;
 }
 
 function parseReal(s) {
   if (s == null) return null;
-  const t = String(s).trim();
+  const t = normalizeRealString(s);
   if (t === "" || !NUM_RE.test(t)) return null;
-  return Number.parseFloat(t);
+  const n = Number.parseFloat(t);
+  return Number.isFinite(n) ? n : null;
 }
 
 function parseDonateTypeInt(s) {
@@ -109,7 +131,10 @@ function splitAndExtractThaiPhones(raw) {
   if (t === "") return [];
 
   // Split by "/" first (per requirement), but still robust if multiple slashes/spaces exist.
-  const parts = t.split("/").map((p) => p.trim()).filter((p) => p !== "");
+  const parts = t
+    .split("/")
+    .map((p) => p.trim())
+    .filter((p) => p !== "");
   if (parts.length === 0) return [];
 
   /** @type {string[]} */
@@ -183,16 +208,245 @@ function hasAddressPayload(row) {
   );
 }
 
+function sourceRawNonempty(v) {
+  if (v == null) return false;
+  return (
+    String(v)
+      .replace(/^\uFEFF/, "")
+      .trim() !== ""
+  );
+}
+
+function sortPids(ids) {
+  return [...ids].sort((a, b) => {
+    try {
+      const aa = BigInt(a);
+      const bb = BigInt(b);
+      return aa < bb ? -1 : aa > bb ? 1 : 0;
+    } catch {
+      return String(a).localeCompare(String(b));
+    }
+  });
+}
+
+function issueTextTruncated(pgField, srcRaw, mapped) {
+  const src = nullIfTrimEmpty(srcRaw);
+  if (src == null || src.length <= 255) return null;
+  return {
+    field: pgField,
+    reason: "text_truncated",
+    message: "ข้อความยาวกว่า 255 ตัวอักษร ถูกตัดก่อน insert",
+    source_raw: srcRaw,
+    mapped,
+  };
+}
+
+/** แมปแถว MSSQL → ค่าที่จะ insert (ใช้ทั้ง insert และตรวจ field issues) */
+function mapPatientInfoRow(row) {
+  const np = normPid(getField(row, "pid"));
+  const { phone_biz, phone_home } = normalizeAndDistributePhones(
+    getField(row, "phone_biz"),
+    getField(row, "phone_home"),
+  );
+  const h = parseReal(getField(row, "height"));
+  const w = parseReal(getField(row, "weight"));
+
+  return {
+    pid: np,
+    pid_raw: String(getField(row, "pid") ?? ""),
+    patient: {
+      old_db_id: np,
+      pid: np,
+      prefix_th: clampText255(getField(row, "prefix")),
+      first_name_th: clampText255(getField(row, "name")),
+      last_name_th: clampText255(getField(row, "surname")),
+      date_of_birth: parseDateOfBirthGregorian(
+        getField(row, "date_of_birth_be"),
+      ),
+      marital_status: clampText255(getField(row, "single")),
+      phone_biz: clampText255(phone_biz),
+      phone_home: clampText255(phone_home),
+      height: h == null || Number.isNaN(h) ? null : h,
+      weight: w == null || Number.isNaN(w) ? null : w,
+      donate_type: parseDonateTypeInt(getField(row, "donate_type")),
+      prefix_en: clampText255(getField(row, "eng_prefix")),
+      first_name_en: clampText255(getField(row, "eng_name")),
+      last_name_en: clampText255(getField(row, "eng_surname")),
+      soc_id: clampText255(normSocId(getField(row, "soc_id"))),
+      hn: clampText255(getField(row, "hn")),
+      gender: clampText255(getField(row, "gender")),
+      short_note: nullIfTrimEmpty(getField(row, "short_note")),
+      disease: clampText255(getField(row, "disease")),
+      mobile_phone: clampText255(getField(row, "mobile_phone")),
+      email: clampText255(getField(row, "email")),
+    },
+    address: hasAddressPayload(row)
+      ? {
+          address: clampText255(getField(row, "address")),
+          sub_district: clampText255(getField(row, "sub_area")),
+          district: clampText255(getField(row, "area")),
+          province: clampText255(getField(row, "province")),
+          zipcode: clampText255(getField(row, "zip")),
+          address2: clampText255(getField(row, "address2")),
+        }
+      : null,
+  };
+}
+
+/**
+ * @returns {{ field: string, reason: string, message: string, source_raw: unknown, mapped: unknown }[]}
+ */
+function collectPatientInfoFieldIssues(row, mapped) {
+  const issues = [];
+  const p = mapped.patient;
+
+  if (mapped.pid === "" && sourceRawNonempty(getField(row, "pid"))) {
+    issues.push({
+      field: "pid",
+      reason: "invalid_pid",
+      message: "pid ในแหล่งข้อมูลว่างหรือใช้ migrate ไม่ได้",
+      source_raw: getField(row, "pid"),
+      mapped: null,
+    });
+    return issues;
+  }
+
+  const dobRaw = getField(row, "date_of_birth_be");
+  if (sourceRawNonempty(dobRaw) && p.date_of_birth == null) {
+    issues.push({
+      field: "date_of_birth",
+      reason: "date_parse_failed",
+      message: "วันเกิดในแหล่งข้อมูลแปลงเป็น YYYY-MM-DD ไม่ได้",
+      source_raw: dobRaw,
+      mapped: null,
+    });
+  }
+
+  const heightRaw = getField(row, "height");
+  if (sourceRawNonempty(heightRaw) && p.height == null) {
+    issues.push({
+      field: "height",
+      reason: "real_parse_failed",
+      message: "ค่าส่วนสูงในแหล่งข้อมูลไม่ใช่ตัวเลขที่ถูกต้อง",
+      source_raw: heightRaw,
+      mapped: null,
+    });
+  }
+
+  const weightRaw = getField(row, "weight");
+  if (sourceRawNonempty(weightRaw) && p.weight == null) {
+    issues.push({
+      field: "weight",
+      reason: "real_parse_failed",
+      message: "ค่าน้ำหนักในแหล่งข้อมูลไม่ใช่ตัวเลขที่ถูกต้อง",
+      source_raw: weightRaw,
+      mapped: null,
+    });
+  }
+
+  const donateRaw = getField(row, "donate_type");
+  if (sourceRawNonempty(donateRaw) && p.donate_type == null) {
+    issues.push({
+      field: "donate_type",
+      reason: "integer_parse_failed",
+      message: "donate_type ในแหล่งข้อมูลไม่ใช่จำนวนเต็มที่ถูกต้อง",
+      source_raw: donateRaw,
+      mapped: null,
+    });
+  }
+
+  const socRaw = getField(row, "soc_id");
+  if (sourceRawNonempty(socRaw) && p.soc_id == null) {
+    issues.push({
+      field: "soc_id",
+      reason: "soc_id_normalize_failed",
+      message: "เลขบัตรประชาชนในแหล่งข้อมูลไม่มีตัวเลขที่ใช้ได้",
+      source_raw: socRaw,
+      mapped: null,
+    });
+  }
+
+  const textChecks = [
+    ["prefix_th", "prefix", p.prefix_th],
+    ["first_name_th", "name", p.first_name_th],
+    ["last_name_th", "surname", p.last_name_th],
+    ["marital_status", "single", p.marital_status],
+    ["phone_biz", "phone_biz", p.phone_biz],
+    ["phone_home", "phone_home", p.phone_home],
+    ["prefix_en", "eng_prefix", p.prefix_en],
+    ["first_name_en", "eng_name", p.first_name_en],
+    ["last_name_en", "eng_surname", p.last_name_en],
+    ["hn", "hn", p.hn],
+    ["gender", "gender", p.gender],
+    ["disease", "disease", p.disease],
+    ["mobile_phone", "mobile_phone", p.mobile_phone],
+    ["email", "email", p.email],
+  ];
+  for (const [pgField, srcKey, mappedVal] of textChecks) {
+    const iss = issueTextTruncated(pgField, getField(row, srcKey), mappedVal);
+    if (iss) issues.push(iss);
+  }
+
+  if (mapped.address) {
+    const addrChecks = [
+      ["address.address", "address", mapped.address.address],
+      ["address.sub_district", "sub_area", mapped.address.sub_district],
+      ["address.district", "area", mapped.address.district],
+      ["address.province", "province", mapped.address.province],
+      ["address.zipcode", "zip", mapped.address.zipcode],
+      ["address.address2", "address2", mapped.address.address2],
+    ];
+    for (const [pgField, srcKey, mappedVal] of addrChecks) {
+      const iss = issueTextTruncated(pgField, getField(row, srcKey), mappedVal);
+      if (iss) issues.push(iss);
+    }
+  }
+
+  return issues;
+}
+
 /**
  * ลบ/แทรกแถวต่อ chunk: address → patient → setval → insert patient → setval → insert address
  * @param {import("pg").PoolClient} pgClient
  * @param {object[]} mssqlRows แถวดิบจาก recordset
+ * @param {object} [options]
  */
-export async function runPatientInfoChunkPostLoad(pgClient, mssqlRows) {
+export async function runPatientInfoChunkPostLoad(
+  pgClient,
+  mssqlRows,
+  options = {},
+) {
   const rows = distinctOnNormPid(mssqlRows);
-  if (rows.length === 0) return;
+  if (rows.length === 0) {
+    return { failedPids: [], fieldIssues: null };
+  }
 
-  const npids = rows.map((r) => normPid(getField(r, "pid"))).filter((n) => n !== "");
+  const failingPidSet = new Set();
+  let totalFieldIssueCount = 0;
+  /** @type {Map<string, { pid: string, pid_raw: string, patient_info_id: number|null, fieldIssues: object[] }>} */
+  const recordsWithIssues = new Map();
+
+  function recordPidIssues(pid, meta, fieldIssues) {
+    if (fieldIssues.length === 0) return;
+    failingPidSet.add(pid);
+    totalFieldIssueCount += fieldIssues.length;
+    let rec = recordsWithIssues.get(pid);
+    if (!rec) {
+      rec = {
+        pid,
+        pid_raw: meta.pidRaw,
+        patient_info_id: meta.patientInfoId ?? null,
+        fieldIssues: [],
+      };
+      recordsWithIssues.set(pid, rec);
+    }
+    if (meta.patientInfoId != null) rec.patient_info_id = meta.patientInfoId;
+    rec.fieldIssues.push(...fieldIssues);
+  }
+
+  const npids = rows
+    .map((r) => normPid(getField(r, "pid")))
+    .filter((n) => n !== "");
 
   await pgClient.query(
     `
@@ -203,7 +457,7 @@ export async function runPatientInfoChunkPostLoad(pgClient, mssqlRows) {
       WHERE migrate_stg.norm_pid(p.pid::text) = ANY($1::text[])
     )
     `,
-    [npids]
+    [npids],
   );
 
   await pgClient.query(
@@ -211,7 +465,7 @@ export async function runPatientInfoChunkPostLoad(pgClient, mssqlRows) {
     DELETE FROM public.patient_info p
     WHERE migrate_stg.norm_pid(p.pid::text) = ANY($1::text[])
     `,
-    [npids]
+    [npids],
   );
 
   await pgClient.query(`
@@ -246,37 +500,50 @@ export async function runPatientInfoChunkPostLoad(pgClient, mssqlRows) {
   const aEmail = [];
 
   for (const r of rows) {
-    const np = normPid(getField(r, "pid"));
-    aOld.push(np);
-    aPid.push(np);
-    aPreTh.push(clampText255(getField(r, "prefix")));
-    aFnTh.push(clampText255(getField(r, "name")));
-    aLnTh.push(clampText255(getField(r, "surname")));
-    const d = parseDateOfBirthGregorian(getField(r, "date_of_birth_be"));
-    aDob.push(d);
-    aMar.push(clampText255(getField(r, "single")));
-    const { phone_biz, phone_home } = normalizeAndDistributePhones(
-      getField(r, "phone_biz"),
-      getField(r, "phone_home")
+    const mapped = mapPatientInfoRow(r);
+    const np = mapped.pid;
+    if (np === "") {
+      const issues = collectPatientInfoFieldIssues(r, mapped);
+      if (issues.length > 0) {
+        const rawPid = String(getField(r, "pid") ?? "").trim() || "(empty)";
+        recordPidIssues(
+          rawPid,
+          { pidRaw: mapped.pid_raw, patientInfoId: null },
+          issues,
+        );
+      }
+      continue;
+    }
+
+    const p = mapped.patient;
+    aOld.push(p.old_db_id);
+    aPid.push(p.pid);
+    aPreTh.push(p.prefix_th);
+    aFnTh.push(p.first_name_th);
+    aLnTh.push(p.last_name_th);
+    aDob.push(p.date_of_birth);
+    aMar.push(p.marital_status);
+    aPhBiz.push(p.phone_biz);
+    aPhHome.push(p.phone_home);
+    aH.push(p.height);
+    aW.push(p.weight);
+    aDon.push(p.donate_type);
+    aPreEn.push(p.prefix_en);
+    aFnEn.push(p.first_name_en);
+    aLnEn.push(p.last_name_en);
+    aSoc.push(p.soc_id);
+    aHn.push(p.hn);
+    aGen.push(p.gender);
+    aNote.push(p.short_note);
+    aDis.push(p.disease);
+    aMobile.push(p.mobile_phone);
+    aEmail.push(p.email);
+
+    recordPidIssues(
+      np,
+      { pidRaw: mapped.pid_raw, patientInfoId: null },
+      collectPatientInfoFieldIssues(r, mapped),
     );
-    aPhBiz.push(clampText255(phone_biz));
-    aPhHome.push(clampText255(phone_home));
-    const h = parseReal(getField(r, "height"));
-    aH.push(h == null || Number.isNaN(h) ? null : h);
-    const w = parseReal(getField(r, "weight"));
-    aW.push(w == null || Number.isNaN(w) ? null : w);
-    const dnt = parseDonateTypeInt(getField(r, "donate_type"));
-    aDon.push(dnt);
-    aPreEn.push(clampText255(getField(r, "eng_prefix")));
-    aFnEn.push(clampText255(getField(r, "eng_name")));
-    aLnEn.push(clampText255(getField(r, "eng_surname")));
-    aSoc.push(clampText255(normSocId(getField(r, "soc_id"))));
-    aHn.push(clampText255(getField(r, "hn")));
-    aGen.push(clampText255(getField(r, "gender")));
-    aNote.push(clampText255(getField(r, "short_note")));
-    aDis.push(clampText255(getField(r, "disease")));
-    aMobile.push(clampText255(getField(r, "mobile_phone")));
-    aEmail.push(clampText255(getField(r, "email")));
   }
 
   const ins = await pgClient.query(
@@ -339,13 +606,28 @@ export async function runPatientInfoChunkPostLoad(pgClient, mssqlRows) {
       aNote,
       aDis,
       aMobile,
-      aEmail
-    ]
+      aEmail,
+    ],
   );
 
   const idByNpid = new Map();
   for (const r of ins.rows) {
     idByNpid.set(normPid(r.pid), r.id);
+  }
+
+  const patientRowsInserted = ins.rowCount ?? aPid.length;
+
+  for (const np of npids) {
+    if (idByNpid.has(np)) continue;
+    recordPidIssues(np, { pidRaw: np, patientInfoId: null }, [
+      {
+        field: "_record",
+        reason: "insert_missing_after_migrate",
+        message: "แมปและ insert แล้ว แต่ไม่พบแถวใน public.patient_info",
+        source_raw: np,
+        mapped: null,
+      },
+    ]);
   }
 
   const adAddr = [];
@@ -358,19 +640,43 @@ export async function runPatientInfoChunkPostLoad(pgClient, mssqlRows) {
 
   for (const r of rows) {
     if (!hasAddressPayload(r)) continue;
-    const np = normPid(getField(r, "pid"));
+    const mapped = mapPatientInfoRow(r);
+    const np = mapped.pid;
+    if (np === "") continue;
+
     const id = idByNpid.get(np);
-    if (id == null) continue;
-    adAddr.push(clampText255(getField(r, "address")));
-    adSub.push(clampText255(getField(r, "sub_area")));
-    adDist.push(clampText255(getField(r, "area")));
-    adProv.push(clampText255(getField(r, "province")));
-    adZip.push(clampText255(getField(r, "zip")));
-    ad2.push(clampText255(getField(r, "address2")));
+    if (id == null) {
+      recordPidIssues(np, { pidRaw: mapped.pid_raw, patientInfoId: null }, [
+        {
+          field: "_address",
+          reason: "address_skipped_patient_not_inserted",
+          message:
+            "มีข้อมูลที่อยู่ในแหล่งข้อมูล แต่ไม่มี patient_info.id สำหรับ insert address",
+          source_raw: null,
+          mapped: null,
+        },
+      ]);
+      continue;
+    }
+
+    const addr = mapped.address;
+    adAddr.push(addr?.address ?? null);
+    adSub.push(addr?.sub_district ?? null);
+    adDist.push(addr?.district ?? null);
+    adProv.push(addr?.province ?? null);
+    adZip.push(addr?.zipcode ?? null);
+    ad2.push(addr?.address2 ?? null);
     adPat.push(id);
+
+    const existing = recordsWithIssues.get(np);
+    if (existing) existing.patient_info_id = id;
   }
 
-  if (adPat.length === 0) return;
+  let addressRowsInserted = 0;
+
+  if (adPat.length === 0) {
+    return buildChunkFieldIssueResult(patientRowsInserted, addressRowsInserted);
+  }
 
   await pgClient.query(`
     SELECT setval(
@@ -405,7 +711,7 @@ export async function runPatientInfoChunkPostLoad(pgClient, mssqlRows) {
     )
     RETURNING id, patient_info
     `,
-    [st, adAddr, adSub, adDist, adProv, adZip, ad2, adPat, fromOld]
+    [st, adAddr, adSub, adDist, adProv, adZip, ad2, adPat, fromOld],
   );
 
   // If patient_info has a FK back to address (e.g. address_id), populate it.
@@ -434,5 +740,25 @@ export async function runPatientInfoChunkPostLoad(pgClient, mssqlRows) {
       `,
       [addrIds, piIds],
     );
+  }
+
+  addressRowsInserted = insAddress.rowCount ?? adPat.length;
+
+  return buildChunkFieldIssueResult(patientRowsInserted, addressRowsInserted);
+
+  function buildChunkFieldIssueResult(patientInserted, addressInserted) {
+    const failedPids = sortPids(failingPidSet);
+    const hasIssues = totalFieldIssueCount > 0;
+    return {
+      failedPids,
+      fieldIssues: hasIssues
+        ? {
+            totalFieldIssueCount,
+            rowsInserted: patientInserted,
+            summaryExtras: { addressRowsInserted: addressInserted },
+            records: [...recordsWithIssues.values()],
+          }
+        : null,
+    };
   }
 }

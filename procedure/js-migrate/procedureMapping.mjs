@@ -2,6 +2,8 @@
  * Mapping: MSSQL dbo.biopsy -> Directus Postgres public.procedure
  */
 
+import { sourceRawNonempty } from "../../shared/js-migrate/fieldIssueLog.mjs";
+
 function getField(row, key) {
   return row[key] ?? row[key.toLowerCase()] ?? row[key.toUpperCase()];
 }
@@ -385,51 +387,229 @@ export function mapBiopsyRowToProcedure(row, examPgId) {
   return payload;
 }
 
+const PROCEDURE_MSSQL_SOURCE = {
+  patient_type: "patient_type",
+  biopsy_proc: "biopsy_proc",
+  location: "location",
+  assessment_others: "assessment_others",
+  width: "width",
+  depth: "depth",
+  assessment_birads: "assessment_birads",
+  remark: "remark",
+  technique: "technique",
+  patient_pos: "patient_pos",
+  breast_compress: "breast_compress",
+  approach: "approach",
+  recommend: "recommend",
+  recommend_benign: "recommend_benign",
+  recommend_highrisk: "recommend_highrisk",
+  recommend_milignant: "recommend_malignant",
+  result_aspiration_app: "result_aspiration_app",
+  result_ductography: "result_ductography",
+  needleno: "needle_no",
+  summary_doctor: "summary_doctor",
+  pathocode_fillby: "patho_code_fill_by",
+  pathocode_resultdate: "patho_code_result_date",
+  result_corebiopsy_specimens: "result_corebiopsy_specimens",
+  result_corebiopsy_microcal: "result_corebiopsy_microcal",
+  result_aspiration_cc: "result_aspiration_cc",
+  result_needle_mm_depth: "result_needle_mm_depth",
+  result_needle_mm_near: "result_needle_mm_near",
+  result_smear_noofslide: "result_smear_noofslide",
+  result_smear_app: "result_smear_app",
+  result_aspiration_cytology: "result_aspiration_cytology",
+  result_aspiration_culture: "result_aspiration_culture",
+  result_needle_within_lesion: "result_needle_within_lesion",
+  spontaneous_discharge: "spontaneous_discharge",
+};
+
+const PROCEDURE_INT_FIELDS = new Set([
+  "patient_type",
+  "biopsy_proc",
+  "location",
+  "assessment_others",
+  "assessment_birads",
+  "remark",
+  "technique",
+  "patient_pos",
+  "breast_compress",
+  "approach",
+  "result_aspiration_app",
+  "result_ductography",
+  "needleno",
+]);
+
+const PROCEDURE_BIGINT_FIELDS = new Set([
+  "recommend",
+  "recommend_benign",
+  "recommend_highrisk",
+  "recommend_milignant",
+]);
+
+const PROCEDURE_NUMERIC_FIELDS = new Set([
+  "width",
+  "depth",
+  "result_corebiopsy_specimens",
+  "result_corebiopsy_microcal",
+  "result_aspiration_cc",
+  "result_needle_mm_depth",
+  "result_needle_mm_near",
+  "result_smear_noofslide",
+  "result_smear_app",
+]);
+
+const PROCEDURE_BOOL_FIELDS = new Set([
+  "result_aspiration_cytology",
+  "result_aspiration_culture",
+  "result_needle_within_lesion",
+  "spontaneous_discharge",
+]);
+
+function collectProcedureFieldIssues(row, mapped) {
+  const issues = [];
+  const oldDbId = mapped.old_db_id;
+
+  if (oldDbId == null) {
+    const examRaw = getField(row, "exam_id");
+    const biopsyRaw = getField(row, "biopsy_id");
+    if (sourceRawNonempty(examRaw) || sourceRawNonempty(biopsyRaw)) {
+      issues.push({
+        field: "old_db_id",
+        reason: "invalid_procedure_key",
+        message: "exam_id หรือ biopsy_id ในแหล่งข้อมูลใช้สร้าง old_db_id ไม่ได้",
+        source_raw: { exam_id: examRaw, biopsy_id: biopsyRaw },
+        mapped: null,
+      });
+    }
+    return issues;
+  }
+
+  for (const [pgField, mssqlKey] of Object.entries(PROCEDURE_MSSQL_SOURCE)) {
+    const srcRaw = getField(row, mssqlKey);
+    const mappedVal = mapped[pgField];
+    if (!sourceRawNonempty(srcRaw) || mappedVal != null) continue;
+
+    if (pgField === "pathocode_resultdate") {
+      issues.push({
+        field: pgField,
+        reason: "timestamp_parse_failed",
+        message: "วันที่/เวลาในแหล่งข้อมูลแปลงไม่ได้",
+        source_raw: srcRaw,
+        mapped: null,
+      });
+    } else if (PROCEDURE_BOOL_FIELDS.has(pgField)) {
+      issues.push({
+        field: pgField,
+        reason: "boolean_parse_failed",
+        message: "ค่า boolean ในแหล่งข้อมูลไม่รู้จัก",
+        source_raw: srcRaw,
+        mapped: null,
+      });
+    } else if (
+      PROCEDURE_INT_FIELDS.has(pgField) ||
+      PROCEDURE_BIGINT_FIELDS.has(pgField)
+    ) {
+      issues.push({
+        field: pgField,
+        reason: "integer_parse_failed",
+        message: "ค่าตัวเลขในแหล่งข้อมูลไม่ใช่จำนวนเต็มที่ถูกต้อง",
+        source_raw: srcRaw,
+        mapped: null,
+      });
+    } else if (PROCEDURE_NUMERIC_FIELDS.has(pgField)) {
+      issues.push({
+        field: pgField,
+        reason: "numeric_parse_failed",
+        message: "ค่าตัวเลขทศนิยมในแหล่งข้อมูลแปลงไม่ได้",
+        source_raw: srcRaw,
+        mapped: null,
+      });
+    } else if (pgField === "summary_doctor" || pgField === "pathocode_fillby") {
+      issues.push({
+        field: pgField,
+        reason: "uuid_parse_failed",
+        message: "ค่า UUID ในแหล่งข้อมูลไม่ถูกต้อง",
+        source_raw: srcRaw,
+        mapped: null,
+      });
+    }
+  }
+
+  return issues;
+}
+
 /** เก็บเฉพาะแถวที่มี Examination ปลายทาง และ distinct ด้วย key exam+biopsy */
 export async function runProcedureChunkPostLoad(pgClient, mssqlRows) {
   const examMap = await getOldExamToPgExamMap(pgClient);
   const seen = new Map();
   const rowsIn = [];
-  let missingExamCount = 0;
-  const missingExamSamples = [];
+  let totalFieldIssueCount = 0;
+  /** @type {Map<string, object>} */
+  const recordsWithIssues = new Map();
+
+  function recordProcedureIssues(oldDbId, meta, fieldIssues) {
+    if (fieldIssues.length === 0 || oldDbId == null) return;
+    totalFieldIssueCount += fieldIssues.length;
+    let rec = recordsWithIssues.get(String(oldDbId));
+    if (!rec) {
+      rec = {
+        old_db_id: String(oldDbId),
+        exam_id: meta.exam_id ?? null,
+        biopsy_id: meta.biopsy_id ?? null,
+        exam_pg_id: meta.examPgId ?? null,
+        fieldIssues: [],
+      };
+      recordsWithIssues.set(String(oldDbId), rec);
+    }
+    if (meta.examPgId != null) rec.exam_pg_id = meta.examPgId;
+    rec.fieldIssues.push(...fieldIssues);
+  }
 
   for (const row of mssqlRows) {
     const key = normProcedureDbId(row);
-    if (key == null) continue;
+    const oldExam = normExamId(getField(row, "exam_id"));
+    const biopsyId = getField(row, "biopsy_id");
+    const meta = {
+      exam_id: oldExam === "" ? null : oldExam,
+      biopsy_id: biopsyId ?? null,
+      examPgId: null,
+    };
+
+    if (key == null) {
+      recordProcedureIssues(
+        `${oldExam || "?"}_${biopsyId ?? "?"}`,
+        meta,
+        collectProcedureFieldIssues(row, { old_db_id: null }),
+      );
+      continue;
+    }
     if (seen.has(key)) continue;
     seen.set(key, true);
 
-    const oldExam = normExamId(getField(row, "exam_id"));
     const pgExam = examMap.get(oldExam);
     if (pgExam == null) {
-      missingExamCount += 1;
-      if (missingExamSamples.length < 10) {
-        const oldDbId = normProcedureDbId(row);
-        missingExamSamples.push({
-          old_db_id: oldDbId,
-          exam_id: oldExam,
-        });
-      }
+      recordProcedureIssues(key, meta, [
+        {
+          field: "exam",
+          reason: "exam_not_resolved",
+          message: "มี exam_id ในแหล่งข้อมูล แต่ไม่พบใน public.examination",
+          source_raw: oldExam,
+          mapped: null,
+        },
+      ]);
       continue;
     }
 
+    meta.examPgId = pgExam;
     rowsIn.push({
       raw: row,
       examPgId: pgExam,
     });
   }
 
-  if (missingExamCount > 0) {
-    const sampleText =
-      missingExamSamples.length > 0
-        ? ` sample=${JSON.stringify(missingExamSamples)}`
-        : "";
-    throw new Error(
-      `[procedure] missing mapped examination for ${missingExamCount} row(s); abort chunk.${sampleText}`,
-    );
+  if (rowsIn.length === 0) {
+    return buildProcedureChunkFieldIssueResult(0, recordsWithIssues, totalFieldIssueCount);
   }
-
-  if (rowsIn.length === 0) return;
 
   const oldDbIds = rowsIn
     .map((x) => normProcedureDbId(x.raw))
@@ -451,14 +631,54 @@ export async function runProcedureChunkPostLoad(pgClient, mssqlRows) {
   const fkSets = await getProcedureForeignKeyAllowedSets(pgClient);
   const varcharLimits = await getProcedureVarcharLimits(pgClient);
   const trimStats = new Map();
-  const payloads = rowsIn.map(({ raw, examPgId }) => {
+  const payloads = [];
+  for (const { raw, examPgId } of rowsIn) {
     const m = mapBiopsyRowToProcedure(raw, examPgId);
-    nullOutInvalidForeignKeys(m, fkSets);
-    trimValuesToVarcharLimit(m, varcharLimits, trimStats);
-    return m;
-  });
+    const oldDbId = m.old_db_id;
+    const meta = {
+      exam_id: normExamId(getField(raw, "exam_id")) || null,
+      biopsy_id: getField(raw, "biopsy_id") ?? null,
+      examPgId,
+    };
+    recordProcedureIssues(oldDbId, meta, collectProcedureFieldIssues(raw, m));
 
-  // Intentionally silent during chunk processing to keep progress UI single-line/dynamic.
+    for (const [col, set] of fkSets) {
+      if (!Object.hasOwn(m, col)) continue;
+      const before = m[col];
+      if (before == null) continue;
+      if (!valueInFkSet(set, before)) {
+        m[col] = null;
+        recordProcedureIssues(oldDbId, meta, [
+          {
+            field: col,
+            reason: "fk_not_in_master",
+            message: `ค่าไม่มีในตาราง master สำหรับ FK คอลัมน์ ${col}`,
+            source_raw: before,
+            mapped: null,
+          },
+        ]);
+      }
+    }
+
+    for (const [col, maxLen] of varcharLimits) {
+      if (!Object.hasOwn(m, col)) continue;
+      const v = m[col];
+      if (typeof v !== "string" || v.length <= maxLen) continue;
+      const srcRaw = getField(raw, col);
+      m[col] = v.slice(0, maxLen);
+      recordProcedureIssues(oldDbId, meta, [
+        {
+          field: col,
+          reason: "text_truncated",
+          message: `ข้อความยาวเกิน ${maxLen} ตัวอักษร (ตัดก่อน insert)`,
+          source_raw: srcRaw ?? v,
+          mapped: m[col],
+        },
+      ]);
+    }
+
+    payloads.push(m);
+  }
 
   const A = payloads;
   /** ลำดับต้องตรง unnest และ INSERT — อย่าสับใสเรียงคีย์จาก mapBiopsyRowToProcedure */
@@ -659,6 +879,55 @@ export async function runProcedureChunkPostLoad(pgClient, mssqlRows) {
       A.map((p) => p.location_left_other),
     ],
   );
+
+  const rowsInserted = A.length;
+  if (oldDbIds.length > 0) {
+    const { rows: presentRows } = await pgClient.query(
+      `SELECT old_db_id::text AS k FROM public."procedure" WHERE old_db_id::text = ANY($1::text[])`,
+      [oldDbIds],
+    );
+    const present = new Set(presentRows.map((r) => String(r.k)));
+    for (const id of oldDbIds) {
+      if (present.has(String(id))) continue;
+      const src = rowsIn.find((x) => normProcedureDbId(x.raw) === id);
+      recordProcedureIssues(id, {
+        exam_id: src ? normExamId(getField(src.raw, "exam_id")) : null,
+        biopsy_id: src ? getField(src.raw, "biopsy_id") : null,
+        examPgId: src?.examPgId ?? null,
+      }, [
+        {
+          field: "_record",
+          reason: "insert_missing_after_migrate",
+          message: 'แมปและ insert แล้ว แต่ไม่พบแถวใน public."procedure"',
+          source_raw: id,
+          mapped: null,
+        },
+      ]);
+    }
+  }
+
+  return buildProcedureChunkFieldIssueResult(
+    rowsInserted,
+    recordsWithIssues,
+    totalFieldIssueCount,
+  );
+}
+
+function buildProcedureChunkFieldIssueResult(
+  rowsInserted,
+  recordsWithIssues,
+  totalFieldIssueCount,
+) {
+  const hasIssues = totalFieldIssueCount > 0;
+  return {
+    fieldIssues: hasIssues
+      ? {
+          totalFieldIssueCount,
+          rowsInserted,
+          records: [...recordsWithIssues.values()],
+        }
+      : null,
+  };
 }
 
 export const MSSQL_PROCEDURE_DEST_FIELD_PAIRS = [

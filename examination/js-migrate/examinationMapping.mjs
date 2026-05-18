@@ -1,11 +1,189 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 /**
  * แมปแถว examination จาก MSSQL -> public.examination (เทียบ logic เดิมจาก SQL)
  */
 
 const INT_RE = /^-?\d+$/;
 
-function getField(row, key) {
-  return row[key] ?? row[key.toLowerCase()] ?? row[key.toUpperCase()];
+/**
+ * รองรับคีย์จาก JSON export (PascalCase เช่น Referring_MD) และจาก MSSQL driver (snake_case)
+ */
+export function getField(row, key) {
+  if (row == null) return undefined;
+  if (Object.prototype.hasOwnProperty.call(row, key)) return row[key];
+  const lk = key.toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(row, lk)) return row[lk];
+  const uk = key.toUpperCase();
+  if (Object.prototype.hasOwnProperty.call(row, uk)) return row[uk];
+  for (const k of Object.keys(row)) {
+    if (k.toLowerCase() === lk) return row[k];
+  }
+  return undefined;
+}
+
+/** ยุบช่องว่างสำหรับเทียบชื่อแพทย์/คลินิก */
+function normRefLabel(v) {
+  if (v == null) return "";
+  return String(v)
+    .replace(/^\uFEFF/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** ใช้เฉพาะ referring_md: NFC + แก้สะกดที่พบบ่อยระหว่าง legacy กับ Directus */
+function canonRefString(v) {
+  let t = normRefLabel(v).normalize("NFC");
+  t = t.replace(/โพธสุวรรณ/g, "โพธิสุวรรณ");
+  return t;
+}
+
+/**
+ * ลบคำนำหน้าแพทย์/วิชาการซ้ำได้หลายชั้น
+ * (เช่น อ./นพ./รศ.นพ. ให้ core ชื่อเดียวกับ master ที่เขียน รศ.นพ.…)
+ */
+const TITLE_STRIP_RES = [
+  /^รศ\.\s*นพ\.\s*/iu,
+  /^รศ\.\s*พญ\.\s*/iu,
+  /^ศ\.\s*นพ\.\s*/iu,
+  /^ศ\.\s*พญ\.\s*/iu,
+  /^ผศ\.\s*นพ\.\s*/iu,
+  /^ผศ\.\s*พญ\.\s*/iu,
+  /^พ\.ญ\.\s*/iu,
+  /^พ\.\s*ญ\.\s*/iu,
+  /^นพ\.\s*/iu,
+  /^พญ\.\s*/iu,
+  /^อ\.\s*/iu,
+  /^รศ\.\s*/iu,
+  /^ศ\.\s*/iu,
+  /^ดร\.\s*/iu,
+  /^ผศ\.\s*/iu,
+  /^แพทย์หญิง\s*/iu,
+  /^แพทย์\s*/iu,
+];
+
+function stripAllPhysicianPrefixes(s) {
+  let t = canonRefString(s);
+  for (let i = 0; i < 12; i++) {
+    let u = t;
+    for (const re of TITLE_STRIP_RES) {
+      u = u.replace(re, "");
+    }
+    u = canonRefString(u);
+    if (u === t) break;
+    t = u;
+  }
+  return t;
+}
+
+function refCompositeKey(fullNorm, hospNorm) {
+  return `${fullNorm}\u0001${hospNorm}`;
+}
+
+/**
+ * สร้างตัวแปลงชื่อ/เลขจาก MSSQL → id ใน referring_md (Directus)
+ */
+function createReferringMdResolver(masterRows) {
+  const allIds = new Set();
+  /** @type {Map<string, number[]>} */
+  const byExactFull = new Map();
+  /** @type {Map<string, number>} */
+  const byFullHosp = new Map();
+  /** @type {Map<string, number[]>} */
+  const byCore = new Map();
+
+  const rows = [];
+  for (const r of masterRows) {
+    const id = Number(r.id);
+    if (!Number.isInteger(id)) continue;
+    allIds.add(id);
+    const nfn = canonRefString(r.fullname);
+    const nh = canonRefString(r.hospital);
+    const core = stripAllPhysicianPrefixes(nfn);
+    rows.push({ id, nfn, nh, core });
+    if (nfn) {
+      const a = byExactFull.get(nfn) ?? [];
+      if (!a.includes(id)) a.push(id);
+      byExactFull.set(nfn, a);
+      const ck = refCompositeKey(nfn, nh);
+      if (!byFullHosp.has(ck)) byFullHosp.set(ck, id);
+    }
+    if (core) {
+      const a = byCore.get(core) ?? [];
+      if (!a.includes(id)) a.push(id);
+      byCore.set(core, a);
+    }
+  }
+
+  function disambiguateByHospital(candIds, hospNorm) {
+    if (candIds.length === 0) return null;
+    if (candIds.length === 1) return candIds[0];
+    if (!hospNorm) return null;
+    const hits = rows.filter(
+      (x) =>
+        candIds.includes(x.id) &&
+        x.nh !== "" &&
+        canonRefString(x.nh) === hospNorm,
+    );
+    if (hits.length === 1) return hits[0].id;
+    return null;
+  }
+
+  function tryUniqueSubstringFullname(nInCanon) {
+    if (nInCanon.length < 8) return null;
+    const hits = rows.filter((x) => {
+      if (!x.nfn) return false;
+      return x.nfn.includes(nInCanon) || nInCanon.includes(x.nfn);
+    });
+    const ids = [...new Set(hits.map((h) => h.id))];
+    if (ids.length === 1) return ids[0];
+    if (ids.length > 1 && hits.length > 0) {
+      const narrowed = hits.filter(
+        (x) => x.nfn === nInCanon || x.nfn.includes(nInCanon),
+      );
+      const ids2 = [...new Set(narrowed.map((h) => h.id))];
+      if (ids2.length === 1) return ids2[0];
+    }
+    return null;
+  }
+
+  return function resolveReferringMd(nameRaw, hospRaw) {
+    const nIn = canonRefString(nameRaw);
+    if (!nIn) return null;
+    const hIn = canonRefString(hospRaw);
+
+    const asInt = toStrictInt(nIn);
+    if (asInt != null && allIds.has(asInt)) return asInt;
+
+    const exact = byExactFull.get(nIn);
+    if (exact?.length === 1) return exact[0];
+    if (exact && exact.length > 1) {
+      const d = disambiguateByHospital(exact, hIn);
+      if (d != null) return d;
+    }
+
+    const comp = refCompositeKey(nIn, hIn);
+    if (byFullHosp.has(comp)) return byFullHosp.get(comp);
+
+    const coreIn = stripAllPhysicianPrefixes(nIn);
+    if (coreIn) {
+      const cs = byCore.get(coreIn);
+      if (cs?.length === 1) return cs[0];
+      if (cs && cs.length > 1) {
+        const d = disambiguateByHospital(cs, hIn);
+        if (d != null) return d;
+      }
+    }
+
+    const sub = tryUniqueSubstringFullname(nIn);
+    if (sub != null) return sub;
+
+    return null;
+  };
 }
 
 export function normExamId(v) {
@@ -452,6 +630,288 @@ const INSERT_DEFS = [
   ["appointment", "int4", (_row, ctx) => ctx.appointmentId],
 ];
 
+/** คีย์ MSSQL สำหรับแต่ละคอลัมน์ปลายทาง (ค่าเริ่มต้น = ชื่อคอลัมน์เดียวกัน) */
+const EXAMINATION_MSSQL_SOURCE = {
+  old_exam_id: "exam_id",
+  old_pid: "pid",
+  patient: "pid",
+  pregnant: "pragnant",
+  appointment: "schedule_id",
+};
+
+function mssqlSourceKey(pgColumn) {
+  return EXAMINATION_MSSQL_SOURCE[pgColumn] ?? pgColumn;
+}
+
+function sourceRawNonempty(v) {
+  if (v == null) return false;
+  return String(v).replace(/^\uFEFF/, "").trim() !== "";
+}
+
+function sortExamIds(ids) {
+  const out = [...ids];
+  out.sort((a, b) => {
+    try {
+      const aa = BigInt(a);
+      const bb = BigInt(b);
+      return aa < bb ? -1 : aa > bb ? 1 : 0;
+    } catch {
+      return String(a).localeCompare(String(b));
+    }
+  });
+  return out;
+}
+
+/**
+ * ตรวจทุกฟิลด์ที่จะ insert: แหล่งมีค่าแต่แมปไม่ได้ / FK ไม่ตรง / parse ล้มเหลว
+ * @returns {{ field: string, reason: string, message: string, source_raw: unknown, mapped: unknown, detail?: object }[]}
+ */
+function collectExaminationFieldIssues({
+  row,
+  context,
+  mappedByName,
+  patientCol,
+  referringResolvedBeforeFk,
+  referringFkStripped,
+}) {
+  const issues = [];
+  const patientField = patientCol === "patient_id" ? "patient_id" : "patient";
+
+  const pidRaw = getField(row, "pid");
+  if (normPid(pidRaw) !== "" && context.patientId == null) {
+    issues.push({
+      field: patientField,
+      reason: "patient_not_resolved",
+      message: "มี pid ในแหล่งข้อมูล แต่ไม่พบใน public.patient_info",
+      source_raw: pidRaw,
+      mapped: mappedByName.get("patient") ?? null,
+    });
+  }
+
+  const schedRaw = getField(row, "schedule_id");
+  const schedInt = toStrictInt(schedRaw);
+  if (schedInt != null && context.appointmentId == null) {
+    issues.push({
+      field: "appointment",
+      reason: "appointment_not_resolved",
+      message: "มี schedule_id แต่ไม่พบ appointment.old_db_id ที่ตรงกัน",
+      source_raw: schedRaw,
+      mapped: mappedByName.get("appointment") ?? null,
+    });
+  }
+
+  const refNameRaw = getField(row, "referring_md");
+  const refHospRaw = getField(row, "referring_hospital");
+  if (sourceRawNonempty(refNameRaw)) {
+    if (referringFkStripped) {
+      issues.push({
+        field: "referring_md",
+        reason: "referring_md_fk_invalid",
+        message: "แมปได้ id แต่ไม่มีในตาราง master / FK",
+        source_raw: refNameRaw,
+        mapped: null,
+        detail: {
+          resolved_id_before_strip: referringResolvedBeforeFk,
+          referring_hospital_raw: refHospRaw,
+        },
+      });
+    } else if (mappedByName.get("referring_md") == null) {
+      issues.push({
+        field: "referring_md",
+        reason: "referring_md_not_resolved",
+        message: "มีชื่อแพทย์อ้างอิงในแหล่งข้อมูล แต่แมปเป็น id ไม่ได้",
+        source_raw: refNameRaw,
+        mapped: null,
+        detail: {
+          referring_hospital_raw: refHospRaw,
+          referring_md_canon: canonRefString(refNameRaw),
+          referring_hospital_canon: canonRefString(refHospRaw),
+        },
+      });
+    }
+  }
+
+  const skipGeneric = new Set([
+    "patient",
+    "appointment",
+    "referring_md",
+    "old_exam_id",
+    "old_pid",
+  ]);
+
+  for (const [col, pgType] of INSERT_DEFS) {
+    if (skipGeneric.has(col)) continue;
+
+    const srcKey = mssqlSourceKey(col);
+    const srcRaw = getField(row, srcKey);
+    const mapped = mappedByName.get(col);
+
+    if (pgType === "timestamp" && sourceRawNonempty(srcRaw) && mapped == null) {
+      issues.push({
+        field: col,
+        reason: "timestamp_parse_failed",
+        message: "วันที่/เวลาในแหล่งข้อมูลแปลงไม่ได้",
+        source_raw: srcRaw,
+        mapped: null,
+      });
+      continue;
+    }
+
+    if (pgType === "boolean" && sourceRawNonempty(srcRaw) && mapped == null) {
+      issues.push({
+        field: col,
+        reason: "boolean_parse_failed",
+        message: "ค่า boolean ในแหล่งข้อมูลไม่รู้จัก (ไม่ใช่ 0/1/Y/N/true/false ฯลฯ)",
+        source_raw: srcRaw,
+        mapped: null,
+      });
+      continue;
+    }
+
+    if (pgType === "int4" && col === "mobile_updated") {
+      if (sourceRawNonempty(srcRaw) && mapped == null) {
+        issues.push({
+          field: col,
+          reason: "epoch_parse_failed",
+          message: "ค่า mobile_updated แปลงเป็น unix epoch ไม่ได้",
+          source_raw: srcRaw,
+          mapped: null,
+        });
+      }
+      continue;
+    }
+
+    if (pgType === "int4" && sourceRawNonempty(srcRaw) && mapped == null) {
+      issues.push({
+        field: col,
+        reason: "integer_parse_failed",
+        message: "ค่าตัวเลขในแหล่งข้อมูลไม่ใช่จำนวนเต็มที่ถูกต้อง",
+        source_raw: srcRaw,
+        mapped: null,
+      });
+    }
+  }
+
+  return issues;
+}
+
+function buildFieldIssueSummary(recordIssues) {
+  /** @type {Record<string, Record<string, number>>} */
+  const summaryByField = {};
+  /** @type {Record<string, number>} */
+  const summaryByReason = {};
+
+  for (const rec of recordIssues) {
+    for (const fi of rec.fieldIssues ?? []) {
+      const f = fi.field;
+      const r = fi.reason;
+      if (!summaryByField[f]) summaryByField[f] = {};
+      summaryByField[f][r] = (summaryByField[f][r] ?? 0) + 1;
+      summaryByReason[r] = (summaryByReason[r] ?? 0) + 1;
+    }
+  }
+  return { summaryByField, summaryByReason };
+}
+
+/** สะสม field issues จากทุก chunk ก่อนเขียนไฟล์เดียวตอนจบ migration */
+export function createFieldIssueAccumulator() {
+  return {
+    /** @type {Map<string, object>} */
+    recordsByExamId: new Map(),
+    totalFieldIssueCount: 0,
+    referringNullified: 0,
+    rowsInserted: 0,
+    masterLoadError: null,
+  };
+}
+
+export function mergeFieldIssueChunk(accumulator, chunkResult) {
+  if (!accumulator || !chunkResult) return;
+  const fi = chunkResult.fieldIssues;
+  if (!fi) return;
+  accumulator.totalFieldIssueCount += fi.totalFieldIssueCount ?? 0;
+  accumulator.referringNullified += fi.referringNullified ?? 0;
+  accumulator.rowsInserted += fi.rowsInserted ?? 0;
+  if (fi.masterLoadError) accumulator.masterLoadError = fi.masterLoadError;
+  for (const rec of fi.records ?? []) {
+    const id = String(rec.exam_id);
+    const prev = accumulator.recordsByExamId.get(id);
+    if (prev) {
+      prev.fieldIssues.push(...(rec.fieldIssues ?? []));
+    } else {
+      accumulator.recordsByExamId.set(id, {
+        ...rec,
+        fieldIssues: [...(rec.fieldIssues ?? [])],
+      });
+    }
+  }
+}
+
+/**
+ * เขียน log แบบ summary (อ่านง่าย) + records ครบทุก exam_id (คีย์ = exam_id)
+ * ใช้ stream เพื่อไม่สร้าง string ยักษ์ใน memory
+ */
+export function writeFieldIssueLogFile(logPath, payload) {
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  const fd = fs.openSync(logPath, "w");
+  try {
+    const head = {
+      type: payload.type,
+      generatedAt: payload.generatedAt,
+      migrationKey: payload.migrationKey,
+      summary: payload.summary,
+    };
+    const headJson = JSON.stringify(head, null, 2);
+    fs.writeSync(fd, `${headJson.slice(0, -1)},\n  "records": {\n`);
+
+    const keys = sortExamIds(Object.keys(payload.records ?? {}));
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      const recJson = JSON.stringify(payload.records[k]);
+      const suffix = i < keys.length - 1 ? ",\n" : "\n";
+      fs.writeSync(fd, `    ${JSON.stringify(k)}: ${recJson}${suffix}`);
+    }
+    fs.writeSync(fd, "  }\n}\n");
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+export function buildFieldIssueLogPayload(accumulator, options = {}) {
+  const allRecords = [...accumulator.recordsByExamId.values()];
+  const { summaryByField, summaryByReason } = buildFieldIssueSummary(allRecords);
+
+  /** @type {Record<string, object>} exam_id -> รายละเอียดปัญหา (แทน failedExamIds แยก) */
+  const records = {};
+  for (const rec of allRecords) {
+    const id = String(rec.exam_id);
+    records[id] = {
+      exam_id: id,
+      exam_id_raw: rec.exam_id_raw ?? id,
+      schedule_id: rec.schedule_id ?? null,
+      appointment_id: rec.appointment_id ?? null,
+      patient_id: rec.patient_id ?? null,
+      fieldIssues: rec.fieldIssues ?? [],
+    };
+  }
+
+  return {
+    type: "examination_field_issues",
+    generatedAt: new Date().toISOString(),
+    migrationKey: options.migrationKey ?? null,
+    summary: {
+      affectedRecordCount: allRecords.length,
+      totalFieldIssueCount: accumulator.totalFieldIssueCount,
+      rowsInserted: accumulator.rowsInserted,
+      referringNullified: accumulator.referringNullified,
+      masterLoadError: accumulator.masterLoadError,
+      byField: summaryByField,
+      byReason: summaryByReason,
+    },
+    records,
+  };
+}
+
 function assertStagingFromClause(stagingFromClause) {
   const t = String(stagingFromClause ?? "").trim();
   if (!/^\w+\.\w+$/.test(t)) {
@@ -536,15 +996,47 @@ export async function runExaminationChunkPostLoad(
   const log = (msg) => {
     if (verbose) console.error(msg);
   };
+
+  const failingExamIdSet = new Set();
+  let totalFieldIssueCount = 0;
+  /** @type {Map<string, { exam_id: string, exam_id_raw: string, schedule_id: number|null, appointment_id: number|null, patient_id: number|null, fieldIssues: any[] }>} */
+  const recordsWithIssues = new Map();
+  /** @type {null|{message:string,parentRel:string|null}} */
+  let referringMdMasterLoadError = null;
+
+  function recordRowFieldIssues(examId, meta, fieldIssues) {
+    if (fieldIssues.length === 0) return;
+    failingExamIdSet.add(examId);
+    totalFieldIssueCount += fieldIssues.length;
+
+    let rec = recordsWithIssues.get(examId);
+    if (!rec) {
+      rec = {
+        exam_id: examId,
+        exam_id_raw: meta.examIdRaw,
+        schedule_id: meta.scheduleId,
+        appointment_id: meta.appointmentId,
+        patient_id: meta.patientId,
+        fieldIssues: [],
+      };
+      recordsWithIssues.set(examId, rec);
+    }
+    rec.fieldIssues.push(...fieldIssues);
+  }
+
   const stg = assertStagingFromClause(stagingFromClause);
   const rows = distinctOnNormExamId(mssqlRows);
-  if (rows.length === 0) return;
+  if (rows.length === 0) {
+    return { failedExamIds: [], fieldIssues: null };
+  }
 
   const examIds = rows
     .map((r) => normExamId(getField(r, "exam_id")))
     .filter((id) => id !== "" && isDigitsOnly(id));
 
-  if (examIds.length === 0) return;
+  if (examIds.length === 0) {
+    return { failedExamIds: [], fieldIssues: null };
+  }
 
   const mssqlExamU = rows.map((r) => String(getField(r, "exam_id") ?? ""));
   const { rows: stgCountRow } = await pgClient.query(
@@ -633,7 +1125,10 @@ export async function runExaminationChunkPostLoad(
   const referringIdx = INSERT_DEFS.findIndex(
     ([name]) => name === "referring_md",
   );
-  let validReferringSet = null;
+  /** @type {Set<number>|null} */
+  let allReferringIds = null;
+  /** @type {((nameRaw: unknown, hospRaw: unknown) => number|null)|null} */
+  let resolveReferringMd = null;
   if (referringIdx >= 0) {
     const fk = await resolveSingleColumnFk(pgClient, {
       schema: "public",
@@ -641,33 +1136,69 @@ export async function runExaminationChunkPostLoad(
       column: "referring_md",
     });
     if (fk?.parent_schema && fk?.parent_table && fk?.parent_column) {
-      const candidateReferring = Array.from(
-        new Set(
-          rows
-            .map((r) => toStrictInt(getField(r, "referring_md")))
-            .filter((v) => Number.isInteger(v)),
-        ),
-      );
-      if (candidateReferring.length > 0) {
-        const q = `SELECT ${fk.parent_column} AS id FROM ${fk.parent_schema}.${fk.parent_table} WHERE ${fk.parent_column} = ANY($1::int[])`;
-        const { rows: refRows } = await pgClient.query(q, [candidateReferring]);
-        validReferringSet = new Set(refRows.map((r) => r.id));
-        console.error(
-          `>>> [examination] post-load: FK referring_md → ${fk.parent_schema}.${fk.parent_table}(${fk.parent_column}); candidate=${candidateReferring.length} valid=${validReferringSet.size}`,
+      const fq = (ident) => `"${String(ident).replace(/"/g, '""')}"`;
+      const parentRel = `${fq(fk.parent_schema)}.${fq(fk.parent_table)}`;
+      const idCol = fq(fk.parent_column);
+      let masterRows = [];
+      try {
+        const { rows: mrows } = await pgClient.query(
+          `SELECT ${idCol} AS id, fullname, hospital FROM ${parentRel}`,
         );
+        masterRows = mrows;
+      } catch (e) {
+        const msg = `>>> [examination] post-load: โหลด master referring_md จาก ${parentRel} ไม่ได้ (ต้องมีคอลัมน์ fullname, hospital): ${e?.message ?? e}`;
+        console.error(msg);
+        referringMdMasterLoadError = { message: msg, parentRel: parentRel ?? null };
+        const { rows: idOnly } = await pgClient.query(
+          `SELECT ${idCol} AS id FROM ${parentRel}`,
+        );
+        masterRows = idOnly.map((r) => ({
+          id: r.id,
+          fullname: null,
+          hospital: null,
+        }));
       }
+      allReferringIds = new Set(
+        masterRows.map((r) => Number(r.id)).filter((n) => Number.isInteger(n)),
+      );
+      resolveReferringMd = createReferringMdResolver(masterRows);
     }
   }
 
   const arrays = INSERT_DEFS.map(() => []);
   let referringNullified = 0;
+  const insertedExamIds = [];
+
   for (const row of rows) {
     const examId = normExamId(getField(row, "exam_id"));
-    if (examId === "" || !isDigitsOnly(examId)) continue;
-
     const u = String(getField(row, "exam_id") ?? "");
-    const patientId = mssqlUToPatient.get(u) ?? null;
 
+    if (examId === "" || !isDigitsOnly(examId)) {
+      if (sourceRawNonempty(getField(row, "exam_id"))) {
+        const badId = String(getField(row, "exam_id") ?? "").trim();
+        recordRowFieldIssues(
+          badId || "(empty)",
+          {
+            examIdRaw: u,
+            scheduleId: toStrictInt(getField(row, "schedule_id")),
+            appointmentId: null,
+            patientId: null,
+          },
+          [
+            {
+              field: "old_exam_id",
+              reason: "invalid_exam_id",
+              message: "exam_id ในแหล่งข้อมูลไม่ใช่ตัวเลขที่ใช้ migrate ได้",
+              source_raw: getField(row, "exam_id"),
+              mapped: null,
+            },
+          ],
+        );
+      }
+      continue;
+    }
+
+    const patientId = mssqlUToPatient.get(u) ?? null;
     const scheduleId = toStrictInt(getField(row, "schedule_id"));
     const scheduleKey = scheduleId == null ? null : String(scheduleId);
     const appointmentId =
@@ -675,32 +1206,65 @@ export async function runExaminationChunkPostLoad(
         ? null
         : (scheduleKeyToAppointmentId.get(scheduleKey) ?? null);
     const context = { patientId, appointmentId };
+    const rowMeta = {
+      examIdRaw: u,
+      scheduleId,
+      appointmentId,
+      patientId,
+    };
+
+    /** @type {Map<string, unknown>} */
+    const mappedByName = new Map();
+    let referringResolvedBeforeFk = null;
+    let referringFkStripped = false;
 
     for (let i = 0; i < INSERT_DEFS.length; i++) {
-      let v = INSERT_DEFS[i][2](row, context);
-      if (
-        i === referringIdx &&
-        validReferringSet &&
-        v != null &&
-        !validReferringSet.has(v)
-      ) {
-        v = null;
-        referringNullified += 1;
+      const [colName] = INSERT_DEFS[i];
+      let v;
+      if (i === referringIdx) {
+        if (resolveReferringMd) {
+          const nameRaw = getField(row, "referring_md");
+          const hospRaw = getField(row, "referring_hospital");
+          v = resolveReferringMd(nameRaw, hospRaw);
+        } else {
+          v = INSERT_DEFS[i][2](row, context);
+        }
+        if (v != null && allReferringIds && !allReferringIds.has(v)) {
+          referringResolvedBeforeFk = v;
+          referringFkStripped = true;
+          v = null;
+          referringNullified += 1;
+        }
+      } else {
+        v = INSERT_DEFS[i][2](row, context);
       }
+      mappedByName.set(colName, v);
       arrays[i].push(v);
     }
+
+    insertedExamIds.push(examId);
+
+    const fieldIssues = collectExaminationFieldIssues({
+      row,
+      context,
+      mappedByName,
+      patientCol,
+      referringResolvedBeforeFk,
+      referringFkStripped,
+    });
+    recordRowFieldIssues(examId, rowMeta, fieldIssues);
   }
 
   if (arrays[0].length === 0) {
     log(
       `>>> [examination] post-load: จะ insert 0 แถว (map patient ${mssqlUToPatient.size} ราย; กรอง exam/schedule)`,
     );
-    return;
+    return buildChunkFieldIssueResult();
   }
 
   if (referringNullified > 0) {
-    console.error(
-      `>>> [examination] post-load: referring_md ถูกตัดเป็น null ${referringNullified} ค่า (กัน FK examination_referring_md_foreign ล้ม; ควรกลับมา seed/แก้ master ทีหลัง)`,
+    log(
+      `>>> [examination] post-load: referring_md ถูกตัดเป็น null ${referringNullified} ค่า (ไม่มี id ใน master / FK ไม่รองรับ)`,
     );
   }
 
@@ -721,4 +1285,48 @@ export async function runExaminationChunkPostLoad(
   log(
     `>>> [examination] post-load: insert public.examination แล้ว ${ins.rowCount ?? arrays[0].length} แถว (คอลัมน์ patient → ${patientCol})`,
   );
+
+  // หลัง migrate: ตรวจว่าแถวที่ควร insert มีจริงใน PG
+  if (insertedExamIds.length > 0) {
+    const { rows: pgRows } = await pgClient.query(
+      `SELECT old_exam_id::text AS exam_id FROM public.examination WHERE old_exam_id = ANY($1::text[])`,
+      [insertedExamIds],
+    );
+    const present = new Set(pgRows.map((r) => String(r.exam_id)));
+    for (const eid of insertedExamIds) {
+      if (present.has(eid)) continue;
+      recordRowFieldIssues(
+        eid,
+        { examIdRaw: eid, scheduleId: null, appointmentId: null, patientId: null },
+        [
+          {
+            field: "_record",
+            reason: "insert_missing_after_migrate",
+            message: "แมปและ insert แล้ว แต่ไม่พบแถวใน public.examination",
+            source_raw: eid,
+            mapped: null,
+          },
+        ],
+      );
+    }
+  }
+
+  return buildChunkFieldIssueResult();
+
+  function buildChunkFieldIssueResult() {
+    const failedExamIds = sortExamIds(failingExamIdSet);
+    const hasIssues = totalFieldIssueCount > 0 || referringMdMasterLoadError;
+    return {
+      failedExamIds,
+      fieldIssues: hasIssues
+        ? {
+            totalFieldIssueCount,
+            referringNullified,
+            masterLoadError: referringMdMasterLoadError,
+            records: [...recordsWithIssues.values()],
+            rowsInserted: ins?.rowCount ?? arrays[0]?.length ?? 0,
+          }
+        : null,
+    };
+  }
 }

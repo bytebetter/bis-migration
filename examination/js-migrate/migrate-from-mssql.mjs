@@ -13,8 +13,13 @@ import {
   ensureExaminationStagingDdl,
 } from "./examinationPgDdl.mjs";
 import {
+  buildFieldIssueLogPayload,
+  createFieldIssueAccumulator,
+  getField,
+  mergeFieldIssueChunk,
   normExamId,
   runExaminationChunkPostLoad,
+  writeFieldIssueLogFile,
 } from "./examinationMapping.mjs";
 import {
   createUiState,
@@ -314,7 +319,7 @@ function toStr(v) {
 
 function rowToStagingArrays(row, rowIdx, arrays, cols) {
   const g = (k) => {
-    const v = row[k] ?? row[k.toLowerCase()] ?? row[k.toUpperCase()];
+    const v = getField(row, k);
     return v === undefined || v === null ? null : toStr(v);
   };
   for (let c = 0; c < cols.length; c++) arrays[c][rowIdx] = g(cols[c]);
@@ -497,6 +502,15 @@ async function runTableJob({
   let examinationSuccessCases = 0;
   let examinationFailCases = 0;
   const failedExamIdSet = new Set();
+  const fieldIssueAcc = isExaminationBuiltin
+    ? createFieldIssueAccumulator()
+    : null;
+  const fieldIssueLogPath = isExaminationBuiltin
+    ? path.join(
+        path.resolve(__dirname, "logs"),
+        `migration-field-issues-${String(key).replace(/[^a-zA-Z0-9_-]/g, "_")}-${nowStamp()}.json`,
+      )
+    : null;
   const chunkResults = [];
   let chunkIndex = 0;
   let successChunkCount = 0;
@@ -724,9 +738,19 @@ async function runTableJob({
           console.error(`>>> [${key}] runExaminationChunkPostLoad`);
         }
         const postLoadStartedAt = Date.now();
-        await runExaminationChunkPostLoad(pgClient, rows, stagingFromClause, {
-          verbose: debugLogs && !singleLineUi,
-        });
+        const postLoadResult = await runExaminationChunkPostLoad(
+          pgClient,
+          rows,
+          stagingFromClause,
+          {
+            verbose: debugLogs && !singleLineUi,
+            migrationKey: key,
+            chunkIndex,
+          },
+        );
+        mergeFieldIssueChunk(fieldIssueAcc, postLoadResult);
+        for (const eid of postLoadResult?.failedExamIds ?? [])
+          failedExamIdSet.add(eid);
         postLoadMs = Date.now() - postLoadStartedAt;
       }
 
@@ -940,6 +964,19 @@ GROUP BY reason
 ORDER BY reason;
 `);
 
+  let fieldIssueLogWritten = null;
+  if (
+    fieldIssueAcc &&
+    fieldIssueLogPath &&
+    (fieldIssueAcc.totalFieldIssueCount > 0 || fieldIssueAcc.masterLoadError)
+  ) {
+    const payload = buildFieldIssueLogPayload(fieldIssueAcc, {
+      migrationKey: key,
+    });
+    writeFieldIssueLogFile(fieldIssueLogPath, payload);
+    fieldIssueLogWritten = fieldIssueLogPath;
+  }
+
   const summary = {
     key,
     totalRowsRead: total,
@@ -947,6 +984,7 @@ ORDER BY reason;
     examination_success_cases: examinationSuccessCases,
     examination_fail_cases: examinationFailCases,
     failedExamIds: Array.from(failedExamIdSet),
+    fieldIssueLogPath: fieldIssueLogWritten,
     missingByReason: missingByReason.rows,
     checkpointPath: checkpointEnabled ? checkpointPath : null,
     chunkCount: chunkIndex,
