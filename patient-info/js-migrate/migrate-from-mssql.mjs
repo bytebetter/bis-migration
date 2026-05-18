@@ -4,7 +4,16 @@ import { fileURLToPath } from "node:url";
 import sql from "mssql";
 import pg from "pg";
 import { MSSQL_PATIENT_INFO_SELECT } from "./mssqlPatientInfoSelect.mjs";
-import { ensurePatientInfoStagingDdl } from "./patientInfoPgDdl.mjs";
+import {
+  ensurePatientInfoShortNoteColumn,
+  ensurePatientInfoStagingDdl,
+} from "./patientInfoPgDdl.mjs";
+import {
+  buildFieldIssueLogPayload,
+  createFieldIssueAccumulator,
+  mergeFieldIssueChunk,
+  writeFieldIssueLogFile,
+} from "../../shared/js-migrate/fieldIssueLog.mjs";
 import {
   distinctOnNormPid,
   normPid,
@@ -186,9 +195,7 @@ async function dryRunPatientInfoPostLoadSubset(
     for (let i = 0; i < n; i++) {
       rowToStagingArraysFn(subsetRows[i], i, arrays, columns);
     }
-    const unnestArgs = arrays
-      .map((_, idx) => `$${idx + 1}::text[]`)
-      .join(", ");
+    const unnestArgs = arrays.map((_, idx) => `$${idx + 1}::text[]`).join(", ");
     const insertStaging = `INSERT INTO ${stagingTable} (${columns.join(", ")}) SELECT * FROM unnest(${unnestArgs});`;
     await pgClient.query(insertStaging, arrays);
     await runPatientInfoChunkPostLoad(pgClient, subsetRows);
@@ -418,9 +425,11 @@ async function runTableJob({
   if (isPatientInfoBuiltin && toArray(tableJob.preLoadSqlFiles).length === 0) {
     writeOutLine(`>>> [${key}] ensure migrate_stg + norm_pid (DDL)`, uiState);
     await ensurePatientInfoStagingDdl(pgClient);
+    await ensurePatientInfoShortNoteColumn(pgClient);
   }
   for (const sqlFile of toArray(tableJob.preLoadSqlFiles)) {
-    if (debugLogs) writeOutLine(`>>> [${key}] run pre-load SQL: ${sqlFile}`, uiState);
+    if (debugLogs)
+      writeOutLine(`>>> [${key}] run pre-load SQL: ${sqlFile}`, uiState);
     await pgClient.query(readSql(sqlBaseDir, sqlFile));
   }
 
@@ -430,6 +439,15 @@ async function runTableJob({
   let patientFailCases = 0;
   let addressSuccessCases = 0;
   const failedPidSet = new Set();
+  const fieldIssueAcc = isPatientInfoBuiltin
+    ? createFieldIssueAccumulator("pid")
+    : null;
+  const fieldIssueLogPath = isPatientInfoBuiltin
+    ? path.join(
+        path.resolve(__dirname, "logs"),
+        `migration-field-issues-${String(key).replace(/[^a-zA-Z0-9_-]/g, "_")}-${nowStamp()}.json`,
+      )
+    : null;
   const chunkResults = [];
   let chunkIndex = 0;
 
@@ -478,7 +496,14 @@ async function runTableJob({
         if (debugLogs) {
           writeOutLine(`>>> [${key}] runPatientInfoChunkPostLoad`, uiState);
         }
-        await runPatientInfoChunkPostLoad(pgClient, rows);
+        const postLoadResult = await runPatientInfoChunkPostLoad(
+          pgClient,
+          rows,
+          { migrationKey: key, chunkIndex },
+        );
+        mergeFieldIssueChunk(fieldIssueAcc, postLoadResult);
+        for (const pid of postLoadResult?.failedPids ?? [])
+          failedPidSet.add(pid);
       }
 
       step = "compute chunk stats";
@@ -681,6 +706,27 @@ LIMIT 200;
     });
   }
 
+  let fieldIssueLogWritten = null;
+  if (
+    fieldIssueAcc &&
+    fieldIssueLogPath &&
+    fieldIssueAcc.totalFieldIssueCount > 0
+  ) {
+    const payload = buildFieldIssueLogPayload(fieldIssueAcc, {
+      migrationKey: key,
+      logType: "patient_info_field_issues",
+      recordIdKey: "pid",
+      buildRecord: (rec) => ({
+        pid: String(rec.pid),
+        pid_raw: rec.pid_raw ?? String(rec.pid),
+        patient_info_id: rec.patient_info_id ?? null,
+        fieldIssues: rec.fieldIssues ?? [],
+      }),
+    });
+    writeFieldIssueLogFile(fieldIssueLogPath, payload);
+    fieldIssueLogWritten = fieldIssueLogPath;
+  }
+
   const summary = {
     key,
     totalRowsRead: total,
@@ -689,6 +735,7 @@ LIMIT 200;
     patient_fail_cases: patientFailCases,
     address_success_cases: addressSuccessCases,
     failedPids: Array.from(failedPidSet),
+    fieldIssueLogPath: fieldIssueLogWritten,
     checkpointPath: checkpointEnabled ? checkpointPath : null,
     chunkCount: chunkIndex,
     chunkResults,

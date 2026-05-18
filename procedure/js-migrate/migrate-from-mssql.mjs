@@ -7,6 +7,12 @@ import { MSSQL_PROCEDURE_SELECT } from "./mssqlProcedureSelect.mjs";
 import { ensureProcedurePipelineDdl } from "./procedurePgDdl.mjs";
 import { runProcedureChunkPostLoad } from "./procedureMapping.mjs";
 import {
+  buildFieldIssueLogPayload,
+  createFieldIssueAccumulator,
+  mergeFieldIssueChunk,
+  writeFieldIssueLogFile,
+} from "../../shared/js-migrate/fieldIssueLog.mjs";
+import {
   createUiState,
   endProgress,
   formatSec,
@@ -365,6 +371,12 @@ async function runProcedureTableJob({
   await ensureProcedurePipelineDdl(pgClient);
 
   let total = 0;
+  const fieldIssueAcc = createFieldIssueAccumulator("old_db_id");
+  const fieldIssueLogPath = path.join(
+    path.resolve(__dirname, "logs"),
+    `migration-field-issues-procedure-${nowStamp()}.json`,
+  );
+  fs.mkdirSync(path.dirname(fieldIssueLogPath), { recursive: true });
   const chunkResults = [];
   let chunkIndex = 0;
   let successChunkCount = 0;
@@ -435,7 +447,8 @@ async function runProcedureTableJob({
         arrays,
       );
       step = "run procedure post-load (map -> public.procedure)";
-      await runProcedureChunkPostLoad(pgClient, rows);
+      const postLoadResult = await runProcedureChunkPostLoad(pgClient, rows);
+      mergeFieldIssueChunk(fieldIssueAcc, postLoadResult);
       await pgClient.query("COMMIT");
       lastChunkProcessMs = Date.now() - chunkT0;
       successChunkCount += 1;
@@ -533,9 +546,28 @@ async function runProcedureTableJob({
     });
   }
 
+  let fieldIssueLogWritten = null;
+  if (fieldIssueAcc.totalFieldIssueCount > 0) {
+    const payload = buildFieldIssueLogPayload(fieldIssueAcc, {
+      migrationKey: key,
+      logType: "procedure_field_issues",
+      recordIdKey: "old_db_id",
+      buildRecord: (rec) => ({
+        old_db_id: String(rec.old_db_id),
+        exam_id: rec.exam_id ?? null,
+        biopsy_id: rec.biopsy_id ?? null,
+        exam_pg_id: rec.exam_pg_id ?? null,
+        fieldIssues: rec.fieldIssues ?? [],
+      }),
+    });
+    writeFieldIssueLogFile(fieldIssueLogPath, payload);
+    fieldIssueLogWritten = fieldIssueLogPath;
+  }
+
   const summary = {
     key,
     totalRowsRead: total,
+    fieldIssueLogPath: fieldIssueLogWritten,
     checkpointPath: checkpointEnabled ? checkpointPath : null,
     chunkCount: chunkIndex,
     successChunkCount,

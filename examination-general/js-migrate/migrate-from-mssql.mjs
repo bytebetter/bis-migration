@@ -13,6 +13,13 @@ import {
   runExaminationGeneralChunkPostLoad,
 } from "./examinationGeneralMapping.mjs";
 import {
+  buildFieldIssueLogPayload,
+  createFieldIssueAccumulator,
+  mergeFieldIssueChunk,
+  writeFieldIssueLogFile,
+} from "../../shared/js-migrate/fieldIssueLog.mjs";
+import { runExamKeyedStagingFieldIssuePipeline } from "../../shared/js-migrate/stagingFieldIssues.mjs";
+import {
   createUiState,
   endProgress,
   formatSec,
@@ -335,6 +342,11 @@ async function main() {
       if (!Number.isFinite(offset) || offset < 0) offset = 0;
       let afterExamId = Number(checkpointEnabled ? checkpoint.afterExamId : 0);
       if (!Number.isFinite(afterExamId) || afterExamId < 0) afterExamId = 0;
+      const fieldIssueAcc = createFieldIssueAccumulator("exam_id");
+      const fieldIssueLogPath = path.join(
+        logsDir,
+        `migration-field-issues-examination_general-${nowStamp()}.json`,
+      );
       let chunkIndex = 0;
       let plannedRows = null;
       if (progressEnabled) {
@@ -435,6 +447,33 @@ async function main() {
           const postLoadStartedAt = Date.now();
           await runExaminationGeneralChunkPostLoad(client);
           postLoadMs = Date.now() - postLoadStartedAt;
+          const issueResult = await runExamKeyedStagingFieldIssuePipeline(
+            client,
+            rows,
+            normalizeMssqlRow,
+            {
+              recordIdKey: "exam_id",
+              getRecordIdFromRaw: (r) => r?.exam_id ?? r?.Exam_ID,
+              getRecordIdFromNorm: (n) => n.exam_id,
+              timestampFields: [
+                "exam_date",
+                "followupletterprintdate",
+                "followup_date",
+                "correcteddate",
+              ],
+              buildMeta: (raw, norm) => ({
+                pid: norm?.pid ?? raw?.pid ?? null,
+              }),
+            },
+            {
+              recordIdKey: "exam_id",
+              targetTable: "examination_general",
+              stagingFromClause: "migrate_stg.examination_general_mssql",
+              buildMeta: (r) => ({ pid: r.pid ?? null }),
+            },
+            loaded,
+          );
+          mergeFieldIssueChunk(fieldIssueAcc, issueResult);
           runLog.rowsUpserted += loaded;
           step = "COMMIT";
           const commitStartedAt = Date.now();
@@ -498,6 +537,23 @@ async function main() {
         });
       }
       if (progressEnabled) endProgress(uiState);
+
+      let fieldIssueLogWritten = null;
+      if (fieldIssueAcc.totalFieldIssueCount > 0) {
+        const payload = buildFieldIssueLogPayload(fieldIssueAcc, {
+          migrationKey: KEY,
+          logType: "examination_general_field_issues",
+          recordIdKey: "exam_id",
+          buildRecord: (rec) => ({
+            exam_id: String(rec.exam_id),
+            pid: rec.pid ?? null,
+            fieldIssues: rec.fieldIssues ?? [],
+          }),
+        });
+        writeFieldIssueLogFile(fieldIssueLogPath, payload);
+        fieldIssueLogWritten = fieldIssueLogPath;
+      }
+      runLog.fieldIssueLogPath = fieldIssueLogWritten;
       runLog.status = "success";
     } finally {
       client.release();
@@ -512,6 +568,9 @@ async function main() {
     runLog.finishedAt = new Date().toISOString();
     fs.writeFileSync(logPath, `${JSON.stringify(runLog, null, 2)}\n`, "utf8");
     console.error(`>>> migration log saved: ${logPath}`);
+    if (runLog.fieldIssueLogPath) {
+      console.error(`>>> field issue log: ${runLog.fieldIssueLogPath}`);
+    }
   }
 }
 

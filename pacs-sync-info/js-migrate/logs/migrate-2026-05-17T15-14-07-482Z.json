@@ -1,5 +1,5 @@
 {
-  "startedAt": "2026-05-12T05:49:03.378Z",
+  "startedAt": "2026-05-17T15:14:07.482Z",
   "status": "success",
   "sourceObject": "dbo.pacs_sync_info",
   "batchSize": 2000,
@@ -16,5 +16,6 @@
   "error": null,
   "plannedRows": 2338322,
   "plannedChunks": 1170,
-  "finishedAt": "2026-05-12T06:24:41.401Z"
+  "fieldIssueLogPath": "C:\\Users\\UsEr\\Documents\\BIS-DB-Migration\\pacs-sync-info\\js-migrate\\logs\\migration-field-issues-pacs_sync_info-2026-05-17T15-14-08-550Z.json",
+  "finishedAt": "2026-05-17T15:53:02.661Z"
 }

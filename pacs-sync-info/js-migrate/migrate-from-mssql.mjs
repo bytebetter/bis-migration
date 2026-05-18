@@ -25,6 +25,13 @@ import {
   syncPacsSyncInfoIdSequence,
 } from "./pacsSyncInfoMapping.mjs";
 import {
+  buildFieldIssueLogPayload,
+  createFieldIssueAccumulator,
+  mergeFieldIssueChunk,
+  writeFieldIssueLogFile,
+} from "../../shared/js-migrate/fieldIssueLog.mjs";
+import { runPacsSyncStagingFieldIssuePipeline } from "../../shared/js-migrate/stagingFieldIssues.mjs";
+import {
   createUiState,
   endProgress,
   formatSec,
@@ -679,6 +686,11 @@ async function main() {
       }
 
       let offset = Number(checkpointEnabled ? checkpoint.offset : 0);
+      const fieldIssueAcc = createFieldIssueAccumulator("accession_id");
+      const fieldIssueLogPath = path.join(
+        logsDir,
+        `migration-field-issues-pacs_sync_info-${nowStamp()}.json`,
+      );
       if (!Number.isFinite(offset) || offset < 0) offset = 0;
       let afterAccessionId =
         checkpointEnabled && checkpoint.afterAccessionId != null
@@ -1004,6 +1016,14 @@ async function main() {
             const postLoadStartedAt = Date.now();
             await runPacsSyncInfoChunkPostLoad(client);
             postLoadMs = Date.now() - postLoadStartedAt;
+            const issueResult = await runPacsSyncStagingFieldIssuePipeline(
+              client,
+              rows,
+              (r, i) => normalizePacsSyncMssqlRow(r, offset + i),
+              "migrate_stg.pacs_sync_info_mssql",
+              loaded,
+            );
+            mergeFieldIssueChunk(fieldIssueAcc, issueResult);
             runLog.rowsUpserted += loaded;
 
             step = "COMMIT";
@@ -1155,6 +1175,14 @@ async function main() {
             const postLoadStartedAt = Date.now();
             await runPacsSyncInfoChunkPostLoad(client);
             postLoadMs = Date.now() - postLoadStartedAt;
+            const issueResult = await runPacsSyncStagingFieldIssuePipeline(
+              client,
+              rows,
+              (r, i) => normalizePacsSyncMssqlRow(r, offset + i),
+              "migrate_stg.pacs_sync_info_mssql",
+              loaded,
+            );
+            mergeFieldIssueChunk(fieldIssueAcc, issueResult);
             runLog.rowsUpserted += loaded;
 
             step = "COMMIT";
@@ -1233,6 +1261,23 @@ async function main() {
         });
       }
       if (progressEnabled) endProgress(uiState);
+
+      let fieldIssueLogWritten = null;
+      if (fieldIssueAcc.totalFieldIssueCount > 0) {
+        const payload = buildFieldIssueLogPayload(fieldIssueAcc, {
+          migrationKey: KEY,
+          logType: "pacs_sync_info_field_issues",
+          recordIdKey: "accession_id",
+          buildRecord: (rec) => ({
+            accession_id: String(rec.accession_id),
+            pid: rec.pid ?? null,
+            fieldIssues: rec.fieldIssues ?? [],
+          }),
+        });
+        writeFieldIssueLogFile(fieldIssueLogPath, payload);
+        fieldIssueLogWritten = fieldIssueLogPath;
+      }
+      runLog.fieldIssueLogPath = fieldIssueLogWritten;
       runLog.status = "success";
       runLog.migrationLeg = "done";
       runLog.nullTailDone = true;
@@ -1249,6 +1294,9 @@ async function main() {
     runLog.finishedAt = new Date().toISOString();
     fs.writeFileSync(logPath, `${JSON.stringify(runLog, null, 2)}\n`, "utf8");
     console.error(`>>> migration log saved: ${logPath}`);
+    if (runLog.fieldIssueLogPath) {
+      console.error(`>>> field issue log: ${runLog.fieldIssueLogPath}`);
+    }
   }
 }
 

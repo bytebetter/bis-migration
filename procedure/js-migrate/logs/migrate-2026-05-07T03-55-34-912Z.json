@@ -1,7 +1,0 @@
-{
-  "startedAt": "2026-05-07T03:55:33.511Z",
-  "status": "failed",
-  "tableResults": [],
-  "error": "connect ECONNREFUSED 127.0.0.1:5432",
-  "finishedAt": "2026-05-07T03:55:34.912Z"
-}

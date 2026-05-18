@@ -54,3 +54,23 @@ export async function ensurePatientInfoStagingDdl(pgClient) {
     "COMMENT ON TABLE migrate_stg.patient_info_mssql IS 'Staging: ข้อมูล patient จาก MSSQL ก่อนแปลงเข้า public.patient_info';"
   );
 }
+
+/** MSSQL ShortNote ยาวได้ — ขยาย public.patient_info.short_note จาก varchar(255) เป็น text */
+export async function ensurePatientInfoShortNoteColumn(pgClient) {
+  await pgClient.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'patient_info'
+          AND column_name = 'short_note'
+          AND data_type <> 'text'
+      ) THEN
+        ALTER TABLE public.patient_info
+          ALTER COLUMN short_note TYPE text;
+      END IF;
+    END $$;
+  `);
+}

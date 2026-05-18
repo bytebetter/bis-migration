@@ -10,6 +10,12 @@ import {
 } from "./mssqlAppointmentSelect.mjs";
 import { ensureAppointmentStagingDdl } from "./appointmentPgDdl.mjs";
 import {
+  buildFieldIssueLogPayload,
+  createFieldIssueAccumulator,
+  mergeFieldIssueChunk,
+  writeFieldIssueLogFile,
+} from "../../shared/js-migrate/fieldIssueLog.mjs";
+import {
   resetAppointmentIdSequenceIfEmpty,
   runAppointmentChunkPostLoad,
   syncAppointmentIdSequence,
@@ -430,6 +436,11 @@ END $$;
   `);
 
   let total = 0;
+  const fieldIssueAcc = createFieldIssueAccumulator("schedule_id");
+  const fieldIssueLogPath = path.join(
+    path.resolve(__dirname, "logs"),
+    `migration-field-issues-appointment-${nowStamp()}.json`,
+  );
   const chunkResults = [];
   let chunkIndex = 0;
   let successChunkCount = 0;
@@ -533,7 +544,11 @@ END $$;
       );
       step = "run appointment post-load (map -> public.appointment)";
       const postLoadStartedAt = Date.now();
-      await runAppointmentChunkPostLoad(pgClient, rows);
+      const postLoadResult = await runAppointmentChunkPostLoad(pgClient, rows, {
+        migrationKey: key,
+        chunkIndex,
+      });
+      mergeFieldIssueChunk(fieldIssueAcc, postLoadResult);
       postLoadMs = Date.now() - postLoadStartedAt;
       await pgClient.query("COMMIT");
       lastChunkProcessMs = Date.now() - chunkStartedAt;
@@ -655,9 +670,28 @@ END $$;
     });
   }
 
+  let fieldIssueLogWritten = null;
+  if (fieldIssueAcc.totalFieldIssueCount > 0) {
+    const payload = buildFieldIssueLogPayload(fieldIssueAcc, {
+      migrationKey: key,
+      logType: "appointment_field_issues",
+      recordIdKey: "schedule_id",
+      buildRecord: (rec) => ({
+        schedule_id: String(rec.schedule_id),
+        schedule_id_raw: rec.schedule_id_raw ?? String(rec.schedule_id),
+        pid: rec.pid ?? null,
+        patient_info_id: rec.patient_info_id ?? null,
+        fieldIssues: rec.fieldIssues ?? [],
+      }),
+    });
+    writeFieldIssueLogFile(fieldIssueLogPath, payload);
+    fieldIssueLogWritten = fieldIssueLogPath;
+  }
+
   const summary = {
     key,
     totalRowsRead: total,
+    fieldIssueLogPath: fieldIssueLogWritten,
     checkpointPath: checkpointEnabled ? checkpointPath : null,
     chunkCount: chunkIndex,
     successChunkCount,

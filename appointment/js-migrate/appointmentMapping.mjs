@@ -3,7 +3,33 @@
  */
 
 function getField(row, key) {
-  return row[key] ?? row[key.toLowerCase()] ?? row[key.toUpperCase()];
+  if (row == null) return undefined;
+  if (Object.prototype.hasOwnProperty.call(row, key)) return row[key];
+  const lk = key.toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(row, lk)) return row[lk];
+  const uk = key.toUpperCase();
+  if (Object.prototype.hasOwnProperty.call(row, uk)) return row[uk];
+  for (const k of Object.keys(row)) {
+    if (k.toLowerCase() === lk) return row[k];
+  }
+  return undefined;
+}
+
+function sourceRawNonempty(v) {
+  if (v == null) return false;
+  return String(v).replace(/^\uFEFF/, "").trim() !== "";
+}
+
+function sortScheduleIds(ids) {
+  return [...ids].sort((a, b) => {
+    try {
+      const aa = BigInt(a);
+      const bb = BigInt(b);
+      return aa < bb ? -1 : aa > bb ? 1 : 0;
+    } catch {
+      return String(a).localeCompare(String(b));
+    }
+  });
 }
 
 function nullIfTrimEmpty(value) {
@@ -311,10 +337,37 @@ async function resolveAppointmentPatientColumn(pgClient) {
 
 /**
  * upsert แบบลบแล้วแทรกในช่วง chunk
+ * @returns {{ failedScheduleIds: string[], fieldIssues: object|null }}
  */
-export async function runAppointmentChunkPostLoad(pgClient, mssqlRows) {
+export async function runAppointmentChunkPostLoad(pgClient, mssqlRows, options = {}) {
   const rows = distinctOnScheduleId(mssqlRows);
-  if (rows.length === 0) return;
+  if (rows.length === 0) {
+    return { failedScheduleIds: [], fieldIssues: null };
+  }
+
+  const failingScheduleIdSet = new Set();
+  let totalFieldIssueCount = 0;
+  /** @type {Map<string, object>} */
+  const recordsWithIssues = new Map();
+
+  function recordScheduleIssues(scheduleId, meta, fieldIssues) {
+    if (fieldIssues.length === 0 || scheduleId == null) return;
+    failingScheduleIdSet.add(String(scheduleId));
+    totalFieldIssueCount += fieldIssues.length;
+    let rec = recordsWithIssues.get(String(scheduleId));
+    if (!rec) {
+      rec = {
+        schedule_id: String(scheduleId),
+        schedule_id_raw: meta.scheduleIdRaw ?? String(scheduleId),
+        pid: meta.pid ?? null,
+        patient_info_id: meta.patientInfoId ?? null,
+        fieldIssues: [],
+      };
+      recordsWithIssues.set(String(scheduleId), rec);
+    }
+    if (meta.patientInfoId != null) rec.patient_info_id = meta.patientInfoId;
+    rec.fieldIssues.push(...fieldIssues);
+  }
 
   const oldDbIds = rows
     .map((r) => normScheduleId(getField(r, "schedule_id")))
@@ -332,9 +385,27 @@ export async function runAppointmentChunkPostLoad(pgClient, mssqlRows) {
   const patientColumn = await resolveAppointmentPatientColumn(pgClient);
   const payloads = rows.map((r) => mapScheduleRowToAppointment(r));
   const patientIdByPid = await resolvePatientIdByPidMap(pgClient, rows);
+
   for (let i = 0; i < rows.length; i++) {
-    const pid = normPid(getField(rows[i], "pid") ?? getField(rows[i], "PID"));
+    const row = rows[i];
+    const scheduleId = payloads[i].old_db_id;
+    const pid = normPid(getField(row, "pid") ?? getField(row, "PID"));
     const patientId = pid == null ? null : (patientIdByPid.get(pid) ?? null);
+    const rowMeta = {
+      scheduleIdRaw: String(getField(row, "schedule_id") ?? ""),
+      pid,
+      patientInfoId: patientId,
+    };
+
+    recordScheduleIssues(
+      scheduleId,
+      rowMeta,
+      collectAppointmentFieldIssues(row, payloads[i], {
+        patientColumn,
+        patientId,
+      }),
+    );
+
     if (patientColumn) {
       payloads[i][patientColumn] =
         patientId == null || Number(patientId) === 0 ? null : Number(patientId);
@@ -358,7 +429,33 @@ export async function runAppointmentChunkPostLoad(pgClient, mssqlRows) {
       }
       if (distinct.length === 0) continue;
       const allowed = await getCachedAllowedFkSet(pgClient, meta);
-      nullOutInvalidForeignKeysForChunk(payloads, col, allowed);
+      for (let i = 0; i < payloads.length; i++) {
+        const before = payloads[i][col];
+        if (before == null) continue;
+        if (!valueInFkSet(allowed, before)) {
+          payloads[i][col] = null;
+          const sid = payloads[i].old_db_id;
+          const pid = normPid(getField(rows[i], "pid") ?? getField(rows[i], "PID"));
+          recordScheduleIssues(
+            sid,
+            {
+              scheduleIdRaw: String(getField(rows[i], "schedule_id") ?? ""),
+              pid,
+              patientInfoId: payloads[i][patientColumn] ?? null,
+            },
+            [
+              {
+                field: col,
+                reason: "fk_not_in_master",
+                message: `ค่าไม่มีในตาราง master ${meta.sch}.${meta.rel} (${meta.pcol})`,
+                source_raw: before,
+                mapped: null,
+                detail: { parent: `${meta.sch}.${meta.rel}` },
+              },
+            ],
+          );
+        }
+      }
     }
   }
   const arrays = {
@@ -451,13 +548,58 @@ export async function runAppointmentChunkPostLoad(pgClient, mssqlRows) {
     .map(([, pgType], idx) => `$${idx + 1}::${pgType}`)
     .join(", ");
   const params = insertDefs.map(([, , arr]) => arr);
-  await pgClient.query(
+  const ins = await pgClient.query(
     `
     INSERT INTO public.appointment (${colList})
     SELECT * FROM unnest(${unnestList})
     `,
     params,
   );
+
+  const rowsInserted = ins.rowCount ?? payloads.length;
+
+  if (oldDbIds.length > 0) {
+    const { rows: presentRows } = await pgClient.query(
+      oldDbIdTextLike
+        ? `SELECT old_db_id::text AS k FROM public.appointment WHERE old_db_id = ANY($1::text[])`
+        : `SELECT old_db_id::text AS k FROM public.appointment WHERE old_db_id::text = ANY($1::text[])`,
+      [oldDbIds],
+    );
+    const present = new Set(presentRows.map((r) => String(r.k)));
+    for (const sid of oldDbIds) {
+      if (present.has(String(sid))) continue;
+      recordScheduleIssues(
+        sid,
+        { scheduleIdRaw: sid, pid: null, patientInfoId: null },
+        [
+          {
+            field: "_record",
+            reason: "insert_missing_after_migrate",
+            message: "แมปและ insert แล้ว แต่ไม่พบแถวใน public.appointment",
+            source_raw: sid,
+            mapped: null,
+          },
+        ],
+      );
+    }
+  }
+
+  return buildChunkFieldIssueResult(rowsInserted);
+
+  function buildChunkFieldIssueResult(inserted) {
+    const failedScheduleIds = sortScheduleIds(failingScheduleIdSet);
+    const hasIssues = totalFieldIssueCount > 0;
+    return {
+      failedScheduleIds,
+      fieldIssues: hasIssues
+        ? {
+            totalFieldIssueCount,
+            rowsInserted: inserted,
+            records: [...recordsWithIssues.values()],
+          }
+        : null,
+    };
+  }
 }
 
 export async function syncAppointmentIdSequence(pgClient) {
@@ -485,6 +627,125 @@ export async function resetAppointmentIdSequenceIfEmpty(pgClient) {
     WHERE cnt.c = 0
       AND pg_get_serial_sequence('public.appointment', 'id') IS NOT NULL;
   `);
+}
+
+/** คีย์ MSSQL (snake จาก SELECT) ต่อฟิลด์ appointment */
+const APPOINTMENT_MSSQL_SOURCE = {
+  appointment_datetime: "schedule_datetime",
+  appointment_no: "schedule_number",
+  prefix: "prefix",
+  first_name: "name",
+  last_name: "surname",
+  payment_type: "payment_type",
+  patient_type: "patient_type",
+  receive_date: "receive_date",
+  old_login_name: "login_name",
+  memo_detail: "memo_detail",
+  fail: "fail",
+  telephone: "telephone",
+  inventional: "inventional",
+  biopsy_proc: "biopsy_proc",
+  referring_md: "referring_md",
+  biopsy_comment: "biopsy_comment",
+  biopsy_radiologistg: "biopsy_radiologist",
+  mobile: "mobile",
+  is_online: "is_online",
+  have_doc: "have_doc",
+  have_cd: "have_cd",
+  right_id: "right_id",
+  location: "location_id",
+  old_db_id: "schedule_id",
+};
+
+/**
+ * @returns {{ field: string, reason: string, message: string, source_raw: unknown, mapped: unknown }[]}
+ */
+function collectAppointmentFieldIssues(row, mapped, ctx) {
+  const issues = [];
+  const scheduleId = mapped.old_db_id;
+
+  if (scheduleId == null && sourceRawNonempty(getField(row, "schedule_id"))) {
+    issues.push({
+      field: "old_db_id",
+      reason: "invalid_schedule_id",
+      message: "schedule_id ในแหล่งข้อมูลไม่ใช่ตัวเลขที่ใช้ migrate ได้",
+      source_raw: getField(row, "schedule_id"),
+      mapped: null,
+    });
+    return issues;
+  }
+
+  const pidRaw = getField(row, "pid");
+  if (sourceRawNonempty(pidRaw) && ctx.patientId == null && ctx.patientColumn) {
+    issues.push({
+      field: ctx.patientColumn,
+      reason: "patient_not_resolved",
+      message: "มี pid ในแหล่งข้อมูล แต่ไม่พบใน public.patient_info",
+      source_raw: pidRaw,
+      mapped: null,
+    });
+  }
+
+  for (const [pgField, mssqlKey] of Object.entries(APPOINTMENT_MSSQL_SOURCE)) {
+    if (pgField === "old_db_id") continue;
+    const srcRaw = getField(row, mssqlKey);
+    const mappedVal = mapped[pgField];
+
+    if (
+      (pgField === "appointment_datetime" || pgField === "receive_date") &&
+      sourceRawNonempty(srcRaw) &&
+      mappedVal == null
+    ) {
+      issues.push({
+        field: pgField,
+        reason: "datetime_parse_failed",
+        message: "วันที่/เวลาในแหล่งข้อมูลแปลงไม่ได้",
+        source_raw: srcRaw,
+        mapped: null,
+      });
+      continue;
+    }
+
+    if (
+      ["is_online", "have_doc", "have_cd"].includes(pgField) &&
+      sourceRawNonempty(srcRaw) &&
+      mappedVal == null
+    ) {
+      issues.push({
+        field: pgField,
+        reason: "integer_flag_parse_failed",
+        message: "ค่า flag ในแหล่งข้อมูลไม่รู้จัก (ไม่ใช่ 0/1/Y/N ฯลฯ)",
+        source_raw: srcRaw,
+        mapped: null,
+      });
+      continue;
+    }
+
+    if (
+      [
+        "appointment_no",
+        "payment_type",
+        "patient_type",
+        "fail",
+        "inventional",
+        "referring_md",
+        "right_id",
+        "location",
+      ].includes(pgField) &&
+      sourceRawNonempty(srcRaw) &&
+      mappedVal == null
+    ) {
+      issues.push({
+        field: pgField,
+        reason: "integer_parse_failed",
+        message: "ค่าตัวเลขในแหล่งข้อมูลไม่ใช่จำนวนเต็มที่ถูกต้อง",
+        source_raw: srcRaw,
+        mapped: null,
+      });
+    }
+  }
+
+  return issues;
 }
 
 export const SCHEDULE_TO_APPOINTMENT_FIELD_MAP = [
