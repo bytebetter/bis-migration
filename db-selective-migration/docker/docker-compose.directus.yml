@@ -1,12 +1,10 @@
 # Directus 11 — ใช้ร่วมกับ Postgres ใน repo นี้
 #
-# จาก db-selective-migration/:
-#   cp docker/directus.env.example .env.directus   # แก้ KEY, SECRET, รหัสผ่าน
-#   docker compose --env-file .env.postgres --env-file .env.directus \
-#     -f docker/docker-compose.postgres.yml \
-#     -f docker/docker-compose.directus.yml up -d
+# Directus only (Postgres อยู่ที่อื่น). สำหรับทั้งคู่ใช้ docker/docker-compose.yml
 #
-# ถ้า Postgres รันอยู่แล้ว (host อื่น): ตั้ง DB_HOST ใน .env.directus แล้วรันเฉพาะไฟล์นี้
+#   cp docker/directus.env.example .env.directus
+#   docker compose --env-file .env.directus -f docker/docker-compose.directus.yml up -d
+#   # ตั้ง DB_HOST ใน .env.directus ถ้า Postgres ไม่ใช่ service ชื่อ postgres
 
 services:
   directus:
@@ -23,9 +21,9 @@ services:
       DB_CLIENT: ${DB_CLIENT:-pg}
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
-      DB_DATABASE: ${DB_DATABASE:-bisinfo}
-      DB_USER: ${DB_USER:-bis}
-      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env.directus}
+      DB_DATABASE: ${DB_DATABASE:-${POSTGRES_DB:-bisinfo}}
+      DB_USER: ${DB_USER:-${POSTGRES_USER:-bis}}
+      DB_PASSWORD: ${DB_PASSWORD:-${POSTGRES_PASSWORD:?set DB_PASSWORD in .env.directus or POSTGRES_PASSWORD in .env.postgres}}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env.directus}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8055}

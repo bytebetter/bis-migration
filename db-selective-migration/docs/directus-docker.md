@@ -22,8 +22,7 @@ cp docker/directus.env.example .env.directus
 docker compose \
   --env-file .env.postgres \
   --env-file .env.directus \
-  -f docker/docker-compose.postgres.yml \
-  -f docker/docker-compose.directus.yml \
+  -f docker/docker-compose.yml \
   up -d
 ```
 
@@ -31,8 +30,7 @@ docker compose \
 
 ```bash
 docker compose --env-file .env.postgres --env-file .env.directus \
-  -f docker/docker-compose.postgres.yml \
-  -f docker/docker-compose.directus.yml ps
+  -f docker/docker-compose.yml ps
 ```
 
 เปิด UI: [http://localhost:8055](http://localhost:8055) (bind ที่ `127.0.0.1` เท่านั้น — เปิดจากเครื่อง server หรือ SSH tunnel)
@@ -43,7 +41,7 @@ docker compose --env-file .env.postgres --env-file .env.directus \
 
 ```bash
 set -a && source .env.postgres && set +a
-docker compose --env-file .env.postgres -f docker/docker-compose.postgres.yml exec -T postgres \
+docker compose --env-file .env.postgres -f docker/docker-compose.yml exec -T postgres \
   psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 \
   < baseline/bisinfo_selective_initial.sql
 ```
@@ -66,8 +64,7 @@ docker compose --env-file .env.directus -f docker/docker-compose.directus.yml up
 
 ```bash
 docker compose --env-file .env.postgres --env-file .env.directus \
-  -f docker/docker-compose.postgres.yml \
-  -f docker/docker-compose.directus.yml down
+  -f docker/docker-compose.yml down
 ```
 
 Volume `directus_uploads` / `directus_extensions` ไม่ถูกลบเมื่อ `down` (ไม่ใส่ `-v`)
