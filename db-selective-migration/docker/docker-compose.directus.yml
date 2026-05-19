@@ -1,0 +1,36 @@
+# Directus 11 — ใช้ร่วมกับ Postgres ใน repo นี้
+#
+# จาก db-selective-migration/:
+#   cp docker/directus.env.example .env.directus   # แก้ KEY, SECRET, รหัสผ่าน
+#   docker compose --env-file .env.postgres --env-file .env.directus \
+#     -f docker/docker-compose.postgres.yml \
+#     -f docker/docker-compose.directus.yml up -d
+#
+# ถ้า Postgres รันอยู่แล้ว (host อื่น): ตั้ง DB_HOST ใน .env.directus แล้วรันเฉพาะไฟล์นี้
+
+services:
+  directus:
+    image: directus/directus:11
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${DIRECTUS_PORT:-8055}:8055"
+    volumes:
+      - directus_uploads:/directus/uploads
+      - directus_extensions:/directus/extensions
+    environment:
+      KEY: ${KEY:?set KEY in .env.directus}
+      SECRET: ${SECRET:?set SECRET in .env.directus}
+      DB_CLIENT: ${DB_CLIENT:-pg}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:-bisinfo}
+      DB_USER: ${DB_USER:-bis}
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env.directus}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env.directus}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8055}
+      WEBSOCKETS_ENABLED: ${WEBSOCKETS_ENABLED:-true}
+
+volumes:
+  directus_uploads:
+  directus_extensions:
