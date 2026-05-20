@@ -276,6 +276,22 @@ function toUnixEpochSeconds(v) {
   return Math.floor(ms / 1000);
 }
 
+/**
+ * MobileUpdated จาก MSSQL:
+ * - ค่าว่าง / CONVERT(...,126) ได้ "0" หรือ "1" = ไม่มีวันที่อัปเดต → null
+ * - ตัวเลขล้วน = unix epoch ที่เก็บในต้นทาง
+ * - รูปแบบวันที่ ISO = แปลงเป็น unix epoch
+ */
+function toMobileUpdatedEpoch(v) {
+  const t = nullIfTrimEmpty(v);
+  if (t == null || t === "0" || t === "1") return null;
+  if (/^-?\d+$/.test(t)) {
+    const n = Number.parseInt(t, 10);
+    return Number.isFinite(n) ? n : null;
+  }
+  return toUnixEpochSeconds(v);
+}
+
 export function distinctOnNormExamId(mssqlRows) {
   const rowsSorted = [...mssqlRows].sort((a, b) => {
     const ai = toStrictInt(getField(a, "exam_id"));
@@ -519,7 +535,7 @@ const INSERT_DEFS = [
   [
     "mobile_updated",
     "int4",
-    (row) => toUnixEpochSeconds(getField(row, "mobile_updated")),
+    (row) => toMobileUpdatedEpoch(getField(row, "mobile_updated")),
   ],
   ["mobile_loc", "int4", (row) => toStrictInt(getField(row, "mobile_loc"))],
   [
@@ -645,7 +661,11 @@ function mssqlSourceKey(pgColumn) {
 
 function sourceRawNonempty(v) {
   if (v == null) return false;
-  return String(v).replace(/^\uFEFF/, "").trim() !== "";
+  return (
+    String(v)
+      .replace(/^\uFEFF/, "")
+      .trim() !== ""
+  );
 }
 
 function sortExamIds(ids) {
@@ -761,7 +781,8 @@ function collectExaminationFieldIssues({
       issues.push({
         field: col,
         reason: "boolean_parse_failed",
-        message: "ค่า boolean ในแหล่งข้อมูลไม่รู้จัก (ไม่ใช่ 0/1/Y/N/true/false ฯลฯ)",
+        message:
+          "ค่า boolean ในแหล่งข้อมูลไม่รู้จัก (ไม่ใช่ 0/1/Y/N/true/false ฯลฯ)",
         source_raw: srcRaw,
         mapped: null,
       });
@@ -769,7 +790,8 @@ function collectExaminationFieldIssues({
     }
 
     if (pgType === "int4" && col === "mobile_updated") {
-      if (sourceRawNonempty(srcRaw) && mapped == null) {
+      const sentinel = ["0", "1"].includes(String(srcRaw ?? "").trim());
+      if (sourceRawNonempty(srcRaw) && mapped == null && !sentinel) {
         issues.push({
           field: col,
           reason: "epoch_parse_failed",
@@ -879,7 +901,8 @@ export function writeFieldIssueLogFile(logPath, payload) {
 
 export function buildFieldIssueLogPayload(accumulator, options = {}) {
   const allRecords = [...accumulator.recordsByExamId.values()];
-  const { summaryByField, summaryByReason } = buildFieldIssueSummary(allRecords);
+  const { summaryByField, summaryByReason } =
+    buildFieldIssueSummary(allRecords);
 
   /** @type {Record<string, object>} exam_id -> รายละเอียดปัญหา (แทน failedExamIds แยก) */
   const records = {};
@@ -1148,7 +1171,10 @@ export async function runExaminationChunkPostLoad(
       } catch (e) {
         const msg = `>>> [examination] post-load: โหลด master referring_md จาก ${parentRel} ไม่ได้ (ต้องมีคอลัมน์ fullname, hospital): ${e?.message ?? e}`;
         console.error(msg);
-        referringMdMasterLoadError = { message: msg, parentRel: parentRel ?? null };
+        referringMdMasterLoadError = {
+          message: msg,
+          parentRel: parentRel ?? null,
+        };
         const { rows: idOnly } = await pgClient.query(
           `SELECT ${idCol} AS id FROM ${parentRel}`,
         );
@@ -1297,7 +1323,12 @@ export async function runExaminationChunkPostLoad(
       if (present.has(eid)) continue;
       recordRowFieldIssues(
         eid,
-        { examIdRaw: eid, scheduleId: null, appointmentId: null, patientId: null },
+        {
+          examIdRaw: eid,
+          scheduleId: null,
+          appointmentId: null,
+          patientId: null,
+        },
         [
           {
             field: "_record",

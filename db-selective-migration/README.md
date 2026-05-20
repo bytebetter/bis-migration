@@ -9,7 +9,10 @@
 - `scripts/db-dump-selective-backup.sh` — สร้างไฟล์ `.sql` สำหรับ restore บนเครื่องอื่น
 - `docs/db-migration-selective-runbook.md` — คู่มือรันจริงและ restore
 - `docs/production-docker-restore.md` — ติดตั้ง Postgres 16 ด้วย Docker + restore dump บน production server
-- `docker/docker-compose.postgres.yml` — compose ตัวอย่างสำหรับ Postgres 16
+- `docker/docker-compose.yml` — **Postgres 16 + Directus 11** (แนะนำ)
+- `docker/docker-compose.postgres.yml` — Postgres อย่างเดียว
+- `docker/docker-compose.directus.yml` — Directus อย่างเดียว (DB ภายนอก)
+- `docs/directus-docker.md` — ติดตั้งและรัน Directus ด้วย Docker Compose
 - `baseline/bisinfo_selective_initial.sql` — **ไฟล์ dump ตั้งต้นของระบบ** (track ใน Git) ดู [baseline/README.md](baseline/README.md)
 
 ไฟล์ dump ชั่วคราวจากสคริปต์จะถูกเขียนลง `backups/` (โฟลเดอร์นี้ถูก ignore โดย `.gitignore`)

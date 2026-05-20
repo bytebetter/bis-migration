@@ -17,7 +17,11 @@ function getField(row, key) {
 
 function sourceRawNonempty(v) {
   if (v == null) return false;
-  return String(v).replace(/^\uFEFF/, "").trim() !== "";
+  return (
+    String(v)
+      .replace(/^\uFEFF/, "")
+      .trim() !== ""
+  );
 }
 
 function sortScheduleIds(ids) {
@@ -115,13 +119,13 @@ export function mapScheduleRowToAppointment(row) {
     /** คอลัมน์ inventional ในฐานเป็น integer */
     inventional: toInt(getField(row, "Inventional")),
     biopsy_proc: nullIfTrimEmpty(getField(row, "BiopsyProc")),
-    referring_md: toInt(getField(row, "ReferringMD")),
+    referring_md: nullIfTrimEmpty(getField(row, "referring_md")),
     biopsy_comment: nullIfTrimEmpty(getField(row, "BiopsyComment")),
     biopsy_radiologistg: nullIfTrimEmpty(getField(row, "BiopsyRadiologist")),
     mobile: nullIfTrimEmpty(getField(row, "Mobile")),
-    is_online: toIntFlag(getField(row, "IsOnline")),
-    have_doc: toIntFlag(getField(row, "HaveDoc")),
-    have_cd: toIntFlag(getField(row, "HaveCD")),
+    is_online: toInt(getField(row, "is_online")),
+    have_doc: toInt(getField(row, "have_doc")),
+    have_cd: toInt(getField(row, "have_cd")),
     right_id: toInt(getField(row, "Right_ID")),
     location: toInt(getField(row, "Location_ID")),
     patient: null,
@@ -339,7 +343,11 @@ async function resolveAppointmentPatientColumn(pgClient) {
  * upsert แบบลบแล้วแทรกในช่วง chunk
  * @returns {{ failedScheduleIds: string[], fieldIssues: object|null }}
  */
-export async function runAppointmentChunkPostLoad(pgClient, mssqlRows, options = {}) {
+export async function runAppointmentChunkPostLoad(
+  pgClient,
+  mssqlRows,
+  options = {},
+) {
   const rows = distinctOnScheduleId(mssqlRows);
   if (rows.length === 0) {
     return { failedScheduleIds: [], fieldIssues: null };
@@ -435,7 +443,9 @@ export async function runAppointmentChunkPostLoad(pgClient, mssqlRows, options =
         if (!valueInFkSet(allowed, before)) {
           payloads[i][col] = null;
           const sid = payloads[i].old_db_id;
-          const pid = normPid(getField(rows[i], "pid") ?? getField(rows[i], "PID"));
+          const pid = normPid(
+            getField(rows[i], "pid") ?? getField(rows[i], "PID"),
+          );
           recordScheduleIssues(
             sid,
             {
@@ -529,7 +539,7 @@ export async function runAppointmentChunkPostLoad(pgClient, mssqlRows, options =
     ["telephone", "text[]", arrays.telephone],
     ["inventional", "int4[]", arrays.inventional],
     ["biopsy_proc", "text[]", arrays.biopsy_proc],
-    ["referring_md", "int4[]", arrays.referring_md],
+    ["referring_md", "text[]", arrays.referring_md],
     ["biopsy_comment", "text[]", arrays.biopsy_comment],
     ["biopsy_radiologistg", "text[]", arrays.biopsy_radiologistg],
     ["mobile", "text[]", arrays.mobile],
@@ -707,30 +717,17 @@ function collectAppointmentFieldIssues(row, mapped, ctx) {
     }
 
     if (
-      ["is_online", "have_doc", "have_cd"].includes(pgField) &&
-      sourceRawNonempty(srcRaw) &&
-      mappedVal == null
-    ) {
-      issues.push({
-        field: pgField,
-        reason: "integer_flag_parse_failed",
-        message: "ค่า flag ในแหล่งข้อมูลไม่รู้จัก (ไม่ใช่ 0/1/Y/N ฯลฯ)",
-        source_raw: srcRaw,
-        mapped: null,
-      });
-      continue;
-    }
-
-    if (
       [
         "appointment_no",
         "payment_type",
         "patient_type",
         "fail",
         "inventional",
-        "referring_md",
         "right_id",
         "location",
+        "is_online",
+        "have_doc",
+        "have_cd",
       ].includes(pgField) &&
       sourceRawNonempty(srcRaw) &&
       mappedVal == null
