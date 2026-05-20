@@ -1,3 +1,2 @@
-
-# runtime / dev pod cruft
+# Runtime / upload dirs from extension containers (never commit)
 **/temp/
