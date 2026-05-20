@@ -35,6 +35,11 @@ import {
   bindMigrateSrcNumericRange,
 } from "../../shared/js-migrate/migrateCliArgs.mjs";
 import { examinationExamNumericRangePredicate } from "../../shared/js-migrate/migrateMssqlBindings.mjs";
+import {
+  isLastKeysetPage,
+  optionalDetailRowCount,
+  resolveKeysetAdvance,
+} from "../../shared/js-migrate/twoStepKeyset.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXAM_NUMERIC_KEY_RANGE_PRED = examinationExamNumericRangePredicate();
@@ -699,6 +704,8 @@ async function runTableJob({
     }
 
     let rows = [];
+    /** @type {any[]} */
+    let idRows = [];
     let lastExamIdFromProbe = null;
     let fetchElapsedMs = 0;
     let idFetchElapsedMs = 0;
@@ -715,7 +722,7 @@ async function runTableJob({
         .input("page", sql.Int, pageSize)
         .query(probeSql);
       idFetchElapsedMs = Date.now() - idFetchStartedAt;
-      const idRows = idResp.recordset || [];
+      idRows = idResp.recordset || [];
       if (idRows.length > 0) {
         lastExamIdFromProbe = idRows[idRows.length - 1].probe_exam_id;
       }
@@ -783,7 +790,10 @@ async function runTableJob({
     }
     if (rows.length === 0) break;
 
-    const nFetched = rows.length;
+    const keysetAdvance = resolveKeysetAdvance(
+      isExaminationBuiltin && useMssqlKeyset ? idRows.length : null,
+      rows.length,
+    );
     let stagingRows = rows;
     if (
       isExaminationBuiltin &&
@@ -797,12 +807,12 @@ async function runTableJob({
 
     /** chunk จาก MSSQL หมดชุดแล้วทุก exam มีอยู่แล้ว (insert-only) — ข้าม TX แต่ต้อง advance keyset/checkpoint */
     if (n === 0) {
-      total += nFetched;
-      offset += nFetched;
+      total += keysetAdvance;
+      offset += keysetAdvance;
       if (useMssqlKeyset) {
         mssqlKeysetAfter =
           lastExamIdFromProbe ??
-          toBigIntish(normExamId(rows[nFetched - 1]?.exam_id));
+          toBigIntish(normExamId(rows[rows.length - 1]?.exam_id));
       }
       if (checkpointEnabled) {
         writeJson(checkpointPath, {
@@ -826,13 +836,13 @@ async function runTableJob({
         );
       }
       rows.length = 0;
-      if (nFetched < pageSize) break;
+      if (isLastKeysetPage(keysetAdvance, pageSize)) break;
       continue;
     }
 
     const chunkStartedAt = Date.now();
     const sourceOffsetStart = offset;
-    const sourceOffsetEnd = offset + nFetched - 1;
+    const sourceOffsetEnd = offset + keysetAdvance - 1;
     const firstExamId = normExamId(stagingRows[0]?.exam_id);
     const lastExamId = normExamId(stagingRows[n - 1]?.exam_id);
     const arrays = columns.map(() => new Array(n));
@@ -961,7 +971,8 @@ LIMIT 200;
         status: "success",
         sourceOffsetStart,
         sourceOffsetEnd,
-        rowCount: nFetched,
+        rowCount: keysetAdvance,
+        ...optionalDetailRowCount(keysetAdvance, rows.length),
         stagingRowCount: n,
         firstExamId,
         lastExamId,
@@ -1005,7 +1016,8 @@ LIMIT 200;
         status: "failed",
         sourceOffsetStart,
         sourceOffsetEnd,
-        rowCount: nFetched,
+        rowCount: keysetAdvance,
+        ...optionalDetailRowCount(keysetAdvance, rows.length),
         stagingRowCount: n,
         firstExamId,
         lastExamId,
@@ -1031,12 +1043,12 @@ LIMIT 200;
       );
     }
 
-    total += nFetched;
-    offset += nFetched;
+    total += keysetAdvance;
+    offset += keysetAdvance;
     if (useMssqlKeyset) {
       mssqlKeysetAfter =
         lastExamIdFromProbe ??
-        toBigIntish(normExamId(rows[nFetched - 1]?.exam_id));
+        toBigIntish(normExamId(rows[rows.length - 1]?.exam_id));
     }
     if (checkpointEnabled) {
       writeJson(checkpointPath, {
@@ -1049,12 +1061,12 @@ LIMIT 200;
         updatedAt: new Date().toISOString(),
       });
     }
-    const isLastPage = nFetched < pageSize;
+    const isLastPage = isLastKeysetPage(keysetAdvance, pageSize);
     if (debugLogs && !singleLineUi) {
       writeOutLine(
         `>>> [${key}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(
           Date.now() - chunkStartedAt,
-        )} (fetch ${formatSec(fetchElapsedMs)}, post ${formatSec(postLoadMs)}) mssql_rows ${nFetched} staging ${n}, total ${total}/${plannedRows ?? "?"}`,
+        )} (fetch ${formatSec(fetchElapsedMs)}, post ${formatSec(postLoadMs)}) keyset ${keysetAdvance}${keysetAdvance !== rows.length ? ` detail ${rows.length}` : ""} staging ${n}, total ${total}/${plannedRows ?? "?"}`,
         uiState,
       );
     }

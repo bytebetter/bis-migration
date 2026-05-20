@@ -34,6 +34,11 @@ import {
   appointmentScheduleNumericRangePredicate,
   bindAppointmentMssqlCommon,
 } from "../../shared/js-migrate/migrateMssqlBindings.mjs";
+import {
+  isLastKeysetPage,
+  optionalDetailRowCount,
+  resolveKeysetAdvance,
+} from "../../shared/js-migrate/twoStepKeyset.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KEY = "appointment";
@@ -596,10 +601,7 @@ END $$;
     }
 
     const n = rows.length;
-    const advance =
-      twoStepKeysetAdvance != null && twoStepKeysetAdvance > 0
-        ? twoStepKeysetAdvance
-        : n;
+    const advance = resolveKeysetAdvance(twoStepKeysetAdvance, n);
     chunkIndex += 1;
     const chunkStartedAt = Date.now();
     const sourceOffsetStart = offset;
@@ -650,7 +652,7 @@ END $$;
         sourceOffsetStart,
         sourceOffsetEnd,
         rowCount: advance,
-        ...(n !== advance ? { detailRowCount: n } : {}),
+        ...optionalDetailRowCount(advance, n),
         firstScheduleId,
         lastScheduleId,
         mssqlFetchMs: fetchElapsedMs,
@@ -680,7 +682,7 @@ END $$;
         sourceOffsetStart,
         sourceOffsetEnd,
         rowCount: advance,
-        ...(n !== advance ? { detailRowCount: n } : {}),
+        ...optionalDetailRowCount(advance, n),
         firstScheduleId,
         lastScheduleId,
         mssqlFetchMs: fetchElapsedMs,
@@ -731,7 +733,7 @@ END $$;
         updatedAt: new Date().toISOString(),
       });
     }
-    const isLastPage = advance < pageSize;
+    const isLastPage = isLastKeysetPage(advance, pageSize);
     if (progressEnabled) {
       renderProgress(
         total,
