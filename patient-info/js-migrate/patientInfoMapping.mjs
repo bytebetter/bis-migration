@@ -55,6 +55,8 @@ function normalizeRealString(s) {
   let t = String(s).trim();
   if (t === "") return "";
   t = t.replace(/\s+/g, "");
+  t = t.replace(/^\+/, "");
+  t = t.replace(/(?<=\d)[+-]$/, "");
   if (/^-?\d+,\d+$/.test(t)) {
     t = t.replace(",", ".");
   }
@@ -83,7 +85,8 @@ function normSocId(v) {
   const t = nullIfTrimEmpty(v);
   if (t == null) return null;
   const digits = String(t).replace(/\D/g, "");
-  return digits === "" ? null : digits;
+  if (digits !== "") return digits;
+  return t;
 }
 
 function isHomePrefix(p2) {
