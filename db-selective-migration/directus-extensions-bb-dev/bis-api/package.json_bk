@@ -1,0 +1,46 @@
+{
+  "name": "bis-api",
+  "description": "Please enter a description for your extension",
+  "icon": "extension",
+  "version": "0.1.4",
+  "keywords": [
+    "directus",
+    "directus-extension",
+    "directus-extension-endpoint"
+  ],
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "directus:extension": {
+    "type": "endpoint",
+    "path": "dist/index.js",
+    "source": "src/index.ts",
+    "host": "^10.10.0"
+  },
+  "scripts": {
+    "build:dev": "dotenv -e .env.development directus-extension build",
+    "build:staging": "dotenv -e .env.staging directus-extension build",
+    "build:prod": "dotenv -e .env.production directus-extension build",
+    "dev": "directus-extension build -w --no-minify",
+    "link": "directus-extension link"
+  },
+  "devDependencies": {
+    "@directus/extensions-sdk": "11.0.7",
+    "@types/express": "^4",
+    "@types/http-proxy-middleware": "^1.0.0",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/node": "^20.14.2",
+    "dotenv-cli": "^7.4.2",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "@directus/api": "^19.3.0",
+    "@directus/sdk": "^17.0.2",
+    "@directus/types": "^11.1.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "http-proxy-middleware": "^3.0.0",
+    "jsonwebtoken": "^9.0.2"
+  }
+}

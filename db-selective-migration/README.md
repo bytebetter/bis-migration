@@ -13,6 +13,7 @@
 - `docker/docker-compose.postgres.yml` — Postgres อย่างเดียว
 - `docker/docker-compose.directus.yml` — Directus อย่างเดียว (DB ภายนอก)
 - `docs/directus-docker.md` — ติดตั้งและรัน Directus ด้วย Docker Compose
+- `directus-extensions-bb-dev/` — snapshot extensions จาก Directus บน `bb-dev-cluster` (คัดลอกไป volume `/directus/extensions`)
 - `baseline/bisinfo_selective_initial.sql` — **ไฟล์ dump ตั้งต้นของระบบ** (track ใน Git) ดู [baseline/README.md](baseline/README.md)
 
 ไฟล์ dump ชั่วคราวจากสคริปต์จะถูกเขียนลง `backups/` (โฟลเดอร์นี้ถูก ignore โดย `.gitignore`)
