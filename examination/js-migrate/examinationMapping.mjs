@@ -1053,6 +1053,8 @@ export async function runExaminationChunkPostLoad(
     return { failedExamIds: [], fieldIssues: null };
   }
 
+  const migrateRowMode = options.migrateRowMode ?? "overwrite";
+
   const examIds = rows
     .map((r) => normExamId(getField(r, "exam_id")))
     .filter((id) => id !== "" && isDigitsOnly(id));
@@ -1133,10 +1135,12 @@ export async function runExaminationChunkPostLoad(
     }
   }
 
-  await pgClient.query(
-    "DELETE FROM public.examination WHERE old_exam_id = ANY($1::text[])",
-    [examIds],
-  );
+  if (migrateRowMode !== "insert-only" && examIds.length > 0) {
+    await pgClient.query(
+      "DELETE FROM public.examination WHERE old_exam_id = ANY($1::text[])",
+      [examIds],
+    );
+  }
   await pgClient.query(`
     SELECT setval(
       pg_get_serial_sequence('public.examination', 'id'),

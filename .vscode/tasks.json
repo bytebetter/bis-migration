@@ -2,59 +2,45 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "migrate: patient_info → Postgres (js-migrate)",
+      "label": "migrate: npm install (repository root)",
       "type": "shell",
-      "command": "node",
-      "args": [
-        "migrate-from-mssql.mjs",
-        "--config",
-        "../../migration.config.local.json",
-        "--profile",
-        "patient_info"
-      ],
-      "options": { "cwd": "${workspaceFolder}/patient-info/js-migrate" },
+      "command": "npm install",
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "shared", "focus": false }
+    },
+    {
+      "label": "migrate: all tables (12 jobs)",
+      "type": "shell",
+      "command": "npm run migrate:all",
+      "options": { "cwd": "${workspaceFolder}" },
       "presentation": { "reveal": "always", "panel": "shared", "focus": true }
     },
     {
-      "label": "migrate: examination → Postgres (js-migrate)",
+      "label": "migrate: patient_info",
       "type": "shell",
-      "command": "node",
-      "args": [
-        "migrate-from-mssql.mjs",
-        "--config",
-        "../../migration.config.local.json",
-        "--profile",
-        "examination"
-      ],
-      "options": { "cwd": "${workspaceFolder}/examination/js-migrate" },
+      "command": "npm run migrate:patient_info",
+      "options": { "cwd": "${workspaceFolder}" },
       "presentation": { "reveal": "always", "panel": "shared", "focus": true }
     },
     {
-      "label": "migrate: appointment → Postgres (js-migrate)",
+      "label": "migrate: examination",
       "type": "shell",
-      "command": "node",
-      "args": [
-        "migrate-from-mssql.mjs",
-        "--config",
-        "../../migration.config.local.json",
-        "--profile",
-        "appointment"
-      ],
-      "options": { "cwd": "${workspaceFolder}/appointment/js-migrate" },
+      "command": "npm run migrate:examination",
+      "options": { "cwd": "${workspaceFolder}" },
       "presentation": { "reveal": "always", "panel": "shared", "focus": true }
     },
     {
-      "label": "migrate: procedure (biopsy) → Postgres (js-migrate)",
+      "label": "migrate: appointment",
       "type": "shell",
-      "command": "node",
-      "args": [
-        "migrate-from-mssql.mjs",
-        "--config",
-        "../../migration.config.local.json",
-        "--profile",
-        "procedure"
-      ],
-      "options": { "cwd": "${workspaceFolder}/procedure/js-migrate" },
+      "command": "npm run migrate:appointment",
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "shared", "focus": true }
+    },
+    {
+      "label": "migrate: procedure",
+      "type": "shell",
+      "command": "npm run migrate:procedure",
+      "options": { "cwd": "${workspaceFolder}" },
       "presentation": { "reveal": "always", "panel": "shared", "focus": true }
     }
   ]

@@ -13,7 +13,7 @@
 
 - [ ] คัดลอก `migration.config.example.json` → `migration.config.local.json` (ที่ root repo) แล้วใส่รหัส
 - [ ] เปิด `kubectl port-forward` หรือ network ไปยัง Postgres ปลายทาง
-- [ ] รัน `npm install` ในโฟลเดอร์นี้
+- [ ] ที่ **root repo** รัน `npm install` ครั้งหนึ่ง (หรือให้ `run-migrate.ps1` ติดตั้งให้อัตโนมัติ)
 
 ## Config
 
@@ -31,9 +31,14 @@
 
 ## Run
 
+ทุกอย่างรันจาก **root ของ repo** เท่านั้น (`package.json` / `node_modules` มีแค่ที่ root — ไม่มีใต้ `*/js-migrate`):
+
 ```powershell
-cd .\patient-info\js-migrate
-npm run migrate
+cd <root ของ repo>
+npm install
+npm run migrate:patient_info
 ```
+
+หรือใช้ `.\patient-info\js-migrate\run-migrate.ps1` (โหลดแพ็กเกจจาก root โดยอัตโนมัติ)
 
 Log: `logs/migrate-*.json` — checkpoint: `checkpoints/<key>.json`

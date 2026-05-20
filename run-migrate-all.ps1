@@ -7,13 +7,23 @@
     .\run-migrate-all.ps1 -SkipInstall
     .\run-migrate-all.ps1 -StartFrom 3
     .\run-migrate-all.ps1 -LogPath ".\logs\my-run.log"
+    .\run-migrate-all.ps1 -Tables appointment,examination
+    .\run-migrate-all.ps1 -MigrateMode insert-only -SourceKeyRange "1-5000"
+    .\run-migrate-all.ps1 -SourceKeyFrom 100 -SourceKeyTo 200 -SkipInstall
+
+  -SkipInstall = ข้ามการตรวจและรัน npm ที่ root (ต้องมี `node_modules/mssql` และ `pg` ที่ root เองแล้ว)
 #>
 
 param(
   [string] $ConfigPath = ".\migration.config.local.json",
   [int] $StartFrom = 1,
   [switch] $SkipInstall,
-  [string] $LogPath = ""
+  [string] $LogPath = "",
+  [string[]] $Tables = @(),
+  [string] $MigrateMode = "",
+  [string] $SourceKeyRange = "",
+  [string] $SourceKeyFrom = "",
+  [string] $SourceKeyTo = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,19 +71,24 @@ function Set-MigrateStatus {
 }
 
 $steps = @(
-  @{ N = 1;  Table = "patient_info";        Script = ".\patient-info\js-migrate\run-migrate.ps1" },
-  @{ N = 2;  Table = "appointment";         Script = ".\appointment\js-migrate\run-migrate.ps1" },
-  @{ N = 3;  Table = "examination";         Script = ".\examination\js-migrate\run-migrate.ps1" },
-  @{ N = 4;  Table = "examination_general"; Script = ".\examination-general\js-migrate\run-migrate.ps1" },
-  @{ N = 5;  Table = "pacs_sync_info";      Script = ".\pacs-sync-info\js-migrate\run-migrate.ps1" },
-  @{ N = 6;  Table = "procedure";           Script = ".\procedure\js-migrate\run-migrate.ps1" },
-  @{ N = 7;  Table = "ultrasound";          Script = ".\ultrasound\js-migrate\run-migrate.ps1" },
-  @{ N = 8;  Table = "mammogram";           Script = ".\mam\js-migrate\run-migrate.ps1" },
-  @{ N = 9;  Table = "mammogram_cal";       Script = ".\mam-cal\js-migrate\run-migrate.ps1" },
-  @{ N = 10; Table = "mammogram_mass";      Script = ".\mam-mass\js-migrate\run-migrate.ps1" },
-  @{ N = 11; Table = "ultrasound_cyst";     Script = ".\ultrasound-cyst\js-migrate\run-migrate.ps1" },
-  @{ N = 12; Table = "ultrasound_mass";     Script = ".\ultrasound-mass\js-migrate\run-migrate.ps1" }
+  @{ N = 1;  Table = "patient_info";        Script = "patient-info/js-migrate/run-migrate.ps1" },
+  @{ N = 2;  Table = "appointment";         Script = "appointment/js-migrate/run-migrate.ps1" },
+  @{ N = 3;  Table = "examination";         Script = "examination/js-migrate/run-migrate.ps1" },
+  @{ N = 4;  Table = "examination_general"; Script = "examination-general/js-migrate/run-migrate.ps1" },
+  @{ N = 5;  Table = "pacs_sync_info";      Script = "pacs-sync-info/js-migrate/run-migrate.ps1" },
+  @{ N = 6;  Table = "procedure";           Script = "procedure/js-migrate/run-migrate.ps1" },
+  @{ N = 7;  Table = "ultrasound";          Script = "ultrasound/js-migrate/run-migrate.ps1" },
+  @{ N = 8;  Table = "mammogram";           Script = "mam/js-migrate/run-migrate.ps1" },
+  @{ N = 9;  Table = "mammogram_cal";       Script = "mam-cal/js-migrate/run-migrate.ps1" },
+  @{ N = 10; Table = "mammogram_mass";      Script = "mam-mass/js-migrate/run-migrate.ps1" },
+  @{ N = 11; Table = "ultrasound_cyst";     Script = "ultrasound-cyst/js-migrate/run-migrate.ps1" },
+  @{ N = 12; Table = "ultrasound_mass";     Script = "ultrasound-mass/js-migrate/run-migrate.ps1" }
 )
+
+$tableFilter = foreach ($t in $Tables) {
+  if ($null -ne $t -and "$t".Trim() -ne "") { "$t".Trim().ToLowerInvariant() }
+}
+$runAllTables = ($tableFilter.Count -eq 0)
 
 $repoRoot = $PSScriptRoot
 $total = $steps.Count
@@ -84,6 +99,15 @@ Write-MigrateLog "Config: $ConfigPath"
 Write-MigrateLog "Log file: $LogPath"
 Write-MigrateLog "Status file: $statusPath"
 if ($StartFrom -gt 1) { Write-MigrateLog "StartFrom step: $StartFrom" }
+if (-not $runAllTables) {
+  Write-MigrateLog "Tables filter: $($tableFilter -join ', ') (MSSQL key filter is supported for appointment Schedule_ID / examination Exam_ID only)"
+}
+
+if (-not $SkipInstall) {
+  $ensureDot = Join-Path $repoRoot "scripts/Ensure-MigrateNodeModules.ps1"
+  . $ensureDot
+  Ensure-MigrateNodeModules -RepoRoot $repoRoot
+}
 
 Set-MigrateStatus ('RUNNING ; waiting to start ; 0/{0}' -f $total)
 
@@ -92,9 +116,13 @@ foreach ($step in $steps) {
     Write-MigrateLog "[$($step.N)/$total] $($step.Table) (skipped, StartFrom=$StartFrom)" -Level SKIP
     continue
   }
+  if (-not $runAllTables -and ($tableFilter -notcontains $step.Table.ToLowerInvariant())) {
+    Write-MigrateLog "[$($step.N)/$total] $($step.Table) (skipped, not in -Tables)" -Level SKIP
+    continue
+  }
 
   $label = "[$($step.N)/$total] $($step.Table)"
-  $scriptPath = Join-Path $repoRoot ($step.Script -replace '^\.\\', '')
+  $scriptPath = Join-Path $repoRoot $step.Script
   if (-not (Test-Path -LiteralPath $scriptPath)) {
     throw "Migration script not found: $scriptPath"
   }
@@ -102,9 +130,19 @@ foreach ($step in $steps) {
   Set-MigrateStatus ('RUNNING ; {0} ; {1}/{2}' -f $label, $step.N, $total)
   Write-MigrateLog ('{0} - starting {1}' -f $label, $scriptPath) -Level START
 
-  $invokeArgs = @{ ConfigPath = $ConfigPath }
-  if ($SkipInstall) { $invokeArgs.SkipInstall = $true }
-  elseif ($step.N -gt 1) { $invokeArgs.SkipInstall = $true }
+  # เดิมให้โฟลเดอร์ที่ 2+ ข้าม npm — ตอนนี้ติดตั้งที่ root แล้วก่อนวนขั้นอยู่ด้านบน → ให้ลูกไม่เรียก npm ซ้ำ
+  $invokeArgs = @{ ConfigPath = $ConfigPath; SkipInstall = $true }
+  if ($MigrateMode -eq "insert-only") { $invokeArgs.MigrateMode = "insert-only" }
+  $skr = if ($SourceKeyRange) { $SourceKeyRange.Trim() } else { "" }
+  if ($skr -ne "") {
+    $invokeArgs.SourceKeyRange = $skr
+  }
+  else {
+    $sf = if ($SourceKeyFrom) { $SourceKeyFrom.Trim() } else { "" }
+    $st = if ($SourceKeyTo) { $SourceKeyTo.Trim() } else { "" }
+    if ($sf -ne "") { $invokeArgs.SourceKeyFrom = $sf }
+    if ($st -ne "") { $invokeArgs.SourceKeyTo = $st }
+  }
 
   $stepStarted = Get-Date
   try {

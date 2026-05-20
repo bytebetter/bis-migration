@@ -6,6 +6,7 @@ import pg from "pg";
 import {
   MSSQL_APPOINTMENT_DETAIL_BY_IDS_SELECT,
   MSSQL_APPOINTMENT_ID_SELECT,
+  MSSQL_APPOINTMENT_SCHEDULE_DATETIME_FILTER,
   MSSQL_APPOINTMENT_SELECT,
 } from "./mssqlAppointmentSelect.mjs";
 import { ensureAppointmentStagingDdl } from "./appointmentPgDdl.mjs";
@@ -28,6 +29,11 @@ import {
   renderProgress,
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
+import { migrateCliOverridesFromArgv, readNumericSourceKeyBounds } from "../../shared/js-migrate/migrateCliArgs.mjs";
+import {
+  appointmentScheduleNumericRangePredicate,
+  bindAppointmentMssqlCommon,
+} from "../../shared/js-migrate/migrateMssqlBindings.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KEY = "appointment";
@@ -252,12 +258,22 @@ function toBigIntish(v) {
   return BigInt(String(v));
 }
 
+function bigIntToJsKeysetValue(b) {
+  if (b >= -9007199254740991n && b <= 9007199254740991n) return Number(b);
+  return b.toString();
+}
+
 function keysetIdForCheckpoint(v) {
   if (v == null) return null;
   if (typeof v === "bigint") return v.toString();
+  if (typeof v === "number" && Number.isFinite(v)) return String(Math.trunc(v));
   return v;
 }
 
+const SCHED_RANGE_COMPAT = appointmentScheduleNumericRangePredicate(
+  MSSQL_SCHEDULE_ID_NUMERIC_EXPR,
+);
+/** keyset เดิม (compat) WHERE … numeric expr */
 function buildMssqlAppointmentKeysetSelect() {
   const marker = "FROM {{sourceObject}}";
   const s = MSSQL_APPOINTMENT_SELECT;
@@ -271,9 +287,13 @@ function buildMssqlAppointmentKeysetSelect() {
   ${MSSQL_SCHEDULE_ID_NUMERIC_EXPR} AS __mssql_schedule_id
 FROM {{sourceObject}}
 WHERE ${MSSQL_SCHEDULE_ID_NUMERIC_EXPR} > @afterScheduleId
+ AND (${SCHED_RANGE_COMPAT})
 ORDER BY ${MSSQL_SCHEDULE_ID_NUMERIC_EXPR} ASC, [Schedule_ID] ASC;`;
 }
 
+const SCHED_RANGE_NATIVE = appointmentScheduleNumericRangePredicate(
+  "CAST([Schedule_ID] AS BIGINT)",
+);
 function buildMssqlAppointmentNativeKeysetSelect() {
   const marker = "FROM {{sourceObject}}";
   const s = MSSQL_APPOINTMENT_SELECT;
@@ -286,6 +306,7 @@ function buildMssqlAppointmentNativeKeysetSelect() {
   return `${headWithTop}
 FROM {{sourceObject}}
 WHERE ${MSSQL_SCHEDULE_ID_NATIVE_EXPR} > @afterScheduleId
+ AND (${SCHED_RANGE_NATIVE})
 ORDER BY ${MSSQL_SCHEDULE_ID_NATIVE_EXPR} ASC;`;
 }
 
@@ -309,7 +330,21 @@ async function runAppointmentTableJob({
     migrationConfig.checkpointDir ?? "./checkpoints",
   );
   fs.mkdirSync(checkpointDir, { recursive: true });
-  const checkpointPath = path.join(checkpointDir, `${key}.json`);
+  const kb = readNumericSourceKeyBounds(migrationConfig);
+  const rowModeSlug =
+    migrationConfig.migrateRowMode === "insert-only" ? "ins" : "ovr";
+  let checkpointBasename = key;
+  if (
+    kb.min != null ||
+    kb.max != null ||
+    migrationConfig.migrateRowMode === "insert-only"
+  ) {
+    const ckParts = [rowModeSlug];
+    if (kb.min != null) ckParts.push(`from${kb.min}`);
+    if (kb.max != null) ckParts.push(`to${kb.max}`);
+    checkpointBasename = `${key}-${ckParts.join("-")}`;
+  }
+  const checkpointPath = path.join(checkpointDir, `${checkpointBasename}.json`);
   const checkpoint = readJsonIfExists(checkpointPath, {
     key,
     offset: 0,
@@ -346,10 +381,23 @@ async function runAppointmentTableJob({
   const scheduleIdOrderExpr = useNativeKeyset
     ? `${MSSQL_SCHEDULE_ID_NATIVE_EXPR} ASC`
     : `${MSSQL_SCHEDULE_ID_NUMERIC_EXPR} ASC, [Schedule_ID] ASC`;
+
+  const dtFilterOneLine = MSSQL_APPOINTMENT_SCHEDULE_DATETIME_FILTER.replace(
+    /\s+/g,
+    " ",
+  ).trim();
+  const offsetSelectTpl = MSSQL_APPOINTMENT_SELECT.replace(
+    "WHERE {{appointmentScheduleDatetimeFilter}}",
+    `WHERE (${dtFilterOneLine}) AND (${SCHED_RANGE_COMPAT})`,
+  );
   const idProbeSql = MSSQL_APPOINTMENT_ID_SELECT.replaceAll(
     "{{sourceObject}}",
     sourceObjectNoLock,
+  ).replace(
+    "[Schedule_ID] > @afterScheduleId",
+    `[Schedule_ID] > @afterScheduleId AND (${SCHED_RANGE_NATIVE})`,
   );
+
   const detailSqlTemplate = MSSQL_APPOINTMENT_DETAIL_BY_IDS_SELECT.replaceAll(
     "{{sourceObject}}",
     sourceObjectNoLock,
@@ -359,13 +407,34 @@ async function runAppointmentTableJob({
       ? useNativeKeyset
         ? buildMssqlAppointmentNativeKeysetSelect()
         : buildMssqlAppointmentKeysetSelect()
-      : MSSQL_APPOINTMENT_SELECT
+      : offsetSelectTpl
   )
     .replaceAll("{{sourceObject}}", sourceObjectNoLock)
     .replaceAll("{{orderBy}}", scheduleIdOrderExpr);
+
   let mssqlKeysetAfter = checkpoint.mssqlKeysetAfter;
   if (useMssqlKeyset && mssqlKeysetAfter == null) mssqlKeysetAfter = -1;
   if (!useMssqlKeyset) mssqlKeysetAfter = null;
+  if (useMssqlKeyset && kb.min != null) {
+    const floorExclusive = kb.min - 1n;
+    const curBi = toBigIntish(mssqlKeysetAfter);
+    if (curBi < floorExclusive) {
+      console.error(
+        `>>> [${key}] ปรับ keyset ให้ครอบ sourceKeyNumericMin (${kb.min}): after ${JSON.stringify(mssqlKeysetAfter)} → ${floorExclusive.toString()} (exclusive)`,
+      );
+      mssqlKeysetAfter = bigIntToJsKeysetValue(floorExclusive);
+    }
+  }
+
+  if (migrationConfig.migrateRowMode === "insert-only") {
+    console.error(
+      `>>> [${key}] migrateRowMode=insert-only (เพิ่มเท่าที่ยังไม่มีใน Postgres เท่านั้น — ข้ามอัปเดตของเดิม)`,
+    );
+  } else if (kb.min != null || kb.max != null) {
+    console.error(
+      `>>> [${key}] source key numeric range: min=${kb.min ?? "unset"} max=${kb.max ?? "unset"}`,
+    );
+  }
 
   const chunkLogMode = String(
     migrationConfig.chunkLogMode ?? "compact",
@@ -383,9 +452,10 @@ async function runAppointmentTableJob({
   let plannedRows = sourceLimit;
   if (plannedRows == null && progressEnabled) {
     try {
-      const countRes = await mssqlPool
-        .request()
-        .query(`SELECT COUNT_BIG(1) AS total FROM ${sourceObjectNoLock};`);
+      const countReq = mssqlPool.request();
+      bindAppointmentMssqlCommon(countReq, migrationConfig, sql);
+      const countSql = `SELECT COUNT_BIG(1) AS total FROM ${sourceObjectNoLock} WHERE (${SCHED_RANGE_NATIVE});`;
+      const countRes = await countReq.query(countSql);
       plannedRows = Number(countRes.recordset?.[0]?.total ?? 0);
     } catch {
       plannedRows = null;
@@ -461,10 +531,15 @@ END $$;
 
     let fetchElapsedMs = 0;
     let rows = [];
+    /** โหมด two-step: จำนวนแถวตามลำดับ keyset (TOP @page) — ไม่ใช่แถวจาก detail ที่อาจพองจาก Schedule_ID ซ้ำ */
+    let twoStepKeysetAdvance = null;
+    let twoStepFirstScheduleIdNum = null;
+    let twoStepLastScheduleIdNum = null;
     if (useMssqlKeyset && useNativeKeyset && useTwoStepFetch) {
       const probeStartedAt = Date.now();
-      const idRes = await mssqlPool
-        .request()
+      const probeReq = mssqlPool.request();
+      bindAppointmentMssqlCommon(probeReq, migrationConfig, sql);
+      const idRes = await probeReq
         .input("afterScheduleId", sql.BigInt, toBigIntish(mssqlKeysetAfter))
         .input("page", sql.Int, pageSize)
         .query(idProbeSql);
@@ -472,6 +547,11 @@ END $$;
       const ids = (idRes.recordset || [])
         .map((x) => Number.parseInt(x?.schedule_id ?? "", 10))
         .filter((v) => Number.isFinite(v));
+      twoStepKeysetAdvance = ids.length;
+      if (ids.length > 0) {
+        twoStepFirstScheduleIdNum = ids[0];
+        twoStepLastScheduleIdNum = ids[ids.length - 1];
+      }
       if (ids.length === 0) {
         rows = [];
         fetchElapsedMs = probeMs;
@@ -491,14 +571,14 @@ END $$;
       }
     } else {
       const fetchStartedAt = Date.now();
+      const rq = mssqlPool.request();
+      bindAppointmentMssqlCommon(rq, migrationConfig, sql);
       const r = useMssqlKeyset
-        ? await mssqlPool
-            .request()
+        ? await rq
             .input("afterScheduleId", sql.BigInt, toBigIntish(mssqlKeysetAfter))
             .input("page", sql.Int, pageSize)
             .query(selectSql)
-        : await mssqlPool
-            .request()
+        : await rq
             .input("offset", sql.Int, offset)
             .input("page", sql.Int, pageSize)
             .query(selectSql);
@@ -516,12 +596,22 @@ END $$;
     }
 
     const n = rows.length;
+    const advance =
+      twoStepKeysetAdvance != null && twoStepKeysetAdvance > 0
+        ? twoStepKeysetAdvance
+        : n;
     chunkIndex += 1;
     const chunkStartedAt = Date.now();
     const sourceOffsetStart = offset;
-    const sourceOffsetEnd = offset + n - 1;
-    const firstScheduleId = getScheduleIdForLog(rows[0]);
-    const lastScheduleId = getScheduleIdForLog(rows[n - 1]);
+    const sourceOffsetEnd = offset + advance - 1;
+    const firstScheduleId =
+      twoStepFirstScheduleIdNum != null
+        ? String(twoStepFirstScheduleIdNum)
+        : getScheduleIdForLog(rows[0]);
+    const lastScheduleId =
+      twoStepLastScheduleIdNum != null
+        ? String(twoStepLastScheduleIdNum)
+        : getScheduleIdForLog(rows[n - 1]);
     const arrays = APPOINTMENT_COLUMNS.map(() => new Array(n));
     for (let i = 0; i < n; i++) {
       rowToStagingArrays(rows[i], i, arrays, APPOINTMENT_COLUMNS);
@@ -547,6 +637,7 @@ END $$;
       const postLoadResult = await runAppointmentChunkPostLoad(pgClient, rows, {
         migrationKey: key,
         chunkIndex,
+        migrateRowMode: migrationConfig.migrateRowMode ?? "overwrite",
       });
       mergeFieldIssueChunk(fieldIssueAcc, postLoadResult);
       postLoadMs = Date.now() - postLoadStartedAt;
@@ -558,7 +649,8 @@ END $$;
         status: "success",
         sourceOffsetStart,
         sourceOffsetEnd,
-        rowCount: n,
+        rowCount: advance,
+        ...(n !== advance ? { detailRowCount: n } : {}),
         firstScheduleId,
         lastScheduleId,
         mssqlFetchMs: fetchElapsedMs,
@@ -587,7 +679,8 @@ END $$;
         status: "failed",
         sourceOffsetStart,
         sourceOffsetEnd,
-        rowCount: n,
+        rowCount: advance,
+        ...(n !== advance ? { detailRowCount: n } : {}),
         firstScheduleId,
         lastScheduleId,
         mssqlFetchMs: fetchElapsedMs,
@@ -602,12 +695,16 @@ END $$;
       );
     }
 
-    total += n;
-    offset += n;
+    total += advance;
+    offset += advance;
     if (useMssqlKeyset) {
-      mssqlKeysetAfter = useNativeKeyset
-        ? rows[n - 1].schedule_id
-        : rows[n - 1].__mssql_schedule_id;
+      if (twoStepLastScheduleIdNum != null) {
+        mssqlKeysetAfter = twoStepLastScheduleIdNum;
+      } else if (useNativeKeyset) {
+        mssqlKeysetAfter = rows[n - 1].schedule_id;
+      } else {
+        mssqlKeysetAfter = rows[n - 1].__mssql_schedule_id;
+      }
     }
     if (progressEnabled && !singleLineUi) {
       writeOutLine(
@@ -619,7 +716,7 @@ END $$;
       writeOutLine(
         `>>> [${key}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(
           Date.now() - chunkStartedAt,
-        )} (fetch ${formatSec(fetchElapsedMs)}, post ${formatSec(postLoadMs)}) rows ${n}, total ${total}/${plannedRows ?? "?"}`,
+        )} (fetch ${formatSec(fetchElapsedMs)}, post ${formatSec(postLoadMs)}) detailRows ${n}${n !== advance ? ` keysetAdvance ${advance}` : ""}, total ${total}/${plannedRows ?? "?"}`,
         uiState,
       );
     }
@@ -634,7 +731,7 @@ END $$;
         updatedAt: new Date().toISOString(),
       });
     }
-    const isLastPage = n < pageSize;
+    const isLastPage = advance < pageSize;
     if (progressEnabled) {
       renderProgress(
         total,
@@ -645,8 +742,12 @@ END $$;
         uiState,
       );
     } else {
+      const rowMsg =
+        advance === n
+          ? `${advance} rows`
+          : `${advance} rows advanced (${n} detail rows)`;
       console.error(
-        `... [${key}] chunk ${chunkIndex} ok: ${n} rows, total ${total} (offset=${offset}) | chunk_ms=${lastChunkProcessMs} mssql_fetch_ms=${fetchElapsedMs}`,
+        `... [${key}] chunk ${chunkIndex} ok: ${rowMsg}, total ${total} (offset=${offset}) | chunk_ms=${lastChunkProcessMs} mssql_fetch_ms=${fetchElapsedMs}`,
       );
     }
     for (let i = 0; i < arrays.length; i++) arrays[i].length = 0;
@@ -711,6 +812,7 @@ async function main() {
 
   const migrationForJob = {
     ...(config.migration ?? {}),
+    ...migrateCliOverridesFromArgv(process.argv),
     batchSize:
       config.migration?.batchSize != null &&
       String(config.migration.batchSize).trim() !== ""

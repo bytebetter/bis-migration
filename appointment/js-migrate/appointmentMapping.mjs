@@ -339,8 +339,166 @@ async function resolveAppointmentPatientColumn(pgClient) {
   return cachedAppointmentPatientColumn;
 }
 
+/** @returns {Record<string, unknown[]>} */
+function buildAppointmentColumnArrays(payloads, patientColumn) {
+  const arrays = {
+    appointment_datetime: [],
+    appointment_no: [],
+    prefix: [],
+    first_name: [],
+    last_name: [],
+    payment_type: [],
+    patient_type: [],
+    receive_date: [],
+    old_login_name: [],
+    memo_detail: [],
+    fail: [],
+    telephone: [],
+    inventional: [],
+    biopsy_proc: [],
+    referring_md: [],
+    biopsy_comment: [],
+    biopsy_radiologistg: [],
+    mobile: [],
+    is_online: [],
+    have_doc: [],
+    have_cd: [],
+    right_id: [],
+    location: [],
+    old_db_id: [],
+  };
+  if (patientColumn) arrays[patientColumn] = [];
+
+  for (const item of payloads) {
+    arrays.appointment_datetime.push(item.appointment_datetime);
+    arrays.appointment_no.push(item.appointment_no);
+    arrays.prefix.push(item.prefix);
+    arrays.first_name.push(item.first_name);
+    arrays.last_name.push(item.last_name);
+    arrays.payment_type.push(item.payment_type);
+    arrays.patient_type.push(item.patient_type);
+    arrays.receive_date.push(item.receive_date);
+    arrays.old_login_name.push(item.old_login_name);
+    arrays.memo_detail.push(item.memo_detail);
+    arrays.fail.push(item.fail);
+    arrays.telephone.push(item.telephone);
+    arrays.inventional.push(item.inventional);
+    arrays.biopsy_proc.push(item.biopsy_proc);
+    arrays.referring_md.push(item.referring_md);
+    arrays.biopsy_comment.push(item.biopsy_comment);
+    arrays.biopsy_radiologistg.push(item.biopsy_radiologistg);
+    arrays.mobile.push(item.mobile);
+    arrays.is_online.push(item.is_online);
+    arrays.have_doc.push(item.have_doc);
+    arrays.have_cd.push(item.have_cd);
+    arrays.right_id.push(item.right_id);
+    arrays.location.push(item.location);
+    if (patientColumn) arrays[patientColumn].push(item[patientColumn] ?? null);
+    arrays.old_db_id.push(item.old_db_id);
+  }
+  return arrays;
+}
+
+function buildAppointmentInsertDefs(arrays, patientColumn) {
+  return [
+    ["appointment_datetime", "timestamp[]", arrays.appointment_datetime],
+    ["appointment_no", "int4[]", arrays.appointment_no],
+    ["prefix", "text[]", arrays.prefix],
+    ["first_name", "text[]", arrays.first_name],
+    ["last_name", "text[]", arrays.last_name],
+    ["payment_type", "int4[]", arrays.payment_type],
+    ["patient_type", "int4[]", arrays.patient_type],
+    ["receive_date", "timestamp[]", arrays.receive_date],
+    ["old_login_name", "text[]", arrays.old_login_name],
+    ["memo_detail", "text[]", arrays.memo_detail],
+    ["fail", "int4[]", arrays.fail],
+    ["telephone", "text[]", arrays.telephone],
+    ["inventional", "int4[]", arrays.inventional],
+    ["biopsy_proc", "text[]", arrays.biopsy_proc],
+    ["referring_md", "text[]", arrays.referring_md],
+    ["biopsy_comment", "text[]", arrays.biopsy_comment],
+    ["biopsy_radiologistg", "text[]", arrays.biopsy_radiologistg],
+    ["mobile", "text[]", arrays.mobile],
+    ["is_online", "int4[]", arrays.is_online],
+    ["have_doc", "int4[]", arrays.have_doc],
+    ["have_cd", "int4[]", arrays.have_cd],
+    ["right_id", "int4[]", arrays.right_id],
+    ["location", "int4[]", arrays.location],
+    ...(patientColumn
+      ? [[patientColumn, "int4[]", arrays[patientColumn]]]
+      : []),
+    ["old_db_id", "text[]", arrays.old_db_id],
+  ];
+}
+
+async function loadExistingAppointmentIdByOldDbId(
+  pgClient,
+  oldDbIds,
+  oldDbIdTextLike,
+) {
+  if (oldDbIds.length === 0) return new Map();
+  const { rows } = await pgClient.query(
+    oldDbIdTextLike
+      ? `SELECT id, btrim(old_db_id::text) AS k
+         FROM public.appointment
+         WHERE btrim(old_db_id::text) = ANY($1::text[])`
+      : `SELECT id, btrim(old_db_id::text) AS k
+         FROM public.appointment
+         WHERE old_db_id::text = ANY($1::text[])`,
+    [oldDbIds],
+  );
+  const map = new Map();
+  for (const row of rows) {
+    if (row.k == null) continue;
+    const prev = map.get(row.k);
+    if (prev == null || row.id < prev) map.set(row.k, row.id);
+  }
+  return map;
+}
+
+async function bulkInsertAppointments(pgClient, insertDefs) {
+  const colList = insertDefs.map(([col]) => col).join(", ");
+  const unnestList = insertDefs
+    .map(([, pgType], idx) => `$${idx + 1}::${pgType}`)
+    .join(", ");
+  const params = insertDefs.map(([, , arr]) => arr);
+  const ins = await pgClient.query(
+    `
+    INSERT INTO public.appointment (${colList})
+    SELECT * FROM unnest(${unnestList})
+    `,
+    params,
+  );
+  return ins.rowCount ?? params[0]?.length ?? 0;
+}
+
+async function bulkUpdateAppointmentsByOldDbId(pgClient, insertDefs) {
+  const setList = insertDefs
+    .filter(([col]) => col !== "old_db_id")
+    .map(([col]) => `${col} = v.${col}`)
+    .join(", ");
+  const unnestList = insertDefs
+    .map(([, pgType], idx) => `$${idx + 1}::${pgType}`)
+    .join(", ");
+  const vCols = insertDefs.map(([col]) => col).join(", ");
+  const params = insertDefs.map(([, , arr]) => arr);
+  const upd = await pgClient.query(
+    `
+    UPDATE public.appointment AS a
+    SET ${setList}
+    FROM (
+      SELECT * FROM unnest(${unnestList}) AS v(${vCols})
+    ) v
+    WHERE btrim(a.old_db_id::text) = btrim(v.old_db_id::text)
+    `,
+    params,
+  );
+  return upd.rowCount ?? params[0]?.length ?? 0;
+}
+
 /**
- * upsert แบบลบแล้วแทรกในช่วง chunk
+ * upsert ตาม old_db_id — UPDATE แถวเดิม (คง id) / INSERT เฉพาะแถวใหม่
+ * ลดช่องว่างใน id จากการรัน migrate ซ้ำ (เดิม DELETE แล้ว INSERT ใหม่)
  * @returns {{ failedScheduleIds: string[], fieldIssues: object|null }}
  */
 export async function runAppointmentChunkPostLoad(
@@ -382,11 +540,10 @@ export async function runAppointmentChunkPostLoad(
     .filter((v) => v != null);
 
   const oldDbIdTextLike = await isOldDbIdTextLike(pgClient);
-  await pgClient.query(
-    oldDbIdTextLike
-      ? "DELETE FROM public.appointment WHERE old_db_id = ANY($1::text[])"
-      : "DELETE FROM public.appointment WHERE old_db_id::text = ANY($1::text[])",
-    [oldDbIds],
+  const existingIdByOldDbId = await loadExistingAppointmentIdByOldDbId(
+    pgClient,
+    oldDbIds,
+    oldDbIdTextLike,
   );
 
   const fkMeta = await getAppointmentForeignKeyMeta(pgClient);
@@ -468,105 +625,34 @@ export async function runAppointmentChunkPostLoad(
       }
     }
   }
-  const arrays = {
-    appointment_datetime: [],
-    appointment_no: [],
-    prefix: [],
-    first_name: [],
-    last_name: [],
-    payment_type: [],
-    patient_type: [],
-    receive_date: [],
-    old_login_name: [],
-    memo_detail: [],
-    fail: [],
-    telephone: [],
-    inventional: [],
-    biopsy_proc: [],
-    referring_md: [],
-    biopsy_comment: [],
-    biopsy_radiologistg: [],
-    mobile: [],
-    is_online: [],
-    have_doc: [],
-    have_cd: [],
-    right_id: [],
-    location: [],
-    old_db_id: [],
-  };
-  if (patientColumn) arrays[patientColumn] = [];
-
-  for (const item of payloads) {
-    arrays.appointment_datetime.push(item.appointment_datetime);
-    arrays.appointment_no.push(item.appointment_no);
-    arrays.prefix.push(item.prefix);
-    arrays.first_name.push(item.first_name);
-    arrays.last_name.push(item.last_name);
-    arrays.payment_type.push(item.payment_type);
-    arrays.patient_type.push(item.patient_type);
-    arrays.receive_date.push(item.receive_date);
-    arrays.old_login_name.push(item.old_login_name);
-    arrays.memo_detail.push(item.memo_detail);
-    arrays.fail.push(item.fail);
-    arrays.telephone.push(item.telephone);
-    arrays.inventional.push(item.inventional);
-    arrays.biopsy_proc.push(item.biopsy_proc);
-    arrays.referring_md.push(item.referring_md);
-    arrays.biopsy_comment.push(item.biopsy_comment);
-    arrays.biopsy_radiologistg.push(item.biopsy_radiologistg);
-    arrays.mobile.push(item.mobile);
-    arrays.is_online.push(item.is_online);
-    arrays.have_doc.push(item.have_doc);
-    arrays.have_cd.push(item.have_cd);
-    arrays.right_id.push(item.right_id);
-    arrays.location.push(item.location);
-    if (patientColumn) arrays[patientColumn].push(item[patientColumn] ?? null);
-    arrays.old_db_id.push(item.old_db_id);
+  const insertPayloads = [];
+  const updatePayloads = [];
+  for (const p of payloads) {
+    const key = String(p.old_db_id);
+    if (existingIdByOldDbId.has(key)) updatePayloads.push(p);
+    else insertPayloads.push(p);
   }
 
-  const insertDefs = [
-    ["appointment_datetime", "timestamp[]", arrays.appointment_datetime],
-    ["appointment_no", "int4[]", arrays.appointment_no],
-    ["prefix", "text[]", arrays.prefix],
-    ["first_name", "text[]", arrays.first_name],
-    ["last_name", "text[]", arrays.last_name],
-    ["payment_type", "int4[]", arrays.payment_type],
-    ["patient_type", "int4[]", arrays.patient_type],
-    ["receive_date", "timestamp[]", arrays.receive_date],
-    ["old_login_name", "text[]", arrays.old_login_name],
-    ["memo_detail", "text[]", arrays.memo_detail],
-    ["fail", "int4[]", arrays.fail],
-    ["telephone", "text[]", arrays.telephone],
-    ["inventional", "int4[]", arrays.inventional],
-    ["biopsy_proc", "text[]", arrays.biopsy_proc],
-    ["referring_md", "text[]", arrays.referring_md],
-    ["biopsy_comment", "text[]", arrays.biopsy_comment],
-    ["biopsy_radiologistg", "text[]", arrays.biopsy_radiologistg],
-    ["mobile", "text[]", arrays.mobile],
-    ["is_online", "int4[]", arrays.is_online],
-    ["have_doc", "int4[]", arrays.have_doc],
-    ["have_cd", "int4[]", arrays.have_cd],
-    ["right_id", "int4[]", arrays.right_id],
-    ["location", "int4[]", arrays.location],
-    ...(patientColumn
-      ? [[patientColumn, "int4[]", arrays[patientColumn]]]
-      : []),
-    ["old_db_id", "text[]", arrays.old_db_id],
-  ];
-  const colList = insertDefs.map(([col]) => col).join(", ");
-  const unnestList = insertDefs
-    .map(([, pgType], idx) => `$${idx + 1}::${pgType}`)
-    .join(", ");
-  const params = insertDefs.map(([, , arr]) => arr);
-  const ins = await pgClient.query(
-    `
-    INSERT INTO public.appointment (${colList})
-    SELECT * FROM unnest(${unnestList})
-    `,
-    params,
-  );
-
-  const rowsInserted = ins.rowCount ?? payloads.length;
+  let rowsInserted = 0;
+  if (insertPayloads.length > 0) {
+    const insertArrays = buildAppointmentColumnArrays(
+      insertPayloads,
+      patientColumn,
+    );
+    const insertDefs = buildAppointmentInsertDefs(insertArrays, patientColumn);
+    rowsInserted += await bulkInsertAppointments(pgClient, insertDefs);
+  }
+  if (
+    updatePayloads.length > 0 &&
+    (options.migrateRowMode ?? "overwrite") !== "insert-only"
+  ) {
+    const updateArrays = buildAppointmentColumnArrays(
+      updatePayloads,
+      patientColumn,
+    );
+    const updateDefs = buildAppointmentInsertDefs(updateArrays, patientColumn);
+    rowsInserted += await bulkUpdateAppointmentsByOldDbId(pgClient, updateDefs);
+  }
 
   if (oldDbIds.length > 0) {
     const { rows: presentRows } = await pgClient.query(

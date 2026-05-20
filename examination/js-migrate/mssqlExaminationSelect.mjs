@@ -104,6 +104,7 @@ SELECT
   CAST([sendExam_LoginName] AS NVARCHAR(MAX)) AS send_exam_login_name,
   CAST(CAST([Schedule_ID] AS NVARCHAR(50)) AS NVARCHAR(MAX)) AS schedule_id
 FROM {{sourceObject}}
+WHERE ({{examNumericKeyRange}})
 ORDER BY {{orderBy}}
 OFFSET @offset ROWS FETCH NEXT @page ROWS ONLY;
 `.trim();
@@ -215,7 +216,7 @@ export const MSSQL_EXAMINATION_ID_SELECT = `
 SELECT TOP (@page)
   CAST([Exam_ID] AS BIGINT) AS exam_id
 FROM {{sourceObject}}
-WHERE [Exam_ID] > @afterExamId
+WHERE [Exam_ID] > @afterExamId AND ({{examNumericKeyRange}})
 ORDER BY [Exam_ID] ASC
 `.trim();
 
