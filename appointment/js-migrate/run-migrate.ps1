@@ -20,14 +20,14 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
   throw "npm not found in PATH"
 }
 
-if (-not $SkipInstall -and -not (Test-Path -LiteralPath ".\node_modules")) {
+if (-not $SkipInstall -and -not (Test-Path -LiteralPath "./node_modules")) {
   Write-Host ">>> Installing dependencies..."
   npm install
   if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
 }
 
 Write-Host ">>> Running migration with config: $ConfigPath (profile: $Profile)"
-node .\migrate-from-mssql.mjs --config $ConfigPath --profile $Profile
+node ./migrate-from-mssql.mjs --config $ConfigPath --profile $Profile
 if ($LASTEXITCODE -ne 0) { throw "migration failed" }
 
 Write-Host "Done"
