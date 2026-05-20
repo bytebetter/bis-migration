@@ -1,0 +1,45 @@
+{
+  "name": "bis-sign-to-pacs-api",
+  "description": "Please enter a description for your extension",
+  "icon": "extension",
+  "version": "1.0.5",
+  "keywords": [
+    "directus",
+    "directus-extension",
+    "directus-extension-endpoint"
+  ],
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "directus:extension": {
+    "type": "endpoint",
+    "path": "dist/index.js",
+    "source": "src/index.ts",
+    "host": "^10.10.0"
+  },
+  "scripts": {
+    "build": "directus-extension build",
+    "build:dev": "dotenv -e .env.development directus-extension build",
+    "build:dev:patch": "npm version patch && npm run build:dev",
+    "build:dev:minor": "npm version minor && npm run build:dev",
+    "build:dev:major": "npm version major && npm run build:dev",
+    "build:staging": "dotenv -e .env.staging directus-extension build",
+    "build:prod": "dotenv -e .env.production directus-extension build",
+    "dev": "directus-extension build -w --no-minify",
+    "link": "directus-extension link",
+    "validate": "directus-extension validate"
+  },
+  "devDependencies": {
+    "@directus/extensions-sdk": "13.1.0",
+    "@types/node": "^22.15.18",
+    "@types/pdfkit": "^0.13.9",
+    "dotenv-cli": "^11.0.0",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@directus/sdk": "^19.1.0",
+    "pdf-lib": "^1.17.1",
+    "pdfkit": "^0.17.1"
+  }
+}

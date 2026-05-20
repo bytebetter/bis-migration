@@ -1,0 +1,43 @@
+{
+  "name": "bis-pacs-sync-api",
+  "description": "Please enter a description for your extension",
+  "icon": "extension",
+  "version": "1.0.18",
+  "keywords": [
+    "directus",
+    "directus-extension",
+    "directus-extension-endpoint"
+  ],
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "directus:extension": {
+    "type": "endpoint",
+    "path": "dist/index.js",
+    "source": "src/index.ts",
+    "host": "^10.10.0"
+  },
+  "scripts": {
+    "build": "directus-extension build",
+    "build:dev": "directus-extension build",
+    "build:stg": "directus-extension build",
+    "build:prod": "directus-extension build",
+    "build:dev:patch": "npm version patch && npm run build:dev",
+    "build:dev:minor": "npm version minor && npm run build:dev",
+    "build:dev:major": "npm version major && npm run build:dev",
+    "dev": "directus-extension build -w --no-minify",
+    "link": "directus-extension link"
+  },
+  "devDependencies": {
+    "@directus/extensions-sdk": "12.1.4",
+    "@types/busboy": "^1.5.4",
+    "@types/node": "^22.10.6",
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "@directus/sdk": "^19.0.0",
+    "@directus/shared": "^9.24.0",
+    "busboy": "^1.6.0"
+  }
+}
