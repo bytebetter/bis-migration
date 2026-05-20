@@ -1,0 +1,34 @@
+# Directus 11 — ใช้ร่วมกับ Postgres ใน repo นี้
+#
+# Directus only (Postgres อยู่ที่อื่น). สำหรับทั้งคู่ใช้ docker/docker-compose.yml
+#
+#   cp docker/directus.env.example .env.directus
+#   docker compose --env-file .env.directus -f docker/docker-compose.directus.yml up -d
+#   # ตั้ง DB_HOST ใน .env.directus ถ้า Postgres ไม่ใช่ service ชื่อ postgres
+
+services:
+  directus:
+    image: directus/directus:11
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${DIRECTUS_PORT:-8055}:8055"
+    volumes:
+      - directus_uploads:/directus/uploads
+      - directus_extensions:/directus/extensions
+    environment:
+      KEY: ${KEY:?set KEY in .env.directus}
+      SECRET: ${SECRET:?set SECRET in .env.directus}
+      DB_CLIENT: ${DB_CLIENT:-pg}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:-${POSTGRES_DB:-bisinfo}}
+      DB_USER: ${DB_USER:-${POSTGRES_USER:-bis}}
+      DB_PASSWORD: ${DB_PASSWORD:-${POSTGRES_PASSWORD:?set DB_PASSWORD in .env.directus or POSTGRES_PASSWORD in .env.postgres}}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env.directus}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8055}
+      WEBSOCKETS_ENABLED: ${WEBSOCKETS_ENABLED:-true}
+
+volumes:
+  directus_uploads:
+  directus_extensions:
