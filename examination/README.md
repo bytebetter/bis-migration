@@ -18,12 +18,12 @@ examination/
 ## รัน
 
 ```powershell
-cd .\examination\js-migrate
+cd <root ของ repo>
 npm install
-npm run migrate
+npm run migrate:examination
 ```
 
-หรือใช้ Task ใน VS Code/Cursor: **`migrate: examination → Postgres (js-migrate)`** (ดู `.vscode/tasks.json`)
+หรือใช้ Task ใน VS Code/Cursor: **`migrate: examination`** (ดู `.vscode/tasks.json`)
 
 ค่าเชื่อมต่อใช้ไฟล์กลางที่ root: `migration.config.local.json` (profile: `examination`)
 

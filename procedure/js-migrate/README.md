@@ -25,12 +25,12 @@ Flow เดียวกับ `appointment/js-migrate` และ `examination/js
 ## Run
 
 ```powershell
-cd .\procedure\js-migrate
+cd <root ของ repo>
 npm install
-npm run migrate
+npm run migrate:procedure
 ```
 
-หรือ Task: **migrate: procedure (biopsy) → Postgres (js-migrate)** ใน `.vscode/tasks.json`
+หรือ Task: **migrate: procedure (biopsy)** ใน `.vscode/tasks.json`
 
 ## หมายเหตุ
 

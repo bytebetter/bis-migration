@@ -1,0 +1,41 @@
+{
+  "name": "bis-status-hook",
+  "description": "Please enter a description for your extension",
+  "icon": "extension",
+  "version": "1.0.5",
+  "keywords": [
+    "directus",
+    "directus-extension",
+    "directus-extension-hook"
+  ],
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "directus:extension": {
+    "type": "hook",
+    "path": "dist/index.js",
+    "source": "src/index.ts",
+    "host": "^10.10.0"
+  },
+  "scripts": {
+    "build:dev": "cross-env NODE_ENV=development directus-extension build",
+    "build:dev:patch": "npm version patch && npm run build:dev",
+    "build:dev:minor": "npm version minor && npm run build:dev",
+    "build:dev:major": "npm version major && npm run build:dev",
+    "build:staging": "cross-env NODE_ENV=staging directus-extension build",
+    "build:prod": "cross-env NODE_ENV=production directus-extension build",
+    "dev": "cross-env TARGET_ENV=development directus-extension build -w --no-minify",
+    "link": "directus-extension link"
+  },
+  "devDependencies": {
+    "@directus/extensions-sdk": "^13.0.0",
+    "@types/node": "^22.10.7",
+    "cross-env": "^7.0.3",
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "@directus/sdk": "^19.0.0",
+    "dotenv": "^16.5.0"
+  }
+}

@@ -29,8 +29,20 @@ import {
   renderProgress,
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
+import {
+  migrateCliOverridesFromArgv,
+  readNumericSourceKeyBounds,
+  bindMigrateSrcNumericRange,
+} from "../../shared/js-migrate/migrateCliArgs.mjs";
+import { examinationExamNumericRangePredicate } from "../../shared/js-migrate/migrateMssqlBindings.mjs";
+import {
+  isLastKeysetPage,
+  optionalDetailRowCount,
+  resolveKeysetAdvance,
+} from "../../shared/js-migrate/twoStepKeyset.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const EXAM_NUMERIC_KEY_RANGE_PRED = examinationExamNumericRangePredicate();
 const MSSQL_EXAM_ID_NUMERIC_EXPR = "[Exam_ID]";
 
 /**
@@ -50,7 +62,7 @@ function buildMssqlExaminationKeysetSelect() {
   return `${headWithTop},
   ${MSSQL_EXAM_ID_NUMERIC_EXPR} AS __mssql_exam_id
 FROM {{sourceObject}}
-WHERE ${MSSQL_EXAM_ID_NUMERIC_EXPR} > @afterExamId
+WHERE ${MSSQL_EXAM_ID_NUMERIC_EXPR} > @afterExamId AND (${EXAM_NUMERIC_KEY_RANGE_PRED})
 ORDER BY ${MSSQL_EXAM_ID_NUMERIC_EXPR} ASC;`;
 }
 
@@ -65,6 +77,27 @@ function buildMssqlExaminationDetailByIdsSelect(idPlaceholders) {
   );
 }
 
+async function filterExamFetchRowsInsertOnly(pgClient, rows) {
+  const cand = Array.from(
+    new Set(
+      rows
+        .map((r) => normExamId(getField(r, "exam_id")))
+        .filter((id) => id !== "" && /^[0-9]+$/.test(id)),
+    ),
+  );
+  if (cand.length === 0) return [];
+  const { rows: existRows } = await pgClient.query(
+    `SELECT old_exam_id::text AS eid FROM public.examination WHERE old_exam_id::text = ANY($1::text[])`,
+    [cand],
+  );
+  const have = new Set(existRows.map((r) => String(r.eid)));
+  return rows.filter((r) => {
+    const id = normExamId(getField(r, "exam_id"));
+    if (id === "" || !/^[0-9]+$/.test(id)) return true;
+    return !have.has(id);
+  });
+}
+
 function toBigIntish(v) {
   if (v == null) return -1n;
   if (typeof v === "bigint") return v;
@@ -73,6 +106,11 @@ function toBigIntish(v) {
     return BigInt(v.trim());
   }
   return BigInt(String(v));
+}
+
+function bigIntToJsKeysetValue(b) {
+  if (b >= -9007199254740991n && b <= 9007199254740991n) return Number(b);
+  return b.toString();
 }
 
 function keysetIdForCheckpoint(v) {
@@ -410,7 +448,22 @@ async function runTableJob({
     migrationConfig.checkpointDir ?? "./checkpoints",
   );
   fs.mkdirSync(checkpointDir, { recursive: true });
-  const checkpointPath = path.join(checkpointDir, `${key}.json`);
+
+  const kb = readNumericSourceKeyBounds(migrationConfig);
+  const rowModeSlug =
+    migrationConfig.migrateRowMode === "insert-only" ? "ins" : "ovr";
+  let checkpointBasename = key;
+  if (
+    kb.min != null ||
+    kb.max != null ||
+    migrationConfig.migrateRowMode === "insert-only"
+  ) {
+    const ckParts = [rowModeSlug];
+    if (kb.min != null) ckParts.push(`from${kb.min}`);
+    if (kb.max != null) ckParts.push(`to${kb.max}`);
+    checkpointBasename = `${key}-${ckParts.join("-")}`;
+  }
+  const checkpointPath = path.join(checkpointDir, `${checkpointBasename}.json`);
   const isExaminationBuiltin = (() => {
     const jobKey = (tableJob.key ?? "").toString().toLowerCase();
     const st = (tableJob.sourceTable ?? "").toString().toLowerCase();
@@ -468,18 +521,53 @@ async function runTableJob({
       : useMssqlKeyset
         ? buildMssqlExaminationKeysetSelect()
         : MSSQL_EXAMINATION_SELECT;
-    return tpl
+    let out = tpl
       .replaceAll("{{sourceObject}}", sourceObjectNoLock)
       .replaceAll("{{orderBy}}", orderBy);
+    if (out.includes("{{examNumericKeyRange}}")) {
+      out = out.replaceAll(
+        "{{examNumericKeyRange}}",
+        EXAM_NUMERIC_KEY_RANGE_PRED,
+      );
+    }
+    return out;
   })();
-  const probeSql = buildMssqlExaminationProbeSelect().replaceAll(
-    "{{sourceObject}}",
-    sourceObjectNoLock,
-  );
+  const probeSql = (() => {
+    let p = buildMssqlExaminationProbeSelect().replaceAll(
+      "{{sourceObject}}",
+      sourceObjectNoLock,
+    );
+    if (p.includes("{{examNumericKeyRange}}")) {
+      p = p.replaceAll("{{examNumericKeyRange}}", EXAM_NUMERIC_KEY_RANGE_PRED);
+    }
+    return p;
+  })();
 
   let mssqlKeysetAfter = checkpoint.mssqlKeysetAfter;
   if (useMssqlKeyset && mssqlKeysetAfter == null) mssqlKeysetAfter = -1;
   if (!useMssqlKeyset) mssqlKeysetAfter = null;
+  if (useMssqlKeyset && kb.min != null) {
+    const floorExclusive = kb.min - 1n;
+    const curBi = toBigIntish(mssqlKeysetAfter);
+    if (curBi < floorExclusive) {
+      console.error(
+        `>>> [${key}] ปรับ keyset ให้ครอบ sourceKeyNumericMin (${kb.min})`,
+      );
+      mssqlKeysetAfter = bigIntToJsKeysetValue(floorExclusive);
+    }
+  }
+  if (
+    migrationConfig.migrateRowMode === "insert-only" &&
+    isExaminationBuiltin
+  ) {
+    console.error(
+      `>>> [${key}] migrateRowMode=insert-only (ไม่ DELETE/แทนที่ examination ที่มี old_exam_id อยู่แล้ว)`,
+    );
+  } else if (isExaminationBuiltin && (kb.min != null || kb.max != null)) {
+    console.error(
+      `>>> [${key}] source key numeric range: min=${kb.min ?? "unset"} max=${kb.max ?? "unset"}`,
+    );
+  }
 
   console.error(
     `>>> [${key}] start offset: ${offset}${useMssqlKeyset ? " (MSSQL keyset ตาม [Exam_ID])" : ""}`,
@@ -534,10 +622,19 @@ async function runTableJob({
   let plannedRows = sourceLimit;
   if (plannedRows == null && progressEnabled) {
     try {
-      const countRes = await mssqlPool
-        .request()
-        .query(`SELECT COUNT_BIG(1) AS total FROM ${sourceObjectNoLock};`);
-      plannedRows = Number(countRes.recordset?.[0]?.total ?? 0);
+      const countReq = mssqlPool.request();
+      if (probeSql.includes("@migrateSrcKeyMin")) {
+        bindMigrateSrcNumericRange(countReq, migrationConfig, sql);
+        const countRes = await countReq.query(
+          `SELECT COUNT_BIG(1) AS total FROM ${sourceObjectNoLock} WHERE (${EXAM_NUMERIC_KEY_RANGE_PRED});`,
+        );
+        plannedRows = Number(countRes.recordset?.[0]?.total ?? 0);
+      } else {
+        const countRes = await countReq.query(
+          `SELECT COUNT_BIG(1) AS total FROM ${sourceObjectNoLock};`,
+        );
+        plannedRows = Number(countRes.recordset?.[0]?.total ?? 0);
+      }
     } catch {
       plannedRows = null;
     }
@@ -583,8 +680,11 @@ async function runTableJob({
 
     if (probeTiming && useMssqlKeyset) {
       const probeStartedAt = Date.now();
-      const probe = await mssqlPool
-        .request()
+      const pReq = mssqlPool.request();
+      if (probeSql.includes("@migrateSrcKeyMin")) {
+        bindMigrateSrcNumericRange(pReq, migrationConfig, sql);
+      }
+      const probe = await pReq
         .input("afterExamId", sql.BigInt, toBigIntish(mssqlKeysetAfter))
         .input("page", sql.Int, Math.min(pageSize, 50))
         .query(probeSql);
@@ -604,6 +704,8 @@ async function runTableJob({
     }
 
     let rows = [];
+    /** @type {any[]} */
+    let idRows = [];
     let lastExamIdFromProbe = null;
     let fetchElapsedMs = 0;
     let idFetchElapsedMs = 0;
@@ -611,13 +713,16 @@ async function runTableJob({
     if (isExaminationBuiltin && useMssqlKeyset) {
       // Step 1: fetch lightweight Exam_ID list (keyset).
       const idFetchStartedAt = Date.now();
-      const idResp = await mssqlPool
-        .request()
+      const idReq = mssqlPool.request();
+      if (probeSql.includes("@migrateSrcKeyMin")) {
+        bindMigrateSrcNumericRange(idReq, migrationConfig, sql);
+      }
+      const idResp = await idReq
         .input("afterExamId", sql.BigInt, toBigIntish(mssqlKeysetAfter))
         .input("page", sql.Int, pageSize)
         .query(probeSql);
       idFetchElapsedMs = Date.now() - idFetchStartedAt;
-      const idRows = idResp.recordset || [];
+      idRows = idResp.recordset || [];
       if (idRows.length > 0) {
         lastExamIdFromProbe = idRows[idRows.length - 1].probe_exam_id;
       }
@@ -660,14 +765,16 @@ async function runTableJob({
       }
     } else {
       const fetchStartedAt = Date.now();
+      const fq = mssqlPool.request();
+      if (selectSql.includes("@migrateSrcKeyMin")) {
+        bindMigrateSrcNumericRange(fq, migrationConfig, sql);
+      }
       const r = useMssqlKeyset
-        ? await mssqlPool
-            .request()
+        ? await fq
             .input("afterExamId", sql.BigInt, toBigIntish(mssqlKeysetAfter))
             .input("page", sql.Int, pageSize)
             .query(selectSql)
-        : await mssqlPool
-            .request()
+        : await fq
             .input("offset", sql.Int, offset)
             .input("page", sql.Int, pageSize)
             .query(selectSql);
@@ -683,15 +790,64 @@ async function runTableJob({
     }
     if (rows.length === 0) break;
 
-    const n = rows.length;
+    const keysetAdvance = resolveKeysetAdvance(
+      isExaminationBuiltin && useMssqlKeyset ? idRows.length : null,
+      rows.length,
+    );
+    let stagingRows = rows;
+    if (
+      isExaminationBuiltin &&
+      (migrationConfig.migrateRowMode ?? "overwrite") === "insert-only"
+    ) {
+      stagingRows = await filterExamFetchRowsInsertOnly(pgClient, rows);
+    }
+
+    const n = stagingRows.length;
     chunkIndex += 1;
+
+    /** chunk จาก MSSQL หมดชุดแล้วทุก exam มีอยู่แล้ว (insert-only) — ข้าม TX แต่ต้อง advance keyset/checkpoint */
+    if (n === 0) {
+      total += keysetAdvance;
+      offset += keysetAdvance;
+      if (useMssqlKeyset) {
+        mssqlKeysetAfter =
+          lastExamIdFromProbe ??
+          toBigIntish(normExamId(rows[rows.length - 1]?.exam_id));
+      }
+      if (checkpointEnabled) {
+        writeJson(checkpointPath, {
+          key,
+          offset,
+          ...(useMssqlKeyset
+            ? { mssqlKeysetAfter: keysetIdForCheckpoint(mssqlKeysetAfter) }
+            : { mssqlKeysetAfter: null }),
+          completed: false,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      if (progressEnabled) {
+        renderProgress(
+          total,
+          progressTotal,
+          progressStartedAt,
+          chunkIndex,
+          plannedChunks,
+          uiState,
+        );
+      }
+      rows.length = 0;
+      if (isLastKeysetPage(keysetAdvance, pageSize)) break;
+      continue;
+    }
+
     const chunkStartedAt = Date.now();
     const sourceOffsetStart = offset;
-    const sourceOffsetEnd = offset + n - 1;
-    const firstExamId = normExamId(rows[0]?.exam_id);
-    const lastExamId = normExamId(rows[n - 1]?.exam_id);
+    const sourceOffsetEnd = offset + keysetAdvance - 1;
+    const firstExamId = normExamId(stagingRows[0]?.exam_id);
+    const lastExamId = normExamId(stagingRows[n - 1]?.exam_id);
     const arrays = columns.map(() => new Array(n));
-    for (let i = 0; i < n; i++) rowToStagingArrays(rows[i], i, arrays, columns);
+    for (let i = 0; i < n; i++)
+      rowToStagingArrays(stagingRows[i], i, arrays, columns);
 
     let step = "begin chunk transaction";
     let txBeginMs = 0;
@@ -740,12 +896,13 @@ async function runTableJob({
         const postLoadStartedAt = Date.now();
         const postLoadResult = await runExaminationChunkPostLoad(
           pgClient,
-          rows,
+          stagingRows,
           stagingFromClause,
           {
             verbose: debugLogs && !singleLineUi,
             migrationKey: key,
             chunkIndex,
+            migrateRowMode: migrationConfig.migrateRowMode ?? "overwrite",
           },
         );
         mergeFieldIssueChunk(fieldIssueAcc, postLoadResult);
@@ -814,7 +971,9 @@ LIMIT 200;
         status: "success",
         sourceOffsetStart,
         sourceOffsetEnd,
-        rowCount: n,
+        rowCount: keysetAdvance,
+        ...optionalDetailRowCount(keysetAdvance, rows.length),
+        stagingRowCount: n,
         firstExamId,
         lastExamId,
         source_cases: Number(chunkStats.source_cases ?? 0),
@@ -857,7 +1016,9 @@ LIMIT 200;
         status: "failed",
         sourceOffsetStart,
         sourceOffsetEnd,
-        rowCount: n,
+        rowCount: keysetAdvance,
+        ...optionalDetailRowCount(keysetAdvance, rows.length),
+        stagingRowCount: n,
         firstExamId,
         lastExamId,
         failedAtStep: step,
@@ -882,11 +1043,12 @@ LIMIT 200;
       );
     }
 
-    total += n;
-    offset += n;
+    total += keysetAdvance;
+    offset += keysetAdvance;
     if (useMssqlKeyset) {
       mssqlKeysetAfter =
-        lastExamIdFromProbe ?? toBigIntish(normExamId(rows[n - 1]?.exam_id));
+        lastExamIdFromProbe ??
+        toBigIntish(normExamId(rows[rows.length - 1]?.exam_id));
     }
     if (checkpointEnabled) {
       writeJson(checkpointPath, {
@@ -899,12 +1061,12 @@ LIMIT 200;
         updatedAt: new Date().toISOString(),
       });
     }
-    const isLastPage = n < pageSize;
+    const isLastPage = isLastKeysetPage(keysetAdvance, pageSize);
     if (debugLogs && !singleLineUi) {
       writeOutLine(
         `>>> [${key}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(
           Date.now() - chunkStartedAt,
-        )} (fetch ${formatSec(fetchElapsedMs)}, post ${formatSec(postLoadMs)}) rows ${n}, total ${total}/${plannedRows ?? "?"}`,
+        )} (fetch ${formatSec(fetchElapsedMs)}, post ${formatSec(postLoadMs)}) keyset ${keysetAdvance}${keysetAdvance !== rows.length ? ` detail ${rows.length}` : ""} staging ${n}, total ${total}/${plannedRows ?? "?"}`,
         uiState,
       );
     }
@@ -1051,7 +1213,10 @@ async function main() {
           mssqlPool: pool,
           pgClient: client,
           sqlBaseDir,
-          migrationConfig: config.migration ?? {},
+          migrationConfig: {
+          ...(config.migration ?? {}),
+          ...migrateCliOverridesFromArgv(process.argv),
+        },
           tableJob,
         });
         runLog.tableResults.push(result);

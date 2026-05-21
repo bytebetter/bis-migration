@@ -1,4 +1,12 @@
 /**
+ * Predicate ช่วง [Schedule_Datetime] — ผูก @appointmentDtFrom / @appointmentDtToExcl เป็น NULL ได้
+ * เมื่อทั้งคู่เป็น NULL จะไม่กรองวันที่
+ */
+export const MSSQL_APPOINTMENT_SCHEDULE_DATETIME_FILTER = `
+(@appointmentDtFrom IS NULL OR [Schedule_Datetime] >= @appointmentDtFrom)
+  AND (@appointmentDtToExcl IS NULL OR [Schedule_Datetime] < @appointmentDtToExcl)`;
+
+/**
  * คิวรีอ่าน dbo.schedule จาก MSSQL แบบแบ่งหน้า
  *
  * ใช้ NVARCHAR(n) แทน NVARCHAR(MAX) ในฟิลด์ที่ความยาวจำกัดได้ — ลด LOB / payload ระหว่าง fetch
@@ -36,6 +44,7 @@ SELECT
   CONVERT(NVARCHAR(50), [HaveCD]) AS have_cd,
   CONVERT(NVARCHAR(50), [Right_ID]) AS right_id
 FROM {{sourceObject}}
+WHERE {{appointmentScheduleDatetimeFilter}}
 ORDER BY {{orderBy}}
 OFFSET @offset ROWS FETCH NEXT @page ROWS ONLY;
 `.trim();

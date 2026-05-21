@@ -30,6 +30,10 @@ import {
   renderProgress,
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
+import {
+  formatAdvanceLog,
+  isLastKeysetPage,
+} from "../../shared/js-migrate/twoStepKeyset.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KEY = "mam";
@@ -445,7 +449,8 @@ async function main() {
           );
         }
 
-        offset += rows.length;
+        const keysetAdvance = ids.length;
+        offset += keysetAdvance;
         if (ids.length > 0) {
           afterExamId = ids[ids.length - 1];
         }
@@ -462,7 +467,7 @@ async function main() {
           writeOutLine(
             `>>> [${KEY}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(
               Date.now() - chunkStartedAt,
-            )} rows=${rows.length} total=${offset}/${plannedRows ?? "?"} (fetch=${formatSec(
+            )} ${formatAdvanceLog(keysetAdvance, rows.length)} total=${offset}/${plannedRows ?? "?"} (fetch=${formatSec(
               fetchMs,
             )}, begin=${formatSec(txBeginMs)}, staging=${formatSec(
               stagingMs,
@@ -481,7 +486,7 @@ async function main() {
           );
         }
 
-        if (rows.length < batchSize) break;
+        if (isLastKeysetPage(keysetAdvance, batchSize)) break;
       }
 
       if (checkpointEnabled) {

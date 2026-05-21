@@ -1,0 +1,28 @@
+{
+  "name": "bis-db-migration",
+  "private": true,
+  "type": "module",
+  "description": "dependencies กลางสำหรับทุก job ใน <โฟลเดอร์ตาราง>/js-migrate (npm install ครั้งเดียวที่ root)",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "migrate:all": "node ./scripts/run-migrate-all-cli.mjs",
+    "migrate:patient_info": "node patient-info/js-migrate/migrate-from-mssql.mjs --config ./migration.config.local.json --profile patient_info",
+    "migrate:appointment": "node appointment/js-migrate/migrate-from-mssql.mjs --config ./migration.config.local.json --profile appointment",
+    "migrate:examination": "node examination/js-migrate/migrate-from-mssql.mjs --config ./migration.config.local.json --profile examination",
+    "migrate:examination_general": "node examination-general/js-migrate/migrate-from-mssql.mjs --config ./migration.config.local.json --profile examination_general",
+    "migrate:pacs_sync_info": "node pacs-sync-info/js-migrate/migrate-from-mssql.mjs --config ./migration.config.local.json --profile pacs_sync_info",
+    "migrate:procedure": "node procedure/js-migrate/migrate-from-mssql.mjs --config ./migration.config.local.json --profile procedure",
+    "migrate:ultrasound": "node ultrasound/js-migrate/migrate-from-mssql.mjs --config ./migration.config.local.json --profile ultrasound",
+    "migrate:mam": "node mam/js-migrate/migrate-from-mssql.mjs --config ./migration.config.local.json --profile mam",
+    "migrate:mam_cal": "node mam-cal/js-migrate/migrate-from-mssql.mjs --config ./migration.config.local.json --profile mam_cal",
+    "migrate:mam_mass": "node mam-mass/js-migrate/migrate-from-mssql.mjs --config ./migration.config.local.json --profile mam_mass",
+    "migrate:ultrasound_cyst": "node ultrasound-cyst/js-migrate/migrate-from-mssql.mjs --config ./migration.config.local.json --profile ultrasound_cyst",
+    "migrate:ultrasound_mass": "node ultrasound-mass/js-migrate/migrate-from-mssql.mjs --config ./migration.config.local.json --profile ultrasound_mass"
+  },
+  "dependencies": {
+    "mssql": "^11.0.1",
+    "pg": "^8.13.1"
+  }
+}

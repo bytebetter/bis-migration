@@ -7,6 +7,10 @@
 param(
   [string] $ConfigPath = "..\..\migration.config.local.json",
   [string] $Profile = "mam_mass",
+  [string] $MigrateMode = "",
+  [string] $SourceKeyRange = "",
+  [string] $SourceKeyFrom = "",
+  [string] $SourceKeyTo = "",
   [switch] $SkipInstall
 )
 
@@ -58,14 +62,27 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
   throw "npm not found in PATH"
 }
 
-if (-not $SkipInstall -and -not (Test-Path -LiteralPath "./node_modules")) {
-  Write-Host ">>> Installing dependencies..."
-  npm install
-  if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+. (Join-Path $repoRoot "scripts\Ensure-MigrateNodeModules.ps1")
+if (-not $SkipInstall) {
+  Ensure-MigrateNodeModules -RepoRoot $repoRoot
 }
 
 Write-Host ">>> Running migration with config: $ConfigPath (profile: $Profile)"
-node ./migrate-from-mssql.mjs --config $ConfigPath --profile $Profile
+$nodeExtra = @()
+if ($MigrateMode -eq "insert-only") {
+  $nodeExtra += "--migrate-mode", "insert-only"
+}
+$r = if ($SourceKeyRange) { $SourceKeyRange.Trim() } else { "" }
+if ($r -ne "") {
+  $nodeExtra += "--source-key-range", $r
+} else {
+  $sf = if ($SourceKeyFrom) { $SourceKeyFrom.Trim() } else { "" }
+  $st = if ($SourceKeyTo) { $SourceKeyTo.Trim() } else { "" }
+  if ($sf -ne "") { $nodeExtra += "--source-key-from", $sf }
+  if ($st -ne "") { $nodeExtra += "--source-key-to", $st }
+}
+& node ./migrate-from-mssql.mjs --config $ConfigPath --profile $Profile @nodeExtra
 if ($LASTEXITCODE -ne 0) { throw "migration failed" }
 
 Write-Host "Done"

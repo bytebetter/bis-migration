@@ -19,12 +19,12 @@ patient-info/
 ## รัน
 
 ```powershell
-cd .\patient-info\js-migrate
+cd <root ของ repo>
 npm install
-npm run migrate
+npm run migrate:patient_info
 ```
 
-หรือใช้ Task ใน VS Code/Cursor: **`migrate: patient_info → Postgres (js-migrate)`** (ดู `.vscode/tasks.json`)
+หรือใช้ Task ใน VS Code/Cursor: **`migrate: patient_info`** (ดู `.vscode/tasks.json`)
 
 ค่าเชื่อมต่อใช้ไฟล์กลางที่ root: `migration.config.local.json` (profile: `patient_info`)
 

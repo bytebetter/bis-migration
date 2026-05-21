@@ -26,16 +26,37 @@ Flow เดียวกับ `examination/js-migrate`:
 
 ## Run
 
+แพ็กเกจ `mssql` / `pg` อยู่ที่ **`npm install` ครั้งเดียวที่ root repo** — ไม่ต้อง `npm install` ในโฟลเดอร์นี้อีก (`run-migrate.ps1` จะติดตั้งให้ที่ root เมื่อยังไม่ครบ ถ้าไม่ใส่ `-SkipInstall`)
+
 ```powershell
-cd .\appointment\js-migrate
+cd <root ของ repo>
 npm install
-npm run migrate
+npm run migrate:appointment
 ```
 
-หรือ Task ใน VS Code/Cursor: **migrate: appointment → Postgres (js-migrate)** (`.vscode/tasks.json`)
+หรือ PowerShell พร้อมช่วง `Schedule_ID` และโหมดแถว:
+
+```powershell
+cd .\appointment\js-migrate
+.\run-migrate.ps1 -ConfigPath "..\..\migration.config.local.json" -Profile appointment `
+  -SourceKeyRange "1-100"
+
+# เฉพาะคิวที่ยังไม่มีใน Postgres (ไม่เรียก UPDATE เดิม)
+.\run-migrate.ps1 -MigrateMode insert-only -SourceKeyFrom 101 -SourceKeyTo 150
+```
+
+แบบ `node` โดยตรง (`overwrite` = ไม่ใส่ flag) จาก root ของ repo:
+
+```text
+node appointment/js-migrate/migrate-from-mssql.mjs --config ./migration.config.local.json --profile appointment --migrate-mode insert-only --source-key-range 1-500
+```
+
+หรือ Task ใน VS Code/Cursor: **migrate: appointment** (`.vscode/tasks.json`)
 
 ## ปรับพฤติกรรม (ใน `profiles.appointment.migration` หรือ `shared.migration`)
 
+- `migrateRowMode`: `overwrite` (ดีฟอลต์) หรือ `insert-only` — จาก CLI มีเฉพาะ `insert-only` (`--migrate-mode insert-only`)
+- `sourceKeyNumericMin` / `sourceKeyNumericMax` — จำกัดช่วง `Schedule_ID` ฝั่ง MSSQL (เลขทั้งชุด, inclusive) เทียบ `CAST([Schedule_ID] AS BIGINT)`
 - `batchSize` — ขนาด chunk
 - `chunkLogMode`: `compact` (แนะนำ), `full`, `none`
 - `chunkSampleEvery` — ในโหมด `compact` เก็บรายละเอียด chunk ทุกๆ N
@@ -48,9 +69,10 @@ npm run migrate
 ## ตำแหน่งไฟล์
 
 - log: `logs/migrate-*.json`
-- checkpoint: `checkpoints/appointment.json`
+- checkpoint: `checkpoints/appointment.json` (หรือ `checkpoints/appointment-<โหมด>-from..-to..json` เมื่อมี `--source-key-range` / `insert-only`)
 
 ## หมายเหตุ
 
 - งานนี้ใช้ pagination แบบ OFFSET; ตารางใหญ่มากอาจช้า — รอบหน้าสามารถเพิ่ม keyset ตาม `Schedule_ID` ได้ถ้าต้องการ
-- ไม่ล้าง `public.appointment` ทั้งตารางอัตโนมัติ (ลบเฉพาะ `old_db_id` ที่ซ้ำใน chunk นั้นก่อน insert)
+- โหมด **two-step** (ดึง ID ก่อนแล้วค่อยดึงรายละเอียด): ถ้ามีหลายแถวต่อ `Schedule_ID` ฝั่ง MSSQL จำนวนแถวจาก `IN (...)` อาจมากกว่าหน้า keyset — **progress / `offset` ใน checkpoint นับตามแถวลำดับ keyset** (ให้ตรง `COUNT(*)` และตำแหน่ง resume) ไม่ใช่จำนวนแถวจาก detail query
+- ไม่ล้าง `public.appointment` ทั้งตารางอัตโนมัติ — upsert ตาม `old_db_id` (UPDATE คง `id` / INSERT แถวใหม่) เพื่อไม่ให้ `id` กระโดดเมื่อรัน migrate ซ้ำ
