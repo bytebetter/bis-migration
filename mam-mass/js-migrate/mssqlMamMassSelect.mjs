@@ -58,3 +58,11 @@ FROM (
   ORDER BY [Exam_ID] ASC, [Described_Mass_ID] ASC
 ) s
 `.trim();
+
+export const MSSQL_MAM_MASS_BY_EXAM_IDS_SELECT = `
+SELECT
+  ${MAM_MASS_COLUMNS}
+FROM {{sourceObject}}
+WHERE [Exam_ID] IN ({{idPlaceholders}})
+ORDER BY [Exam_ID] ASC, [Described_Mass_ID] ASC
+`.trim();

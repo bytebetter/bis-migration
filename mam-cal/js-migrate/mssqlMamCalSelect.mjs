@@ -44,3 +44,11 @@ FROM (
   ORDER BY [Exam_ID] ASC, [Described_Cal_ID] ASC
 ) s
 `.trim();
+
+export const MSSQL_MAM_CAL_BY_EXAM_IDS_SELECT = `
+SELECT
+  ${MAM_CAL_COLUMNS}
+FROM {{sourceObject}}
+WHERE [Exam_ID] IN ({{idPlaceholders}})
+ORDER BY [Exam_ID] ASC, [Described_Cal_ID] ASC
+`.trim();

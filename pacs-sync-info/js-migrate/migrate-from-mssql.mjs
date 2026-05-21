@@ -39,6 +39,12 @@ import {
   renderProgress,
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
+import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
+import { REPAIR_SPEC_PACS_SYNC_INFO } from "../../shared/js-migrate/migrateTableSpecs.mjs";
+import {
+  batchIds,
+  resolveRepairSourceIds,
+} from "../../shared/js-migrate/repairFromLog.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KEY = "pacs_sync_info";
@@ -169,7 +175,7 @@ function assertMssqlSourceReady(source) {
     String(pw) === "YOUR_MSSQL_PASSWORD"
   ) {
     throw new Error(
-      "MSSQL: กำหนด source.password ใน migration.config.local.json ให้เป็นรหัสจริง",
+      "MSSQL: เธเธณเธซเธเธ” source.password เนเธ migration.config.local.json เนเธซเนเน€เธเนเธเธฃเธซเธฑเธชเธเธฃเธดเธ",
     );
   }
 }
@@ -188,10 +194,10 @@ function bracketIdent(value) {
 }
 
 /**
- * bind เป็น NVarChar เสมอสำหรับคีย์เซ็ต —
- * ถ้าส่ง BigInt เมื่อคอลัมน์เป็น varchar/nvarchar แล้วใช้กับ `Accession_ID > @p`
- * SQL Server จะเทียบแบบตัวเลขหลัง implicit cast ไม่ตรงกับ ORDER BY แบบจัดเรียงสตริง
- * (เช่น "594341000" ลำดับสตริงใหญ่กว่า "5943407001" แต่ค่าตัวเลขกลับน้อยกว่า → แถวหาย ~1M)
+ * bind เน€เธเนเธ NVarChar เน€เธชเธกเธญเธชเธณเธซเธฃเธฑเธเธเธตเธขเนเน€เธเนเธ• โ€”
+ * เธ–เนเธฒเธชเนเธ BigInt เน€เธกเธทเนเธญเธเธญเธฅเธฑเธกเธเนเน€เธเนเธ varchar/nvarchar เนเธฅเนเธงเนเธเนเธเธฑเธ `Accession_ID > @p`
+ * SQL Server เธเธฐเน€เธ—เธตเธขเธเนเธเธเธ•เธฑเธงเน€เธฅเธเธซเธฅเธฑเธ implicit cast เนเธกเนเธ•เธฃเธเธเธฑเธ ORDER BY เนเธเธเธเธฑเธ”เน€เธฃเธตเธขเธเธชเธ•เธฃเธดเธ
+ * (เน€เธเนเธ "594341000" เธฅเธณเธ”เธฑเธเธชเธ•เธฃเธดเธเนเธซเธเนเธเธงเนเธฒ "5943407001" เนเธ•เนเธเนเธฒเธ•เธฑเธงเน€เธฅเธเธเธฅเธฑเธเธเนเธญเธขเธเธงเนเธฒ โ’ เนเธ–เธงเธซเธฒเธข ~1M)
  */
 function mssqlParamForAccessionKey(value) {
   if (value == null) {
@@ -200,7 +206,9 @@ function mssqlParamForAccessionKey(value) {
   const s =
     typeof value === "bigint"
       ? value.toString()
-      : String(value).replace(/^\uFEFF/, "").trimEnd();
+      : String(value)
+          .replace(/^\uFEFF/, "")
+          .trimEnd();
   return { type: sql.NVarChar(sql.MAX), val: s };
 }
 
@@ -210,7 +218,7 @@ function accessionKeyForCheckpoint(v) {
   return String(v);
 }
 
-/** จากโหมด TOP+JOIN — ใช้ [Accession_ID] ดิบสำหรับ checkpoint */
+/** เธเธฒเธเนเธซเธกเธ” TOP+JOIN โ€” เนเธเน [Accession_ID] เธ”เธดเธเธชเธณเธซเธฃเธฑเธ checkpoint */
 function readCheckpointAccessionRow(row) {
   if (!row || typeof row !== "object") return undefined;
   if (Object.hasOwn(row, "__checkpoint_acc_key"))
@@ -221,7 +229,7 @@ function readCheckpointAccessionRow(row) {
   return hit ? row[hit] : undefined;
 }
 
-/** แถวจาก id probe — MSSQL ส่งเป็น __acc_key */
+/** เนเธ–เธงเธเธฒเธ id probe โ€” MSSQL เธชเนเธเน€เธเนเธ __acc_key */
 function readIdRowAccessionKey(row) {
   if (!row || typeof row !== "object") return undefined;
   if (Object.hasOwn(row, "__acc_key")) return row.__acc_key;
@@ -236,7 +244,7 @@ function rowColCi(row, name) {
   return hit ? row[hit] : undefined;
 }
 
-/** ค่าสำหรับ keyset เฟส Accession_ID IS NULL */
+/** เธเนเธฒเธชเธณเธซเธฃเธฑเธ keyset เน€เธเธช Accession_ID IS NULL */
 function readNullTailCheckpointFromRow(row) {
   const examRaw = rowColCi(row, "__null_ck_exam");
   const dlRaw = rowColCi(row, "__null_ck_dl");
@@ -253,7 +261,7 @@ function readNullTailCheckpointFromRow(row) {
   const pid = pidRaw == null ? "" : String(pidRaw);
   if (!Buffer.isBuffer(fpRaw) || fpRaw.length === 0) {
     throw new Error(
-      "null-tail: แถวสุดท้ายขาด __null_ck_fp (Buffer) สำหรับ checkpoint",
+      "null-tail: เนเธ–เธงเธชเธธเธ”เธ—เนเธฒเธขเธเธฒเธ” __null_ck_fp (Buffer) เธชเธณเธซเธฃเธฑเธ checkpoint",
     );
   }
   return { exam, dlStr, pid, fpBuf: fpRaw };
@@ -300,12 +308,12 @@ function deserializeNullTailCursor(raw) {
   return { exam, dlStr, pid, fpBuf };
 }
 
-/** keyset composite เฟสมี Accession_ID (แถวสุดท้ายของ chunk) */
+/** keyset composite เน€เธเธชเธกเธต Accession_ID (เนเธ–เธงเธชเธธเธ”เธ—เนเธฒเธขเธเธญเธ chunk) */
 function readAccLegCompositeFromRow(row) {
   const accRaw = readCheckpointAccessionRow(row);
   if (accRaw == null || String(accRaw).trim() === "") {
     throw new Error(
-      "acc-leg composite: แถวสุดท้ายขาด __checkpoint_acc_key สำหรับ checkpoint",
+      "acc-leg composite: เนเธ–เธงเธชเธธเธ”เธ—เนเธฒเธขเธเธฒเธ” __checkpoint_acc_key เธชเธณเธซเธฃเธฑเธ checkpoint",
     );
   }
   const examRaw = rowColCi(row, "__acc_ck_exam");
@@ -330,12 +338,12 @@ function readAccLegCompositeFromRow(row) {
         : Number(chkRaw);
   if (!Number.isFinite(chk)) {
     throw new Error(
-      "acc-leg composite: แถวสุดท้ายขาด __acc_ck_chk (BINARY_CHECKSUM) สำหรับ checkpoint",
+      "acc-leg composite: เนเธ–เธงเธชเธธเธ”เธ—เนเธฒเธขเธเธฒเธ” __acc_ck_chk (BINARY_CHECKSUM) เธชเธณเธซเธฃเธฑเธ checkpoint",
     );
   }
   if (!Buffer.isBuffer(fpRaw) || fpRaw.length === 0) {
     throw new Error(
-      "acc-leg composite: แถวสุดท้ายขาด __acc_ck_fp (Buffer) สำหรับ checkpoint",
+      "acc-leg composite: เนเธ–เธงเธชเธธเธ”เธ—เนเธฒเธขเธเธฒเธ” __acc_ck_fp (Buffer) เธชเธณเธซเธฃเธฑเธ checkpoint",
     );
   }
   return { accRaw, exam, dlStr, pid, fpBuf: fpRaw, chk };
@@ -425,6 +433,7 @@ async function main() {
   const configPath = path.resolve(process.cwd(), getConfigPath());
   const rawConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
   const config = resolveRuntimeConfig(rawConfig, "pacs_sync_info");
+  const migration = mergeMigrationWithCli(config?.migration, "pacs_sync_info");
   if (config.__profileName) {
     console.error(`>>> using config profile: ${config.__profileName}`);
   }
@@ -449,9 +458,9 @@ async function main() {
 
   const batchSize = Math.max(
     100,
-    Math.min(5000, Number(config?.migration?.batchSize ?? 2000)),
+    Math.min(5000, Number(migration.batchSize ?? 2000)),
   );
-  const studyDescriptionRaw = config?.migration?.studyDescriptionMaxChars;
+  const studyDescriptionRaw = migration.studyDescriptionMaxChars;
   const studyDescriptionMaxChars =
     studyDescriptionRaw === undefined || studyDescriptionRaw === null
       ? 8192
@@ -460,10 +469,10 @@ async function main() {
     config?.migration?.mssqlOptimizeSingleQuery !== false;
 
   /**
-   * "keyset_plus_null" (default) = เฟสมี Accession_ID + เฟส NULL — เร็วกว่า offset
-   * "offset" = ดึงทั้งตารางด้วย ORDER BY + OFFSET/FETCH (ช้าเมื่อ offset สูง แต่ลำดับชัด/callback ได้ครบแถว)
-   * "keyset" = เฉพาะแถวที่มี Accession_ID
-   * อ่านเฉพาะสคริปต์ pacs — แนะนำใส่ใน profiles.pacs_sync_info.migration ไม่ใช่ shared
+   * "keyset_plus_null" (default) = เน€เธเธชเธกเธต Accession_ID + เน€เธเธช NULL โ€” เน€เธฃเนเธงเธเธงเนเธฒ offset
+   * "offset" = เธ”เธถเธเธ—เธฑเนเธเธ•เธฒเธฃเธฒเธเธ”เนเธงเธข ORDER BY + OFFSET/FETCH (เธเนเธฒเน€เธกเธทเนเธญ offset เธชเธนเธ เนเธ•เนเธฅเธณเธ”เธฑเธเธเธฑเธ”/callback เนเธ”เนเธเธฃเธเนเธ–เธง)
+   * "keyset" = เน€เธเธเธฒเธฐเนเธ–เธงเธ—เธตเนเธกเธต Accession_ID
+   * เธญเนเธฒเธเน€เธเธเธฒเธฐเธชเธเธฃเธดเธเธ•เน pacs โ€” เนเธเธฐเธเธณเนเธชเนเนเธ profiles.pacs_sync_info.migration เนเธกเนเนเธเน shared
    */
   const mssqlPagination =
     config?.migration?.mssqlPagination ?? "keyset_plus_null";
@@ -530,7 +539,7 @@ async function main() {
 
   if (useKeysetPlusNull && !mssqlOptimizeSingleQuery) {
     console.error(
-      `>>> [${KEY}] คำเตือน: keyset_plus_null ใช้ได้กับ mssqlOptimizeSingleQuery เท่านั้น — จะไม่รันเฟส null (ใช้ offset หรือเปิด TOP+JOIN)`,
+      `>>> [${KEY}] เธเธณเน€เธ•เธทเธญเธ: keyset_plus_null เนเธเนเนเธ”เนเธเธฑเธ mssqlOptimizeSingleQuery เน€เธ—เนเธฒเธเธฑเนเธ โ€” เธเธฐเนเธกเนเธฃเธฑเธเน€เธเธช null (เนเธเน offset เธซเธฃเธทเธญเน€เธเธดเธ” TOP+JOIN)`,
     );
   }
 
@@ -623,7 +632,7 @@ async function main() {
       runLog.migrationLeg = checkpoint.migrationLeg ?? "done";
       runLog.nullTailDone = true;
       console.error(
-        `>>> [${KEY}] checkpoint: ย้ายครบแล้ว (รวมแถว Accession_ID NULL) — ไม่รันซ้ำ`,
+        `>>> [${KEY}] checkpoint: เธขเนเธฒเธขเธเธฃเธเนเธฅเนเธง (เธฃเธงเธกเนเธ–เธง Accession_ID NULL) โ€” เนเธกเนเธฃเธฑเธเธเนเธณ`,
       );
       return;
     }
@@ -677,10 +686,10 @@ async function main() {
         const sdHint =
           !Number.isFinite(studyDescriptionMaxChars) ||
           studyDescriptionMaxChars <= 0
-            ? "StudyDescription เต็ม MAX"
-            : `StudyDescription ≤${studyDescriptionMaxChars}`;
+            ? "StudyDescription เน€เธ•เนเธก MAX"
+            : `StudyDescription โค${studyDescriptionMaxChars}`;
         writeOutLine(
-          `>>> [${KEY}] options: ${sdHint}; PG indexes จาก DDL; mssqlDetailInChunkSize=${mssqlDetailInChunkSize}`,
+          `>>> [${KEY}] options: ${sdHint}; PG indexes เธเธฒเธ DDL; mssqlDetailInChunkSize=${mssqlDetailInChunkSize}`,
           uiState,
         );
       }
@@ -691,6 +700,124 @@ async function main() {
         logsDir,
         `migration-field-issues-pacs_sync_info-${nowStamp()}.json`,
       );
+
+      const repairSourceIds = resolveRepairSourceIds(
+        migration,
+        logsDir,
+        REPAIR_SPEC_PACS_SYNC_INFO,
+      );
+      if (repairSourceIds != null) {
+        if (repairSourceIds.length === 0) {
+          console.error(`>>> [${KEY}] repair-from-log: ไม่มี id ให้ migrate`);
+        } else {
+          console.error(
+            `>>> [${KEY}] migrateRunMode=repair-from-log (${repairSourceIds.length} accession_id)`,
+          );
+          const repairDetailTpl =
+            detailSqlTemplate ??
+            buildMssqlPacsSyncInfoDetailSql(
+              studyDescriptionMaxChars,
+            ).replaceAll("{{sourceObject}}", sourceObjectNoLock);
+          let repairOffset = 0;
+          let repairChunkIndex = 0;
+          const repairStartedAt = Date.now();
+          for (const accBatch of batchIds(repairSourceIds, batchSize)) {
+            let rows = [];
+            const sliceCount = Math.max(
+              1,
+              Math.ceil(accBatch.length / mssqlDetailInChunkSize),
+            );
+            for (let s = 0; s < sliceCount; s++) {
+              const lo = s * mssqlDetailInChunkSize;
+              const slice = accBatch.slice(lo, lo + mssqlDetailInChunkSize);
+              if (slice.length === 0) break;
+              const idPlaceholders = slice.map((_, i) => `@id${i}`).join(", ");
+              const detailSql = repairDetailTpl.replaceAll(
+                "{{idPlaceholders}}",
+                idPlaceholders,
+              );
+              const detailReq = pool.request();
+              slice.forEach((key, i) => {
+                const pk = mssqlParamForAccessionKey(key);
+                detailReq.input(`id${i}`, pk.type, pk.val);
+              });
+              const detailRes = await detailReq.query(detailSql);
+              rows.push(...(detailRes.recordset || []));
+            }
+            if (rows.length === 0) continue;
+
+            repairChunkIndex += 1;
+            const normalized = rows.map((r, i) =>
+              normalizePacsSyncMssqlRow(r, repairOffset + i),
+            );
+            const skipped = rows.length - normalized.length;
+
+            let step = "begin";
+            try {
+              step = "BEGIN";
+              await client.query("BEGIN");
+              step = "load to staging";
+              const loaded = await loadChunkToStaging(client, normalized);
+              runLog.rowsLoadedToStaging += loaded;
+              runLog.skipped += skipped;
+              step = "post-load (pacs_sync_info)";
+              await runPacsSyncInfoChunkPostLoad(client);
+              const issueResult = await runPacsSyncStagingFieldIssuePipeline(
+                client,
+                rows,
+                (r, i) => normalizePacsSyncMssqlRow(r, repairOffset + i),
+                "migrate_stg.pacs_sync_info_mssql",
+                loaded,
+              );
+              mergeFieldIssueChunk(fieldIssueAcc, issueResult);
+              runLog.rowsUpserted += loaded;
+              step = "COMMIT";
+              await client.query("COMMIT");
+            } catch (err) {
+              await client.query("ROLLBACK");
+              throw new Error(
+                `[${KEY}] repair failed chunk ${repairChunkIndex} at step '${step}': ${
+                  err instanceof Error ? err.message : String(err)
+                }`,
+              );
+            }
+
+            repairOffset += rows.length;
+            if (progressEnabled) {
+              renderProgress(
+                repairOffset,
+                repairSourceIds.length,
+                repairStartedAt,
+                repairChunkIndex,
+                Math.ceil(repairSourceIds.length / batchSize),
+                uiState,
+              );
+            }
+          }
+          if (progressEnabled) endProgress(uiState);
+          await syncPacsSyncInfoIdSequence(client);
+        }
+
+        let fieldIssueLogWritten = null;
+        if (fieldIssueAcc.totalFieldIssueCount > 0) {
+          const payload = buildFieldIssueLogPayload(fieldIssueAcc, {
+            migrationKey: KEY,
+            logType: "pacs_sync_info_field_issues",
+            recordIdKey: "accession_id",
+            buildRecord: (rec) => ({
+              accession_id: String(rec.accession_id),
+              pid: rec.pid ?? null,
+              fieldIssues: rec.fieldIssues ?? [],
+            }),
+          });
+          writeFieldIssueLogFile(fieldIssueLogPath, payload);
+          fieldIssueLogWritten = fieldIssueLogPath;
+        }
+        runLog.fieldIssueLogPath = fieldIssueLogWritten;
+        runLog.status = "success";
+        return;
+      }
+
       if (!Number.isFinite(offset) || offset < 0) offset = 0;
       let afterAccessionId =
         checkpointEnabled && checkpoint.afterAccessionId != null
@@ -717,7 +844,7 @@ async function main() {
           nullTailCursor = null;
           accLegCursor = null;
           console.error(
-            `>>> [${KEY}] เปลี่ยน mssqlPagination (${ckMode} -> ${mssqlPagination}) — รีเซ็ตตำแหน่ง checkpoint`,
+            `>>> [${KEY}] เน€เธเธฅเธตเนเธขเธ mssqlPagination (${ckMode} -> ${mssqlPagination}) โ€” เธฃเธตเน€เธเนเธ•เธ•เธณเนเธซเธเนเธ checkpoint`,
           );
         } else if (useOffsetPagination && ckMode == null) {
           offset = 0;
@@ -726,7 +853,7 @@ async function main() {
           nullTailCursor = null;
           accLegCursor = null;
           console.error(
-            `>>> [${KEY}] โหมด offset: checkpoint เก่าไม่มี mssqlPagination — เริ่มที่ offset 0`,
+            `>>> [${KEY}] เนเธซเธกเธ” offset: checkpoint เน€เธเนเธฒเนเธกเนเธกเธต mssqlPagination โ€” เน€เธฃเธดเนเธกเธ—เธตเน offset 0`,
           );
         }
       }
@@ -762,7 +889,7 @@ async function main() {
         accLegCursor = null;
         nullTailCursor = null;
         console.error(
-          `>>> [${KEY}] keyset composite: checkpoint ไม่มี accLegCursor — รีเซ็ตเฟส 1 (ดึงซ้ำ Accession ครบ)`,
+          `>>> [${KEY}] keyset composite: checkpoint เนเธกเนเธกเธต accLegCursor โ€” เธฃเธตเน€เธเนเธ•เน€เธเธช 1 (เธ”เธถเธเธเนเธณ Accession เธเธฃเธ)`,
         );
       }
 
@@ -776,7 +903,7 @@ async function main() {
 
       if (onlyNullTail) {
         console.error(
-          `>>> [${KEY}] รันเฉพาะเฟสแถว Accession_ID NULL (ข้ามเฟสมี Accession_ID)`,
+          `>>> [${KEY}] เธฃเธฑเธเน€เธเธเธฒเธฐเน€เธเธชเนเธ–เธง Accession_ID NULL (เธเนเธฒเธกเน€เธเธชเธกเธต Accession_ID)`,
         );
       }
 
@@ -877,7 +1004,7 @@ async function main() {
             detailMs = fetchMs;
             if (debugLogs && !singleLineUi) {
               writeOutLine(
-                `>>> [${KEY}] fetch chunk ${nextProbeLabel} TOP+JOIN+composite: rows=${rows.length}, ms=${fetchMs}${useStartSqlAcc ? " (จากต้น)" : ""}`,
+                `>>> [${KEY}] fetch chunk ${nextProbeLabel} TOP+JOIN+composite: rows=${rows.length}, ms=${fetchMs}${useStartSqlAcc ? " (เธเธฒเธเธ•เนเธ)" : ""}`,
                 uiState,
               );
             }
@@ -900,7 +1027,7 @@ async function main() {
             detailMs = fetchMs;
             if (debugLogs && !singleLineUi) {
               writeOutLine(
-                `>>> [${KEY}] fetch chunk ${nextProbeLabel} TOP+JOIN: rows=${rows.length}, ms=${fetchMs}${useStartSqlAcc ? " (จากต้น)" : ""}`,
+                `>>> [${KEY}] fetch chunk ${nextProbeLabel} TOP+JOIN: rows=${rows.length}, ms=${fetchMs}${useStartSqlAcc ? " (เธเธฒเธเธ•เนเธ)" : ""}`,
                 uiState,
               );
             }
@@ -931,7 +1058,7 @@ async function main() {
             if (accRawKeys.length === 0) {
               if (idRows.length > 0) {
                 console.error(
-                  `>>> [${KEY}] คำเตือน: id query ได้ ${idRows.length} แถว แต่ไม่มีคีย์จาก __acc_key (${Object.keys(idRows[0] ?? {}).join(", ")})`,
+                  `>>> [${KEY}] เธเธณเน€เธ•เธทเธญเธ: id query เนเธ”เน ${idRows.length} เนเธ–เธง เนเธ•เนเนเธกเนเธกเธตเธเธตเธขเนเธเธฒเธ __acc_key (${Object.keys(idRows[0] ?? {}).join(", ")})`,
                 );
               }
               break;
@@ -980,7 +1107,7 @@ async function main() {
 
             if (debugLogs && !singleLineUi) {
               writeOutLine(
-                `>>> [${KEY}] fetch chunk ${nextProbeLabel} done: rows=${rows.length}, ms=${fetchMs} (probe=${probeMs}, detail=${detailMs}; ${sliceCount} IN-query, ≤${mssqlDetailInChunkSize} params)`,
+                `>>> [${KEY}] fetch chunk ${nextProbeLabel} done: rows=${rows.length}, ms=${fetchMs} (probe=${probeMs}, detail=${detailMs}; ${sliceCount} IN-query, โค${mssqlDetailInChunkSize} params)`,
                 uiState,
               );
             }
@@ -1051,7 +1178,7 @@ async function main() {
             ckKey = readCheckpointAccessionRow(rows[rows.length - 1]);
             if (ckKey == null || String(ckKey).trim() === "") {
               throw new Error(
-                `[${KEY}] TOP+JOIN chunk ${nextProbeLabel}: แถวสุดท้ายขาด __checkpoint_acc_key`,
+                `[${KEY}] TOP+JOIN chunk ${nextProbeLabel}: เนเธ–เธงเธชเธธเธ”เธ—เนเธฒเธขเธเธฒเธ” __checkpoint_acc_key`,
               );
             }
           } else if (accRawKeys.length > 0) {
@@ -1117,7 +1244,7 @@ async function main() {
       ) {
         if (!onlyNullTail) {
           console.error(
-            `>>> [${KEY}] เฟส 2: แถวที่ [Accession_ID] IS NULL (keyset เร็ว)`,
+            `>>> [${KEY}] เน€เธเธช 2: เนเธ–เธงเธ—เธตเน [Accession_ID] IS NULL (keyset เน€เธฃเนเธง)`,
           );
         }
         let nullCk = nullTailCursor;

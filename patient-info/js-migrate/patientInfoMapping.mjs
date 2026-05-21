@@ -408,77 +408,28 @@ function collectPatientInfoFieldIssues(row, mapped) {
   return issues;
 }
 
-/**
- * ลบ/แทรกแถวต่อ chunk: address → patient → setval → insert patient → setval → insert address
- * @param {import("pg").PoolClient} pgClient
- * @param {object[]} mssqlRows แถวดิบจาก recordset
- * @param {object} [options]
- */
-export async function runPatientInfoChunkPostLoad(
-  pgClient,
-  mssqlRows,
-  options = {},
-) {
-  const rows = distinctOnNormPid(mssqlRows);
-  if (rows.length === 0) {
-    return { failedPids: [], fieldIssues: null };
-  }
-
-  const failingPidSet = new Set();
-  let totalFieldIssueCount = 0;
-  /** @type {Map<string, { pid: string, pid_raw: string, patient_info_id: number|null, fieldIssues: object[] }>} */
-  const recordsWithIssues = new Map();
-
-  function recordPidIssues(pid, meta, fieldIssues) {
-    if (fieldIssues.length === 0) return;
-    failingPidSet.add(pid);
-    totalFieldIssueCount += fieldIssues.length;
-    let rec = recordsWithIssues.get(pid);
-    if (!rec) {
-      rec = {
-        pid,
-        pid_raw: meta.pidRaw,
-        patient_info_id: meta.patientInfoId ?? null,
-        fieldIssues: [],
-      };
-      recordsWithIssues.set(pid, rec);
-    }
-    if (meta.patientInfoId != null) rec.patient_info_id = meta.patientInfoId;
-    rec.fieldIssues.push(...fieldIssues);
-  }
-
-  const npids = rows
-    .map((r) => normPid(getField(r, "pid")))
-    .filter((n) => n !== "");
-
-  await pgClient.query(
+async function loadExistingPatientIdByNpid(pgClient, npids) {
+  if (npids.length === 0) return new Map();
+  const { rows } = await pgClient.query(
     `
-    DELETE FROM public.address a
-    WHERE a.patient_info IN (
-      SELECT p.id
-      FROM public.patient_info p
-      WHERE migrate_stg.norm_pid(p.pid::text) = ANY($1::text[])
-    )
+    SELECT id, migrate_stg.norm_pid(pid::text) AS npid
+    FROM public.patient_info
+    WHERE migrate_stg.norm_pid(pid::text) = ANY($1::text[])
     `,
     [npids],
   );
+  const map = new Map();
+  for (const row of rows) {
+    if (!row.npid) continue;
+    const prev = map.get(row.npid);
+    if (prev == null || row.id < prev) map.set(row.npid, row.id);
+  }
+  return map;
+}
 
-  await pgClient.query(
-    `
-    DELETE FROM public.patient_info p
-    WHERE migrate_stg.norm_pid(p.pid::text) = ANY($1::text[])
-    `,
-    [npids],
-  );
-
-  await pgClient.query(`
-    SELECT setval(
-      pg_get_serial_sequence('public.patient_info', 'id'),
-      COALESCE((SELECT MAX(id) + 1 FROM public.patient_info), 1),
-      false
-    );
-  `);
-
+/** @param {{ mapped: ReturnType<typeof mapPatientInfoRow> }[]} payloads */
+function buildPatientBulkArrays(payloads) {
+  const aId = [];
   const aOld = [];
   const aPid = [];
   const aPreTh = [];
@@ -502,23 +453,9 @@ export async function runPatientInfoChunkPostLoad(
   const aMobile = [];
   const aEmail = [];
 
-  for (const r of rows) {
-    const mapped = mapPatientInfoRow(r);
-    const np = mapped.pid;
-    if (np === "") {
-      const issues = collectPatientInfoFieldIssues(r, mapped);
-      if (issues.length > 0) {
-        const rawPid = String(getField(r, "pid") ?? "").trim() || "(empty)";
-        recordPidIssues(
-          rawPid,
-          { pidRaw: mapped.pid_raw, patientInfoId: null },
-          issues,
-        );
-      }
-      continue;
-    }
-
+  for (const { mapped, patientInfoId } of payloads) {
     const p = mapped.patient;
+    if (patientInfoId != null) aId.push(patientInfoId);
     aOld.push(p.old_db_id);
     aPid.push(p.pid);
     aPreTh.push(p.prefix_th);
@@ -541,14 +478,36 @@ export async function runPatientInfoChunkPostLoad(
     aDis.push(p.disease);
     aMobile.push(p.mobile_phone);
     aEmail.push(p.email);
-
-    recordPidIssues(
-      np,
-      { pidRaw: mapped.pid_raw, patientInfoId: null },
-      collectPatientInfoFieldIssues(r, mapped),
-    );
   }
 
+  return {
+    aId,
+    aOld,
+    aPid,
+    aPreTh,
+    aFnTh,
+    aLnTh,
+    aDob,
+    aMar,
+    aPhBiz,
+    aPhHome,
+    aH,
+    aW,
+    aDon,
+    aPreEn,
+    aFnEn,
+    aLnEn,
+    aSoc,
+    aHn,
+    aGen,
+    aNote,
+    aDis,
+    aMobile,
+    aEmail,
+  };
+}
+
+async function bulkInsertPatients(pgClient, arrays) {
   const ins = await pgClient.query(
     `
     INSERT INTO public.patient_info (
@@ -588,51 +547,117 @@ export async function runPatientInfoChunkPostLoad(
     RETURNING id, pid::text
     `,
     [
-      aOld,
-      aPid,
-      aPreTh,
-      aFnTh,
-      aLnTh,
-      aDob,
-      aMar,
-      aPhBiz,
-      aPhHome,
-      aH,
-      aW,
-      aDon,
-      aPreEn,
-      aFnEn,
-      aLnEn,
-      aSoc,
-      aHn,
-      aGen,
-      aNote,
-      aDis,
-      aMobile,
-      aEmail,
+      arrays.aOld,
+      arrays.aPid,
+      arrays.aPreTh,
+      arrays.aFnTh,
+      arrays.aLnTh,
+      arrays.aDob,
+      arrays.aMar,
+      arrays.aPhBiz,
+      arrays.aPhHome,
+      arrays.aH,
+      arrays.aW,
+      arrays.aDon,
+      arrays.aPreEn,
+      arrays.aFnEn,
+      arrays.aLnEn,
+      arrays.aSoc,
+      arrays.aHn,
+      arrays.aGen,
+      arrays.aNote,
+      arrays.aDis,
+      arrays.aMobile,
+      arrays.aEmail,
     ],
   );
+  return ins;
+}
 
-  const idByNpid = new Map();
-  for (const r of ins.rows) {
-    idByNpid.set(normPid(r.pid), r.id);
-  }
+async function bulkUpdatePatientsById(pgClient, arrays) {
+  const upd = await pgClient.query(
+    `
+    UPDATE public.patient_info AS p
+    SET
+      old_db_id = v.old_db_id,
+      pid = v.pid,
+      prefix_th = v.prefix_th,
+      first_name_th = v.first_name_th,
+      last_name_th = v.last_name_th,
+      date_of_birth = v.date_of_birth,
+      marital_status = v.marital_status,
+      phone_biz = v.phone_biz,
+      phone_home = v.phone_home,
+      height = v.height,
+      weight = v.weight,
+      donate_type = v.donate_type,
+      prefix_en = v.prefix_en,
+      first_name_en = v.first_name_en,
+      last_name_en = v.last_name_en,
+      soc_id = v.soc_id,
+      hn = v.hn,
+      gender = v.gender,
+      short_note = v.short_note,
+      disease = v.disease,
+      mobile_phone = v.mobile_phone,
+      email = v.email
+    FROM (
+      SELECT * FROM unnest(
+        $1::int[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::date[],
+        $8::text[], $9::text[], $10::text[], $11::float4[], $12::float4[], $13::int[],
+        $14::text[], $15::text[], $16::text[], $17::text[], $18::text[], $19::text[],
+        $20::text[], $21::text[], $22::text[], $23::text[]
+      ) AS v(
+        id, old_db_id, pid, prefix_th, first_name_th, last_name_th, date_of_birth, marital_status,
+        phone_biz, phone_home, height, weight, donate_type, prefix_en, first_name_en, last_name_en,
+        soc_id, hn, gender, short_note, disease, mobile_phone, email
+      )
+    ) v
+    WHERE p.id = v.id
+    `,
+    [
+      arrays.aId,
+      arrays.aOld,
+      arrays.aPid,
+      arrays.aPreTh,
+      arrays.aFnTh,
+      arrays.aLnTh,
+      arrays.aDob,
+      arrays.aMar,
+      arrays.aPhBiz,
+      arrays.aPhHome,
+      arrays.aH,
+      arrays.aW,
+      arrays.aDon,
+      arrays.aPreEn,
+      arrays.aFnEn,
+      arrays.aLnEn,
+      arrays.aSoc,
+      arrays.aHn,
+      arrays.aGen,
+      arrays.aNote,
+      arrays.aDis,
+      arrays.aMobile,
+      arrays.aEmail,
+    ],
+  );
+  return upd.rowCount ?? arrays.aId.length;
+}
 
-  const patientRowsInserted = ins.rowCount ?? aPid.length;
+async function deleteAddressesForPatientIds(pgClient, patientInfoIds) {
+  if (patientInfoIds.length === 0) return;
+  await pgClient.query(
+    `DELETE FROM public.address WHERE patient_info = ANY($1::int[])`,
+    [patientInfoIds],
+  );
+}
 
-  for (const np of npids) {
-    if (idByNpid.has(np)) continue;
-    recordPidIssues(np, { pidRaw: np, patientInfoId: null }, [
-      {
-        field: "_record",
-        reason: "insert_missing_after_migrate",
-        message: "แมปและ insert แล้ว แต่ไม่พบแถวใน public.patient_info",
-        source_raw: np,
-        mapped: null,
-      },
-    ]);
-  }
-
+/**
+ * @param {import("pg").PoolClient} pgClient
+ * @param {{ row: object, mapped: ReturnType<typeof mapPatientInfoRow> }[]} items
+ * @param {Map<string, number>} idByNpid
+ */
+async function insertAddressesForItems(pgClient, items, idByNpid) {
   const adAddr = [];
   const adSub = [];
   const adDist = [];
@@ -641,27 +666,12 @@ export async function runPatientInfoChunkPostLoad(
   const ad2 = [];
   const adPat = [];
 
-  for (const r of rows) {
-    if (!hasAddressPayload(r)) continue;
-    const mapped = mapPatientInfoRow(r);
+  for (const { row, mapped } of items) {
+    if (!hasAddressPayload(row)) continue;
     const np = mapped.pid;
     if (np === "") continue;
-
     const id = idByNpid.get(np);
-    if (id == null) {
-      recordPidIssues(np, { pidRaw: mapped.pid_raw, patientInfoId: null }, [
-        {
-          field: "_address",
-          reason: "address_skipped_patient_not_inserted",
-          message:
-            "มีข้อมูลที่อยู่ในแหล่งข้อมูล แต่ไม่มี patient_info.id สำหรับ insert address",
-          source_raw: null,
-          mapped: null,
-        },
-      ]);
-      continue;
-    }
-
+    if (id == null) continue;
     const addr = mapped.address;
     adAddr.push(addr?.address ?? null);
     adSub.push(addr?.sub_district ?? null);
@@ -670,16 +680,9 @@ export async function runPatientInfoChunkPostLoad(
     adZip.push(addr?.zipcode ?? null);
     ad2.push(addr?.address2 ?? null);
     adPat.push(id);
-
-    const existing = recordsWithIssues.get(np);
-    if (existing) existing.patient_info_id = id;
   }
 
-  let addressRowsInserted = 0;
-
-  if (adPat.length === 0) {
-    return buildChunkFieldIssueResult(patientRowsInserted, addressRowsInserted);
-  }
+  if (adPat.length === 0) return 0;
 
   await pgClient.query(`
     SELECT setval(
@@ -717,8 +720,6 @@ export async function runPatientInfoChunkPostLoad(
     [st, adAddr, adSub, adDist, adProv, adZip, ad2, adPat, fromOld],
   );
 
-  // If patient_info has a FK back to address (e.g. address_id), populate it.
-  // This keeps relations usable in apps/ORMs that model it bidirectionally.
   const piHasAddressId = await pgClient.query(
     `
     SELECT 1
@@ -745,11 +746,177 @@ export async function runPatientInfoChunkPostLoad(
     );
   }
 
-  addressRowsInserted = insAddress.rowCount ?? adPat.length;
+  return insAddress.rowCount ?? adPat.length;
+}
 
-  return buildChunkFieldIssueResult(patientRowsInserted, addressRowsInserted);
+/**
+ * แมป chunk → patient_info + address
+ * - insert-only (resume): เพิ่มเฉพาะ PID ใหม่ ไม่แตะแถวเดิม
+ * - overwrite: UPDATE แถวเดิมตาม id + INSERT PID ใหม่ (ที่อยู่ลบแล้วใส่ใหม่)
+ *
+ * @param {import("pg").PoolClient} pgClient
+ * @param {object[]} mssqlRows
+ * @param {object} [options]
+ * @param {'insert-only'|'overwrite'} [options.migrateRowMode]
+ */
+export async function runPatientInfoChunkPostLoad(
+  pgClient,
+  mssqlRows,
+  options = {},
+) {
+  const rows = distinctOnNormPid(mssqlRows);
+  if (rows.length === 0) {
+    return { failedPids: [], fieldIssues: null };
+  }
 
-  function buildChunkFieldIssueResult(patientInserted, addressInserted) {
+  const migrateRowMode = options.migrateRowMode ?? "overwrite";
+  const insertOnly = migrateRowMode === "insert-only";
+
+  const failingPidSet = new Set();
+  let totalFieldIssueCount = 0;
+  /** @type {Map<string, { pid: string, pid_raw: string, patient_info_id: number|null, fieldIssues: object[] }>} */
+  const recordsWithIssues = new Map();
+
+  function recordPidIssues(pid, meta, fieldIssues) {
+    if (fieldIssues.length === 0) return;
+    failingPidSet.add(pid);
+    totalFieldIssueCount += fieldIssues.length;
+    let rec = recordsWithIssues.get(pid);
+    if (!rec) {
+      rec = {
+        pid,
+        pid_raw: meta.pidRaw,
+        patient_info_id: meta.patientInfoId ?? null,
+        fieldIssues: [],
+      };
+      recordsWithIssues.set(pid, rec);
+    }
+    if (meta.patientInfoId != null) rec.patient_info_id = meta.patientInfoId;
+    rec.fieldIssues.push(...fieldIssues);
+  }
+
+  /** @type {{ row: object, mapped: ReturnType<typeof mapPatientInfoRow>, patientInfoId?: number }[]} */
+  const mappedItems = [];
+
+  for (const r of rows) {
+    const mapped = mapPatientInfoRow(r);
+    const np = mapped.pid;
+    if (np === "") {
+      const issues = collectPatientInfoFieldIssues(r, mapped);
+      if (issues.length > 0) {
+        const rawPid = String(getField(r, "pid") ?? "").trim() || "(empty)";
+        recordPidIssues(
+          rawPid,
+          { pidRaw: mapped.pid_raw, patientInfoId: null },
+          issues,
+        );
+      }
+      continue;
+    }
+    mappedItems.push({ row: r, mapped });
+    recordPidIssues(
+      np,
+      { pidRaw: mapped.pid_raw, patientInfoId: null },
+      collectPatientInfoFieldIssues(r, mapped),
+    );
+  }
+
+  const npids = mappedItems.map((x) => x.mapped.pid);
+  const existingByNpid = await loadExistingPatientIdByNpid(pgClient, npids);
+
+  /** @type {{ row: object, mapped: ReturnType<typeof mapPatientInfoRow>, patientInfoId?: number }[]} */
+  const toInsert = [];
+  /** @type {{ row: object, mapped: ReturnType<typeof mapPatientInfoRow>, patientInfoId: number }[]} */
+  const toUpdate = [];
+
+  for (const item of mappedItems) {
+    const np = item.mapped.pid;
+    const existingId = existingByNpid.get(np);
+    if (existingId != null) {
+      if (insertOnly) continue;
+      toUpdate.push({ ...item, patientInfoId: existingId });
+    } else {
+      toInsert.push(item);
+    }
+  }
+
+  const idByNpid = new Map(existingByNpid);
+  let patientRowsInserted = 0;
+  let patientRowsUpdated = 0;
+  let addressRowsInserted = 0;
+
+  if (toUpdate.length > 0) {
+    const updArrays = buildPatientBulkArrays(toUpdate);
+    patientRowsUpdated = await bulkUpdatePatientsById(pgClient, updArrays);
+    for (const u of toUpdate) {
+      const rec = recordsWithIssues.get(u.mapped.pid);
+      if (rec) rec.patient_info_id = u.patientInfoId;
+    }
+    await deleteAddressesForPatientIds(
+      pgClient,
+      toUpdate.map((u) => u.patientInfoId),
+    );
+    addressRowsInserted += await insertAddressesForItems(
+      pgClient,
+      toUpdate,
+      idByNpid,
+    );
+  }
+
+  if (toInsert.length > 0) {
+    await pgClient.query(`
+      SELECT setval(
+        pg_get_serial_sequence('public.patient_info', 'id'),
+        COALESCE((SELECT MAX(id) + 1 FROM public.patient_info), 1),
+        false
+      );
+    `);
+    const insArrays = buildPatientBulkArrays(
+      toInsert.map((x) => ({ mapped: x.mapped, patientInfoId: null })),
+    );
+    const ins = await bulkInsertPatients(pgClient, insArrays);
+    for (const r of ins.rows) {
+      idByNpid.set(normPid(r.pid), r.id);
+    }
+    patientRowsInserted = ins.rowCount ?? insArrays.aPid.length;
+
+    for (const item of toInsert) {
+      const id = idByNpid.get(item.mapped.pid);
+      if (id != null) {
+        const rec = recordsWithIssues.get(item.mapped.pid);
+        if (rec) rec.patient_info_id = id;
+      }
+    }
+
+    addressRowsInserted += await insertAddressesForItems(
+      pgClient,
+      toInsert,
+      idByNpid,
+    );
+  }
+
+  for (const np of npids) {
+    if (insertOnly && existingByNpid.has(np)) continue;
+    if (!idByNpid.has(np)) {
+      recordPidIssues(np, { pidRaw: np, patientInfoId: null }, [
+        {
+          field: "_record",
+          reason: "insert_missing_after_migrate",
+          message: "แมปแล้ว แต่ไม่พบแถวใน public.patient_info",
+          source_raw: np,
+          mapped: null,
+        },
+      ]);
+    }
+  }
+
+  return buildChunkFieldIssueResult(
+    patientRowsInserted,
+    addressRowsInserted,
+    patientRowsUpdated,
+  );
+
+  function buildChunkFieldIssueResult(patientInserted, addressInserted, patientUpdated) {
     const failedPids = sortPids(failingPidSet);
     const hasIssues = totalFieldIssueCount > 0;
     return {
@@ -758,7 +925,10 @@ export async function runPatientInfoChunkPostLoad(
         ? {
             totalFieldIssueCount,
             rowsInserted: patientInserted,
-            summaryExtras: { addressRowsInserted: addressInserted },
+            summaryExtras: {
+              addressRowsInserted: addressInserted,
+              patientRowsUpdated: patientUpdated,
+            },
             records: [...recordsWithIssues.values()],
           }
         : null,

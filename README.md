@@ -71,18 +71,132 @@ npm run migrate:all
 # เริ่มจากตารางที่ 3 (examination) ถ้า 1–2 เสร็จแล้ว
 .\run-migrate-all.ps1 -StartFrom 3 -SkipInstall
 
-# เลือกเฉพาะบาง job (ชื่อคอลัมน์ Table ใน pipeline — เช่น appointment, examination)
+# เลือกเฉพาะบางตาราง (ชื่อใน pipeline — ดูตารางลำดับด้านบน)
 .\run-migrate-all.ps1 -Tables appointment,examination -SkipInstall
 
-# โหมดแถว: เขียนทับจากต้นทาง (ดีฟอลต์ของ appointment/examination)
-# และช่วงคีย์ MSSQL เลขเท่านั้น: appointment → Schedule_ID / examination → Exam_ID
+# ช่วงคีย์ MSSQL (appointment → Schedule_ID / examination → Exam_ID)
 .\run-migrate-all.ps1 -Tables appointment -SourceKeyRange "1-100" -SkipInstall
-
-# เฉพาะแถวที่ Postgres ยังไม่มี (รองรับใน appointment และ examination เท่านั้นในรอบนี้)
-.\run-migrate-all.ps1 -Tables examination -MigrateMode insert-only -SourceKeyFrom 9000 -SourceKeyTo 9500 -SkipInstall
 ```
 
-**หมายเหตุโหมดและช่วงคีย์:** การกรอง `SourceKey*` / `-SourceKeyRange` ถูกตีความอย่างสมบูรณ์ใน Node ของ **appointment** และ **examination** เท่านั้น Job อื่นรับพารามิเตอร์ผ่าน `run-migrate.ps1`/`node` ได้ แต่สคริปต์เหล่านั้นจะยังไม่อ่านช่วงคีย์ — ใช้กับคู่ที่รองรับหรือรอให้เราผูกเหมือนกันในโมดูลนั้นต่อไปได้
+### โหมดรัน (`-MigrateRunMode`) — มี 3 แบบ
+
+| โหมด | พารามิเตอร์ | เมื่อไหร่ใช้ |
+|------|-------------|-------------|
+| **1. resume** (ดีฟอลต์) | ไม่ใส่ หรือ `-MigrateRunMode resume` | รันปกติ / รันต่อหลังหยุดกลางคัน — **ไม่ทับ**แถวที่มีใน Postgres แล้ว |
+| **2. overwrite** | `-MigrateRunMode overwrite` | ต้องการ migrate **ทั้งชุดใหม่** และ **เขียนทับ**ข้อมูลเดิม |
+| **3. repair-from-log** | `-MigrateRunMode repair-from-log` | แก้เฉพาะแถวที่ error / field issue จาก **log ล่าสุด** |
+
+รองรับทั้ง **12 ตาราง** ใน pipeline
+
+| โหมด | checkpoint | เขียนทับ Postgres |
+|------|------------|-------------------|
+| resume | เปิด — อ่าน/บันทึกที่ `<ตาราง>/js-migrate/checkpoints/` | ไม่ทับ (insert-only) |
+| overwrite | ปิด — เริ่มจากต้นทาง | เขียนทับ |
+| repair-from-log | ปิด — ไม่ใช้ checkpoint | เขียนทับเฉพาะ id ที่ดึงจาก log |
+
+Log ที่โหมด **repair-from-log** อ่าน (ไฟล์ **ล่าสุด** ใน `<ตาราง>/js-migrate/logs/`):
+
+- `migrate-*.json` — chunk ล้มเหลว, สถิติ run
+- `migration-field-issues-*.json` — รายการ id ที่มี field issue
+
+---
+
+### วิธีใช้แต่ละโหมด
+
+#### โหมด 1 — resume (ดีฟอลต์)
+
+ใช้เมื่อ migrate ครั้งแรกหรือรันต่อจากครั้งก่อน ระบบจะข้ามแถวที่มีใน Postgres แล้ว และจำตำแหน่งล่าสุดใน checkpoint
+
+```powershell
+# ทุกตาราง (ไม่ต้องใส่ -MigrateRunMode)
+.\run-migrate-all.ps1 -SkipInstall
+
+# เฉพาะ examination
+.\run-migrate-all.ps1 -Tables examination -SkipInstall
+
+# ทีละตาราง
+.\examination\js-migrate\run-migrate.ps1 -SkipInstall
+npm run migrate:examination
+```
+
+เริ่มใหม่แบบ resume (ลบ checkpoint ของตารางนั้นก่อน):
+
+```powershell
+Remove-Item .\examination\js-migrate\checkpoints\*.json -ErrorAction SilentlyContinue
+.\examination\js-migrate\run-migrate.ps1 -SkipInstall
+```
+
+---
+
+#### โหมด 2 — overwrite
+
+ใช้เมื่อต้องการดึงข้อมูลจาก MSSQL **ทั้งชุดอีกครั้ง** และ **อัปเดตทับ**ของเดิมใน Postgres (ไม่ใช้ checkpoint)
+
+```powershell
+# ทุกตาราง
+.\run-migrate-all.ps1 -MigrateRunMode overwrite -SkipInstall
+
+# เฉพาะ examination
+.\run-migrate-all.ps1 -Tables examination -MigrateRunMode overwrite -SkipInstall
+
+# ทีละตาราง
+.\examination\js-migrate\run-migrate.ps1 -MigrateRunMode overwrite -SkipInstall
+npm run migrate:examination -- --migrate-run-mode overwrite
+```
+
+คำเตือน: โหมดนี้จะ migrate ข้อมูลจำนวนมากจากต้นทาง — ใช้เมื่อแน่ใจว่าต้องการทับข้อมูลเดิม
+
+สำหรับ **`patient_info`**: overwrite จะ **UPDATE** แถวเดิมตาม `id` (ไม่ลบแล้ว INSERT ใหม่) เพื่อไม่ให้ FK ที่อ้าง `patient_info.id` หลุด — ที่อยู่ (`address`) จะลบแล้วใส่ใหม่ตาม `patient_info.id` นั้น
+
+---
+
+#### โหมด 3 — repair-from-log
+
+ใช้หลังรัน migrate แล้วมี error หรือ field issue — จะอ่าน log **ล่าสุด** ของตารางนั้นแล้ว migrate เฉพาะ id ที่มีปัญหา
+
+```powershell
+# หลายตาราง
+.\run-migrate-all.ps1 -Tables appointment,examination -MigrateRunMode repair-from-log -SkipInstall
+
+# ตารางเดียว
+.\examination\js-migrate\run-migrate.ps1 -MigrateRunMode repair-from-log -SkipInstall
+npm run migrate:examination -- --migrate-run-mode repair-from-log
+```
+
+ตรวจ log ก่อนรัน (ตัวอย่าง examination):
+
+```powershell
+Get-ChildItem .\examination\js-migrate\logs\ | Sort-Object LastWriteTime -Descending | Select-Object -First 5 Name, LastWriteTime
+```
+
+ถ้าไม่มี id ใน log สคริปต์จะจบสำเร็จทันทีโดยไม่ migrate แถวใด
+
+เมื่อรันจบ จะพิมพ์สรุปบน stderr เช่น:
+
+```
+>>> [patient_info] repair-from-log สรุปผล (patient_info): จาก log ต้องแก้ 3 รายการ (pid)
+>>> [patient_info]   สำเร็จ: 2 เคส
+>>> [patient_info]   ไม่สำเร็จ: 1 เคส
+>>> [patient_info]     - ไม่พบใน MSSQL: 0 เคส
+>>> [patient_info]     - แมป/ลง Postgres ไม่ผ่าน: 1 เคส
+```
+
+ค่าสรุปอยู่ใน `repairSummary` ของผลรัน / `migrate-*.json` ด้วย
+
+---
+
+### ชื่อตารางสำหรับ `-Tables`
+
+`patient_info`, `appointment`, `examination`, `examination_general`, `pacs_sync_info`, `procedure`, `ultrasound`, `mammogram`, `mammogram_cal`, `mammogram_mass`, `ultrasound_cyst`, `ultrasound_mass`
+
+### ช่วงคีย์ MSSQL (ใช้ร่วมกับโหมด resume / overwrite)
+
+รองรับหลักที่ **appointment** (`Schedule_ID`) และ **examination** (`Exam_ID`):
+
+```powershell
+.\run-migrate-all.ps1 -Tables appointment -SourceKeyRange "1-5000" -SkipInstall
+.\run-migrate-all.ps1 -Tables examination -SourceKeyFrom 9000 -SourceKeyTo 9500 -SkipInstall
+```
 
 ถ้า PowerShell บล็อกสคริปต์:
 
