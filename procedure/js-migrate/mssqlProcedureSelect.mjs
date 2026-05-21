@@ -78,8 +78,9 @@ SELECT
 FROM {{sourceObject}}
 ORDER BY {{orderBy}}
 OFFSET @offset ROWS FETCH NEXT @page ROWS ONLY;
+`.trim();
 
-/** repair-from-log: ดึงตาม old_db_id ({Exam_ID}_{BiopsyID}) */
+/** repair-from-log: ดึงตาม old_db_id (Exam_ID + BiopsyID) */
 export const MSSQL_PROCEDURE_BY_OLD_DB_IDS_SELECT = `
 SELECT
   CAST(CAST([Exam_ID] AS NVARCHAR(50)) AS NVARCHAR(MAX)) AS exam_id,
