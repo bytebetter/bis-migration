@@ -1,4 +1,4 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sql from "mssql";
@@ -27,6 +27,18 @@ import {
   renderProgress,
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
+import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
+import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
+import { REPAIR_SPEC_EXAMINATION_GENERAL } from "../../shared/js-migrate/migrateTableSpecs.mjs";
+import {
+  finishRepairRunSummary,
+  noteRepairBatchFetch,
+  prepareRepairRun,
+  repairRunIsDone,
+  repairRunIsEmpty,
+  takeNextRepairBatch,
+} from "../../shared/js-migrate/repairRun.mjs";
+
 import {
   formatAdvanceLog,
   isLastKeysetPage,
@@ -232,6 +244,7 @@ async function main() {
   const configPath = path.resolve(process.cwd(), getConfigPath());
   const rawConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
   const config = resolveRuntimeConfig(rawConfig, "examination_general");
+  const migration = mergeMigrationWithCli(config?.migration, "examination_general");
   if (config.__profileName) {
     console.error(`>>> using config profile: ${config.__profileName}`);
   }
@@ -252,11 +265,11 @@ async function main() {
 
   const batchSize = Math.max(
     100,
-    Math.min(5000, Number(config?.migration?.batchSize ?? 2000)),
+    Math.min(5000, Number(migration.batchSize ?? 2000)),
   );
-  const progressEnabled = config?.migration?.progressUi !== false;
-  const singleLineUi = config?.migration?.singleLineUi !== false;
-  const debugLogs = config?.migration?.debugLogs === true;
+  const progressEnabled = migration.progressUi !== false;
+  const singleLineUi = migration.singleLineUi !== false;
+  const debugLogs = migration.debugLogs === true;
   const uiState = createUiState();
 
   const pgPool = new pg.Pool({
@@ -281,10 +294,10 @@ async function main() {
     skipped: 0,
     error: null,
   };
-  const checkpointEnabled = config?.migration?.enableCheckpoint !== false;
+  const checkpointEnabled = migration.enableCheckpoint !== false;
   const checkpointDir = path.resolve(
     __dirname,
-    config?.migration?.checkpointDir ?? "./checkpoints",
+    migration.checkpointDir ?? "./checkpoints",
   );
   fs.mkdirSync(checkpointDir, { recursive: true });
   const checkpointPath = path.join(checkpointDir, `${KEY}.json`);
@@ -373,52 +386,87 @@ async function main() {
           `>>> [${KEY}] plan: ${plannedRows} rows, ~${plannedChunks} chunks`,
         );
       }
+      const repairRun = prepareRepairRun(
+        migration,
+        logsDir,
+        REPAIR_SPEC_EXAMINATION_GENERAL,
+        batchSize,
+      );
+      if (repairRunIsEmpty(repairRun)) {
+        runLog.status = "success";
+        return;
+      }
       if (debugLogs) {
         writeOutLine(
-          `>>> [${KEY}] checkpoint start: offset=${offset}, afterExamId=${afterExamId}, enabled=${checkpointEnabled}`,
+          `>>> [${KEY}] checkpoint start: offset=${offset}, afterExamId=${afterExamId}, enabled=${checkpointEnabled}, repair=${repairRun.active}`,
           uiState,
         );
       }
       const startedAt = Date.now();
       while (true) {
         const chunkStartedAt = Date.now();
-        if (debugLogs && !singleLineUi) {
-          writeOutLine(
-            `>>> [${KEY}] fetch chunk ${chunkIndex + 1}: afterExamId=${afterExamId}, page=${batchSize}`,
-            uiState,
-          );
-        }
-        const probeStartedAt = Date.now();
-        const idRes = await pool
-          .request()
-          .input("afterExamId", sql.BigInt, afterExamId)
-          .input("page", sql.Int, batchSize)
-          .query(probeSql);
-        const probeMs = Date.now() - probeStartedAt;
-        const idRows = idRes.recordset || [];
-        const ids = idRows
-          .map((r) => Number.parseInt(r?.exam_id ?? "", 10))
-          .filter((v) => Number.isFinite(v));
-        if (debugLogs && !singleLineUi) {
-          writeOutLine(
-            `>>> [${KEY}] probe chunk ${chunkIndex + 1} done: ids=${ids.length}, ms=${probeMs}`,
-            uiState,
-          );
-        }
-        if (ids.length === 0) break;
+        /** @type {string[]} */
+        let ids = [];
+        let rows = [];
+        let fetchMs = 0;
+        let probeMs = 0;
+        let detailMs = 0;
 
-        const idPlaceholders = ids.map((_, i) => `@id${i}`).join(", ");
-        const detailSql = detailSqlTemplate.replace(
-          "{{idPlaceholders}}",
-          idPlaceholders,
-        );
-        const detailReq = pool.request();
-        ids.forEach((id, i) => detailReq.input(`id${i}`, sql.BigInt, id));
-        const detailStartedAt = Date.now();
-        const detailRes = await detailReq.query(detailSql);
-        const detailMs = Date.now() - detailStartedAt;
-        const fetchMs = probeMs + detailMs;
-        const rows = detailRes.recordset || [];
+        if (repairRun.active) {
+          const idBatch = takeNextRepairBatch(repairRun);
+          if (!idBatch) break;
+          ids = idBatch.map(String);
+          const detailStartedAt = Date.now();
+          rows = await fetchMssqlRowsByIds(pool, sql, {
+            ids,
+            detailSqlTemplate,
+          });
+          detailMs = Date.now() - detailStartedAt;
+          fetchMs = detailMs;
+          noteRepairBatchFetch(repairRun, ids, rows, (r) =>
+            String(r?.exam_id ?? "").trim(),
+          );
+          if (rows.length === 0) continue;
+        } else {
+          if (debugLogs && !singleLineUi) {
+            writeOutLine(
+              `>>> [${KEY}] fetch chunk ${chunkIndex + 1}: afterExamId=${afterExamId}, page=${batchSize}`,
+              uiState,
+            );
+          }
+          const probeStartedAt = Date.now();
+          const idRes = await pool
+            .request()
+            .input("afterExamId", sql.BigInt, afterExamId)
+            .input("page", sql.Int, batchSize)
+            .query(probeSql);
+          probeMs = Date.now() - probeStartedAt;
+          const idRows = idRes.recordset || [];
+          ids = idRows
+            .map((r) => Number.parseInt(r?.exam_id ?? "", 10))
+            .filter((v) => Number.isFinite(v))
+            .map(String);
+          if (debugLogs && !singleLineUi) {
+            writeOutLine(
+              `>>> [${KEY}] probe chunk ${chunkIndex + 1} done: ids=${ids.length}, ms=${probeMs}`,
+              uiState,
+            );
+          }
+          if (ids.length === 0) break;
+
+          const idPlaceholders = ids.map((_, i) => `@id${i}`).join(", ");
+          const detailSql = detailSqlTemplate.replace(
+            "{{idPlaceholders}}",
+            idPlaceholders,
+          );
+          const detailReq = pool.request();
+          ids.forEach((id, i) => detailReq.input(`id${i}`, sql.BigInt, id));
+          const detailStartedAt = Date.now();
+          const detailRes = await detailReq.query(detailSql);
+          detailMs = Date.now() - detailStartedAt;
+          fetchMs = probeMs + detailMs;
+          rows = detailRes.recordset || [];
+        }
         if (debugLogs && !singleLineUi) {
           writeOutLine(
             `>>> [${KEY}] fetch chunk ${chunkIndex + 1} done: rows=${rows.length}, ms=${fetchMs} (probe=${probeMs}, detail=${detailMs})`,
@@ -493,11 +541,13 @@ async function main() {
         }
 
         const keysetAdvance = ids.length;
-        offset += keysetAdvance;
-        if (ids.length > 0) {
-          afterExamId = ids[ids.length - 1];
+        if (!repairRun.active) {
+          offset += keysetAdvance;
+          if (ids.length > 0) {
+            afterExamId = Number.parseInt(ids[ids.length - 1], 10) || afterExamId;
+          }
         }
-        if (checkpointEnabled) {
+        if (checkpointEnabled && !repairRun.active) {
           writeJson(checkpointPath, {
             key: KEY,
             offset,
@@ -529,7 +579,11 @@ async function main() {
           );
         }
 
-        if (isLastKeysetPage(keysetAdvance, batchSize)) break;
+        if (repairRun.active) {
+          if (repairRunIsDone(repairRun)) break;
+        } else if (isLastKeysetPage(keysetAdvance, batchSize)) {
+          break;
+        }
       }
 
       if (checkpointEnabled) {
@@ -559,6 +613,12 @@ async function main() {
         fieldIssueLogWritten = fieldIssueLogPath;
       }
       runLog.fieldIssueLogPath = fieldIssueLogWritten;
+      runLog.repairSummary = finishRepairRunSummary(
+        KEY,
+        REPAIR_SPEC_EXAMINATION_GENERAL,
+        repairRun,
+        { fieldIssueAcc },
+      );
       runLog.status = "success";
     } finally {
       client.release();

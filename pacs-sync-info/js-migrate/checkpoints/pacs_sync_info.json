@@ -1,0 +1,20 @@
+{
+  "key": "pacs_sync_info",
+  "offset": 1050000,
+  "afterAccessionId": "478842001",
+  "mssqlPagination": "keyset_plus_null",
+  "migrationLeg": "acc",
+  "nullTailCursor": null,
+  "accLegCursor": {
+    "accRaw": "478842001",
+    "exam": "4788420",
+    "dlStr": "2017-12-29T11:04:14.7633333",
+    "pid": "98977",
+    "fpHex": "2079384941d35a57e6ec203fd5aa9ee68586c014622cb177ae85b513af81be31",
+    "chk": 708535281
+  },
+  "accFingerprintVersion": 3,
+  "nullTailDone": false,
+  "completed": false,
+  "updatedAt": "2026-05-21T06:31:03.778Z"
+}

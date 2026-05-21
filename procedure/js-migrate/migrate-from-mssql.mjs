@@ -1,9 +1,12 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sql from "mssql";
 import pg from "pg";
-import { MSSQL_PROCEDURE_SELECT } from "./mssqlProcedureSelect.mjs";
+import {
+  MSSQL_PROCEDURE_BY_OLD_DB_IDS_SELECT,
+  MSSQL_PROCEDURE_SELECT,
+} from "./mssqlProcedureSelect.mjs";
 import { ensureProcedurePipelineDdl } from "./procedurePgDdl.mjs";
 import { runProcedureChunkPostLoad } from "./procedureMapping.mjs";
 import {
@@ -20,6 +23,17 @@ import {
   renderProgress,
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
+import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
+import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
+import { REPAIR_SPEC_PROCEDURE } from "../../shared/js-migrate/migrateTableSpecs.mjs";
+import {
+  finalizeRepairFromLog,
+  noteRepairBatchNotFoundInSource,
+} from "../../shared/js-migrate/repairSummary.mjs";
+import {
+  batchIds,
+  resolveRepairSourceIds,
+} from "../../shared/js-migrate/repairFromLog.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KEY = "procedure";
@@ -183,13 +197,13 @@ function resolveRuntimeConfig(rawConfig, fallbackProfile) {
   if (profileConfig === undefined) {
     if (selectedProfile === "procedure") {
       process.stdout.write(
-        ">>> คำเตือน: ไม่พบ profiles.procedure ใน config — ใช้ shared อย่างเดียว (แนะนำคัดลอกจาก migration.config.example.json)",
+        ">>> เธเธณเน€เธ•เธทเธญเธ: เนเธกเนเธเธ profiles.procedure เนเธ config โ€” เนเธเน shared เธญเธขเนเธฒเธเน€เธ”เธตเธขเธง (เนเธเธฐเธเธณเธเธฑเธ”เธฅเธญเธเธเธฒเธ migration.config.example.json)",
         +"\n",
       );
       profileConfig = {};
     } else {
       throw new Error(
-        `Profile '${selectedProfile}' not found in config.profiles — ตรวจสอบ --profile`,
+        `Profile '${selectedProfile}' not found in config.profiles โ€” เธ•เธฃเธงเธเธชเธญเธ --profile`,
       );
     }
   }
@@ -217,7 +231,7 @@ function assertMssqlSourceReady(source) {
     String(pw) === "YOUR_MSSQL_PASSWORD"
   ) {
     throw new Error(
-      "MSSQL: กำหนด source.password ใน migration.config.local.json",
+      "MSSQL: เธเธณเธซเธเธ” source.password เนเธ migration.config.local.json",
     );
   }
 }
@@ -305,7 +319,7 @@ async function runProcedureTableJob({
   const sourceSchema = source?.schema ?? "dbo";
   const sourceTable = source?.table ?? "biopsy";
   const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
-  /** เรียงคงที่ตามคีย์หลัก — ค่า Exam_ID/BiopsyID ในฐานต้นทางเป็นตัวเลข */
+  /** เน€เธฃเธตเธขเธเธเธเธ—เธตเนเธ•เธฒเธกเธเธตเธขเนเธซเธฅเธฑเธ โ€” เธเนเธฒ Exam_ID/BiopsyID เนเธเธเธฒเธเธ•เนเธเธ—เธฒเธเน€เธเนเธเธ•เธฑเธงเน€เธฅเธ */
   const biopsyOrderExpr =
     "CONVERT(BIGINT, [Exam_ID]) ASC, CONVERT(INT, [BiopsyID]) ASC";
 
@@ -313,6 +327,40 @@ async function runProcedureTableJob({
     "{{sourceObject}}",
     sourceObject,
   ).replaceAll("{{orderBy}}", biopsyOrderExpr);
+  const repairDetailTemplate = MSSQL_PROCEDURE_BY_OLD_DB_IDS_SELECT.replaceAll(
+    "{{sourceObject}}",
+    sourceObject,
+  );
+  const logsDir = path.resolve(__dirname, "logs");
+  const repairSourceIds = resolveRepairSourceIds(
+    migrationConfig,
+    logsDir,
+    REPAIR_SPEC_PROCEDURE,
+  );
+  const repairBatches =
+    repairSourceIds != null ? [...batchIds(repairSourceIds, batchSize)] : null;
+  let repairBatchIndex = 0;
+  const repairNotFoundInSource =
+    repairSourceIds != null ? new Set() : null;
+  if (repairSourceIds != null && repairSourceIds.length === 0) {
+    writeOutLine(`>>> [${key}] repair-from-log: ไม่มี id ให้ migrate`, uiState);
+    return {
+      key,
+      totalRowsRead: 0,
+      fieldIssueLogPath: null,
+      checkpointPath: checkpointEnabled ? checkpointPath : null,
+      chunkCount: 0,
+      successChunkCount: 0,
+      failedChunkCount: 0,
+      chunkResults: [],
+    };
+  }
+  if (repairSourceIds != null) {
+    writeOutLine(
+      `>>> [${key}] migrateRunMode=repair-from-log (${repairSourceIds.length} old_db_id)`,
+      uiState,
+    );
+  }
 
   const chunkLogMode = String(
     migrationConfig.chunkLogMode ?? "compact",
@@ -365,7 +413,7 @@ async function runProcedureTableJob({
   }
 
   writeOutLine(
-    `>>> [${key}] start offset: ${offset} (OFFSET ตาม [Exam_ID],[BiopsyID])`,
+    `>>> [${key}] start offset: ${offset} (OFFSET เธ•เธฒเธก [Exam_ID],[BiopsyID])`,
     uiState,
   );
   await ensureProcedurePipelineDdl(pgClient);
@@ -396,21 +444,44 @@ async function runProcedureTableJob({
       );
     }
 
-    const fetchStartedAt = Date.now();
-    const r = await mssqlPool
-      .request()
-      .input("offset", sql.Int, offset)
-      .input("page", sql.Int, pageSize)
-      .query(selectSql);
-    const fetchElapsedMs = Date.now() - fetchStartedAt;
-    if (debugLogs) {
-      writeOutLine(
-        `>>> [${key}] fetched rows: ${(r.recordset || []).length} (chunk ${nextChunkIndex}, mssql_query_ms=${fetchElapsedMs})`,
-        uiState,
-      );
+    let rows = [];
+    let fetchElapsedMs = 0;
+    if (repairBatches) {
+      if (repairBatchIndex >= repairBatches.length) break;
+      const idBatch = repairBatches[repairBatchIndex++];
+      const fetchStartedAt = Date.now();
+      rows = await fetchMssqlRowsByIds(mssqlPool, sql, {
+        ids: idBatch.map((k) => String(k).replace(":", "_")),
+        detailSqlTemplate: repairDetailTemplate,
+        idType: "nvarchar",
+        nvarcharLength: 80,
+      });
+      fetchElapsedMs = Date.now() - fetchStartedAt;
+      if (repairNotFoundInSource) {
+        noteRepairBatchNotFoundInSource(
+          repairNotFoundInSource,
+          idBatch,
+          rows,
+          (r) => getExamBiopsyLog(r),
+        );
+      }
+      if (rows.length === 0) continue;
+    } else {
+      const fetchStartedAt = Date.now();
+      const r = await mssqlPool
+        .request()
+        .input("offset", sql.Int, offset)
+        .input("page", sql.Int, pageSize)
+        .query(selectSql);
+      fetchElapsedMs = Date.now() - fetchStartedAt;
+      if (debugLogs) {
+        writeOutLine(
+          `>>> [${key}] fetched rows: ${(r.recordset || []).length} (chunk ${nextChunkIndex}, mssql_query_ms=${fetchElapsedMs})`,
+          uiState,
+        );
+      }
+      rows = r.recordset || [];
     }
-
-    const rows = r.recordset || [];
     if (rows.length === 0) {
       if (debugLogs) {
         writeOutLine(
@@ -502,8 +573,8 @@ async function runProcedureTableJob({
     }
 
     total += n;
-    offset += n;
-    if (checkpointEnabled) {
+    if (!repairBatches) offset += n;
+    if (checkpointEnabled && !repairBatches) {
       writeJson(checkpointPath, {
         key,
         offset,
@@ -564,6 +635,14 @@ async function runProcedureTableJob({
     fieldIssueLogWritten = fieldIssueLogPath;
   }
 
+  const repairSummary =
+    repairSourceIds != null
+      ? finalizeRepairFromLog(key, REPAIR_SPEC_PROCEDURE, repairSourceIds, {
+          notFoundInSourceIds: repairNotFoundInSource,
+          fieldIssueAcc,
+        })
+      : null;
+
   const summary = {
     key,
     totalRowsRead: total,
@@ -575,6 +654,7 @@ async function runProcedureTableJob({
     chunkLogMode,
     chunkSampleEvery,
     chunkResults,
+    repairSummary,
   };
   writeOutLine(`>>> [${key}] done, total rows read: ${total}`, uiState);
   return summary;
@@ -584,15 +664,10 @@ async function main() {
   const configPath = path.resolve(process.cwd(), getConfigPath());
   const rawConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
   const config = resolveRuntimeConfig(rawConfig, "procedure");
-
-  const migrationForJob = {
-    ...(config.migration ?? {}),
-    batchSize:
-      config.migration?.batchSize != null &&
-      String(config.migration.batchSize).trim() !== ""
-        ? Number(config.migration.batchSize)
-        : 2000,
-  };
+  const migrationForJob = mergeMigrationWithCli(config?.migration, "procedure");
+  if (migrationForJob.batchSize == null) {
+    migrationForJob.batchSize = 2000;
+  }
 
   if (!config?.source) throw new Error("Missing source config");
   if (!config?.target) throw new Error("Missing target config");

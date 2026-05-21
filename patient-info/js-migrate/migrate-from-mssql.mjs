@@ -1,9 +1,12 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sql from "mssql";
 import pg from "pg";
-import { MSSQL_PATIENT_INFO_SELECT } from "./mssqlPatientInfoSelect.mjs";
+import {
+  MSSQL_PATIENT_INFO_BY_PIDS_SELECT,
+  MSSQL_PATIENT_INFO_SELECT,
+} from "./mssqlPatientInfoSelect.mjs";
 import {
   ensurePatientInfoShortNoteColumn,
   ensurePatientInfoStagingDdl,
@@ -26,6 +29,18 @@ import {
   renderProgress,
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
+import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
+import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
+import { REPAIR_SPEC_PATIENT_INFO } from "../../shared/js-migrate/migrateTableSpecs.mjs";
+import {
+  batchIds,
+  resolveRepairSourceIds,
+} from "../../shared/js-migrate/repairFromLog.mjs";
+import {
+  finalizeRepairFromLog,
+  noteRepairBatchNotFoundInSource,
+} from "../../shared/js-migrate/repairSummary.mjs";
+
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -63,8 +78,8 @@ function parseMssqlUrl(rawUrl) {
 }
 
 /**
- * Tedious: requestTimeout ดีฟอลต์ 15s — ข้อมูลเยอะ/เน็ตช้า ให้ใช้ 0 = ไม่จำกัด
- * ถ้า request หมดเวลาแล้ว cancel ช้า: error "Failed to cancel in 5000ms" — ใช้ cancelTimeout: 0
+ * Tedious: requestTimeout เธ”เธตเธเธญเธฅเธ•เน 15s โ€” เธเนเธญเธกเธนเธฅเน€เธขเธญเธฐ/เน€เธเนเธ•เธเนเธฒ เนเธซเนเนเธเน 0 = เนเธกเนเธเธณเธเธฑเธ”
+ * เธ–เนเธฒ request เธซเธกเธ”เน€เธงเธฅเธฒเนเธฅเนเธง cancel เธเนเธฒ: error "Failed to cancel in 5000ms" โ€” เนเธเน cancelTimeout: 0
  */
 function tediousOptionsFromSource(sourceConfig = {}) {
   return {
@@ -144,7 +159,7 @@ function assertMssqlSourceReady(source) {
     String(pw) === "YOUR_MSSQL_PASSWORD"
   ) {
     throw new Error(
-      "MSSQL: กำหนด source.password ใน migration.config.local.json (shared หรือ profile) ให้เป็นรหัสจริง — ยังใช้ placeholder YOUR_MSSQL_PASSWORD หรือเว้นว่างอยู่",
+      "MSSQL: เธเธณเธซเธเธ” source.password เนเธ migration.config.local.json (shared เธซเธฃเธทเธญ profile) เนเธซเนเน€เธเนเธเธฃเธซเธฑเธชเธเธฃเธดเธ โ€” เธขเธฑเธเนเธเน placeholder YOUR_MSSQL_PASSWORD เธซเธฃเธทเธญเน€เธงเนเธเธงเนเธฒเธเธญเธขเธนเน",
     );
   }
 }
@@ -174,7 +189,7 @@ function pidFromMssqlRow(r) {
 }
 
 /**
- * ทดลอง post-load ชุดย่อยใน txn แล้ว ROLLBACK เสมอ — ใช้หา PID ที่ทำให้ INSERT พัง
+ * เธ—เธ”เธฅเธญเธ post-load เธเธธเธ”เธขเนเธญเธขเนเธ txn เนเธฅเนเธง ROLLBACK เน€เธชเธกเธญ โ€” เนเธเนเธซเธฒ PID เธ—เธตเนเธ—เธณเนเธซเน INSERT เธเธฑเธ
  */
 async function dryRunPatientInfoPostLoadSubset(
   pgClient,
@@ -451,14 +466,68 @@ async function runTableJob({
   const chunkResults = [];
   let chunkIndex = 0;
 
+  const logsDir = path.resolve(sqlBaseDir, "logs");
+  const repairSourceIds = resolveRepairSourceIds(
+    migrationConfig,
+    logsDir,
+    REPAIR_SPEC_PATIENT_INFO,
+  );
+  const repairBatches =
+    repairSourceIds != null ? [...batchIds(repairSourceIds, batchSize)] : null;
+  let repairBatchIndex = 0;
+  const repairNotFoundInSource =
+    repairSourceIds != null ? new Set() : null;
+  if (repairSourceIds != null && repairSourceIds.length === 0) {
+    console.error(`>>> [${key}] repair-from-log: ไม่มี pid ให้ migrate`);
+    return {
+      key,
+      totalRowsRead: 0,
+      fieldIssueLogPath: null,
+      checkpointPath: checkpointEnabled ? checkpointPath : null,
+      chunkCount: 0,
+      chunkResults: [],
+      repairSummary: finalizeRepairFromLog(key, REPAIR_SPEC_PATIENT_INFO, [], {}),
+    };
+  }
+  if (repairSourceIds != null) {
+    console.error(
+      `>>> [${key}] migrateRunMode=repair-from-log (${repairSourceIds.length} pid)`,
+    );
+  }
+  const pidDetailTemplate = MSSQL_PATIENT_INFO_BY_PIDS_SELECT.replaceAll(
+    "{{sourceObject}}",
+    sourceObject,
+  );
+
   while (true) {
-    const r = await mssqlPool
-      .request()
-      .input("offset", sql.Int, offset)
-      .input("page", sql.Int, batchSize)
-      .query(selectSql);
-    const rows = r.recordset || [];
-    if (rows.length === 0) break;
+    let rows = [];
+    if (repairBatches) {
+      if (repairBatchIndex >= repairBatches.length) break;
+      const pidBatch = repairBatches[repairBatchIndex++];
+      rows = await fetchMssqlRowsByIds(mssqlPool, sql, {
+        ids: pidBatch,
+        detailSqlTemplate: pidDetailTemplate,
+        idType: "nvarchar",
+        nvarcharLength: 50,
+      });
+      if (repairNotFoundInSource) {
+        noteRepairBatchNotFoundInSource(
+          repairNotFoundInSource,
+          pidBatch,
+          rows,
+          (r) => normPid(r.pid),
+        );
+      }
+      if (rows.length === 0) continue;
+    } else {
+      const r = await mssqlPool
+        .request()
+        .input("offset", sql.Int, offset)
+        .input("page", sql.Int, batchSize)
+        .query(selectSql);
+      rows = r.recordset || [];
+      if (rows.length === 0) break;
+    }
 
     const n = rows.length;
     chunkIndex += 1;
@@ -499,7 +568,11 @@ async function runTableJob({
         const postLoadResult = await runPatientInfoChunkPostLoad(
           pgClient,
           rows,
-          { migrationKey: key, chunkIndex },
+          {
+            migrationKey: key,
+            chunkIndex,
+            migrateRowMode: migrationConfig.migrateRowMode ?? "overwrite",
+          },
         );
         mergeFieldIssueChunk(fieldIssueAcc, postLoadResult);
         for (const pid of postLoadResult?.failedPids ?? [])
@@ -639,7 +712,7 @@ LIMIT 200;
             ? bisectOffendingPids.join(", ")
             : "";
       writeOutLine(
-        `>>> [${key}] WHERE_TO_FIX แก้ข้อมูล MSSQL PID=${focusPidStr || `(ช่วง ${firstPid}..${lastPid} — bisect ไม่ชี้แถวเดียว)`} | pid_range ${firstPid}..${lastPid} | row_offset ${sourceOffsetStart}-${sourceOffsetEnd}`,
+        `>>> [${key}] WHERE_TO_FIX เนเธเนเธเนเธญเธกเธนเธฅ MSSQL PID=${focusPidStr || `(เธเนเธงเธ ${firstPid}..${lastPid} โ€” bisect เนเธกเนเธเธตเนเนเธ–เธงเน€เธ”เธตเธขเธง)`} | pid_range ${firstPid}..${lastPid} | row_offset ${sourceOffsetStart}-${sourceOffsetEnd}`,
         uiState,
       );
       writeOutLine(`>>> [${key}] postgres: ${detail}`, uiState);
@@ -649,7 +722,7 @@ LIMIT 200;
         distinctOnNormPid(rows).length > 1
       ) {
         writeOutLine(
-          `>>> [${key}] hint: ค้นใน dbo.patient_info WHERE PID อยู่ระหว่างช่วงด้านบน หรือใช้ row_offset เทียบ ORDER BY ใน migrate`,
+          `>>> [${key}] hint: เธเนเธเนเธ dbo.patient_info WHERE PID เธญเธขเธนเนเธฃเธฐเธซเธงเนเธฒเธเธเนเธงเธเธ”เนเธฒเธเธเธ เธซเธฃเธทเธญเนเธเน row_offset เน€เธ—เธตเธขเธ ORDER BY เนเธ migrate`,
           uiState,
         );
       }
@@ -668,8 +741,8 @@ LIMIT 200;
     }
 
     total += n;
-    offset += n;
-    if (checkpointEnabled) {
+    if (!repairBatches) offset += n;
+    if (checkpointEnabled && !repairBatches) {
       writeJson(checkpointPath, {
         key,
         offset,
@@ -727,6 +800,15 @@ LIMIT 200;
     fieldIssueLogWritten = fieldIssueLogPath;
   }
 
+  const repairSummary =
+    repairSourceIds != null
+      ? finalizeRepairFromLog(key, REPAIR_SPEC_PATIENT_INFO, repairSourceIds, {
+          failedIds: failedPidSet,
+          notFoundInSourceIds: repairNotFoundInSource,
+          fieldIssueAcc,
+        })
+      : null;
+
   const summary = {
     key,
     totalRowsRead: total,
@@ -739,6 +821,7 @@ LIMIT 200;
     checkpointPath: checkpointEnabled ? checkpointPath : null,
     chunkCount: chunkIndex,
     chunkResults,
+    repairSummary,
   };
 
   if (debugLogs) {
@@ -751,6 +834,10 @@ async function main() {
   const configPath = path.resolve(process.cwd(), getConfigPath());
   const rawConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
   const config = resolveRuntimeConfig(rawConfig, "patient_info");
+  const migrationConfig = mergeMigrationWithCli(
+    config?.migration,
+    "patient_info",
+  );
 
   if (!config?.source) {
     throw new Error("Missing source config");
@@ -800,7 +887,7 @@ async function main() {
           mssqlPool: pool,
           pgClient: client,
           sqlBaseDir,
-          migrationConfig: config.migration ?? {},
+          migrationConfig,
           tableJob,
         });
         runLog.tableResults.push(result);
@@ -835,7 +922,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  // stdout อาจมีบรรทัด FAILED จาก runTableJob แล้ว — stderr เหลือแค่ stack
+  // stdout เธญเธฒเธเธกเธตเธเธฃเธฃเธ—เธฑเธ” FAILED เธเธฒเธ runTableJob เนเธฅเนเธง โ€” stderr เน€เธซเธฅเธทเธญเนเธเน stack
   if (err instanceof Error && err.stack) console.error(err.stack);
   else console.error(err);
   process.exit(1);

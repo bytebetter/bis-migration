@@ -8,9 +8,13 @@
     .\run-migrate-all.ps1 -StartFrom 3
     .\run-migrate-all.ps1 -LogPath ".\logs\my-run.log"
     .\run-migrate-all.ps1 -Tables appointment,examination
-    .\run-migrate-all.ps1 -MigrateMode insert-only -SourceKeyRange "1-5000"
+    .\run-migrate-all.ps1 -Tables examination -MigrateRunMode overwrite
+    .\run-migrate-all.ps1 -Tables examination -MigrateRunMode repair-from-log
     .\run-migrate-all.ps1 -SourceKeyFrom 100 -SourceKeyTo 200 -SkipInstall
 
+  -MigrateRunMode resume (ดีฟอลต์) = ต่อจาก checkpoint, ไม่ทับแถวที่มีใน Postgres แล้ว
+  -MigrateRunMode overwrite = migrate ทั้งชุดจากต้น, เขียนทับข้อมูลเดิม
+  -MigrateRunMode repair-from-log = เฉพาะ id ที่มีปัญหา จาก log ล่าสุดใน <ตาราง>/js-migrate/logs
   -SkipInstall = ข้ามการตรวจและรัน npm ที่ root (ต้องมี `node_modules/mssql` และ `pg` ที่ root เองแล้ว)
 #>
 
@@ -20,6 +24,8 @@ param(
   [switch] $SkipInstall,
   [string] $LogPath = "",
   [string[]] $Tables = @(),
+  [ValidateSet("", "resume", "overwrite", "repair-from-log", "full")]
+  [string] $MigrateRunMode = "",
   [string] $MigrateMode = "",
   [string] $SourceKeyRange = "",
   [string] $SourceKeyFrom = "",
@@ -91,16 +97,20 @@ $tableFilter = foreach ($t in $Tables) {
 $runAllTables = ($tableFilter.Count -eq 0)
 
 $repoRoot = $PSScriptRoot
+. (Join-Path $repoRoot "scripts\Get-MigrateNodeCliArgs.ps1")
 $total = $steps.Count
 $started = Get-Date
+$rawRunMode = if ($MigrateRunMode) { $MigrateRunMode.Trim().ToLowerInvariant() } else { "resume" }
+$effectiveRunMode = if ($rawRunMode -eq "full") { "resume" } else { $rawRunMode }
 
 Write-MigrateLog "=== BIS migrate all started ($total tables) ==="
 Write-MigrateLog "Config: $ConfigPath"
 Write-MigrateLog "Log file: $LogPath"
 Write-MigrateLog "Status file: $statusPath"
 if ($StartFrom -gt 1) { Write-MigrateLog "StartFrom step: $StartFrom" }
+Write-MigrateLog "MigrateRunMode: $effectiveRunMode (resume=checkpoint+skip-existing, overwrite=full-replace, repair-from-log=ids-from-log)"
 if (-not $runAllTables) {
-  Write-MigrateLog "Tables filter: $($tableFilter -join ', ') (MSSQL key filter is supported for appointment Schedule_ID / examination Exam_ID only)"
+  Write-MigrateLog "Tables filter: $($tableFilter -join ', ') (MSSQL key filter: appointment Schedule_ID / examination Exam_ID)"
 }
 
 if (-not $SkipInstall) {
@@ -131,7 +141,11 @@ foreach ($step in $steps) {
   Write-MigrateLog ('{0} - starting {1}' -f $label, $scriptPath) -Level START
 
   # เดิมให้โฟลเดอร์ที่ 2+ ข้าม npm — ตอนนี้ติดตั้งที่ root แล้วก่อนวนขั้นอยู่ด้านบน → ให้ลูกไม่เรียก npm ซ้ำ
-  $invokeArgs = @{ ConfigPath = $ConfigPath; SkipInstall = $true }
+  $invokeArgs = @{
+    ConfigPath      = $ConfigPath
+    SkipInstall     = $true
+    MigrateRunMode  = $effectiveRunMode
+  }
   if ($MigrateMode -eq "insert-only") { $invokeArgs.MigrateMode = "insert-only" }
   $skr = if ($SourceKeyRange) { $SourceKeyRange.Trim() } else { "" }
   if ($skr -ne "") {

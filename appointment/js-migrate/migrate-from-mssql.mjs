@@ -29,7 +29,20 @@ import {
   renderProgress,
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
-import { migrateCliOverridesFromArgv, readNumericSourceKeyBounds } from "../../shared/js-migrate/migrateCliArgs.mjs";
+import {
+  migrateCliOverridesFromArgv,
+  readNumericSourceKeyBounds,
+} from "../../shared/js-migrate/migrateCliArgs.mjs";
+import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
+import {
+  batchIds,
+  resolveRepairSourceIds,
+} from "../../shared/js-migrate/repairFromLog.mjs";
+import { REPAIR_SPEC_APPOINTMENT } from "../../shared/js-migrate/migrateTableSpecs.mjs";
+import {
+  finalizeRepairFromLog,
+  noteRepairBatchNotFoundInSource,
+} from "../../shared/js-migrate/repairSummary.mjs";
 import {
   appointmentScheduleNumericRangePredicate,
   bindAppointmentMssqlCommon,
@@ -511,6 +524,7 @@ END $$;
   `);
 
   let total = 0;
+  const failedScheduleIdSet = new Set();
   const fieldIssueAcc = createFieldIssueAccumulator("schedule_id");
   const fieldIssueLogPath = path.join(
     path.resolve(__dirname, "logs"),
@@ -520,6 +534,38 @@ END $$;
   let chunkIndex = 0;
   let successChunkCount = 0;
   let failedChunkCount = 0;
+
+  const logsDir = path.resolve(__dirname, "logs");
+  const repairSourceIds = resolveRepairSourceIds(
+    migrationConfig,
+    logsDir,
+    REPAIR_SPEC_APPOINTMENT,
+  );
+  const repairBatches =
+    repairSourceIds != null ? [...batchIds(repairSourceIds, batchSize)] : null;
+  let repairBatchIndex = 0;
+  const repairNotFoundInSource =
+    repairSourceIds != null ? new Set() : null;
+  if (repairSourceIds != null && repairSourceIds.length === 0) {
+    console.error(`>>> [${key}] repair-from-log: ไม่มี id ให้ migrate`);
+    return {
+      key,
+      totalRowsRead: 0,
+      fieldIssueLogPath: null,
+      checkpointPath: null,
+      chunkCount: 0,
+      successChunkCount: 0,
+      failedChunkCount: 0,
+      chunkLogMode,
+      chunkSampleEvery,
+      chunkResults: [],
+    };
+  }
+  if (repairSourceIds != null) {
+    console.error(
+      `>>> [${key}] migrateRunMode=repair-from-log (${repairSourceIds.length} schedule_id)`,
+    );
+  }
 
   while (true) {
     const remaining = sourceLimit == null ? null : sourceLimit - total;
@@ -540,7 +586,34 @@ END $$;
     let twoStepKeysetAdvance = null;
     let twoStepFirstScheduleIdNum = null;
     let twoStepLastScheduleIdNum = null;
-    if (useMssqlKeyset && useNativeKeyset && useTwoStepFetch) {
+
+    if (repairBatches) {
+      if (repairBatchIndex >= repairBatches.length) break;
+      const idBatch = repairBatches[repairBatchIndex++];
+      const fetchStartedAt = Date.now();
+      rows = await fetchMssqlRowsByIds(mssqlPool, sql, {
+        ids: idBatch,
+        detailSqlTemplate,
+      });
+      fetchElapsedMs = Date.now() - fetchStartedAt;
+      if (repairNotFoundInSource) {
+        noteRepairBatchNotFoundInSource(
+          repairNotFoundInSource,
+          idBatch,
+          rows,
+          (r) => getScheduleIdForLog(r),
+        );
+      }
+      if (rows.length > 0) {
+        twoStepFirstScheduleIdNum = Number.parseInt(idBatch[0], 10);
+        twoStepLastScheduleIdNum = Number.parseInt(
+          idBatch[idBatch.length - 1],
+          10,
+        );
+        twoStepKeysetAdvance = idBatch.length;
+      }
+      if (rows.length === 0) continue;
+    } else if (useMssqlKeyset && useNativeKeyset && useTwoStepFetch) {
       const probeStartedAt = Date.now();
       const probeReq = mssqlPool.request();
       bindAppointmentMssqlCommon(probeReq, migrationConfig, sql);
@@ -642,6 +715,8 @@ END $$;
         migrateRowMode: migrationConfig.migrateRowMode ?? "overwrite",
       });
       mergeFieldIssueChunk(fieldIssueAcc, postLoadResult);
+      for (const sid of postLoadResult?.failedScheduleIds ?? [])
+        failedScheduleIdSet.add(sid);
       postLoadMs = Date.now() - postLoadStartedAt;
       await pgClient.query("COMMIT");
       lastChunkProcessMs = Date.now() - chunkStartedAt;
@@ -698,14 +773,16 @@ END $$;
     }
 
     total += advance;
-    offset += advance;
-    if (useMssqlKeyset) {
-      if (twoStepLastScheduleIdNum != null) {
-        mssqlKeysetAfter = twoStepLastScheduleIdNum;
-      } else if (useNativeKeyset) {
-        mssqlKeysetAfter = rows[n - 1].schedule_id;
-      } else {
-        mssqlKeysetAfter = rows[n - 1].__mssql_schedule_id;
+    if (!repairBatches) {
+      offset += advance;
+      if (useMssqlKeyset) {
+        if (twoStepLastScheduleIdNum != null) {
+          mssqlKeysetAfter = twoStepLastScheduleIdNum;
+        } else if (useNativeKeyset) {
+          mssqlKeysetAfter = rows[n - 1].schedule_id;
+        } else {
+          mssqlKeysetAfter = rows[n - 1].__mssql_schedule_id;
+        }
       }
     }
     if (progressEnabled && !singleLineUi) {
@@ -722,7 +799,7 @@ END $$;
         uiState,
       );
     }
-    if (checkpointEnabled) {
+    if (checkpointEnabled && !repairBatches) {
       writeJson(checkpointPath, {
         key,
         offset,
@@ -733,7 +810,9 @@ END $$;
         updatedAt: new Date().toISOString(),
       });
     }
-    const isLastPage = isLastKeysetPage(advance, pageSize);
+    const isLastPage = repairBatches
+      ? repairBatchIndex >= repairBatches.length
+      : isLastKeysetPage(advance, pageSize);
     if (progressEnabled) {
       renderProgress(
         total,
@@ -791,6 +870,15 @@ END $$;
     fieldIssueLogWritten = fieldIssueLogPath;
   }
 
+  const repairSummary =
+    repairSourceIds != null
+      ? finalizeRepairFromLog(key, REPAIR_SPEC_APPOINTMENT, repairSourceIds, {
+          failedIds: failedScheduleIdSet,
+          notFoundInSourceIds: repairNotFoundInSource,
+          fieldIssueAcc,
+        })
+      : null;
+
   const summary = {
     key,
     totalRowsRead: total,
@@ -802,6 +890,7 @@ END $$;
     chunkLogMode,
     chunkSampleEvery,
     chunkResults,
+    repairSummary,
   };
   console.error(`>>> [${key}] done, total rows read: ${total}`);
   return summary;

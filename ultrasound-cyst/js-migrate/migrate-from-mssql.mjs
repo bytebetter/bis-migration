@@ -1,9 +1,12 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sql from "mssql";
 import pg from "pg";
-import { MSSQL_ULTRASOUND_CYST_KEYSET_SELECT } from "./mssqlUltrasoundCystSelect.mjs";
+import {
+  MSSQL_ULTRASOUND_CYST_BY_EXAM_IDS_SELECT,
+  MSSQL_ULTRASOUND_CYST_KEYSET_SELECT,
+} from "./mssqlUltrasoundCystSelect.mjs";
 import { ensureUltrasoundCystPipelineDdl } from "./ultrasoundCystPgDdl.mjs";
 import {
   ULTRASOUND_CYST_STAGING_COLUMNS,
@@ -28,6 +31,17 @@ import {
   renderProgress,
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
+import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
+import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
+import { REPAIR_SPEC_ULTRASOUND_CYST } from "../../shared/js-migrate/migrateTableSpecs.mjs";
+import {
+  prepareRepairRun,
+  repairRunIsDone,
+  repairRunIsEmpty,
+  finishRepairRunSummary,
+  noteRepairBatchFetch,
+  takeNextRepairBatch,
+} from "../../shared/js-migrate/repairRun.mjs";
 
 const COMPOSITE_FIELD_ISSUE = buildCompositeStagingFieldIssueConfig(
   "described_cyst_id",
@@ -176,6 +190,7 @@ async function main() {
   const configPath = path.resolve(process.cwd(), getConfigPath());
   const rawConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
   const config = resolveRuntimeConfig(rawConfig, "ultrasound_cyst");
+  const migration = mergeMigrationWithCli(config?.migration, "ultrasound_cyst");
   if (config.__profileName) {
     console.error(`>>> using config profile: ${config.__profileName}`);
   }
@@ -188,14 +203,18 @@ async function main() {
     "{{sourceObject}}",
     sourceObjectNoLock,
   );
+  const detailSqlTemplate = MSSQL_ULTRASOUND_CYST_BY_EXAM_IDS_SELECT.replaceAll(
+    "{{sourceObject}}",
+    sourceObjectNoLock,
+  );
 
   const batchSize = Math.max(
     100,
-    Math.min(5000, Number(config?.migration?.batchSize ?? 2000)),
+    Math.min(5000, Number(migration.batchSize ?? 2000)),
   );
-  const progressEnabled = config?.migration?.progressUi !== false;
-  const singleLineUi = config?.migration?.singleLineUi !== false;
-  const debugLogs = config?.migration?.debugLogs === true;
+  const progressEnabled = migration.progressUi !== false;
+  const singleLineUi = migration.singleLineUi !== false;
+  const debugLogs = migration.debugLogs === true;
   const uiState = createUiState();
 
   const pgPool = new pg.Pool({
@@ -220,10 +239,10 @@ async function main() {
     skipped: 0,
     error: null,
   };
-  const checkpointEnabled = config?.migration?.enableCheckpoint !== false;
+  const checkpointEnabled = migration.enableCheckpoint !== false;
   const checkpointDir = path.resolve(
     __dirname,
-    config?.migration?.checkpointDir ?? "./checkpoints",
+    migration.checkpointDir ?? "./checkpoints",
   );
   fs.mkdirSync(checkpointDir, { recursive: true });
   const checkpointPath = path.join(checkpointDir, `${KEY}.json`);
@@ -311,37 +330,65 @@ async function main() {
           `>>> [${KEY}] plan: ${plannedRows} rows, ~${plannedChunks} chunks`,
         );
       }
+      const repairRun = prepareRepairRun(
+        migration,
+        logsDir,
+        REPAIR_SPEC_ULTRASOUND_CYST,
+        batchSize,
+      );
+      if (repairRunIsEmpty(repairRun)) {
+        runLog.status = "success";
+        return;
+      }
       if (debugLogs) {
         writeOutLine(
-          `>>> [${KEY}] checkpoint start: offset=${offset}, afterExamId=${afterExamId}, afterChildId=${afterChildId}, enabled=${checkpointEnabled}`,
+          `>>> [${KEY}] checkpoint start: offset=${offset}, afterExamId=${afterExamId}, afterChildId=${afterChildId}, enabled=${checkpointEnabled}, repair=${repairRun.active}`,
           uiState,
         );
       }
       const startedAt = Date.now();
       while (true) {
         const chunkStartedAt = Date.now();
-        if (debugLogs && !singleLineUi) {
-          writeOutLine(
-            `>>> [${KEY}] fetch chunk ${chunkIndex + 1}: afterExamId=${afterExamId}, afterChildId=${afterChildId}, page=${batchSize}`,
-            uiState,
+        let rows = [];
+        let fetchMs = 0;
+
+        if (repairRun.active) {
+          const idBatch = takeNextRepairBatch(repairRun);
+          if (!idBatch) break;
+          const fetchStartedAt = Date.now();
+          rows = await fetchMssqlRowsByIds(pool, sql, {
+            ids: idBatch,
+            detailSqlTemplate,
+          });
+          fetchMs = Date.now() - fetchStartedAt;
+          noteRepairBatchFetch(repairRun, idBatch, rows, (r) =>
+            String(r?.exam_id ?? "").trim(),
           );
+          if (rows.length === 0) continue;
+        } else {
+          if (debugLogs && !singleLineUi) {
+            writeOutLine(
+              `>>> [${KEY}] fetch chunk ${chunkIndex + 1}: afterExamId=${afterExamId}, afterChildId=${afterChildId}, page=${batchSize}`,
+              uiState,
+            );
+          }
+          const fetchStartedAt = Date.now();
+          const res = await pool
+            .request()
+            .input("afterExamId", sql.BigInt, afterExamId)
+            .input("afterChildId", sql.Int, afterChildId)
+            .input("page", sql.Int, batchSize)
+            .query(keysetSql);
+          fetchMs = Date.now() - fetchStartedAt;
+          rows = res.recordset || [];
+          if (debugLogs && !singleLineUi) {
+            writeOutLine(
+              `>>> [${KEY}] fetch chunk ${chunkIndex + 1} done: rows=${rows.length}, ms=${fetchMs}`,
+              uiState,
+            );
+          }
+          if (rows.length === 0) break;
         }
-        const fetchStartedAt = Date.now();
-        const res = await pool
-          .request()
-          .input("afterExamId", sql.BigInt, afterExamId)
-          .input("afterChildId", sql.Int, afterChildId)
-          .input("page", sql.Int, batchSize)
-          .query(keysetSql);
-        const fetchMs = Date.now() - fetchStartedAt;
-        const rows = res.recordset || [];
-        if (debugLogs && !singleLineUi) {
-          writeOutLine(
-            `>>> [${KEY}] fetch chunk ${chunkIndex + 1} done: rows=${rows.length}, ms=${fetchMs}`,
-            uiState,
-          );
-        }
-        if (rows.length === 0) break;
 
         chunkIndex += 1;
         const normalized = rows.map(normalizeMssqlRow).filter(Boolean);
@@ -396,7 +443,7 @@ async function main() {
         afterChildId = Number.parseInt(last?.described_cyst_id ?? "", 10);
         if (!Number.isFinite(afterExamId)) afterExamId = 0;
         if (!Number.isFinite(afterChildId)) afterChildId = 0;
-        if (checkpointEnabled) {
+        if (checkpointEnabled && !repairRun.active) {
           writeJson(checkpointPath, {
             key: KEY,
             offset,
@@ -429,7 +476,11 @@ async function main() {
           );
         }
 
-        if (rows.length < batchSize) break;
+        if (repairRun.active) {
+          if (repairRunIsDone(repairRun)) break;
+        } else if (rows.length < batchSize) {
+          break;
+        }
       }
 
       if (checkpointEnabled) {
@@ -462,6 +513,12 @@ async function main() {
         fieldIssueLogWritten = fieldIssueLogPath;
       }
       runLog.fieldIssueLogPath = fieldIssueLogWritten;
+      runLog.repairSummary = finishRepairRunSummary(
+        KEY,
+        REPAIR_SPEC_ULTRASOUND_CYST,
+        repairRun,
+        { fieldIssueAcc },
+      );
       runLog.status = "success";
     } finally {
       client.release();

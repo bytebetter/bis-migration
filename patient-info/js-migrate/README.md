@@ -42,3 +42,16 @@ npm run migrate:patient_info
 หรือใช้ `.\patient-info\js-migrate\run-migrate.ps1` (โหลดแพ็กเกจจาก root โดยอัตโนมัติ)
 
 Log: `logs/migrate-*.json` — checkpoint: `checkpoints/<key>.json`
+
+### โหมดรัน (`migrateRunMode` / `-MigrateRunMode`)
+
+| โหมด | พฤติกรรม `patient_info` |
+|------|-------------------------|
+| **resume** (`insert-only`) | เพิ่มเฉพาะ PID ที่ยังไม่มีใน Postgres — **ไม่แตะ** `id` เดิม |
+| **overwrite** | PID ที่มีแล้ว → **UPDATE** ตาม `patient_info.id` (คง `id` เดิม) แล้วลบ/ใส่ `address` ใหม่; PID ใหม่ → INSERT |
+| **repair-from-log** | เหมือน overwrite แต่ดึงเฉพาะ PID จาก log ล่าสุด — จบแล้วแสดงจำนวนจาก log / สำเร็จ / ไม่สำเร็จ |
+
+```powershell
+npm run migrate:patient_info -- --migrate-run-mode overwrite
+.\patient-info\js-migrate\run-migrate.ps1 -MigrateRunMode overwrite -SkipInstall
+```

@@ -1,18 +1,24 @@
 /**
  * พารามิเตอร์ CLI ร่วมสำหรับงาน migrate (แชร์ข้าม profile)
  *
- * --migrate-mode overwrite | insert-only
- *    overwrite     = พฤติกรรมเดิม (อัปเดตของที่มีอยู่ / เติมแถวใหม่)
- *    insert-only   = เพิ่มเฉพาะแถวที่ยังไม่มีใน Postgres (ข้ามอัปเดตของเดิม)
+ * --migrate-run-mode resume | overwrite | repair-from-log
+ *    resume (ดีฟอลต์)  = ต่อจาก checkpoint, ไม่ทับแถวที่มีใน Postgres แล้ว (insert-only)
+ *    overwrite         = migrate ทั้งชุดจากต้น, เขียนทับข้อมูลเดิม (ปิด checkpoint)
+ *    repair-from-log   = เฉพาะ id จาก log ล่าสุดใน <profile>/js-migrate/logs
  *
- * ช่วงคีย์ต้นทาง (เลขทั้งชุดInclusive, เช่น Schedule_ID / Exam_ID):
- *    --source-key-range 1-100
+ * --migrate-mode overwrite | insert-only  (บังคับพฤติกรรมแถว — แทน run-mode ด้านบนเมื่อระบุ)
+ *
+ * ช่วงคีย์ต้นทาง (เลข inclusive):
+ *    --source-key-range 1-100 | 1-all | all | 50-
  *    หรือ --source-key-from 1 --source-key-to 100
+ *
+ * ค่าเก่า: --migrate-run-mode full ถือเป็น resume
  */
 
 /**
  * @param {string[]} argv
  * @returns {{
+ *   migrateRunMode: 'resume' | 'overwrite' | 'repair-from-log',
  *   migrateRowMode: 'overwrite' | 'insert-only',
  *   sourceKeyMin: bigint | null,
  *   sourceKeyMax: bigint | null,
@@ -20,22 +26,47 @@
  * }}
  */
 export function parseMigrateCliArgs(argv = process.argv) {
+  let runModeRaw = argvValue(argv, "--migrate-run-mode");
+  if (runModeRaw == null) {
+    runModeRaw = detectBareMigrateRunMode(argv);
+  }
+  let migrateRunMode;
+  if (runModeRaw === "repair-from-log") {
+    migrateRunMode = "repair-from-log";
+  } else if (runModeRaw === "overwrite") {
+    migrateRunMode = "overwrite";
+  } else if (
+    runModeRaw === "resume" ||
+    runModeRaw === "full" ||
+    runModeRaw == null ||
+    String(runModeRaw).trim() === ""
+  ) {
+    migrateRunMode = "resume";
+  } else {
+    throw new Error(
+      `--migrate-run-mode ไม่รู้จัก "${runModeRaw}" — ใช้ resume | overwrite | repair-from-log`,
+    );
+  }
+
   const migrateModeRaw = argvValue(argv, "--migrate-mode");
-  const migrateRowMode =
-    migrateModeRaw === "insert-only" ? "insert-only" : "overwrite";
+  let migrateRowMode;
+  if (migrateModeRaw === "overwrite") {
+    migrateRowMode = "overwrite";
+  } else if (migrateModeRaw === "insert-only") {
+    migrateRowMode = "insert-only";
+  } else if (migrateRunMode === "overwrite" || migrateRunMode === "repair-from-log") {
+    migrateRowMode = "overwrite";
+  } else {
+    migrateRowMode = "insert-only";
+  }
 
   let sourceKeyMin = parseOptionalBig(argvValue(argv, "--source-key-from"));
   let sourceKeyMax = parseOptionalBig(argvValue(argv, "--source-key-to"));
   const rangeStr = argvValue(argv, "--source-key-range");
   if (rangeStr != null) {
-    const m = String(rangeStr).trim().match(/^(-?\d+)\s*-\s*(-?\d+)$/);
-    if (!m) {
-      throw new Error(
-        `--source-key-range ไม่ถูกต้อง "${rangeStr}" — ใช้รูป เช่น 1-100`,
-      );
-    }
-    sourceKeyMin = BigInt(m[1]);
-    sourceKeyMax = BigInt(m[2]);
+    const parsed = parseSourceKeyRangeString(rangeStr);
+    sourceKeyMin = parsed.min;
+    sourceKeyMax = parsed.max;
   }
   if (sourceKeyMin != null && sourceKeyMax != null && sourceKeyMin > sourceKeyMax) {
     throw new Error(
@@ -43,18 +74,66 @@ export function parseMigrateCliArgs(argv = process.argv) {
     );
   }
 
-  /** ส่วนที่เหลือส่งให้ npm/node ได้ (ว่างในเวอร์ชันนี้) */
   const rawArgvTail = [];
-  return { migrateRowMode, sourceKeyMin, sourceKeyMax, rawArgvTail };
+  return {
+    migrateRunMode,
+    migrateRowMode,
+    sourceKeyMin,
+    sourceKeyMax,
+    rawArgvTail,
+  };
+}
+
+/**
+ * @param {string} rangeStr เช่น 1-100, 1-all, all, 50-
+ * @returns {{ min: bigint|null, max: bigint|null }}
+ */
+export function parseSourceKeyRangeString(rangeStr) {
+  const s = String(rangeStr).trim().toLowerCase();
+  if (s === "all" || s === "*") {
+    return { min: null, max: null };
+  }
+  const m = s.match(/^(-?\d+)\s*-\s*(-?\d+|all)$/);
+  if (m) {
+    const min = BigInt(m[1]);
+    const maxPart = m[2];
+    const max = maxPart === "all" ? null : BigInt(maxPart);
+    return { min, max };
+  }
+  const openHi = s.match(/^(-?\d+)\s*-\s*$/);
+  if (openHi) {
+    return { min: BigInt(openHi[1]), max: null };
+  }
+  const openLo = s.match(/^-\s*(-?\d+)$/);
+  if (openLo) {
+    return { min: null, max: BigInt(openLo[1]) };
+  }
+  const single = s.match(/^(-?\d+)$/);
+  if (single) {
+    const v = BigInt(single[1]);
+    return { min: v, max: v };
+  }
+  throw new Error(
+    `--source-key-range ไม่ถูกต้อง "${rangeStr}" — ใช้รูป เช่น 1-100, 1-all, all, 50-`,
+  );
 }
 
 export function migrateCliOverridesFromArgv(argv = process.argv) {
-  const { migrateRowMode, sourceKeyMin, sourceKeyMax } = parseMigrateCliArgs(
-    argv,
-  );
+  const {
+    migrateRunMode,
+    migrateRowMode,
+    sourceKeyMin,
+    sourceKeyMax,
+  } = parseMigrateCliArgs(argv);
   /** @type {Record<string, unknown>} */
   const o = {};
+  o.migrateRunMode = migrateRunMode;
   o.migrateRowMode = migrateRowMode;
+  if (migrateRunMode === "repair-from-log" || migrateRunMode === "overwrite") {
+    o.enableCheckpoint = false;
+  } else {
+    o.enableCheckpoint = true;
+  }
   if (sourceKeyMin != null)
     o.sourceKeyNumericMin = sourceKeyMin.toString();
   if (sourceKeyMax != null)
@@ -62,8 +141,26 @@ export function migrateCliOverridesFromArgv(argv = process.argv) {
   return o;
 }
 
+/** แสดงโหมดที่ใช้ใน stderr */
+export function logMigrationRunMode(migration, tableKey) {
+  const run = String(migration?.migrateRunMode ?? "resume");
+  const row = String(migration?.migrateRowMode ?? "insert-only");
+  if (run === "repair-from-log") {
+    console.error(
+      `>>> [${tableKey}] migrateRunMode=repair-from-log (เฉพาะ id จาก log ล่าสุด, migrateRowMode=${row})`,
+    );
+  } else if (run === "overwrite") {
+    console.error(
+      `>>> [${tableKey}] migrateRunMode=overwrite (เริ่มใหม่ทั้งชุด, เขียนทับ, checkpoint=ปิด)`,
+    );
+  } else {
+    console.error(
+      `>>> [${tableKey}] migrateRunMode=resume (ต่อ checkpoint, ไม่ทับของเดิม, migrateRowMode=${row})`,
+    );
+  }
+}
+
 /**
- * เข้ากับ `{ ...config.migration, ...migrateCliOverridesFromArgv() }`
  * @param {Record<string, unknown>} migration merged migration config + CLI (optional bigint string)
  * @returns {{ min: bigint | null, max: bigint | null }}
  */
@@ -109,6 +206,31 @@ function argvValue(argv, name) {
   const idx = argv.indexOf(name);
   if (idx < 0 || idx + 1 >= argv.length) return null;
   return argv[idx + 1];
+}
+
+/** npm บางครั้งส่งแค่คำว่า overwrite โดยไม่มี --migrate-run-mode */
+function detectBareMigrateRunMode(argv) {
+  const known = new Set([
+    "resume",
+    "full",
+    "overwrite",
+    "repair-from-log",
+    "insert-only",
+  ]);
+  const skipNext = new Set(["--config", "--profile", "--migrate-run-mode", "--migrate-mode", "--source-key-range", "--source-key-from", "--source-key-to"]);
+  for (let i = 2; i < argv.length; i++) {
+    const a = argv[i];
+    if (a.startsWith("-")) {
+      if (skipNext.has(a)) i++;
+      continue;
+    }
+    const low = String(a).trim().toLowerCase();
+    if (low === "repair-from-log" || low === "overwrite" || low === "resume" || low === "full") {
+      return low;
+    }
+    if (known.has(low)) continue;
+  }
+  return null;
 }
 
 function parseOptionalBig(s) {

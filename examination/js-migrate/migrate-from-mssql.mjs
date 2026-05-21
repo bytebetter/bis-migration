@@ -34,6 +34,16 @@ import {
   readNumericSourceKeyBounds,
   bindMigrateSrcNumericRange,
 } from "../../shared/js-migrate/migrateCliArgs.mjs";
+import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
+import {
+  batchIds,
+  resolveRepairSourceIds,
+} from "../../shared/js-migrate/repairFromLog.mjs";
+import {
+  finalizeRepairFromLog,
+  noteRepairBatchNotFoundInSource,
+} from "../../shared/js-migrate/repairSummary.mjs";
+import { REPAIR_SPEC_EXAMINATION } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import { examinationExamNumericRangePredicate } from "../../shared/js-migrate/migrateMssqlBindings.mjs";
 import {
   isLastKeysetPage,
@@ -660,6 +670,46 @@ async function runTableJob({
     );
   }
 
+  const logsDir = path.resolve(__dirname, "logs");
+  const repairSourceIds =
+    isExaminationBuiltin
+      ? resolveRepairSourceIds(
+          migrationConfig,
+          logsDir,
+          REPAIR_SPEC_EXAMINATION,
+        )
+      : null;
+  const repairBatches =
+    repairSourceIds != null ? [...batchIds(repairSourceIds, batchSize)] : null;
+  let repairBatchIndex = 0;
+  const repairNotFoundInSource =
+    repairSourceIds != null ? new Set() : null;
+  if (repairSourceIds != null && repairSourceIds.length === 0) {
+    console.error(`>>> [${key}] repair-from-log: ไม่มี id ให้ migrate`);
+    return {
+      key,
+      totalRowsRead: 0,
+      source_cases: 0,
+      examination_success_cases: 0,
+      examination_fail_cases: 0,
+      failedExamIds: [],
+      fieldIssueLogPath: null,
+      missingByReason: [],
+      checkpointPath: null,
+      chunkCount: 0,
+      successChunkCount: 0,
+      failedChunkCount: 0,
+      chunkLogMode,
+      chunkSampleEvery,
+      chunkResults: [],
+    };
+  }
+  if (repairSourceIds != null) {
+    console.error(
+      `>>> [${key}] migrateRunMode=repair-from-log (${repairSourceIds.length} exam_id)`,
+    );
+  }
+
   while (true) {
     const remaining = sourceLimit == null ? null : sourceLimit - total;
     if (remaining != null && remaining <= 0) break;
@@ -710,7 +760,31 @@ async function runTableJob({
     let fetchElapsedMs = 0;
     let idFetchElapsedMs = 0;
     let detailFetchElapsedMs = 0;
-    if (isExaminationBuiltin && useMssqlKeyset) {
+
+    if (repairBatches) {
+      if (repairBatchIndex >= repairBatches.length) break;
+      const idBatch = repairBatches[repairBatchIndex++];
+      const detailFetchStartedAt = Date.now();
+      rows = await fetchMssqlRowsByIds(mssqlPool, sql, {
+        ids: idBatch,
+        detailSqlTemplate: buildMssqlExaminationDetailByIdsSelect(
+          "{{idPlaceholders}}",
+        ).replaceAll("{{sourceObject}}", sourceObjectNoLock),
+      });
+      detailFetchElapsedMs = Date.now() - detailFetchStartedAt;
+      fetchElapsedMs = detailFetchElapsedMs;
+      lastExamIdFromProbe = idBatch[idBatch.length - 1];
+      idRows = idBatch.map((id) => ({ probe_exam_id: id }));
+      if (repairNotFoundInSource) {
+        noteRepairBatchNotFoundInSource(
+          repairNotFoundInSource,
+          idBatch,
+          rows,
+          (r) => normExamId(getField(r, "exam_id")),
+        );
+      }
+      if (rows.length === 0) continue;
+    } else if (isExaminationBuiltin && useMssqlKeyset) {
       // Step 1: fetch lightweight Exam_ID list (keyset).
       const idFetchStartedAt = Date.now();
       const idReq = mssqlPool.request();
@@ -808,22 +882,24 @@ async function runTableJob({
     /** chunk จาก MSSQL หมดชุดแล้วทุก exam มีอยู่แล้ว (insert-only) — ข้าม TX แต่ต้อง advance keyset/checkpoint */
     if (n === 0) {
       total += keysetAdvance;
-      offset += keysetAdvance;
-      if (useMssqlKeyset) {
-        mssqlKeysetAfter =
-          lastExamIdFromProbe ??
-          toBigIntish(normExamId(rows[rows.length - 1]?.exam_id));
-      }
-      if (checkpointEnabled) {
-        writeJson(checkpointPath, {
-          key,
-          offset,
-          ...(useMssqlKeyset
-            ? { mssqlKeysetAfter: keysetIdForCheckpoint(mssqlKeysetAfter) }
-            : { mssqlKeysetAfter: null }),
-          completed: false,
-          updatedAt: new Date().toISOString(),
-        });
+      if (!repairBatches) {
+        offset += keysetAdvance;
+        if (useMssqlKeyset) {
+          mssqlKeysetAfter =
+            lastExamIdFromProbe ??
+            toBigIntish(normExamId(rows[rows.length - 1]?.exam_id));
+        }
+        if (checkpointEnabled) {
+          writeJson(checkpointPath, {
+            key,
+            offset,
+            ...(useMssqlKeyset
+              ? { mssqlKeysetAfter: keysetIdForCheckpoint(mssqlKeysetAfter) }
+              : { mssqlKeysetAfter: null }),
+            completed: false,
+            updatedAt: new Date().toISOString(),
+          });
+        }
       }
       if (progressEnabled) {
         renderProgress(
@@ -836,7 +912,10 @@ async function runTableJob({
         );
       }
       rows.length = 0;
-      if (isLastKeysetPage(keysetAdvance, pageSize)) break;
+      const emptyLast = repairBatches
+        ? repairBatchIndex >= repairBatches.length
+        : isLastKeysetPage(keysetAdvance, pageSize);
+      if (emptyLast) break;
       continue;
     }
 
@@ -1044,24 +1123,28 @@ LIMIT 200;
     }
 
     total += keysetAdvance;
-    offset += keysetAdvance;
-    if (useMssqlKeyset) {
-      mssqlKeysetAfter =
-        lastExamIdFromProbe ??
-        toBigIntish(normExamId(rows[rows.length - 1]?.exam_id));
+    if (!repairBatches) {
+      offset += keysetAdvance;
+      if (useMssqlKeyset) {
+        mssqlKeysetAfter =
+          lastExamIdFromProbe ??
+          toBigIntish(normExamId(rows[rows.length - 1]?.exam_id));
+      }
+      if (checkpointEnabled) {
+        writeJson(checkpointPath, {
+          key,
+          offset,
+          ...(useMssqlKeyset
+            ? { mssqlKeysetAfter: keysetIdForCheckpoint(mssqlKeysetAfter) }
+            : { mssqlKeysetAfter: null }),
+          completed: false,
+          updatedAt: new Date().toISOString(),
+        });
+      }
     }
-    if (checkpointEnabled) {
-      writeJson(checkpointPath, {
-        key,
-        offset,
-        ...(useMssqlKeyset
-          ? { mssqlKeysetAfter: keysetIdForCheckpoint(mssqlKeysetAfter) }
-          : { mssqlKeysetAfter: null }),
-        completed: false,
-        updatedAt: new Date().toISOString(),
-      });
-    }
-    const isLastPage = isLastKeysetPage(keysetAdvance, pageSize);
+    const isLastPage = repairBatches
+      ? repairBatchIndex >= repairBatches.length
+      : isLastKeysetPage(keysetAdvance, pageSize);
     if (debugLogs && !singleLineUi) {
       writeOutLine(
         `>>> [${key}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(
@@ -1139,6 +1222,15 @@ ORDER BY reason;
     fieldIssueLogWritten = fieldIssueLogPath;
   }
 
+  const repairSummary =
+    repairSourceIds != null
+      ? finalizeRepairFromLog(key, REPAIR_SPEC_EXAMINATION, repairSourceIds, {
+          failedIds: failedExamIdSet,
+          notFoundInSourceIds: repairNotFoundInSource,
+          fieldIssueAcc,
+        })
+      : null;
+
   const summary = {
     key,
     totalRowsRead: total,
@@ -1155,6 +1247,7 @@ ORDER BY reason;
     chunkLogMode,
     chunkSampleEvery,
     chunkResults,
+    repairSummary,
   };
 
   console.error(`>>> [${key}] done, total rows read: ${total}`);
