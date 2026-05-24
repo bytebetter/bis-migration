@@ -2,6 +2,10 @@
  * Mapping: MSSQL dbo.schedule -> Directus appointment payload
  */
 
+import {
+  ensurePlaceholderPatientInfo,
+} from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
+
 function getField(row, key) {
   if (row == null) return undefined;
   if (Object.prototype.hasOwnProperty.call(row, key)) return row[key];
@@ -549,6 +553,10 @@ export async function runAppointmentChunkPostLoad(
   const fkMeta = await getAppointmentForeignKeyMeta(pgClient);
   const patientColumn = await resolveAppointmentPatientColumn(pgClient);
   const payloads = rows.map((r) => mapScheduleRowToAppointment(r));
+  const chunkPids = rows
+    .map((r) => normPid(getField(r, "pid") ?? getField(r, "PID")))
+    .filter((p) => p != null);
+  await ensurePlaceholderPatientInfo(pgClient, chunkPids);
   const patientIdByPid = await resolvePatientIdByPidMap(pgClient, rows);
 
   for (let i = 0; i < rows.length; i++) {

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { ensurePlaceholderPatientInfoFromStaging } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
 
 const INT_RE = /^-?\d+$/;
 
@@ -182,6 +183,11 @@ async function getCachedPacsSyncInfoTargetColumns(pgClient) {
  * staging มีข้อมูล chunk ปัจจุบันแล้ว — ลบเฉพาะ accession ที่อยู่ใน staging แล้ว INSERT
  */
 export async function runPacsSyncInfoChunkPostLoad(pgClient) {
+  await ensurePlaceholderPatientInfoFromStaging(
+    pgClient,
+    "migrate_stg.pacs_sync_info_mssql",
+  );
+
   const cols = await getCachedPacsSyncInfoTargetColumns(pgClient);
   if (!cols.has("accession_id")) {
     throw new Error(

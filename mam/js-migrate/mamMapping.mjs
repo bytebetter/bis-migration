@@ -1,4 +1,5 @@
 import sql from "mssql";
+import { ensurePlaceholderPatientInfoFromStaging } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
 
 const INT_RE = /^-?\d+$/;
 
@@ -93,6 +94,8 @@ export async function runMamChunkPostLoad(
   pgClient,
   stagingFromClause = "migrate_stg.mam_mssql",
 ) {
+  await ensurePlaceholderPatientInfoFromStaging(pgClient, stagingFromClause);
+
   const cols = await existingColumns(pgClient, "mammogram");
   if (!cols.has("old_exam_id") && !cols.has("exam")) {
     throw new Error("target public.mammogram must have exam or old_exam_id");

@@ -1,3 +1,5 @@
+import { ensurePlaceholderPatientInfoFromStaging } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
+
 const INT_RE = /^-?\d+$/;
 
 function nullIfTrimEmpty(v) {
@@ -91,6 +93,8 @@ export async function runExaminationGeneralChunkPostLoad(
   pgClient,
   stagingFromClause = "migrate_stg.examination_general_mssql",
 ) {
+  await ensurePlaceholderPatientInfoFromStaging(pgClient, stagingFromClause);
+
   const cols = await existingColumns(pgClient, "examination_general");
   if (!cols.has("old_exam_id")) {
     throw new Error("target public.examination_general must have old_exam_id");

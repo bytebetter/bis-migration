@@ -1,6 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  ensurePlaceholderAppointment,
+} from "../../shared/js-migrate/ensurePlaceholderAppointment.mjs";
+import {
+  ensurePlaceholderPatientInfo,
+} from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1063,6 +1069,11 @@ export async function runExaminationChunkPostLoad(
     return { failedExamIds: [], fieldIssues: null };
   }
 
+  const chunkPids = rows
+    .map((r) => normPid(getField(r, "pid")))
+    .filter((p) => p !== "");
+  await ensurePlaceholderPatientInfo(pgClient, chunkPids);
+
   const mssqlExamU = rows.map((r) => String(getField(r, "exam_id") ?? ""));
   const { rows: stgCountRow } = await pgClient.query(
     `SELECT count(*)::int AS c FROM ${stg} s`,
@@ -1120,6 +1131,8 @@ export async function runExaminationChunkPostLoad(
         .filter((k) => k != null),
     ),
   );
+
+  await ensurePlaceholderAppointment(pgClient, scheduleKeys);
 
   const scheduleKeyToAppointmentId = new Map();
   if (scheduleKeys.length > 0) {

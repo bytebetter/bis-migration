@@ -1,3 +1,5 @@
+import { ensurePlaceholderPatientInfoFromStaging } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
+
 const INT_RE = /^-?\d+$/;
 
 function nullIfTrimEmpty(v) {
@@ -99,6 +101,8 @@ export async function runMamMassChunkPostLoad(
   pgClient,
   stagingFromClause = "migrate_stg.mammogram_mass_mssql",
 ) {
+  await ensurePlaceholderPatientInfoFromStaging(pgClient, stagingFromClause);
+
   const cols = await existingColumns(pgClient, "mammogram_mass");
   if (!cols.has("described_mass_id")) {
     throw new Error("target public.mammogram_mass must have described_mass_id");

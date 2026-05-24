@@ -1,3 +1,5 @@
+import { ensurePlaceholderPatientInfoFromStaging } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
+
 const INT_RE = /^-?\d+$/;
 
 function nullIfTrimEmpty(v) {
@@ -91,6 +93,8 @@ export async function runUltrasoundChunkPostLoad(
   pgClient,
   stagingFromClause = "migrate_stg.ultrasound_mssql",
 ) {
+  await ensurePlaceholderPatientInfoFromStaging(pgClient, stagingFromClause);
+
   const cols = await existingColumns(pgClient, "ultrasound");
   if (!cols.has("old_exam_id")) {
     throw new Error("target public.ultrasound must have old_exam_id");
