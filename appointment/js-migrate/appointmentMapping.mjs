@@ -2,9 +2,7 @@
  * Mapping: MSSQL dbo.schedule -> Directus appointment payload
  */
 
-import {
-  ensurePlaceholderPatientInfo,
-} from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
+import { ensurePlaceholderPatientInfo } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
 
 function getField(row, key) {
   if (row == null) return undefined;
@@ -98,6 +96,18 @@ function toDirectusDateTime(value) {
 }
 
 /**
+ * MSSQL schedule Patient_Type: 0 = คนไข้เก่า, 1 = คนไข้ใหม่
+ * Directus patient_info.patient_category: '1' = ใหม่, '2' = เก่า
+ * @returns {'1'|'2'|null}
+ */
+export function mapSchedulePatientTypeToPatientCategory(mssqlPatientType) {
+  const n = toInt(mssqlPatientType);
+  if (n === 0) return "2";
+  if (n === 1) return "1";
+  return null;
+}
+
+/**
  * map แถวจาก MSSQL schedule ให้เป็น payload สำหรับ Directus appointment
  * หมายเหตุ:
  * - เก็บ Schedule_ID ไปที่ old_db_id เพื่อ trace กลับข้อมูลต้นทาง
@@ -113,7 +123,6 @@ export function mapScheduleRowToAppointment(row) {
     first_name: nullIfTrimEmpty(getField(row, "Name")),
     last_name: nullIfTrimEmpty(getField(row, "Surname")),
     payment_type: toInt(getField(row, "Payment_Type")),
-    patient_type: toInt(getField(row, "Patient_Type")),
     receive_date: toDirectusDateTime(getField(row, "Receive_Date")),
     old_login_name: nullIfTrimEmpty(getField(row, "LoginName")),
     memo_detail: nullIfTrimEmpty(getField(row, "MemoDetail")),
@@ -236,6 +245,11 @@ async function getCachedAllowedFkSet(pgClient, { sch, rel, pcol }) {
   return set;
 }
 
+/** ล้าง cache หลัง insert parent ใหม่ (เช่น placeholder patient_info) */
+function invalidateCachedAllowedFkSet(sch, rel, pcol) {
+  cachedAllowedFkSetByKey.delete(`${sch}.${rel}.${pcol}`);
+}
+
 /** null ฟิลด์ที่ค่าไม่อยู่ใน parent ตาม FK (ใช้ชุด allowed ต่อ chunk) */
 function nullOutInvalidForeignKeysForChunk(payloads, col, allowedSet) {
   for (const mapped of payloads) {
@@ -352,7 +366,6 @@ function buildAppointmentColumnArrays(payloads, patientColumn) {
     first_name: [],
     last_name: [],
     payment_type: [],
-    patient_type: [],
     receive_date: [],
     old_login_name: [],
     memo_detail: [],
@@ -380,7 +393,6 @@ function buildAppointmentColumnArrays(payloads, patientColumn) {
     arrays.first_name.push(item.first_name);
     arrays.last_name.push(item.last_name);
     arrays.payment_type.push(item.payment_type);
-    arrays.patient_type.push(item.patient_type);
     arrays.receive_date.push(item.receive_date);
     arrays.old_login_name.push(item.old_login_name);
     arrays.memo_detail.push(item.memo_detail);
@@ -411,7 +423,6 @@ function buildAppointmentInsertDefs(arrays, patientColumn) {
     ["first_name", "text[]", arrays.first_name],
     ["last_name", "text[]", arrays.last_name],
     ["payment_type", "int4[]", arrays.payment_type],
-    ["patient_type", "int4[]", arrays.patient_type],
     ["receive_date", "timestamp[]", arrays.receive_date],
     ["old_login_name", "text[]", arrays.old_login_name],
     ["memo_detail", "text[]", arrays.memo_detail],
@@ -501,6 +512,53 @@ async function bulkUpdateAppointmentsByOldDbId(pgClient, insertDefs) {
 }
 
 /**
+ * อัปเดต patient_info.patient_category จาก Patient_Type ของ schedule (ไม่ลง appointment.patient_type)
+ * @param {{ patientInfoId: number, patientCategory: string }[]} updates
+ */
+async function bulkUpdatePatientCategoryFromSchedule(pgClient, updates) {
+  /** @type {Map<number, string>} */
+  const byId = new Map();
+  for (const { patientInfoId, patientCategory } of updates) {
+    if (patientInfoId == null || patientCategory == null) continue;
+    byId.set(Number(patientInfoId), patientCategory);
+  }
+  if (byId.size === 0) return 0;
+
+  const ids = [...byId.keys()];
+  const categories = ids.map((id) => byId.get(id));
+  const upd = await pgClient.query(
+    `
+    UPDATE public.patient_info AS p
+    SET patient_category = v.cat
+    FROM unnest($1::int[], $2::text[]) AS v(id, cat)
+    WHERE p.id = v.id
+    `,
+    [ids, categories],
+  );
+  return upd.rowCount ?? 0;
+}
+
+function collectPatientCategoryFieldIssues(row) {
+  const issues = [];
+  const srcRaw = getField(row, "patient_type") ?? getField(row, "Patient_Type");
+  if (!sourceRawNonempty(srcRaw)) return issues;
+
+  const mapped = mapSchedulePatientTypeToPatientCategory(srcRaw);
+  if (mapped != null) return issues;
+
+  issues.push({
+    field: "patient_category",
+    reason: "patient_type_map_failed",
+    message:
+      "Patient_Type ใน schedule ต้องเป็น 0 (คนไข้เก่า) หรือ 1 (คนไข้ใหม่) เท่านั้น",
+    source_raw: srcRaw,
+    mapped: null,
+    detail: { target_table: "patient_info" },
+  });
+  return issues;
+}
+
+/**
  * upsert ตาม old_db_id — UPDATE แถวเดิม (คง id) / INSERT เฉพาะแถวใหม่
  * ลดช่องว่างใน id จากการรัน migrate ซ้ำ (เดิม DELETE แล้ว INSERT ใหม่)
  * @returns {{ failedScheduleIds: string[], fieldIssues: object|null }}
@@ -556,8 +614,14 @@ export async function runAppointmentChunkPostLoad(
   const chunkPids = rows
     .map((r) => normPid(getField(r, "pid") ?? getField(r, "PID")))
     .filter((p) => p != null);
-  await ensurePlaceholderPatientInfo(pgClient, chunkPids);
+  const { inserted: placeholderPatientInserted } =
+    await ensurePlaceholderPatientInfo(pgClient, chunkPids);
+  if (placeholderPatientInserted > 0) {
+    invalidateCachedAllowedFkSet("public", "patient_info", "id");
+  }
   const patientIdByPid = await resolvePatientIdByPidMap(pgClient, rows);
+  /** @type {{ patientInfoId: number, patientCategory: string }[]} */
+  const patientCategoryUpdates = [];
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -570,14 +634,25 @@ export async function runAppointmentChunkPostLoad(
       patientInfoId: patientId,
     };
 
-    recordScheduleIssues(
-      scheduleId,
-      rowMeta,
-      collectAppointmentFieldIssues(row, payloads[i], {
+    const srcPatientType =
+      getField(row, "patient_type") ?? getField(row, "Patient_Type");
+    const patientCategory =
+      mapSchedulePatientTypeToPatientCategory(srcPatientType);
+
+    recordScheduleIssues(scheduleId, rowMeta, [
+      ...collectAppointmentFieldIssues(row, payloads[i], {
         patientColumn,
         patientId,
       }),
-    );
+      ...collectPatientCategoryFieldIssues(row),
+    ]);
+
+    if (patientId != null && patientCategory != null) {
+      patientCategoryUpdates.push({
+        patientInfoId: Number(patientId),
+        patientCategory,
+      });
+    }
 
     if (patientColumn) {
       payloads[i][patientColumn] =
@@ -662,6 +737,8 @@ export async function runAppointmentChunkPostLoad(
     rowsInserted += await bulkUpdateAppointmentsByOldDbId(pgClient, updateDefs);
   }
 
+  await bulkUpdatePatientCategoryFromSchedule(pgClient, patientCategoryUpdates);
+
   if (oldDbIds.length > 0) {
     const { rows: presentRows } = await pgClient.query(
       oldDbIdTextLike
@@ -741,7 +818,6 @@ const APPOINTMENT_MSSQL_SOURCE = {
   first_name: "name",
   last_name: "surname",
   payment_type: "payment_type",
-  patient_type: "patient_type",
   receive_date: "receive_date",
   old_login_name: "login_name",
   memo_detail: "memo_detail",
@@ -814,7 +890,6 @@ function collectAppointmentFieldIssues(row, mapped, ctx) {
       [
         "appointment_no",
         "payment_type",
-        "patient_type",
         "fail",
         "inventional",
         "right_id",
@@ -846,7 +921,7 @@ export const SCHEDULE_TO_APPOINTMENT_FIELD_MAP = [
   ["Name", "first_name"],
   ["Surname", "last_name"],
   ["Payment_Type", "payment_type"],
-  ["Patient_Type", "patient_type"],
+  ["Patient_Type", "patient_info.patient_category"],
   ["Receive_Date", "receive_date"],
   ["LoginName", "old_login_name"],
   ["MemoDetail", "memo_detail"],
