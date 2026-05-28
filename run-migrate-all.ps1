@@ -79,16 +79,17 @@ function Set-MigrateStatus {
 $steps = @(
   @{ N = 1;  Table = "patient_info";        Script = "patient-info/js-migrate/run-migrate.ps1" },
   @{ N = 2;  Table = "appointment";         Script = "appointment/js-migrate/run-migrate.ps1" },
-  @{ N = 3;  Table = "examination";         Script = "examination/js-migrate/run-migrate.ps1" },
-  @{ N = 4;  Table = "examination_general"; Script = "examination-general/js-migrate/run-migrate.ps1" },
-  @{ N = 5;  Table = "pacs_sync_info";      Script = "pacs-sync-info/js-migrate/run-migrate.ps1" },
-  @{ N = 6;  Table = "procedure";           Script = "procedure/js-migrate/run-migrate.ps1" },
-  @{ N = 7;  Table = "ultrasound";          Script = "ultrasound/js-migrate/run-migrate.ps1" },
-  @{ N = 8;  Table = "mammogram";           Script = "mam/js-migrate/run-migrate.ps1" },
-  @{ N = 9;  Table = "mammogram_cal";       Script = "mam-cal/js-migrate/run-migrate.ps1" },
-  @{ N = 10; Table = "mammogram_mass";      Script = "mam-mass/js-migrate/run-migrate.ps1" },
-  @{ N = 11; Table = "ultrasound_cyst";     Script = "ultrasound-cyst/js-migrate/run-migrate.ps1" },
-  @{ N = 12; Table = "ultrasound_mass";     Script = "ultrasound-mass/js-migrate/run-migrate.ps1" }
+  @{ N = 3;  Table = "appointment_reschedules"; Script = "appointment-reschedules/js-migrate/run-migrate.ps1" },
+  @{ N = 4;  Table = "examination";         Script = "examination/js-migrate/run-migrate.ps1" },
+  @{ N = 5;  Table = "examination_general"; Script = "examination-general/js-migrate/run-migrate.ps1" },
+  @{ N = 6;  Table = "pacs_sync_info";      Script = "pacs-sync-info/js-migrate/run-migrate.ps1" },
+  @{ N = 7;  Table = "procedure";           Script = "procedure/js-migrate/run-migrate.ps1" },
+  @{ N = 8;  Table = "ultrasound";          Script = "ultrasound/js-migrate/run-migrate.ps1" },
+  @{ N = 9;  Table = "mammogram";           Script = "mam/js-migrate/run-migrate.ps1" },
+  @{ N = 10; Table = "mammogram_cal";       Script = "mam-cal/js-migrate/run-migrate.ps1" },
+  @{ N = 11; Table = "mammogram_mass";      Script = "mam-mass/js-migrate/run-migrate.ps1" },
+  @{ N = 12; Table = "ultrasound_cyst";     Script = "ultrasound-cyst/js-migrate/run-migrate.ps1" },
+  @{ N = 13; Table = "ultrasound_mass";     Script = "ultrasound-mass/js-migrate/run-migrate.ps1" }
 )
 
 $tableFilter = foreach ($t in $Tables) {

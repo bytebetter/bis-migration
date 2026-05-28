@@ -13,6 +13,7 @@ const repoRoot = join(__dirname, "..");
 const PROFILE_DIR = {
   patient_info: "patient-info",
   appointment: "appointment",
+  appointment_reschedules: "appointment-reschedules",
   examination: "examination",
   examination_general: "examination-general",
   pacs_sync_info: "pacs-sync-info",
