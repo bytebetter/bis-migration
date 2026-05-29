@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Migration run output
+**/js-migrate/logs/
+*.log
+
+# Environment / secrets
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
