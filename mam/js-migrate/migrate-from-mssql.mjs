@@ -31,6 +31,7 @@ import {
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
+import { bindMigrateSrcNumericRange } from "../../shared/js-migrate/migrateCliArgs.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import { REPAIR_SPEC_MAM } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
@@ -380,8 +381,9 @@ async function main() {
             );
           }
           const idProbeStartedAt = Date.now();
-          const idRes = await pool
-            .request()
+          const probeReq = pool.request();
+          bindMigrateSrcNumericRange(probeReq, migration, sql);
+          const idRes = await probeReq
             .input("afterExamId", sql.BigInt, afterExamId)
             .input("page", sql.Int, batchSize)
             .query(probeSql);

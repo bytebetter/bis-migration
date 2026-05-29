@@ -39,8 +39,12 @@ FROM (
   SELECT TOP (@page)
     ${MAM_CAL_STAGING_COLUMNS}
   FROM {{sourceObject}}
-  WHERE [Exam_ID] > @afterExamId
-     OR ([Exam_ID] = @afterExamId AND [Described_Cal_ID] > @afterChildId)
+  WHERE (
+    [Exam_ID] > @afterExamId
+    OR ([Exam_ID] = @afterExamId AND [Described_Cal_ID] > @afterChildId)
+  )
+    AND (@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
+    AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)
   ORDER BY [Exam_ID] ASC, [Described_Cal_ID] ASC
 ) s
 `.trim();

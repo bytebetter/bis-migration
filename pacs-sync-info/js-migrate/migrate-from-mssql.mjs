@@ -40,6 +40,7 @@ import {
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
+import { bindMigrateSrcNumericRange } from "../../shared/js-migrate/migrateCliArgs.mjs";
 import { REPAIR_SPEC_PACS_SYNC_INFO } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
   batchIds,
@@ -976,6 +977,7 @@ async function main() {
               .request()
               .input("page", sql.Int, batchSize)
               .input("offset", sql.Int, offset);
+            bindMigrateSrcNumericRange(offReq, migration, sql);
             const tOff = Date.now();
             const offRes = await offReq.query(chunkSqlOffset);
             fetchMs = Date.now() - tOff;
@@ -990,6 +992,7 @@ async function main() {
             }
           } else if (useCompositeAcc) {
             const joinReq = pool.request().input("page", sql.Int, batchSize);
+            bindMigrateSrcNumericRange(joinReq, migration, sql);
             if (!useStartSqlAcc) {
               attachAccLegCompositeParams(joinReq, accLegCursor);
             }
@@ -1014,6 +1017,7 @@ async function main() {
             chunkSqlOptKeyset
           ) {
             const joinReq = pool.request().input("page", sql.Int, batchSize);
+            bindMigrateSrcNumericRange(joinReq, migration, sql);
             if (!useStartSqlAcc) {
               const pk = mssqlParamForAccessionKey(afterAccessionId);
               joinReq.input("afterAccessionKey", pk.type, pk.val);
@@ -1033,6 +1037,7 @@ async function main() {
             }
           } else {
             const probeReq = pool.request().input("page", sql.Int, batchSize);
+            bindMigrateSrcNumericRange(probeReq, migration, sql);
             if (!useStartSqlAcc) {
               const pk = mssqlParamForAccessionKey(afterAccessionId);
               probeReq.input("afterAccessionKey", pk.type, pk.val);
@@ -1254,6 +1259,7 @@ async function main() {
           let rows = [];
           let fetchMs = 0;
           const nullReq = pool.request().input("page", sql.Int, batchSize);
+          bindMigrateSrcNumericRange(nullReq, migration, sql);
           if (nullCk == null) {
             const t0 = Date.now();
             const res = await nullReq.query(nullAccSqlFirst);

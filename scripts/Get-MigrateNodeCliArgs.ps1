@@ -7,9 +7,9 @@ function Get-MigrateNodeCliArgs {
   param(
     [string] $MigrateMode = "",
     [string] $MigrateRunMode = "",
-    [string] $SourceKeyRange = "",
-    [string] $SourceKeyFrom = "",
-    [string] $SourceKeyTo = ""
+    [string] $SourceIndexRange = "",
+    [string] $SourceIndexFrom = "",
+    [string] $SourceIndexTo = ""
   )
 
   $extra = @()
@@ -34,15 +34,15 @@ function Get-MigrateNodeCliArgs {
     $extra += "--migrate-mode", "overwrite"
   }
 
-  $r = if ($SourceKeyRange) { $SourceKeyRange.Trim() } else { "" }
+  $r = if ($SourceIndexRange) { $SourceIndexRange.Trim() } else { "" }
   if ($r -ne "") {
-    $extra += "--source-key-range", $r
+    $extra += "--source-index-range", $r
   }
   else {
-    $sf = if ($SourceKeyFrom) { $SourceKeyFrom.Trim() } else { "" }
-    $st = if ($SourceKeyTo) { $SourceKeyTo.Trim() } else { "" }
-    if ($sf -ne "") { $extra += "--source-key-from", $sf }
-    if ($st -ne "") { $extra += "--source-key-to", $st }
+    $sf = if ($SourceIndexFrom) { $SourceIndexFrom.Trim() } else { "" }
+    $st = if ($SourceIndexTo) { $SourceIndexTo.Trim() } else { "" }
+    if ($sf -ne "") { $extra += "--source-index-from", $sf }
+    if ($st -ne "") { $extra += "--source-index-to", $st }
   }
 
   return $extra

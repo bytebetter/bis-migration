@@ -1,0 +1,47 @@
+{
+  "startedAt": "2026-05-27T11:37:20.875Z",
+  "status": "success",
+  "tableResults": [
+    {
+      "key": "appointment_reschedules",
+      "totalRowsRead": 503079,
+      "totalRowsWritten": 503079,
+      "fieldIssueLogPath": "C:\\Users\\UsEr\\Documents\\BIS-DB-Migration\\appointment-reschedules\\js-migrate\\logs\\migration-field-issues-appointment_reschedules-2026-05-27T11-37-26-404Z.json",
+      "checkpointPath": "C:\\Users\\UsEr\\Documents\\BIS-DB-Migration\\appointment-reschedules\\js-migrate\\checkpoints\\appointment_reschedules.json",
+      "chunkCount": 51,
+      "successChunkCount": 51,
+      "failedChunkCount": 0,
+      "chunkLogMode": "compact",
+      "chunkSampleEvery": 50,
+      "chunkResults": [
+        {
+          "chunkIndex": 1,
+          "status": "success",
+          "sourceOffsetStart": 0,
+          "sourceOffsetEnd": 9999,
+          "rowCount": 10000,
+          "firstKey": "1219336|2026-04-11T07:25:22.250|2027-02-20T10:00:00",
+          "lastKey": "1175714|2026-02-11T09:39:41.160|2026-02-11T10:00:00",
+          "rowsWritten": 10000,
+          "mssqlFetchMs": 1638,
+          "chunkTotalMs": 3466
+        },
+        {
+          "chunkIndex": 50,
+          "status": "success",
+          "sourceOffsetStart": 490000,
+          "sourceOffsetEnd": 499999,
+          "rowCount": 10000,
+          "firstKey": "|2007-04-02T08:37:15.843|2007-04-26T12:40:00",
+          "lastKey": "",
+          "rowsWritten": 10000,
+          "mssqlFetchMs": 872,
+          "chunkTotalMs": 1408
+        }
+      ],
+      "repairSummary": null
+    }
+  ],
+  "error": null,
+  "finishedAt": "2026-05-27T11:39:38.385Z"
+}

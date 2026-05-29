@@ -32,6 +32,7 @@ import {
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
+import { bindMigrateSrcNumericRange } from "../../shared/js-migrate/migrateCliArgs.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import { REPAIR_SPEC_MAM_CAL } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
@@ -373,8 +374,9 @@ async function main() {
             );
           }
           const fetchStartedAt = Date.now();
-          const res = await pool
-            .request()
+          const keysetReq = pool.request();
+          bindMigrateSrcNumericRange(keysetReq, migration, sql);
+          const res = await keysetReq
             .input("afterExamId", sql.BigInt, afterExamId)
             .input("afterChildId", sql.Int, afterChildId)
             .input("page", sql.Int, batchSize)

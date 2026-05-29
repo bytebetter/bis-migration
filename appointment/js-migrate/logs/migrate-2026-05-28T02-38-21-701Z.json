@@ -1,0 +1,33 @@
+{
+  "startedAt": "2026-05-28T02:38:19.890Z",
+  "status": "success",
+  "tableResults": [
+    {
+      "key": "appointment",
+      "totalRowsRead": 10,
+      "fieldIssueLogPath": "C:\\Users\\UsEr\\Documents\\BIS-DB-Migration\\appointment\\js-migrate\\logs\\migration-field-issues-appointment-2026-05-28T02-38-20-928Z.json",
+      "checkpointPath": "C:\\Users\\UsEr\\Documents\\BIS-DB-Migration\\appointment\\js-migrate\\checkpoints\\appointment-ins-from1-to10.json",
+      "chunkCount": 1,
+      "successChunkCount": 1,
+      "failedChunkCount": 0,
+      "chunkLogMode": "compact",
+      "chunkSampleEvery": 50,
+      "chunkResults": [
+        {
+          "chunkIndex": 1,
+          "status": "success",
+          "sourceOffsetStart": 0,
+          "sourceOffsetEnd": 9,
+          "rowCount": 10,
+          "firstScheduleId": "1",
+          "lastScheduleId": "10",
+          "mssqlFetchMs": 434,
+          "chunkTotalMs": 322
+        }
+      ],
+      "repairSummary": null
+    }
+  ],
+  "error": null,
+  "finishedAt": "2026-05-28T02:38:21.701Z"
+}

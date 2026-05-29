@@ -27,7 +27,7 @@ const PROFILE_DIR = {
 };
 
 const profile = process.argv[2];
-const forwarded = process.argv.slice(3);
+const forwarded = normalizeForwardedArgs(process.argv.slice(3));
 const dir = profile ? PROFILE_DIR[profile] : null;
 
 if (!dir) {
@@ -65,3 +65,99 @@ const r = spawnSync(process.execPath, nodeArgs, {
 });
 
 process.exit(r.status === null ? 1 : r.status);
+
+/**
+ * แก้เคส npm/Windows กลืนชื่อ flag เหลือแต่ value เช่น "1-100"
+ * รองรับเฉพาะ source-index-range/source-index-from/source-index-to
+ * @param {string[]} args
+ * @returns {string[]}
+ */
+function normalizeForwardedArgs(args) {
+  const out = [];
+  let hasSourceIndexRangeFlag = false;
+  let hasSourceIndexFrom = false;
+  let hasSourceIndexTo = false;
+  const rangeValueRe = /^-?\d+\s*-\s*(-?\d+|all)?$/i;
+  const singleValueRe = /^(all|\*|-?\d+)$/i;
+
+  for (let i = 0; i < args.length; i++) {
+    const raw = args[i];
+    const a = String(raw ?? "").trim();
+    const low = a.toLowerCase();
+    if (!a) continue;
+    if (low === "--source-index-range") {
+      hasSourceIndexRangeFlag = true;
+      out.push(a);
+      const next = args[i + 1];
+      if (next != null) {
+        out.push(String(next));
+        i++;
+      }
+      continue;
+    }
+    if (low === "--source-index-from") {
+      hasSourceIndexFrom = true;
+      out.push(a);
+      const next = args[i + 1];
+      if (next != null) {
+        out.push(String(next));
+        i++;
+      }
+      continue;
+    }
+    if (low === "--source-index-to") {
+      hasSourceIndexTo = true;
+      out.push(a);
+      const next = args[i + 1];
+      if (next != null) {
+        out.push(String(next));
+        i++;
+      }
+      continue;
+    }
+    out.push(a);
+  }
+
+  if (
+    !hasSourceIndexRangeFlag &&
+    !hasSourceIndexFrom &&
+    !hasSourceIndexTo &&
+    out.length > 0
+  ) {
+    const eligible = out.filter((x) => !x.startsWith("-"));
+    if (
+      eligible.length === 1 &&
+      (rangeValueRe.test(eligible[0]) || singleValueRe.test(eligible[0]))
+    ) {
+      const envIndexRangeFlagOnly = hasEnvFlag("npm_config_source_index_range");
+      const envIndexRange = readEnvArg("npm_config_source_index_range");
+      if (envIndexRange) return ["--source-index-range", envIndexRange];
+      if (envIndexRangeFlagOnly) return ["--source-index-range", eligible[0]];
+      return ["--source-index-range", eligible[0]];
+    }
+  }
+
+  if (!hasSourceIndexRangeFlag) {
+    const envIndexRange = readEnvArg("npm_config_source_index_range");
+    if (envIndexRange) out.push("--source-index-range", envIndexRange);
+  }
+
+  return out;
+}
+
+function readEnvArg(name) {
+  const v = process.env[name];
+  if (v == null) return "";
+  const s = String(v).trim();
+  if (s === "" || s.toLowerCase() === "true" || s.toLowerCase() === "false") {
+    return "";
+  }
+  return s === "" ? "" : s;
+}
+
+function hasEnvFlag(name) {
+  const v = process.env[name];
+  if (v == null) return false;
+  const s = String(v).trim().toLowerCase();
+  return s === "true" || s === "1";
+}

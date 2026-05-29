@@ -35,6 +35,7 @@ import {
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
+import { bindMigrateSrcNumericRange } from "../../shared/js-migrate/migrateCliArgs.mjs";
 import { REPAIR_SPEC_APPOINTMENT_RESCHEDULES } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
   finalizeRepairFromLog,
@@ -728,6 +729,7 @@ async function runAppointmentReschedulesTableJob({
       } else {
         const fetchStartedAt = Date.now();
         const rq = mssqlRequest();
+        bindMigrateSrcNumericRange(rq, migrationConfig, sql);
         let r;
         if (useMssqlKeyset) {
           bindRescheduleKeysetInputs(rq, mssqlKeysetAfter);

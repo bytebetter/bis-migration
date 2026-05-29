@@ -10,7 +10,7 @@
     .\run-migrate-all.ps1 -Tables appointment,examination
     .\run-migrate-all.ps1 -Tables examination -MigrateRunMode overwrite
     .\run-migrate-all.ps1 -Tables examination -MigrateRunMode repair-from-log
-    .\run-migrate-all.ps1 -SourceKeyFrom 100 -SourceKeyTo 200 -SkipInstall
+    .\run-migrate-all.ps1 -SourceIndexFrom 100 -SourceIndexTo 200 -SkipInstall
 
   -MigrateRunMode resume (ดีฟอลต์) = ต่อจาก checkpoint, ไม่ทับแถวที่มีใน Postgres แล้ว
   -MigrateRunMode overwrite = migrate ทั้งชุดจากต้น, เขียนทับข้อมูลเดิม
@@ -27,9 +27,9 @@ param(
   [ValidateSet("", "resume", "overwrite", "repair-from-log", "full")]
   [string] $MigrateRunMode = "",
   [string] $MigrateMode = "",
-  [string] $SourceKeyRange = "",
-  [string] $SourceKeyFrom = "",
-  [string] $SourceKeyTo = ""
+  [string] $SourceIndexRange = "",
+  [string] $SourceIndexFrom = "",
+  [string] $SourceIndexTo = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -148,15 +148,15 @@ foreach ($step in $steps) {
     MigrateRunMode  = $effectiveRunMode
   }
   if ($MigrateMode -eq "insert-only") { $invokeArgs.MigrateMode = "insert-only" }
-  $skr = if ($SourceKeyRange) { $SourceKeyRange.Trim() } else { "" }
+  $skr = if ($SourceIndexRange) { $SourceIndexRange.Trim() } else { "" }
   if ($skr -ne "") {
-    $invokeArgs.SourceKeyRange = $skr
+    $invokeArgs.SourceIndexRange = $skr
   }
   else {
-    $sf = if ($SourceKeyFrom) { $SourceKeyFrom.Trim() } else { "" }
-    $st = if ($SourceKeyTo) { $SourceKeyTo.Trim() } else { "" }
-    if ($sf -ne "") { $invokeArgs.SourceKeyFrom = $sf }
-    if ($st -ne "") { $invokeArgs.SourceKeyTo = $st }
+    $sf = if ($SourceIndexFrom) { $SourceIndexFrom.Trim() } else { "" }
+    $st = if ($SourceIndexTo) { $SourceIndexTo.Trim() } else { "" }
+    if ($sf -ne "") { $invokeArgs.SourceIndexFrom = $sf }
+    if ($st -ne "") { $invokeArgs.SourceIndexTo = $st }
   }
 
   $stepStarted = Get-Date

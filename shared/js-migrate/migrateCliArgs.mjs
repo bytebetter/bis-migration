@@ -8,9 +8,9 @@
  *
  * --migrate-mode overwrite | insert-only  (บังคับพฤติกรรมแถว — แทน run-mode ด้านบนเมื่อระบุ)
  *
- * ช่วงคีย์ต้นทาง (เลข inclusive):
- *    --source-key-range 1-100 | 1-all | all | 50-
- *    หรือ --source-key-from 1 --source-key-to 100
+ * ช่วงลำดับแถวต้นทาง (1-based, inclusive):
+ *    --source-index-range 1-100 | 100-all | all
+ *    หรือ --source-index-from 1 --source-index-to 100
  *
  * ค่าเก่า: --migrate-run-mode full ถือเป็น resume
  */
@@ -20,8 +20,8 @@
  * @returns {{
  *   migrateRunMode: 'resume' | 'overwrite' | 'repair-from-log',
  *   migrateRowMode: 'overwrite' | 'insert-only',
- *   sourceKeyMin: bigint | null,
- *   sourceKeyMax: bigint | null,
+ *   sourceIndexFrom: number | null,
+ *   sourceIndexTo: number | null,
  *   rawArgvTail: string[]
  * }}
  */
@@ -60,17 +60,33 @@ export function parseMigrateCliArgs(argv = process.argv) {
     migrateRowMode = "insert-only";
   }
 
-  let sourceKeyMin = parseOptionalBig(argvValue(argv, "--source-key-from"));
-  let sourceKeyMax = parseOptionalBig(argvValue(argv, "--source-key-to"));
-  const rangeStr = argvValue(argv, "--source-key-range");
-  if (rangeStr != null) {
-    const parsed = parseSourceKeyRangeString(rangeStr);
-    sourceKeyMin = parsed.min;
-    sourceKeyMax = parsed.max;
-  }
-  if (sourceKeyMin != null && sourceKeyMax != null && sourceKeyMin > sourceKeyMax) {
+  if (
+    argvHas(argv, "--source-key-range") ||
+    argvHas(argv, "--source-key-from") ||
+    argvHas(argv, "--source-key-to")
+  ) {
     throw new Error(
-      `--source-key-from ต้องไม่เกิน --source-key-to (${sourceKeyMin} > ${sourceKeyMax})`,
+      "เลิกใช้ --source-key-range/--source-key-from/--source-key-to แล้ว ให้ใช้ --source-index-range หรือ --source-index-from/--source-index-to แทน",
+    );
+  }
+
+  let sourceIndexFrom = parseOptionalPositiveInt(
+    argvValue(argv, "--source-index-from"),
+  );
+  let sourceIndexTo = parseOptionalPositiveInt(argvValue(argv, "--source-index-to"));
+  const indexRangeStr = argvValue(argv, "--source-index-range");
+  if (indexRangeStr != null) {
+    const parsed = parseSourceIndexRangeString(indexRangeStr);
+    sourceIndexFrom = parsed.from;
+    sourceIndexTo = parsed.to;
+  }
+  if (
+    sourceIndexFrom != null &&
+    sourceIndexTo != null &&
+    sourceIndexFrom > sourceIndexTo
+  ) {
+    throw new Error(
+      `--source-index-from ต้องไม่เกิน --source-index-to (${sourceIndexFrom} > ${sourceIndexTo})`,
     );
   }
 
@@ -78,8 +94,8 @@ export function parseMigrateCliArgs(argv = process.argv) {
   return {
     migrateRunMode,
     migrateRowMode,
-    sourceKeyMin,
-    sourceKeyMax,
+    sourceIndexFrom,
+    sourceIndexTo,
     rawArgvTail,
   };
 }
@@ -122,8 +138,8 @@ export function migrateCliOverridesFromArgv(argv = process.argv) {
   const {
     migrateRunMode,
     migrateRowMode,
-    sourceKeyMin,
-    sourceKeyMax,
+    sourceIndexFrom,
+    sourceIndexTo,
   } = parseMigrateCliArgs(argv);
   /** @type {Record<string, unknown>} */
   const o = {};
@@ -134,10 +150,8 @@ export function migrateCliOverridesFromArgv(argv = process.argv) {
   } else {
     o.enableCheckpoint = true;
   }
-  if (sourceKeyMin != null)
-    o.sourceKeyNumericMin = sourceKeyMin.toString();
-  if (sourceKeyMax != null)
-    o.sourceKeyNumericMax = sourceKeyMax.toString();
+  if (sourceIndexFrom != null) o.sourceIndexFrom = sourceIndexFrom;
+  if (sourceIndexTo != null) o.sourceIndexTo = sourceIndexTo;
   return o;
 }
 
@@ -217,7 +231,7 @@ function detectBareMigrateRunMode(argv) {
     "repair-from-log",
     "insert-only",
   ]);
-  const skipNext = new Set(["--config", "--profile", "--migrate-run-mode", "--migrate-mode", "--source-key-range", "--source-key-from", "--source-key-to"]);
+  const skipNext = new Set(["--config", "--profile", "--migrate-run-mode", "--migrate-mode", "--source-key-range", "--source-key-from", "--source-key-to", "--source-index-range", "--source-index-from", "--source-index-to"]);
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith("-")) {
@@ -240,4 +254,41 @@ function parseOptionalBig(s) {
   } catch {
     throw new Error(`ค่าไม่ใช่เลขเต็ม: ${JSON.stringify(s)}`);
   }
+}
+
+function argvHas(argv, name) {
+  return argv.indexOf(name) >= 0;
+}
+
+/**
+ * @param {string} rangeStr เช่น 1-100, 100-all, all
+ * @returns {{ from: number|null, to: number|null }}
+ */
+export function parseSourceIndexRangeString(rangeStr) {
+  const s = String(rangeStr).trim().toLowerCase();
+  if (s === "all" || s === "*") return { from: null, to: null };
+  const m = s.match(/^(\d+)\s*-\s*(\d+|all)$/);
+  if (m) {
+    return {
+      from: Number.parseInt(m[1], 10),
+      to: m[2] === "all" ? null : Number.parseInt(m[2], 10),
+    };
+  }
+  const single = s.match(/^(\d+)$/);
+  if (single) {
+    const v = Number.parseInt(single[1], 10);
+    return { from: v, to: v };
+  }
+  throw new Error(
+    `--source-index-range ไม่ถูกต้อง "${rangeStr}" — ใช้รูป เช่น 1-100, 100-all, all`,
+  );
+}
+
+function parseOptionalPositiveInt(s) {
+  if (s == null || String(s).trim() === "") return null;
+  const n = Number.parseInt(String(s).trim(), 10);
+  if (!Number.isFinite(n) || n < 1) {
+    throw new Error(`ค่า index ต้องเป็นจำนวนเต็มบวก: ${JSON.stringify(s)}`);
+  }
+  return n;
 }

@@ -9,9 +9,9 @@ param(
   [string] $Profile = "examination",
   [string] $MigrateRunMode = "",
   [string] $MigrateMode = "",
-  [string] $SourceKeyRange = "",
-  [string] $SourceKeyFrom = "",
-  [string] $SourceKeyTo = "",
+  [string] $SourceIndexRange = "",
+  [string] $SourceIndexFrom = "",
+  [string] $SourceIndexTo = "",
   [switch] $SkipInstall
 )
 
@@ -34,7 +34,7 @@ if (-not $SkipInstall) {
 }
 
 Write-Host ">>> Running migration with config: $ConfigPath (profile: $Profile)"
-$nodeExtra = Get-MigrateNodeCliArgs -MigrateMode $MigrateMode -MigrateRunMode $MigrateRunMode -SourceKeyRange $SourceKeyRange -SourceKeyFrom $SourceKeyFrom -SourceKeyTo $SourceKeyTo
+$nodeExtra = Get-MigrateNodeCliArgs -MigrateMode $MigrateMode -MigrateRunMode $MigrateRunMode -SourceIndexRange $SourceIndexRange -SourceIndexFrom $SourceIndexFrom -SourceIndexTo $SourceIndexTo
 & node ./migrate-from-mssql.mjs --config $ConfigPath --profile $Profile @nodeExtra
 if ($LASTEXITCODE -ne 0) { throw "migration failed" }
 

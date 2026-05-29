@@ -24,6 +24,7 @@ import {
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
+import { bindMigrateSrcNumericRange } from "../../shared/js-migrate/migrateCliArgs.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import { REPAIR_SPEC_PROCEDURE } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
@@ -468,8 +469,9 @@ async function runProcedureTableJob({
       if (rows.length === 0) continue;
     } else {
       const fetchStartedAt = Date.now();
-      const r = await mssqlPool
-        .request()
+      const req = mssqlPool.request();
+      bindMigrateSrcNumericRange(req, migrationForJob, sql);
+      const r = await req
         .input("offset", sql.Int, offset)
         .input("page", sql.Int, pageSize)
         .query(selectSql);

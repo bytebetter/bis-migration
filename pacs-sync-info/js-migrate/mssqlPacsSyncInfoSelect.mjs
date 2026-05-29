@@ -88,6 +88,8 @@ FROM (
     [Accession_ID]
   FROM {{sourceTable}} WITH (NOLOCK)
   WHERE [Accession_ID] IS NOT NULL
+    AND (@migrateSrcKeyMin IS NULL OR TRY_CAST([Accession_ID] AS BIGINT) >= @migrateSrcKeyMin)
+    AND (@migrateSrcKeyMax IS NULL OR TRY_CAST([Accession_ID] AS BIGINT) <= @migrateSrcKeyMax)
   ORDER BY [Accession_ID] ASC
 ) AS k
 INNER JOIN {{sourceTable}} AS p WITH (NOLOCK) ON p.[Accession_ID] = k.[Accession_ID]
@@ -106,6 +108,8 @@ FROM (
     [Accession_ID]
   FROM {{sourceTable}} WITH (NOLOCK)
   WHERE [Accession_ID] > @afterAccessionKey
+    AND (@migrateSrcKeyMin IS NULL OR TRY_CAST([Accession_ID] AS BIGINT) >= @migrateSrcKeyMin)
+    AND (@migrateSrcKeyMax IS NULL OR TRY_CAST([Accession_ID] AS BIGINT) <= @migrateSrcKeyMax)
   ORDER BY [Accession_ID] ASC
 ) AS k
 INNER JOIN {{sourceTable}} AS p WITH (NOLOCK) ON p.[Accession_ID] = k.[Accession_ID]
@@ -253,6 +257,8 @@ SELECT TOP (@page)
   [Accession_ID] AS __acc_key
 FROM {{sourceObject}}
 WHERE [Accession_ID] IS NOT NULL
+  AND (@migrateSrcKeyMin IS NULL OR TRY_CAST([Accession_ID] AS BIGINT) >= @migrateSrcKeyMin)
+  AND (@migrateSrcKeyMax IS NULL OR TRY_CAST([Accession_ID] AS BIGINT) <= @migrateSrcKeyMax)
 ORDER BY [Accession_ID] ASC
 `.trim();
 
@@ -262,6 +268,8 @@ SELECT TOP (@page)
   [Accession_ID] AS __acc_key
 FROM {{sourceObject}}
 WHERE [Accession_ID] > @afterAccessionKey
+  AND (@migrateSrcKeyMin IS NULL OR TRY_CAST([Accession_ID] AS BIGINT) >= @migrateSrcKeyMin)
+  AND (@migrateSrcKeyMax IS NULL OR TRY_CAST([Accession_ID] AS BIGINT) <= @migrateSrcKeyMax)
 ORDER BY [Accession_ID] ASC
 `.trim();
 
