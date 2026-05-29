@@ -1,0 +1,6 @@
+﻿2026-05-28 09:33:35 [INFO] === BIS migrate all started (13 tables) ===
+2026-05-28 09:33:35 [INFO] Config: C:\Users\UsEr\Documents\BIS-DB-Migration\migration.config.local.json
+2026-05-28 09:33:35 [INFO] Log file: C:\Users\UsEr\Documents\BIS-DB-Migration\logs\run-migrate-all-20260528-093335.log
+2026-05-28 09:33:35 [INFO] Status file: C:\Users\UsEr\Documents\BIS-DB-Migration\logs\run-migrate-all.current.txt
+2026-05-28 09:33:35 [INFO] MigrateRunMode: resume (resume=checkpoint+skip-existing, overwrite=full-replace, repair-from-log=ids-from-log)
+2026-05-28 09:33:35 [START] [1/13] patient_info - starting C:\Users\UsEr\Documents\BIS-DB-Migration\patient-info\js-migrate\run-migrate.ps1

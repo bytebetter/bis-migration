@@ -1,0 +1,32 @@
+﻿2026-05-27 18:03:17 [INFO] === BIS migrate all started (13 tables) ===
+2026-05-27 18:03:17 [INFO] Config: C:\Users\UsEr\Documents\BIS-DB-Migration\migration.config.local.json
+2026-05-27 18:03:17 [INFO] Log file: C:\Users\UsEr\Documents\BIS-DB-Migration\logs\run-migrate-all-20260527-180317.log
+2026-05-27 18:03:17 [INFO] Status file: C:\Users\UsEr\Documents\BIS-DB-Migration\logs\run-migrate-all.current.txt
+2026-05-27 18:03:17 [INFO] MigrateRunMode: resume (resume=checkpoint+skip-existing, overwrite=full-replace, repair-from-log=ids-from-log)
+2026-05-27 18:03:17 [START] [1/13] patient_info - starting C:\Users\UsEr\Documents\BIS-DB-Migration\patient-info\js-migrate\run-migrate.ps1
+2026-05-27 18:08:33 [OK] [1/13] patient_info - done in 00:05:15
+2026-05-27 18:08:33 [START] [2/13] appointment - starting C:\Users\UsEr\Documents\BIS-DB-Migration\appointment\js-migrate\run-migrate.ps1
+2026-05-27 18:37:20 [OK] [2/13] appointment - done in 00:28:47
+2026-05-27 18:37:20 [START] [3/13] appointment_reschedules - starting C:\Users\UsEr\Documents\BIS-DB-Migration\appointment-reschedules\js-migrate\run-migrate.ps1
+2026-05-27 18:39:38 [OK] [3/13] appointment_reschedules - done in 00:02:18
+2026-05-27 18:39:38 [START] [4/13] examination - starting C:\Users\UsEr\Documents\BIS-DB-Migration\examination\js-migrate\run-migrate.ps1
+2026-05-27 19:26:56 [OK] [4/13] examination - done in 00:47:18
+2026-05-27 19:26:56 [START] [5/13] examination_general - starting C:\Users\UsEr\Documents\BIS-DB-Migration\examination-general\js-migrate\run-migrate.ps1
+2026-05-27 19:42:44 [OK] [5/13] examination_general - done in 00:15:48
+2026-05-27 19:42:44 [START] [6/13] pacs_sync_info - starting C:\Users\UsEr\Documents\BIS-DB-Migration\pacs-sync-info\js-migrate\run-migrate.ps1
+2026-05-27 20:32:40 [OK] [6/13] pacs_sync_info - done in 00:49:55
+2026-05-27 20:32:40 [START] [7/13] procedure - starting C:\Users\UsEr\Documents\BIS-DB-Migration\procedure\js-migrate\run-migrate.ps1
+2026-05-27 20:34:04 [OK] [7/13] procedure - done in 00:01:24
+2026-05-27 20:34:04 [START] [8/13] ultrasound - starting C:\Users\UsEr\Documents\BIS-DB-Migration\ultrasound\js-migrate\run-migrate.ps1
+2026-05-27 20:48:44 [OK] [8/13] ultrasound - done in 00:14:39
+2026-05-27 20:48:44 [START] [9/13] mammogram - starting C:\Users\UsEr\Documents\BIS-DB-Migration\mam\js-migrate\run-migrate.ps1
+2026-05-27 21:23:36 [OK] [9/13] mammogram - done in 00:34:51
+2026-05-27 21:23:36 [START] [10/13] mammogram_cal - starting C:\Users\UsEr\Documents\BIS-DB-Migration\mam-cal\js-migrate\run-migrate.ps1
+2026-05-27 21:32:50 [OK] [10/13] mammogram_cal - done in 00:09:14
+2026-05-27 21:32:50 [START] [11/13] mammogram_mass - starting C:\Users\UsEr\Documents\BIS-DB-Migration\mam-mass\js-migrate\run-migrate.ps1
+2026-05-27 21:34:32 [OK] [11/13] mammogram_mass - done in 00:01:41
+2026-05-27 21:34:32 [START] [12/13] ultrasound_cyst - starting C:\Users\UsEr\Documents\BIS-DB-Migration\ultrasound-cyst\js-migrate\run-migrate.ps1
+2026-05-27 21:40:01 [OK] [12/13] ultrasound_cyst - done in 00:05:28
+2026-05-27 21:40:01 [START] [13/13] ultrasound_mass - starting C:\Users\UsEr\Documents\BIS-DB-Migration\ultrasound-mass\js-migrate\run-migrate.ps1
+2026-05-27 21:52:16 [OK] [13/13] ultrasound_mass - done in 00:12:14
+2026-05-27 21:52:16 [OK] === All migrations completed in 03:48:58 ===
