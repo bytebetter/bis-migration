@@ -33,6 +33,13 @@ import {
   migrateCliOverridesFromArgv,
   readNumericSourceKeyBounds,
 } from "../../shared/js-migrate/migrateCliArgs.mjs";
+import {
+  applySourceIndexToMigrateJob,
+  buildIndexCheckpointSuffix,
+  isIndexWindowComplete,
+  narrowPlannedRowsForIndex,
+  resolvePageSize,
+} from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import {
   batchIds,
@@ -349,10 +356,13 @@ async function runAppointmentTableJob({
   );
   fs.mkdirSync(checkpointDir, { recursive: true });
   const kb = readNumericSourceKeyBounds(migrationConfig);
+  const indexCkSuffix = buildIndexCheckpointSuffix(migrationConfig);
   const rowModeSlug =
     migrationConfig.migrateRowMode === "insert-only" ? "ins" : "ovr";
   let checkpointBasename = key;
-  if (
+  if (indexCkSuffix) {
+    checkpointBasename = `${key}${indexCkSuffix}`;
+  } else if (
     kb.min != null ||
     kb.max != null ||
     migrationConfig.migrateRowMode === "insert-only"
@@ -389,6 +399,15 @@ async function runAppointmentTableJob({
       `>>> [${key}] resume: ใช้ OFFSET (checkpoint เก่า) — ลบ checkpoint แล้วรันใหม่จะกลับไป keyset`,
     );
   }
+  const idx = applySourceIndexToMigrateJob({
+    key,
+    migrationConfig,
+    checkpointEnabled,
+    offset,
+    useMssqlKeyset,
+  });
+  offset = idx.offset;
+  useMssqlKeyset = idx.useMssqlKeyset;
   const mssqlKeysetMode = String(
     migrationConfig.mssqlKeysetMode ?? "native",
   ).toLowerCase();
@@ -479,6 +498,14 @@ async function runAppointmentTableJob({
       plannedRows = null;
     }
   }
+  if (idx.indexLimited) {
+    plannedRows = narrowPlannedRowsForIndex({
+      plannedRows,
+      offset,
+      sourceIndexFrom: idx.sourceIndexFrom,
+      sourceIndexTo: idx.sourceIndexTo,
+    });
+  }
   const progressTotal = plannedRows ?? null;
   const plannedChunks =
     plannedRows != null && plannedRows > 0
@@ -568,10 +595,13 @@ END $$;
   }
 
   while (true) {
-    const remaining = sourceLimit == null ? null : sourceLimit - total;
-    if (remaining != null && remaining <= 0) break;
-    const pageSize =
-      remaining == null ? batchSize : Math.min(batchSize, remaining);
+    const pageSize = resolvePageSize({
+      batchSize,
+      total,
+      sourceLimit,
+      plannedRows: idx.indexLimited ? plannedRows : null,
+    });
+    if (pageSize <= 0) break;
     const nextChunkIndex = chunkIndex + 1;
     if (debugLogs && !singleLineUi) {
       writeOutLine(
@@ -810,9 +840,15 @@ END $$;
         updatedAt: new Date().toISOString(),
       });
     }
-    const isLastPage = repairBatches
-      ? repairBatchIndex >= repairBatches.length
-      : isLastKeysetPage(advance, pageSize);
+    const isLastPage =
+      isIndexWindowComplete({
+        indexLimited: idx.indexLimited,
+        plannedRows,
+        rowsReadInWindow: total,
+      }) ||
+      (repairBatches
+        ? repairBatchIndex >= repairBatches.length
+        : isLastKeysetPage(advance, pageSize));
     if (progressEnabled) {
       renderProgress(
         total,

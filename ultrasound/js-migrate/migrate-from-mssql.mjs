@@ -33,6 +33,13 @@ import {
 } from "../../shared/js-migrate/twoStepKeyset.mjs";
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
 import { bindMigrateSrcNumericRange } from "../../shared/js-migrate/migrateCliArgs.mjs";
+import {
+  applySourceIndexToMigrateJob,
+  buildIndexCheckpointSuffix,
+  isIndexWindowComplete,
+  narrowPlannedRowsForIndex,
+  resolvePageSize,
+} from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import {
   batchIds,
@@ -260,7 +267,8 @@ async function main() {
     migration.checkpointDir ?? "./checkpoints",
   );
   fs.mkdirSync(checkpointDir, { recursive: true });
-  const checkpointPath = path.join(checkpointDir, `${KEY}.json`);
+  const indexCkSuffix = buildIndexCheckpointSuffix(migration);
+  const checkpointPath = path.join(checkpointDir, `${KEY}${indexCkSuffix}.json`);
   const checkpoint = readJsonIfExists(checkpointPath, {
     key: KEY,
     offset: 0,
@@ -313,6 +321,14 @@ async function main() {
 
       let offset = Number(checkpointEnabled ? checkpoint.offset : 0);
       if (!Number.isFinite(offset) || offset < 0) offset = 0;
+      const idx = applySourceIndexToMigrateJob({
+        key: KEY,
+        migrationConfig: migration,
+        checkpointEnabled,
+        offset,
+        useMssqlKeyset: true,
+      });
+      offset = idx.offset;
       let afterExamId = Number(checkpointEnabled ? checkpoint.afterExamId : 0);
       if (!Number.isFinite(afterExamId) || afterExamId < 0) afterExamId = 0;
       const fieldIssueAcc = createFieldIssueAccumulator("exam_id");
@@ -331,6 +347,14 @@ async function main() {
         } catch {
           plannedRows = null;
         }
+      }
+      if (idx.indexLimited) {
+        plannedRows = narrowPlannedRowsForIndex({
+          plannedRows,
+          offset,
+          sourceIndexFrom: idx.sourceIndexFrom,
+          sourceIndexTo: idx.sourceIndexTo,
+        });
       }
       const progressTotal = plannedRows ?? null;
       const plannedChunks =
@@ -370,6 +394,13 @@ async function main() {
       const startedAt = Date.now();
       while (true) {
         const chunkStartedAt = Date.now();
+        const rowsInIndexWindow = Math.max(0, offset - idx.indexStartOffset);
+        const pageSize = resolvePageSize({
+          batchSize,
+          total: rowsInIndexWindow,
+          plannedRows: idx.indexLimited ? plannedRows : null,
+        });
+        if (pageSize <= 0) break;
         let ids = [];
         let rows = [];
         let fetchMs = 0;
@@ -405,7 +436,7 @@ async function main() {
           bindMigrateSrcNumericRange(probeReq, migration, sql);
           const idRes = await probeReq
             .input("afterExamId", sql.BigInt, afterExamId)
-            .input("page", sql.Int, batchSize)
+            .input("page", sql.Int, pageSize)
             .query(probeSql);
           probeMs = Date.now() - idProbeStartedAt;
           const idRows = idRes.recordset || [];
@@ -537,7 +568,14 @@ async function main() {
 
         if (repairBatches) {
           if (repairBatchIndex >= repairBatches.length) break;
-        } else if (isLastKeysetPage(keysetAdvance, batchSize)) {
+        } else if (
+          isIndexWindowComplete({
+            indexLimited: idx.indexLimited,
+            plannedRows,
+            rowsReadInWindow: Math.max(0, offset - idx.indexStartOffset),
+          }) ||
+          isLastKeysetPage(keysetAdvance, pageSize)
+        ) {
           break;
         }
       }

@@ -34,6 +34,13 @@ import {
   readNumericSourceKeyBounds,
   bindMigrateSrcNumericRange,
 } from "../../shared/js-migrate/migrateCliArgs.mjs";
+import {
+  applySourceIndexToMigrateJob,
+  buildIndexCheckpointSuffix,
+  isIndexWindowComplete,
+  narrowPlannedRowsForIndex,
+  resolvePageSize,
+} from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import {
   batchIds,
@@ -460,10 +467,13 @@ async function runTableJob({
   fs.mkdirSync(checkpointDir, { recursive: true });
 
   const kb = readNumericSourceKeyBounds(migrationConfig);
+  const indexCkSuffix = buildIndexCheckpointSuffix(migrationConfig);
   const rowModeSlug =
     migrationConfig.migrateRowMode === "insert-only" ? "ins" : "ovr";
   let checkpointBasename = key;
-  if (
+  if (indexCkSuffix) {
+    checkpointBasename = `${key}${indexCkSuffix}`;
+  } else if (
     kb.min != null ||
     kb.max != null ||
     migrationConfig.migrateRowMode === "insert-only"
@@ -524,6 +534,15 @@ async function runTableJob({
       `>>> [${key}] resume: ใช้ OFFSET (checkpoint เก่า) — รอบนี้จะช้า; ลบไฟล์ checkpoint แล้วรันตั้งแต่ 0 จะใช้ keyset เร็วกว่า`,
     );
   }
+  const idx = applySourceIndexToMigrateJob({
+    key,
+    migrationConfig,
+    checkpointEnabled,
+    offset,
+    useMssqlKeyset,
+  });
+  offset = idx.offset;
+  useMssqlKeyset = idx.useMssqlKeyset;
 
   const selectSql = (() => {
     const tpl = selectSqlFile
@@ -649,6 +668,14 @@ async function runTableJob({
       plannedRows = null;
     }
   }
+  if (idx.indexLimited) {
+    plannedRows = narrowPlannedRowsForIndex({
+      plannedRows,
+      offset,
+      sourceIndexFrom: idx.sourceIndexFrom,
+      sourceIndexTo: idx.sourceIndexTo,
+    });
+  }
   const progressTotal = plannedRows ?? null;
   const plannedChunks =
     plannedRows != null && plannedRows > 0
@@ -711,10 +738,13 @@ async function runTableJob({
   }
 
   while (true) {
-    const remaining = sourceLimit == null ? null : sourceLimit - total;
-    if (remaining != null && remaining <= 0) break;
-    const pageSize =
-      remaining == null ? batchSize : Math.min(batchSize, remaining);
+    const pageSize = resolvePageSize({
+      batchSize,
+      total,
+      sourceLimit,
+      plannedRows: idx.indexLimited ? plannedRows : null,
+    });
+    if (pageSize <= 0) break;
     const nextChunkIndex = chunkIndex + 1;
     if (debugLogs && !singleLineUi && useMssqlKeyset) {
       writeOutLine(
@@ -1142,9 +1172,15 @@ LIMIT 200;
         });
       }
     }
-    const isLastPage = repairBatches
-      ? repairBatchIndex >= repairBatches.length
-      : isLastKeysetPage(keysetAdvance, pageSize);
+    const isLastPage =
+      isIndexWindowComplete({
+        indexLimited: idx.indexLimited,
+        plannedRows,
+        rowsReadInWindow: total,
+      }) ||
+      (repairBatches
+        ? repairBatchIndex >= repairBatches.length
+        : isLastKeysetPage(keysetAdvance, pageSize));
     if (debugLogs && !singleLineUi) {
       writeOutLine(
         `>>> [${key}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(

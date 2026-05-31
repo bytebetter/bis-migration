@@ -36,6 +36,13 @@ import {
 } from "../../shared/js-migrate/progressUi.mjs";
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
 import { bindMigrateSrcNumericRange } from "../../shared/js-migrate/migrateCliArgs.mjs";
+import {
+  applySourceIndexToMigrateJob,
+  buildIndexCheckpointSuffix,
+  isIndexWindowComplete,
+  narrowPlannedRowsForIndex,
+  resolvePageSize,
+} from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { REPAIR_SPEC_APPOINTMENT_RESCHEDULES } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
   finalizeRepairFromLog,
@@ -462,7 +469,11 @@ async function runAppointmentReschedulesTableJob({
     migrationConfig.checkpointDir ?? "./checkpoints",
   );
   fs.mkdirSync(checkpointDir, { recursive: true });
-  const checkpointPath = path.join(checkpointDir, `${key}.json`);
+  const indexCkSuffix = buildIndexCheckpointSuffix(migrationConfig);
+  const checkpointPath = path.join(
+    checkpointDir,
+    `${key}${indexCkSuffix}.json`,
+  );
   const checkpoint = readJsonIfExists(checkpointPath, {
     key,
     offset: 0,
@@ -499,6 +510,15 @@ async function runAppointmentReschedulesTableJob({
   } else {
     mssqlKeysetAfter = normalizeRescheduleKeysetAfter(mssqlKeysetAfter);
   }
+  const idx = applySourceIndexToMigrateJob({
+    key,
+    migrationConfig,
+    checkpointEnabled,
+    offset,
+    useMssqlKeyset,
+  });
+  offset = idx.offset;
+  useMssqlKeyset = idx.useMssqlKeyset;
 
   const logsDir = path.resolve(__dirname, "logs");
   const repairSourceIds = resolveRepairSourceIds(
@@ -640,6 +660,14 @@ async function runAppointmentReschedulesTableJob({
       plannedRows = null;
     }
   }
+  if (idx.indexLimited) {
+    plannedRows = narrowPlannedRowsForIndex({
+      plannedRows,
+      offset,
+      sourceIndexFrom: idx.sourceIndexFrom,
+      sourceIndexTo: idx.sourceIndexTo,
+    });
+  }
   const progressTotal = plannedRows ?? null;
   const plannedChunks =
     plannedRows != null && plannedRows > 0
@@ -693,10 +721,13 @@ async function runAppointmentReschedulesTableJob({
   try {
     while (true) {
       const chunkT0 = Date.now();
-      const remaining = sourceLimit == null ? null : sourceLimit - total;
-      if (remaining != null && remaining <= 0) break;
-      const pageSize =
-        remaining == null ? batchSize : Math.min(batchSize, remaining);
+      const pageSize = resolvePageSize({
+        batchSize,
+        total,
+        sourceLimit,
+        plannedRows: idx.indexLimited ? plannedRows : null,
+      });
+      if (pageSize <= 0) break;
       const nextChunkIndex = chunkIndex + 1;
       if (debugLogs) {
         writeOutLine(
@@ -851,9 +882,13 @@ async function runAppointmentReschedulesTableJob({
           updatedAt: new Date().toISOString(),
         });
       }
-      const isLastPage = useMssqlKeyset
-        ? isLastKeysetPage(n, pageSize)
-        : n < pageSize;
+      const isLastPage =
+        isIndexWindowComplete({
+          indexLimited: idx.indexLimited,
+          plannedRows,
+          rowsReadInWindow: total,
+        }) ||
+        (useMssqlKeyset ? isLastKeysetPage(n, pageSize) : n < pageSize);
       if (debugLogs) {
         writeOutLine(
           `>>> [${key}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(

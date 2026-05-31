@@ -110,6 +110,17 @@ Write-MigrateLog "Log file: $LogPath"
 Write-MigrateLog "Status file: $statusPath"
 if ($StartFrom -gt 1) { Write-MigrateLog "StartFrom step: $StartFrom" }
 Write-MigrateLog "MigrateRunMode: $effectiveRunMode (resume=checkpoint+skip-existing, overwrite=full-replace, repair-from-log=ids-from-log)"
+$idxRangeLog = if ($SourceIndexRange) { $SourceIndexRange.Trim() } else { "" }
+if ($idxRangeLog -eq "") {
+  $sf = if ($SourceIndexFrom) { $SourceIndexFrom.Trim() } else { "" }
+  $st = if ($SourceIndexTo) { $SourceIndexTo.Trim() } else { "" }
+  if ($sf -ne "" -or $st -ne "") {
+    $idxRangeLog = "$(if ($sf) { $sf } else { 'all' })-$(if ($st) { $st } else { 'all' })"
+  }
+}
+if ($idxRangeLog -ne "") {
+  Write-MigrateLog ('SourceIndexRange: {0} — row index 1-based inclusive, per table ORDER BY' -f $idxRangeLog)
+}
 if (-not $runAllTables) {
   Write-MigrateLog "Tables filter: $($tableFilter -join ', ') (MSSQL key filter: appointment Schedule_ID / examination Exam_ID)"
 }
