@@ -12,6 +12,10 @@
  *    --source-index-range 1-100 | 100-all | all
  *    หรือ --source-index-from 1 --source-index-to 100
  *
+ * ช่วงค่า key ตัวเลขต้นทาง (inclusive) — Exam_ID / Schedule_ID ฯลฯ:
+ *    --source-key-range 1-100 | 100-all | all | 50-
+ *    หรือ --source-key-from 1 --source-key-to 100
+ *
  * ค่าเก่า: --migrate-run-mode full ถือเป็น resume
  */
 
@@ -22,6 +26,9 @@
  *   migrateRowMode: 'overwrite' | 'insert-only',
  *   sourceIndexFrom: number | null,
  *   sourceIndexTo: number | null,
+ *   sourceKeyNumericMin: string | null,
+ *   sourceKeyNumericMax: string | null,
+ *   hasSourceKeyCli: boolean,
  *   rawArgvTail: string[]
  * }}
  */
@@ -60,13 +67,34 @@ export function parseMigrateCliArgs(argv = process.argv) {
     migrateRowMode = "insert-only";
   }
 
+  let sourceKeyNumericMin = null;
+  let sourceKeyNumericMax = null;
+  let hasSourceKeyCli = false;
+  const keyFromRaw = argvValue(argv, "--source-key-from");
+  const keyToRaw = argvValue(argv, "--source-key-to");
+  const keyRangeStr = argvValue(argv, "--source-key-range");
+  if (keyRangeStr != null) {
+    hasSourceKeyCli = true;
+    const parsed = parseSourceKeyRangeString(keyRangeStr);
+    sourceKeyNumericMin = parsed.min === null ? null : String(parsed.min);
+    sourceKeyNumericMax = parsed.max === null ? null : String(parsed.max);
+  } else {
+    if (keyFromRaw != null && String(keyFromRaw).trim() !== "") {
+      hasSourceKeyCli = true;
+      sourceKeyNumericMin = String(parseOptionalBig(keyFromRaw));
+    }
+    if (keyToRaw != null && String(keyToRaw).trim() !== "") {
+      hasSourceKeyCli = true;
+      sourceKeyNumericMax = String(parseOptionalBig(keyToRaw));
+    }
+  }
   if (
-    argvHas(argv, "--source-key-range") ||
-    argvHas(argv, "--source-key-from") ||
-    argvHas(argv, "--source-key-to")
+    sourceKeyNumericMin != null &&
+    sourceKeyNumericMax != null &&
+    BigInt(sourceKeyNumericMin) > BigInt(sourceKeyNumericMax)
   ) {
     throw new Error(
-      "เลิกใช้ --source-key-range/--source-key-from/--source-key-to แล้ว ให้ใช้ --source-index-range หรือ --source-index-from/--source-index-to แทน",
+      `--source-key-from ต้องไม่เกิน --source-key-to (${sourceKeyNumericMin} > ${sourceKeyNumericMax})`,
     );
   }
 
@@ -96,6 +124,9 @@ export function parseMigrateCliArgs(argv = process.argv) {
     migrateRowMode,
     sourceIndexFrom,
     sourceIndexTo,
+    sourceKeyNumericMin,
+    sourceKeyNumericMax,
+    hasSourceKeyCli,
     rawArgvTail,
   };
 }
@@ -140,6 +171,9 @@ export function migrateCliOverridesFromArgv(argv = process.argv) {
     migrateRowMode,
     sourceIndexFrom,
     sourceIndexTo,
+    sourceKeyNumericMin,
+    sourceKeyNumericMax,
+    hasSourceKeyCli,
   } = parseMigrateCliArgs(argv);
   /** @type {Record<string, unknown>} */
   const o = {};
@@ -152,6 +186,10 @@ export function migrateCliOverridesFromArgv(argv = process.argv) {
   }
   if (sourceIndexFrom != null) o.sourceIndexFrom = sourceIndexFrom;
   if (sourceIndexTo != null) o.sourceIndexTo = sourceIndexTo;
+  if (hasSourceKeyCli) {
+    o.sourceKeyNumericMin = sourceKeyNumericMin;
+    o.sourceKeyNumericMax = sourceKeyNumericMax;
+  }
   return o;
 }
 
@@ -172,6 +210,15 @@ export function logMigrationRunMode(migration, tableKey) {
       `>>> [${tableKey}] migrateRunMode=resume (ต่อ checkpoint, ไม่ทับของเดิม, migrateRowMode=${row})`,
     );
   }
+}
+
+/** แสดงช่วงค่า key ตัวเลขจาก CLI/config */
+export function logSourceNumericKeyRange(migration, tableKey) {
+  const { min, max } = readNumericSourceKeyBounds(migration);
+  if (min == null && max == null) return;
+  console.error(
+    `>>> [${tableKey}] source key numeric range: min=${min ?? "unset"} max=${max ?? "unset"} (inclusive)`,
+  );
 }
 
 /**

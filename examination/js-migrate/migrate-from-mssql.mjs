@@ -30,10 +30,10 @@ import {
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
 import {
-  migrateCliOverridesFromArgv,
   readNumericSourceKeyBounds,
   bindMigrateSrcNumericRange,
 } from "../../shared/js-migrate/migrateCliArgs.mjs";
+import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
 import {
   applySourceIndexToMigrateJob,
   buildIndexCheckpointSuffix,
@@ -1342,10 +1342,10 @@ async function main() {
           mssqlPool: pool,
           pgClient: client,
           sqlBaseDir,
-          migrationConfig: {
-          ...(config.migration ?? {}),
-          ...migrateCliOverridesFromArgv(process.argv),
-        },
+          migrationConfig: mergeMigrationWithCli(
+            config?.migration,
+            "examination",
+          ),
           tableJob,
         });
         runLog.tableResults.push(result);

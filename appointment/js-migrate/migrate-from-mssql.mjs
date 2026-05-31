@@ -30,9 +30,9 @@ import {
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
 import {
-  migrateCliOverridesFromArgv,
   readNumericSourceKeyBounds,
 } from "../../shared/js-migrate/migrateCliArgs.mjs";
+import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
 import {
   applySourceIndexToMigrateJob,
   buildIndexCheckpointSuffix,
@@ -938,8 +938,7 @@ async function main() {
   const config = resolveRuntimeConfig(rawConfig, "appointment");
 
   const migrationForJob = {
-    ...(config.migration ?? {}),
-    ...migrateCliOverridesFromArgv(process.argv),
+    ...mergeMigrationWithCli(config?.migration, "appointment"),
     batchSize:
       config.migration?.batchSize != null &&
       String(config.migration.batchSize).trim() !== ""

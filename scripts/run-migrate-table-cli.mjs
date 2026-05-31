@@ -5,6 +5,8 @@
 import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertSourceKeyRangeSupported } from "../shared/js-migrate/sourceKeyRangeSupport.mjs";
+import { parseMigrateCliArgs } from "../shared/js-migrate/migrateCliArgs.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
@@ -51,6 +53,7 @@ if (!dir) {
       Object.keys(PROFILE_DIR).join(", "),
       "",
       "Example:",
+      "  npm run migrate:examination -- --source-key-range 1000-5000",
       "  npm run migrate:patient_info -- --source-index-range 1-20 --migrate-mode insert-only",
     ].join("\n"),
   );
@@ -61,6 +64,27 @@ if (recovered.length > 0) {
   console.error(
     `>>> [migrate-cli] npm/Windows กลืน flag — แปลงกลับเป็น: ${recovered.join(" ")}`,
   );
+}
+
+try {
+  const parsed = parseMigrateCliArgs([
+    process.execPath,
+    "run-migrate-table-cli.mjs",
+    ...forwarded,
+  ]);
+  if (parsed.hasSourceKeyCli) {
+    assertSourceKeyRangeSupported(
+      profile,
+      {
+        sourceKeyNumericMin: parsed.sourceKeyNumericMin,
+        sourceKeyNumericMax: parsed.sourceKeyNumericMax,
+      },
+      true,
+    );
+  }
+} catch (err) {
+  console.error(err instanceof Error ? err.message : String(err));
+  process.exit(1);
 }
 
 const jsMigrateDir = join(repoRoot, dir, "js-migrate");
@@ -109,6 +133,33 @@ function normalizeForwardedArgs(args) {
       }
       continue;
     }
+    if (low === "--source-key-range") {
+      pass1.push(a);
+      const next = args[i + 1];
+      if (next != null && !String(next).startsWith("-")) {
+        pass1.push(String(next));
+        i++;
+      }
+      continue;
+    }
+    if (low === "--source-key-from") {
+      pass1.push(a);
+      const next = args[i + 1];
+      if (next != null && !String(next).startsWith("-")) {
+        pass1.push(String(next));
+        i++;
+      }
+      continue;
+    }
+    if (low === "--source-key-to") {
+      pass1.push(a);
+      const next = args[i + 1];
+      if (next != null && !String(next).startsWith("-")) {
+        pass1.push(String(next));
+        i++;
+      }
+      continue;
+    }
     if (low === "--source-index-from") {
       pass1.push(a);
       const next = args[i + 1];
@@ -143,6 +194,23 @@ function normalizeForwardedArgs(args) {
   let hasSourceIndexRange = pass1.includes("--source-index-range");
   let hasSourceIndexFrom = pass1.includes("--source-index-from");
   let hasSourceIndexTo = pass1.includes("--source-index-to");
+  let hasSourceKeyRange = pass1.includes("--source-key-range");
+  let hasSourceKeyFrom = pass1.includes("--source-key-from");
+  let hasSourceKeyTo = pass1.includes("--source-key-to");
+
+  const envKeyRangeRaw = process.env.npm_config_source_key_range;
+  const envKeyRange = readEnvArg("npm_config_source_key_range");
+  /** npm บน Windows มักกลืน --source-key-range แล้ว set env เป็น "true" ค่าช่วงเหลือเป็น arg เปล่า */
+  const npmAteSourceKeyFlag =
+    String(envKeyRangeRaw ?? "").trim().toLowerCase() === "true";
+  const wantsSourceKey =
+    hasSourceKeyRange ||
+    hasSourceKeyFrom ||
+    hasSourceKeyTo ||
+    npmAteSourceKeyFlag ||
+    Boolean(readEnvArg("npm_config_source_key_from")) ||
+    Boolean(readEnvArg("npm_config_source_key_to")) ||
+    (envKeyRange !== "" && !npmAteSourceKeyFlag);
 
   /** @type {string[]} */
   const out = [];
@@ -172,8 +240,18 @@ function normalizeForwardedArgs(args) {
       !hasSourceIndexRange &&
       !hasSourceIndexFrom &&
       !hasSourceIndexTo &&
+      !hasSourceKeyRange &&
+      !hasSourceKeyFrom &&
+      !hasSourceKeyTo &&
       (RANGE_VALUE_RE.test(a) || SINGLE_INDEX_RE.test(a))
     ) {
+      if (wantsSourceKey) {
+        const rangeVal = envKeyRange && !npmAteSourceKeyFlag ? envKeyRange : a;
+        out.push("--source-key-range", rangeVal);
+        hasSourceKeyRange = true;
+        recovered.push(`--source-key-range ${rangeVal}`);
+        continue;
+      }
       out.push("--source-index-range", a);
       hasSourceIndexRange = true;
       recovered.push(`--source-index-range ${a}`);
@@ -183,13 +261,23 @@ function normalizeForwardedArgs(args) {
     out.push(a);
   }
 
-  if (!hasSourceIndexRange) {
+  if (!hasSourceIndexRange && !wantsSourceKey) {
     const envIndexRange = readEnvArg("npm_config_source_index_range");
     if (envIndexRange) {
       out.push("--source-index-range", envIndexRange);
       recovered.push(`--source-index-range ${envIndexRange} (env)`);
       hasSourceIndexRange = true;
     }
+  }
+
+  if (
+    !hasSourceKeyRange &&
+    !hasSourceKeyFrom &&
+    envKeyRange &&
+    !npmAteSourceKeyFlag
+  ) {
+    out.push("--source-key-range", envKeyRange);
+    recovered.push(`--source-key-range ${envKeyRange} (env)`);
   }
 
   return { args: out, recovered };
