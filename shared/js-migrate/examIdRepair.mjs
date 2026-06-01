@@ -1,4 +1,5 @@
-import { batchIds, resolveRepairSourceIds } from "./repairFromLog.mjs";
+import { batchIds, resolveMigrationSourceIds } from "./repairFromLog.mjs";
+import { hasExplicitSourceIds } from "./sourceIdsSupport.mjs";
 
 /**
  * @param {Record<string, unknown>} migration
@@ -7,7 +8,7 @@ import { batchIds, resolveRepairSourceIds } from "./repairFromLog.mjs";
  * @param {number} batchSize
  */
 export function prepareExamIdRepair(migration, logsDir, spec, batchSize) {
-  const repairSourceIds = resolveRepairSourceIds(migration, logsDir, spec);
+  const repairSourceIds = resolveMigrationSourceIds(migration, logsDir, spec);
   const repairBatches =
     repairSourceIds != null ? [...batchIds(repairSourceIds, batchSize)] : null;
   let repairBatchIndex = 0;
@@ -28,13 +29,17 @@ export function prepareExamIdRepair(migration, logsDir, spec, batchSize) {
   };
 }
 
-export function logExamIdRepairStart(tableKey, repair) {
+export function logExamIdRepairStart(tableKey, repair, migration = {}, spec = null) {
   if (!repair.active) return;
+  const mode = hasExplicitSourceIds(migration)
+    ? "by-source-ids"
+    : "repair-from-log";
   if (repair.isEmpty) {
-    console.error(`>>> [${tableKey}] repair-from-log: ไม่มี id ให้ migrate`);
+    console.error(`>>> [${tableKey}] ${mode}: ไม่มี id ให้ migrate`);
     return;
   }
+  const idLabel = spec?.recordIdLabel ?? "id";
   console.error(
-    `>>> [${tableKey}] migrateRunMode=repair-from-log (${repair.idCount} exam_id, ${repair.batchCount} batches)`,
+    `>>> [${tableKey}] migrateRunMode=${mode} (${repair.idCount} ${idLabel}, ${repair.batchCount} batches)`,
   );
 }

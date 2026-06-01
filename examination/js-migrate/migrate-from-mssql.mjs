@@ -33,6 +33,10 @@ import {
   readNumericSourceKeyBounds,
   bindMigrateSrcNumericRange,
 } from "../../shared/js-migrate/migrateCliArgs.mjs";
+import {
+  logByIdMigrationRun,
+  plannedProgressForSourceIds,
+} from "../../shared/js-migrate/sourceIdsSupport.mjs";
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
 import {
   applySourceIndexToMigrateJob,
@@ -44,7 +48,7 @@ import {
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import {
   batchIds,
-  resolveRepairSourceIds,
+  resolveMigrationSourceIds,
 } from "../../shared/js-migrate/repairFromLog.mjs";
 import {
   finalizeRepairFromLog,
@@ -676,8 +680,8 @@ async function runTableJob({
       sourceIndexTo: idx.sourceIndexTo,
     });
   }
-  const progressTotal = plannedRows ?? null;
-  const plannedChunks =
+  let progressTotal = plannedRows ?? null;
+  let plannedChunks =
     plannedRows != null && plannedRows > 0
       ? Math.ceil(plannedRows / batchSize)
       : null;
@@ -700,7 +704,7 @@ async function runTableJob({
   const logsDir = path.resolve(__dirname, "logs");
   const repairSourceIds =
     isExaminationBuiltin
-      ? resolveRepairSourceIds(
+      ? resolveMigrationSourceIds(
           migrationConfig,
           logsDir,
           REPAIR_SPEC_EXAMINATION,
@@ -732,8 +736,17 @@ async function runTableJob({
     };
   }
   if (repairSourceIds != null) {
-    console.error(
-      `>>> [${key}] migrateRunMode=repair-from-log (${repairSourceIds.length} exam_id)`,
+    const idPlan = plannedProgressForSourceIds(repairSourceIds, batchSize);
+    if (idPlan) {
+      plannedRows = idPlan.plannedRows;
+      plannedChunks = idPlan.plannedChunks;
+      progressTotal = idPlan.plannedRows;
+    }
+    logByIdMigrationRun(
+      key,
+      repairSourceIds.length,
+      "exam_id",
+      migrationConfig,
     );
   }
 

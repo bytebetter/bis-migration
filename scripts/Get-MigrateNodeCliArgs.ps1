@@ -12,7 +12,8 @@ function Get-MigrateNodeCliArgs {
     [string] $SourceIndexTo = "",
     [string] $SourceKeyRange = "",
     [string] $SourceKeyFrom = "",
-    [string] $SourceKeyTo = ""
+    [string] $SourceKeyTo = "",
+    [string] $SourceIds = ""
   )
 
   $extra = @()
@@ -35,6 +36,11 @@ function Get-MigrateNodeCliArgs {
   }
   elseif ($rowMode -eq "overwrite") {
     $extra += "--migrate-mode", "overwrite"
+  }
+
+  $ids = if ($SourceIds) { $SourceIds.Trim() } else { "" }
+  if ($ids -ne "") {
+    $extra += "--source-ids", $ids
   }
 
   $kr = if ($SourceKeyRange) { $SourceKeyRange.Trim() } else { "" }

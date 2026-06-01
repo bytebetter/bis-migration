@@ -31,6 +31,10 @@ import {
   formatAdvanceLog,
   isLastKeysetPage,
 } from "../../shared/js-migrate/twoStepKeyset.mjs";
+import {
+  logByIdMigrationRun,
+  plannedProgressForSourceIds,
+} from "../../shared/js-migrate/sourceIdsSupport.mjs";
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
 import { bindMigrateSrcNumericRange } from "../../shared/js-migrate/migrateCliArgs.mjs";
 import {
@@ -43,7 +47,7 @@ import {
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import {
   batchIds,
-  resolveRepairSourceIds,
+  resolveMigrationSourceIds,
 } from "../../shared/js-migrate/repairFromLog.mjs";
 import { REPAIR_SPEC_ULTRASOUND } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 
@@ -356,8 +360,8 @@ async function main() {
           sourceIndexTo: idx.sourceIndexTo,
         });
       }
-      const progressTotal = plannedRows ?? null;
-      const plannedChunks =
+      let progressTotal = plannedRows ?? null;
+      let plannedChunks =
         plannedRows != null && plannedRows > 0
           ? Math.ceil(plannedRows / batchSize)
           : null;
@@ -366,7 +370,7 @@ async function main() {
           `>>> [${KEY}] plan: ${plannedRows} rows, ~${plannedChunks} chunks`,
         );
       }
-      const repairSourceIds = resolveRepairSourceIds(
+      const repairSourceIds = resolveMigrationSourceIds(
         migration,
         logsDir,
         REPAIR_SPEC_ULTRASOUND,
@@ -380,8 +384,17 @@ async function main() {
         return;
       }
       if (repairSourceIds != null) {
-        console.error(
-          `>>> [${KEY}] migrateRunMode=repair-from-log (${repairSourceIds.length} exam_id, ${repairBatches.length} batches)`,
+        const idPlan = plannedProgressForSourceIds(repairSourceIds, batchSize);
+        if (idPlan) {
+          plannedRows = idPlan.plannedRows;
+          plannedChunks = idPlan.plannedChunks;
+          progressTotal = idPlan.plannedRows;
+        }
+        logByIdMigrationRun(
+          KEY,
+          repairSourceIds.length,
+          "exam_id",
+          migration,
         );
       }
 

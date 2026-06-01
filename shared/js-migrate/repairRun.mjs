@@ -1,3 +1,4 @@
+import { plannedProgressForSourceIds } from "./sourceIdsSupport.mjs";
 import {
   logExamIdRepairStart,
   prepareExamIdRepair,
@@ -11,8 +12,14 @@ import {
 
 export function prepareRepairRun(migration, logsDir, spec, batchSize) {
   const repair = prepareExamIdRepair(migration, logsDir, spec, batchSize);
-  logExamIdRepairStart(spec.tableLabel, repair);
+  logExamIdRepairStart(spec.tableLabel, repair, migration, spec);
   return repair;
+}
+
+/** @param {RepairRun} repair @param {number} batchSize */
+export function explicitIdsProgressPlan(repair, batchSize) {
+  if (!repair?.active || !repair.plannedIds?.length) return null;
+  return plannedProgressForSourceIds(repair.plannedIds, batchSize);
 }
 
 export function repairRunIsEmpty(repair) {

@@ -7,6 +7,11 @@ import {
 import { assertMigrateRunModeSupported } from "./repairFromLog.mjs";
 import { REPAIR_SPEC_BY_PROFILE } from "./migrateTableSpecs.mjs";
 import { assertSourceKeyRangeSupported } from "./sourceKeyRangeSupport.mjs";
+import {
+  assertSourceIdsNoConflicts,
+  assertSourceIdsSupported,
+  logExplicitSourceIds,
+} from "./sourceIdsSupport.mjs";
 
 /**
  * รวม config.migration กับ CLI และตรวจว่า repair-from-log ใช้ได้กับ profile นี้หรือไม่
@@ -23,8 +28,11 @@ export function mergeMigrationWithCli(base, profileKey) {
     repairSpec,
   });
   const merged = { ...(base ?? {}), ...cli };
+  assertSourceIdsNoConflicts(merged, parsed);
   assertSourceKeyRangeSupported(profileKey, merged, parsed.hasSourceKeyCli);
+  assertSourceIdsSupported(profileKey, merged, parsed.hasSourceIdsCli);
   logMigrationRunMode(merged, profileKey);
   logSourceNumericKeyRange(merged, profileKey);
+  logExplicitSourceIds(merged, profileKey);
   return merged;
 }

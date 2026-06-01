@@ -32,6 +32,10 @@ import {
 import {
   readNumericSourceKeyBounds,
 } from "../../shared/js-migrate/migrateCliArgs.mjs";
+import {
+  logByIdMigrationRun,
+  plannedProgressForSourceIds,
+} from "../../shared/js-migrate/sourceIdsSupport.mjs";
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
 import {
   applySourceIndexToMigrateJob,
@@ -43,7 +47,7 @@ import {
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import {
   batchIds,
-  resolveRepairSourceIds,
+  resolveMigrationSourceIds,
 } from "../../shared/js-migrate/repairFromLog.mjs";
 import { REPAIR_SPEC_APPOINTMENT } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
@@ -506,8 +510,8 @@ async function runAppointmentTableJob({
       sourceIndexTo: idx.sourceIndexTo,
     });
   }
-  const progressTotal = plannedRows ?? null;
-  const plannedChunks =
+  let progressTotal = plannedRows ?? null;
+  let plannedChunks =
     plannedRows != null && plannedRows > 0
       ? Math.ceil(plannedRows / batchSize)
       : null;
@@ -563,7 +567,7 @@ END $$;
   let failedChunkCount = 0;
 
   const logsDir = path.resolve(__dirname, "logs");
-  const repairSourceIds = resolveRepairSourceIds(
+  const repairSourceIds = resolveMigrationSourceIds(
     migrationConfig,
     logsDir,
     REPAIR_SPEC_APPOINTMENT,
@@ -589,8 +593,17 @@ END $$;
     };
   }
   if (repairSourceIds != null) {
-    console.error(
-      `>>> [${key}] migrateRunMode=repair-from-log (${repairSourceIds.length} schedule_id)`,
+    const idPlan = plannedProgressForSourceIds(repairSourceIds, batchSize);
+    if (idPlan) {
+      plannedRows = idPlan.plannedRows;
+      plannedChunks = idPlan.plannedChunks;
+      progressTotal = idPlan.plannedRows;
+    }
+    logByIdMigrationRun(
+      key,
+      repairSourceIds.length,
+      "schedule_id",
+      migrationConfig,
     );
   }
 

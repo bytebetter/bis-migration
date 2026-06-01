@@ -16,8 +16,17 @@
  *    --source-key-range 1-100 | 100-all | all | 50-
  *    หรือ --source-key-from 1 --source-key-to 100
  *
+ * migrate เฉพาะแถวตาม PK (ตารางที่มี PK บน MSSQL):
+ *    --source-ids "5000"
+ *    --source-ids "100,200,300"   ← ครอบด้วย " เสมอ (โดยเฉพาะหลาย id)
+ *
  * ค่าเก่า: --migrate-run-mode full ถือเป็น resume
  */
+
+import {
+  assertSourceIdsSingleArgvToken,
+  parseSourceIdsString,
+} from "./sourceIdsSupport.mjs";
 
 /**
  * @param {string[]} argv
@@ -29,6 +38,8 @@
  *   sourceKeyNumericMin: string | null,
  *   sourceKeyNumericMax: string | null,
  *   hasSourceKeyCli: boolean,
+ *   sourceIds: string[] | null,
+ *   hasSourceIdsCli: boolean,
  *   rawArgvTail: string[]
  * }}
  */
@@ -118,6 +129,18 @@ export function parseMigrateCliArgs(argv = process.argv) {
     );
   }
 
+  let sourceIds = null;
+  let hasSourceIdsCli = false;
+  const sourceIdParts = argvValuesAfterFlag(argv, "--source-ids");
+  if (sourceIdParts != null) {
+    hasSourceIdsCli = true;
+    assertSourceIdsSingleArgvToken(sourceIdParts);
+    sourceIds = parseSourceIdsString(sourceIdParts[0]);
+    if (sourceIds.length === 0) {
+      throw new Error("--source-ids ต้องมีค่าอย่างน้อย 1 id");
+    }
+  }
+
   const rawArgvTail = [];
   return {
     migrateRunMode,
@@ -127,6 +150,8 @@ export function parseMigrateCliArgs(argv = process.argv) {
     sourceKeyNumericMin,
     sourceKeyNumericMax,
     hasSourceKeyCli,
+    sourceIds,
+    hasSourceIdsCli,
     rawArgvTail,
   };
 }
@@ -174,12 +199,18 @@ export function migrateCliOverridesFromArgv(argv = process.argv) {
     sourceKeyNumericMin,
     sourceKeyNumericMax,
     hasSourceKeyCli,
+    sourceIds,
+    hasSourceIdsCli,
   } = parseMigrateCliArgs(argv);
   /** @type {Record<string, unknown>} */
   const o = {};
   o.migrateRunMode = migrateRunMode;
   o.migrateRowMode = migrateRowMode;
-  if (migrateRunMode === "repair-from-log" || migrateRunMode === "overwrite") {
+  if (
+    migrateRunMode === "repair-from-log" ||
+    migrateRunMode === "overwrite" ||
+    hasSourceIdsCli
+  ) {
     o.enableCheckpoint = false;
   } else {
     o.enableCheckpoint = true;
@@ -189,6 +220,9 @@ export function migrateCliOverridesFromArgv(argv = process.argv) {
   if (hasSourceKeyCli) {
     o.sourceKeyNumericMin = sourceKeyNumericMin;
     o.sourceKeyNumericMax = sourceKeyNumericMax;
+  }
+  if (hasSourceIdsCli && sourceIds != null) {
+    o.sourceIds = sourceIds;
   }
   return o;
 }
@@ -263,6 +297,21 @@ export function clampKeysetLowerBound(afterExclusive, numericMinExclusive, sqlPk
   return wantAfter;
 }
 
+/** @returns {string[] | null} ค่าหลัง flag (ไม่ join — ใช้ตรวจว่าต้องเป็น arg เดียว) */
+function argvValuesAfterFlag(argv, name) {
+  const idx = argv.indexOf(name);
+  if (idx < 0) return null;
+  /** @type {string[]} */
+  const parts = [];
+  for (let i = idx + 1; i < argv.length; i++) {
+    const a = String(argv[i] ?? "");
+    if (a.startsWith("-")) break;
+    const s = a.trim();
+    if (s !== "") parts.push(s);
+  }
+  return parts.length === 0 ? null : parts;
+}
+
 function argvValue(argv, name) {
   const idx = argv.indexOf(name);
   if (idx < 0 || idx + 1 >= argv.length) return null;
@@ -278,7 +327,7 @@ function detectBareMigrateRunMode(argv) {
     "repair-from-log",
     "insert-only",
   ]);
-  const skipNext = new Set(["--config", "--profile", "--migrate-run-mode", "--migrate-mode", "--source-key-range", "--source-key-from", "--source-key-to", "--source-index-range", "--source-index-from", "--source-index-to"]);
+  const skipNext = new Set(["--config", "--profile", "--migrate-run-mode", "--migrate-mode", "--source-key-range", "--source-key-from", "--source-key-to", "--source-index-range", "--source-index-from", "--source-index-to", "--source-ids"]);
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith("-")) {

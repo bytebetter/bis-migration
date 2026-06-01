@@ -29,6 +29,10 @@ import {
   renderProgress,
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
+import {
+  logByIdMigrationRun,
+  plannedProgressForSourceIds,
+} from "../../shared/js-migrate/sourceIdsSupport.mjs";
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
 import {
   bindMigrateSrcNumericRange,
@@ -38,7 +42,7 @@ import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs
 import { REPAIR_SPEC_PATIENT_INFO } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
   batchIds,
-  resolveRepairSourceIds,
+  resolveMigrationSourceIds,
 } from "../../shared/js-migrate/repairFromLog.mjs";
 import {
   finalizeRepairFromLog,
@@ -484,10 +488,11 @@ async function runTableJob({
       plannedRows = null;
     }
   }
-  const plannedChunks =
+  const plannedChunksInitial =
     plannedRows != null && plannedRows > 0
       ? Math.ceil(plannedRows / batchSize)
       : null;
+  let plannedChunks = plannedChunksInitial;
   if (debugLogs && plannedRows != null && plannedChunks != null) {
     writeOutLine(
       `>>> [${key}] plan: ~${plannedRows} rows, ~${plannedChunks} chunks`,
@@ -525,7 +530,7 @@ async function runTableJob({
   let chunkIndex = 0;
 
   const logsDir = path.resolve(sqlBaseDir, "logs");
-  const repairSourceIds = resolveRepairSourceIds(
+  const repairSourceIds = resolveMigrationSourceIds(
     migrationConfig,
     logsDir,
     REPAIR_SPEC_PATIENT_INFO,
@@ -548,8 +553,16 @@ async function runTableJob({
     };
   }
   if (repairSourceIds != null) {
-    console.error(
-      `>>> [${key}] migrateRunMode=repair-from-log (${repairSourceIds.length} pid)`,
+    const idPlan = plannedProgressForSourceIds(repairSourceIds, batchSize);
+    if (idPlan) {
+      plannedRows = idPlan.plannedRows;
+      plannedChunks = idPlan.plannedChunks;
+    }
+    logByIdMigrationRun(
+      key,
+      repairSourceIds.length,
+      "pid",
+      migrationConfig,
     );
   }
   const pidDetailTemplate = MSSQL_PATIENT_INFO_BY_PIDS_SELECT.replaceAll(

@@ -40,6 +40,10 @@ import {
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
+import {
+  logByIdMigrationRun,
+  plannedProgressForSourceIds,
+} from "../../shared/js-migrate/sourceIdsSupport.mjs";
 import { bindMigrateSrcNumericRange } from "../../shared/js-migrate/migrateCliArgs.mjs";
 import {
   applySourceIndexToMigrateJob,
@@ -51,7 +55,7 @@ import {
 import { REPAIR_SPEC_PACS_SYNC_INFO } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
   batchIds,
-  resolveRepairSourceIds,
+  resolveMigrationSourceIds,
 } from "../../shared/js-migrate/repairFromLog.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -721,7 +725,7 @@ async function main() {
         `migration-field-issues-pacs_sync_info-${nowStamp()}.json`,
       );
 
-      const repairSourceIds = resolveRepairSourceIds(
+      const repairSourceIds = resolveMigrationSourceIds(
         migration,
         logsDir,
         REPAIR_SPEC_PACS_SYNC_INFO,
@@ -730,8 +734,11 @@ async function main() {
         if (repairSourceIds.length === 0) {
           console.error(`>>> [${KEY}] repair-from-log: ไม่มี id ให้ migrate`);
         } else {
-          console.error(
-            `>>> [${KEY}] migrateRunMode=repair-from-log (${repairSourceIds.length} accession_id)`,
+          logByIdMigrationRun(
+            KEY,
+            repairSourceIds.length,
+            "accession_id",
+            migration,
           );
           const repairDetailTpl =
             detailSqlTemplate ??

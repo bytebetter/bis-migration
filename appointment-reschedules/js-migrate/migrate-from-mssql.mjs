@@ -34,6 +34,10 @@ import {
   renderProgress,
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
+import {
+  logByIdMigrationRun,
+  plannedProgressForSourceIds,
+} from "../../shared/js-migrate/sourceIdsSupport.mjs";
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
 import { bindMigrateSrcNumericRange } from "../../shared/js-migrate/migrateCliArgs.mjs";
 import {
@@ -50,7 +54,7 @@ import {
 } from "../../shared/js-migrate/repairSummary.mjs";
 import {
   batchIds,
-  resolveRepairSourceIds,
+  resolveMigrationSourceIds,
 } from "../../shared/js-migrate/repairFromLog.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -521,7 +525,7 @@ async function runAppointmentReschedulesTableJob({
   useMssqlKeyset = idx.useMssqlKeyset;
 
   const logsDir = path.resolve(__dirname, "logs");
-  const repairSourceIds = resolveRepairSourceIds(
+  const repairSourceIds = resolveMigrationSourceIds(
     migrationConfig,
     logsDir,
     REPAIR_SPEC_APPOINTMENT_RESCHEDULES,
@@ -579,9 +583,11 @@ async function runAppointmentReschedulesTableJob({
     };
   }
   if (repairSourceIds != null) {
-    writeOutLine(
-      `>>> [${key}] migrateRunMode=repair-from-log (${repairSourceIds.length} log_key)`,
-      uiState,
+    logByIdMigrationRun(
+      key,
+      repairSourceIds.length,
+      "log_key",
+      migrationConfig,
     );
   }
 
@@ -668,11 +674,19 @@ async function runAppointmentReschedulesTableJob({
       sourceIndexTo: idx.sourceIndexTo,
     });
   }
-  const progressTotal = plannedRows ?? null;
-  const plannedChunks =
+  let progressTotal = plannedRows ?? null;
+  let plannedChunks =
     plannedRows != null && plannedRows > 0
       ? Math.ceil(plannedRows / batchSize)
       : null;
+  if (repairSourceIds != null) {
+    const idPlan = plannedProgressForSourceIds(repairSourceIds, batchSize);
+    if (idPlan) {
+      plannedRows = idPlan.plannedRows;
+      plannedChunks = idPlan.plannedChunks;
+      progressTotal = idPlan.plannedRows;
+    }
+  }
   if (sourceLimit != null) {
     writeOutLine(
       `>>> [${key}] TEMP sourceLimit enabled: ${sourceLimit} records`,

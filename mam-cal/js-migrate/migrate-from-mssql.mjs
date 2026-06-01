@@ -43,6 +43,7 @@ import {
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import { REPAIR_SPEC_MAM_CAL } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
+  explicitIdsProgressPlan,
   prepareRepairRun,
   repairRunIsDone,
   repairRunIsEmpty,
@@ -345,8 +346,8 @@ async function main() {
           sourceIndexTo: idx.sourceIndexTo,
         });
       }
-      const progressTotal = plannedRows ?? null;
-      const plannedChunks =
+      let progressTotal = plannedRows ?? null;
+      let plannedChunks =
         plannedRows != null && plannedRows > 0
           ? Math.ceil(plannedRows / batchSize)
           : null;
@@ -361,6 +362,12 @@ async function main() {
         REPAIR_SPEC_MAM_CAL,
         batchSize,
       );
+      const idPlan = explicitIdsProgressPlan(repairRun, batchSize);
+      if (idPlan) {
+        plannedRows = idPlan.plannedRows;
+        plannedChunks = idPlan.plannedChunks;
+        progressTotal = idPlan.plannedRows;
+      }
       if (repairRunIsEmpty(repairRun)) {
         runLog.status = "success";
         return;
