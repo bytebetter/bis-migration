@@ -7,11 +7,27 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertSourceKeyRangeSupported } from "../shared/js-migrate/sourceKeyRangeSupport.mjs";
 import {
+  assertSourceIdsMandatoryQuotes,
   assertSourceIdsSingleArgvToken,
   assertSourceIdsSupported,
+  looksLikeSourceIdsArgvValue,
+  npmConfigAteSourceIdsFlag,
+  parseSpacedNumericIdsParts,
+  sourceIdsKeptInSingleArgvToken,
+  shouldTreatBareNumericPairAsSourceIds,
+  SOURCE_IDS_PK_PROFILES,
   SOURCE_IDS_QUOTE_EXAMPLE,
+  throwNpmSplitSourceIdsMistake,
 } from "../shared/js-migrate/sourceIdsSupport.mjs";
-import { parseMigrateCliArgs } from "../shared/js-migrate/migrateCliArgs.mjs";
+import {
+  assertNpmSwallowedSourceKeyRange,
+  assertSourceIndexRangeArgvShape,
+  assertSourceKeyRangeArgvShape,
+  parseMigrateCliArgs,
+  validateSourceIndexRangeToken,
+  validateSourceKeyRangeToken,
+} from "../shared/js-migrate/migrateCliArgs.mjs";
+import { SOURCE_KEY_RANGE_SUPPORTED } from "../shared/js-migrate/sourceKeyRangeSupport.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
@@ -33,6 +49,7 @@ const PROFILE_DIR = {
   appointment_reschedules: "appointment-reschedules",
   examination: "examination",
   examination_general: "examination-general",
+  billing: "billing",
   pacs_sync_info: "pacs-sync-info",
   procedure: "procedure",
   ultrasound: "ultrasound",
@@ -44,9 +61,20 @@ const PROFILE_DIR = {
 };
 
 const profile = process.argv[2];
-const { args: forwarded, recovered } = normalizeForwardedArgs(
-  process.argv.slice(3),
-);
+/** @type {string[]} */
+let forwarded = [];
+/** @type {string[]} */
+let recovered = [];
+try {
+  ({ args: forwarded, recovered } = normalizeForwardedArgs(
+    process.argv.slice(3),
+    profile,
+    process.argv,
+  ));
+} catch (err) {
+  console.error(err instanceof Error ? err.message : String(err));
+  process.exit(1);
+}
 const dir = profile ? PROFILE_DIR[profile] : null;
 
 if (!dir) {
@@ -58,8 +86,9 @@ if (!dir) {
       Object.keys(PROFILE_DIR).join(", "),
       "",
       "Example:",
-      "  npm run migrate:patient_info -- --source-ids \"0000,1\"",
+      "  npm run migrate:patient_info -- --source-ids \"1,2,3,4,5\"  (ต้องมี \" ครอบค่าเสมอ)",
       "  npm run migrate:patient_info -- --source-index-range 1-20 --migrate-mode insert-only",
+      "  npm run migrate:billing -- --source-key-range 19-469",
     ].join("\n"),
   );
   process.exit(1);
@@ -72,6 +101,8 @@ if (recovered.length > 0) {
 }
 
 try {
+  assertSourceKeyRangeArgvShape(forwarded);
+  assertSourceIndexRangeArgvShape(forwarded);
   const parsed = parseMigrateCliArgs([
     process.execPath,
     "run-migrate-table-cli.mjs",
@@ -124,7 +155,11 @@ process.exit(r.status === null ? 1 : r.status);
  * @param {string[]} args
  * @returns {{ args: string[], recovered: string[] }}
  */
-function normalizeForwardedArgs(args) {
+function normalizeForwardedArgs(args, profileKey = null, fullArgv = []) {
+  args = prependRecoveredSourceIdsArgv(args, profileKey, fullArgv);
+  rejectMisplacedSourceIdsBareArgs(args, profileKey, fullArgv);
+  assertNpmSwallowedSourceKeyRange(profileKey, args, fullArgv);
+
   /** @type {string[]} */
   const recovered = [];
   /** @type {string[]} */
@@ -140,7 +175,20 @@ function normalizeForwardedArgs(args) {
       pass1.push(a);
       const next = args[i + 1];
       if (next != null && !String(next).startsWith("-")) {
-        pass1.push(String(next));
+        const val = String(next).trim();
+        const next2 = args[i + 2];
+        if (
+          next2 != null &&
+          !String(next2).startsWith("-") &&
+          /^\d+$/.test(val) &&
+          /^\d+$/.test(String(next2).trim())
+        ) {
+          throw new Error(
+            `พบ --source-index-range ${val} แล้วตามด้วย ${String(next2).trim()} — ใช้ช่วงด้วย - เช่น --source-index-range ${val}-${String(next2).trim()}`,
+          );
+        }
+        validateSourceIndexRangeToken(val);
+        pass1.push(val);
         i++;
       }
       continue;
@@ -149,7 +197,20 @@ function normalizeForwardedArgs(args) {
       pass1.push(a);
       const next = args[i + 1];
       if (next != null && !String(next).startsWith("-")) {
-        pass1.push(String(next));
+        const val = String(next).trim();
+        const next2 = args[i + 2];
+        if (
+          next2 != null &&
+          !String(next2).startsWith("-") &&
+          /^-?\d+$/.test(val) &&
+          /^-?\d+$/.test(String(next2).trim())
+        ) {
+          throw new Error(
+            `พบ --source-key-range ${val} แล้วตามด้วย ${String(next2).trim()} — ใช้ช่วงด้วย - เช่น --source-key-range ${val}-${String(next2).trim()}`,
+          );
+        }
+        validateSourceKeyRangeToken(val);
+        pass1.push(val);
         i++;
       }
       continue;
@@ -233,8 +294,7 @@ function normalizeForwardedArgs(args) {
   /** npm บน Windows มักกลืน --source-key-range แล้ว set env เป็น "true" ค่าช่วงเหลือเป็น arg เปล่า */
   const npmAteSourceKeyFlag =
     String(envKeyRangeRaw ?? "").trim().toLowerCase() === "true";
-  const npmAteSourceIdsFlag =
-    String(envSourceIdsRaw ?? "").trim().toLowerCase() === "true";
+  const npmAteSourceIdsFlag = npmConfigAteSourceIdsFlag();
   const wantsSourceKey =
     hasSourceKeyRange ||
     hasSourceKeyFrom ||
@@ -243,12 +303,18 @@ function normalizeForwardedArgs(args) {
     Boolean(readEnvArg("npm_config_source_key_from")) ||
     Boolean(readEnvArg("npm_config_source_key_to")) ||
     (envKeyRange !== "" && !npmAteSourceKeyFlag);
-  const wantsSourceIds = npmAteSourceIdsFlag;
+  const wantsSourceIds =
+    npmAteSourceIdsFlag || (envSourceIds !== "" && !npmAteSourceIdsFlag);
+  const sourceIdsProfile =
+    profileKey != null && profileKey in SOURCE_IDS_PK_PROFILES;
+  const keyRangeProfile =
+    profileKey != null && profileKey in SOURCE_KEY_RANGE_SUPPORTED;
 
   /** @type {string[]} */
   const out = [];
 
-  for (const a of pass1) {
+  for (let pi = 0; pi < pass1.length; pi++) {
+    const a = pass1[pi];
     if (a.startsWith("--")) {
       out.push(a);
       continue;
@@ -280,12 +346,32 @@ function normalizeForwardedArgs(args) {
       (RANGE_VALUE_RE.test(a) || SINGLE_INDEX_RE.test(a))
     ) {
       if (wantsSourceKey) {
+        if (
+          SINGLE_INDEX_RE.test(a) &&
+          !RANGE_VALUE_RE.test(a) &&
+          pass1[pi + 1] != null &&
+          !String(pass1[pi + 1]).startsWith("-") &&
+          SINGLE_INDEX_RE.test(String(pass1[pi + 1]).trim())
+        ) {
+          const hi = String(pass1[pi + 1]).trim();
+          if (sourceIdsProfile && npmConfigAteSourceIdsFlag()) {
+            throwNpmSplitSourceIdsMistake([a, hi], profileKey ?? "billing");
+          }
+          throw new Error(
+            `พบตัวเลข ${a} กับ ${hi} แยกกัน — ใช้ --source-key-range ${a}-${hi} (ต้องมีเครื่องหมาย - ไม่ใช้ comma)`,
+          );
+        }
         const rangeVal = envKeyRange && !npmAteSourceKeyFlag ? envKeyRange : a;
+        validateSourceKeyRangeToken(rangeVal);
         out.push("--source-key-range", rangeVal);
         hasSourceKeyRange = true;
         recovered.push(`--source-key-range ${rangeVal}`);
         continue;
       }
+      if (keyRangeProfile && SINGLE_INDEX_RE.test(a) && !RANGE_VALUE_RE.test(a)) {
+        validateSourceKeyRangeToken(a);
+      }
+      validateSourceIndexRangeToken(a);
       out.push("--source-index-range", a);
       hasSourceIndexRange = true;
       recovered.push(`--source-index-range ${a}`);
@@ -298,6 +384,7 @@ function normalizeForwardedArgs(args) {
   if (!hasSourceIndexRange && !wantsSourceKey && !wantsSourceIds) {
     const envIndexRange = readEnvArg("npm_config_source_index_range");
     if (envIndexRange) {
+      validateSourceIndexRangeToken(envIndexRange);
       out.push("--source-index-range", envIndexRange);
       recovered.push(`--source-index-range ${envIndexRange} (env)`);
       hasSourceIndexRange = true;
@@ -310,6 +397,7 @@ function normalizeForwardedArgs(args) {
     envKeyRange &&
     !npmAteSourceKeyFlag
   ) {
+    validateSourceKeyRangeToken(envKeyRange);
     out.push("--source-key-range", envKeyRange);
     recovered.push(`--source-key-range ${envKeyRange} (env)`);
   }
@@ -329,9 +417,7 @@ function normalizeForwardedArgs(args) {
       );
     }
     if (bareIds.length > 1) {
-      throw new Error(
-        `npm กลืน --source-ids แล้วแยกค่าเป็นหลาย args (${bareIds.join(", ")}) — ครอบด้วย " เช่น ${SOURCE_IDS_QUOTE_EXAMPLE}`,
-      );
+      throwNpmSplitSourceIdsMistake(bareIds, profileKey ?? "billing");
     }
     out.push("--source-ids", bareIds[0]);
     hasSourceIds = true;
@@ -341,9 +427,12 @@ function normalizeForwardedArgs(args) {
   if (hasSourceIds) {
     const parts = collectArgvPartsAfterFlag(out, "--source-ids");
     if (parts != null) {
-      assertSourceIdsSingleArgvToken(parts);
+      assertSourceIdsMandatoryQuotes(fullArgv, parts);
     }
   }
+
+  assertSourceKeyRangeArgvShape(out);
+  assertSourceIndexRangeArgvShape(out);
 
   return { args: out, recovered };
 }
@@ -369,4 +458,66 @@ function readEnvArg(name) {
     return "";
   }
   return s;
+}
+
+/**
+ * npm กลืน --source-ids แล้วเหลือแค่ 19 469 / 19,469 โดยไม่มี flag
+ *
+ * @param {string[]} args
+ * @param {string | null} profileKey
+ * @param {string[]} fullArgv
+ */
+function rejectMisplacedSourceIdsBareArgs(args, profileKey, fullArgv) {
+  if (args.some((a) => String(a) === "--source-ids")) return;
+  if (!shouldTreatBareNumericPairAsSourceIds(profileKey, fullArgv)) return;
+
+  /** @type {string[]} */
+  const bare = [];
+  for (const a of args) {
+    const s = String(a ?? "").trim();
+    if (!s || s.startsWith("-")) continue;
+    const low = s.toLowerCase();
+    if (RUN_MODE_BARE.has(low) || ROW_MODE_BARE.has(low)) continue;
+    bare.push(s);
+  }
+  if (bare.length === 0) return;
+
+  const pk = profileKey ?? "billing";
+  const numericOnly = bare.filter((t) => /^-?\d+$/.test(t));
+  if (numericOnly.length >= 2 && numericOnly.length === bare.length) {
+    throwNpmSplitSourceIdsMistake(numericOnly, pk);
+  }
+  if (bare.length === 1) {
+    const spaced = parseSpacedNumericIdsParts(bare[0]);
+    if (spaced) throwNpmSplitSourceIdsMistake(spaced, pk);
+  }
+}
+
+/**
+ * npm กลืน --source-ids แต่ค่า "19,469" ยังอยู่ argv เดียว → ใส่ flag กลับ
+ *
+ * @param {string[]} args
+ * @param {string | null} profileKey
+ * @param {string[]} fullArgv
+ * @returns {string[]}
+ */
+function prependRecoveredSourceIdsArgv(args, profileKey, fullArgv) {
+  if (args.some((a) => String(a) === "--source-ids")) return args;
+  /** @type {string[]} */
+  const bare = [];
+  for (const a of args) {
+    const s = String(a ?? "").trim();
+    if (!s || s.startsWith("-")) continue;
+    const low = s.toLowerCase();
+    if (RUN_MODE_BARE.has(low) || ROW_MODE_BARE.has(low)) continue;
+    bare.push(s);
+  }
+  if (
+    bare.length === 1 &&
+    sourceIdsKeptInSingleArgvToken([bare[0]]) &&
+    shouldTreatBareNumericPairAsSourceIds(profileKey, fullArgv)
+  ) {
+    return ["--source-ids", bare[0]];
+  }
+  return args;
 }

@@ -27,6 +27,7 @@
   "profiles": {
     "patient_info": {},
     "examination": {},
+    "billing": {},
     "examination_general": {},
     "appointment": {},
     "appointment_reschedules": {

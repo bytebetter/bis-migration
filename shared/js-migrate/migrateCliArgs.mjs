@@ -8,25 +8,32 @@
  *
  * --migrate-mode overwrite | insert-only  (บังคับพฤติกรรมแถว — แทน run-mode ด้านบนเมื่อระบุ)
  *
- * ช่วงลำดับแถวต้นทาง (1-based, inclusive):
- *    --source-index-range 1-100 | 100-all | all
+ * ช่วงลำดับแถวต้นทาง (1-based, inclusive) — ต้องเป็นช่วงด้วย -:
+ *    --source-index-range 1-10 | 10-100 | 100-all | all
  *    หรือ --source-index-from 1 --source-index-to 100
  *
- * ช่วงค่า key ตัวเลขต้นทาง (inclusive) — Exam_ID / Schedule_ID ฯลฯ:
- *    --source-key-range 1-100 | 100-all | all | 50-
+ * ช่วงค่า key ตัวเลขต้นทาง (inclusive) — ต้องเป็นช่วงด้วย -:
+ *    --source-key-range 1-10 | 10-100 | 100-all | all | 50-
  *    หรือ --source-key-from 1 --source-key-to 100
  *
- * migrate เฉพาะแถวตาม PK (ตารางที่มี PK บน MSSQL):
+ * รายการ PK เฉพาะแถว (string คั่นด้วย comma ใน argv เดียว):
+ *    --source-ids "1,2,3,4,5"   ← ต้องครอบด้วย " เสมอ (โดยเฉพาะ npm)
  *    --source-ids "5000"
- *    --source-ids "100,200,300"   ← ครอบด้วย " เสมอ (โดยเฉพาะหลาย id)
  *
  * ค่าเก่า: --migrate-run-mode full ถือเป็น resume
  */
 
 import {
+  assertSourceIdsMandatoryQuotes,
   assertSourceIdsSingleArgvToken,
   parseSourceIdsString,
+  parseSpacedNumericIdsParts,
+  readNpmSourceIdsEnvValue,
+  shouldSkipKeyRangeValidationForToken,
+  shouldTreatBareNumericPairAsSourceIds,
+  throwNpmSplitSourceIdsMistake,
 } from "./sourceIdsSupport.mjs";
+import { SOURCE_KEY_RANGE_SUPPORTED } from "./sourceKeyRangeSupport.mjs";
 
 /**
  * @param {string[]} argv
@@ -83,6 +90,7 @@ export function parseMigrateCliArgs(argv = process.argv) {
   let hasSourceKeyCli = false;
   const keyFromRaw = argvValue(argv, "--source-key-from");
   const keyToRaw = argvValue(argv, "--source-key-to");
+  assertSourceKeyRangeArgvShape(argv);
   const keyRangeStr = argvValue(argv, "--source-key-range");
   if (keyRangeStr != null) {
     hasSourceKeyCli = true;
@@ -113,6 +121,7 @@ export function parseMigrateCliArgs(argv = process.argv) {
     argvValue(argv, "--source-index-from"),
   );
   let sourceIndexTo = parseOptionalPositiveInt(argvValue(argv, "--source-index-to"));
+  assertSourceIndexRangeArgvShape(argv);
   const indexRangeStr = argvValue(argv, "--source-index-range");
   if (indexRangeStr != null) {
     const parsed = parseSourceIndexRangeString(indexRangeStr);
@@ -134,8 +143,10 @@ export function parseMigrateCliArgs(argv = process.argv) {
   const sourceIdParts = argvValuesAfterFlag(argv, "--source-ids");
   if (sourceIdParts != null) {
     hasSourceIdsCli = true;
-    assertSourceIdsSingleArgvToken(sourceIdParts);
-    sourceIds = parseSourceIdsString(sourceIdParts[0]);
+    assertSourceIdsMandatoryQuotes(argv, sourceIdParts);
+    const idsRaw =
+      readNpmSourceIdsEnvValue() ?? String(sourceIdParts[0]).trim();
+    sourceIds = parseSourceIdsString(idsRaw);
     if (sourceIds.length === 0) {
       throw new Error("--source-ids ต้องมีค่าอย่างน้อย 1 id");
     }
@@ -156,12 +167,319 @@ export function parseMigrateCliArgs(argv = process.argv) {
   };
 }
 
+const SOURCE_KEY_RANGE_FORMAT_HELP =
+  "รูปแบบที่รองรับ: 1-10, 10-100, 1-all, all, 50- (ต้องมี - คั่นช่วง ไม่ใช้ comma หรือเลขเดี่ยว)";
+
+const SOURCE_INDEX_RANGE_FORMAT_HELP =
+  "รูปแบบที่รองรับ: 1-10, 10-100, 100-all, all (ต้องมี - คั่นช่วง ไม่ใช้ comma หรือเลขเดี่ยว)";
+
 /**
- * @param {string} rangeStr เช่น 1-100, 1-all, all, 50-
+ * @param {string} raw
+ * @param {string} flagLabel
+ */
+function throwCommaLooksLikeSourceIds(raw, flagLabel) {
+  const parts = String(raw)
+    .split(/[,;]+/)
+    .map((p) => p.trim())
+    .filter((p) => p !== "");
+  if (parts.length >= 2) {
+    throw new Error(
+      `${flagLabel} ต้องเป็นช่วงด้วยเครื่องหมาย - ไม่ใช่รายการ id คั่น comma — ใช้ --source-ids "${parts.join(",")}" แทน`,
+    );
+  }
+}
+
+/**
+ * ตรวจค่าช่วง --source-key-range ก่อน parse — ไม่ใช่ช่วงจะ throw ทันที
+ * @param {string} rangeStr
+ * @param {string} [flagLabel]
+ */
+export function validateSourceKeyRangeToken(
+  rangeStr,
+  flagLabel = "--source-key-range",
+) {
+  const raw = String(rangeStr ?? "").trim();
+  if (raw === "") {
+    throw new Error(
+      `${flagLabel} ต้องระบุช่วง — ${SOURCE_KEY_RANGE_FORMAT_HELP}`,
+    );
+  }
+  if (raw.includes(",")) {
+    const m = raw.match(/^(-?\d+)\s*,\s*(-?\d+)$/);
+    if (m) {
+      throw new Error(
+        `${flagLabel} ต้องเป็นช่วงด้วยเครื่องหมาย - ไม่ใช่ , — ตัวอย่าง: ${flagLabel} ${m[1]}-${m[2]}`,
+      );
+    }
+    throwCommaLooksLikeSourceIds(raw, flagLabel);
+    throw new Error(
+      `${flagLabel} ต้องเป็นช่วงด้วยเครื่องหมาย - ไม่ใช่ , — ได้รับ ${raw}`,
+    );
+  }
+  const spacedParts = parseSpacedNumericIdsParts(raw);
+  if (spacedParts != null) {
+    if (flagLabel === "--source-key-range") {
+      throwNpmSplitSourceIdsMistake(spacedParts);
+    }
+    throw new Error(
+      `${flagLabel} ต้องเป็นช่วงด้วยเครื่องหมาย - ไม่ใช่ช่องว่าง — ตัวอย่าง: ${flagLabel} ${spacedParts[0]}-${spacedParts[1]}`,
+    );
+  }
+  const s = raw.toLowerCase();
+  if (s === "all" || s === "*") return;
+  if (!raw.includes("-")) {
+    throw new Error(
+      `${flagLabel} ต้องเป็นช่วง min-max ด้วยเครื่องหมาย - (ได้รับ ${raw}) — ${SOURCE_KEY_RANGE_FORMAT_HELP}`,
+    );
+  }
+  const ok =
+    /^(-?\d+)\s*-\s*(-?\d+|all)$/i.test(raw) ||
+    /^(-?\d+)\s*-\s*$/i.test(raw) ||
+    /^-\s*(-?\d+)$/i.test(raw);
+  if (!ok) {
+    throw new Error(
+      `${flagLabel} ไม่ถูกต้อง (${raw}) — ${SOURCE_KEY_RANGE_FORMAT_HELP}`,
+    );
+  }
+}
+
+/**
+ * ตรวจค่าช่วง --source-index-range ก่อน parse
+ * @param {string} rangeStr
+ * @param {string} [flagLabel]
+ */
+export function validateSourceIndexRangeToken(
+  rangeStr,
+  flagLabel = "--source-index-range",
+) {
+  const raw = String(rangeStr ?? "").trim();
+  if (raw === "") {
+    throw new Error(
+      `${flagLabel} ต้องระบุช่วง — ${SOURCE_INDEX_RANGE_FORMAT_HELP}`,
+    );
+  }
+  if (raw.includes(",")) {
+    const m = raw.match(/^(\d+)\s*,\s*(\d+)$/);
+    if (m) {
+      throw new Error(
+        `${flagLabel} ต้องเป็นช่วงด้วยเครื่องหมาย - ไม่ใช่ , — ตัวอย่าง: ${flagLabel} ${m[1]}-${m[2]}`,
+      );
+    }
+    throwCommaLooksLikeSourceIds(raw, flagLabel);
+    throw new Error(
+      `${flagLabel} ต้องเป็นช่วงด้วยเครื่องหมาย - ไม่ใช่ , — ได้รับ ${raw}`,
+    );
+  }
+  const spaced = raw.match(/^(\d+)\s+(\d+)$/);
+  if (spaced) {
+    throw new Error(
+      `${flagLabel} ต้องเป็นช่วงด้วยเครื่องหมาย - ไม่ใช่ช่องว่าง — ตัวอย่าง: ${flagLabel} ${spaced[1]}-${spaced[2]}`,
+    );
+  }
+  const s = raw.toLowerCase();
+  if (s === "all" || s === "*") return;
+  if (!raw.includes("-")) {
+    throw new Error(
+      `${flagLabel} ต้องเป็นช่วง min-max ด้วยเครื่องหมาย - (ได้รับ ${raw}) — ${SOURCE_INDEX_RANGE_FORMAT_HELP}`,
+    );
+  }
+  if (!/^(\d+)\s*-\s*(\d+|all)$/i.test(raw)) {
+    throw new Error(
+      `${flagLabel} ไม่ถูกต้อง (${raw}) — ${SOURCE_INDEX_RANGE_FORMAT_HELP}`,
+    );
+  }
+}
+
+/** @deprecated ใช้ validateSourceKeyRangeToken หรือ validateSourceIndexRangeToken */
+export function rejectCommaRangeSeparator(rangeStr, flagLabel = "--source-key-range") {
+  if (flagLabel === "--source-index-range") {
+    validateSourceIndexRangeToken(rangeStr, flagLabel);
+  } else {
+    validateSourceKeyRangeToken(rangeStr, flagLabel);
+  }
+}
+
+const SKIP_ONE_VALUE_FLAGS = new Set([
+  "--source-key-range",
+  "--source-index-range",
+  "--source-key-from",
+  "--source-key-to",
+  "--source-index-from",
+  "--source-index-to",
+  "--migrate-run-mode",
+  "--migrate-mode",
+  "--config",
+  "--profile",
+]);
+
+/** @param {string[]} rawArgs */
+function collectBareMigrateArgvTokens(rawArgs) {
+  /** @type {string[]} */
+  const bare = [];
+  for (let i = 0; i < rawArgs.length; i++) {
+    const a = String(rawArgs[i] ?? "").trim();
+    if (!a) continue;
+    const low = a.toLowerCase();
+    if (a.startsWith("-")) {
+      if (low === "--source-ids") {
+        i++;
+        while (i < rawArgs.length && !String(rawArgs[i]).startsWith("-")) i++;
+        continue;
+      }
+      if (SKIP_ONE_VALUE_FLAGS.has(low)) {
+        if (i + 1 < rawArgs.length && !String(rawArgs[i + 1]).startsWith("-")) {
+          i++;
+        }
+      }
+      continue;
+    }
+    if (
+      low === "resume" ||
+      low === "full" ||
+      low === "overwrite" ||
+      low === "repair-from-log" ||
+      low === "insert-only"
+    ) {
+      continue;
+    }
+    bare.push(a);
+  }
+  return bare;
+}
+
+function throwCommaKeyRangeMistake(numericOnly) {
+  throw new Error(
+    `--source-key-range ต้องเป็นช่วงด้วยเครื่องหมาย - ไม่ใช่ตัวเลขแยกหลายค่า (ได้ ${numericOnly.join(" กับ ")}, มักเกิดจาก comma ใน shell) — ตัวอย่าง: --source-key-range ${numericOnly[0]}-${numericOnly[1]}. ${SOURCE_KEY_RANGE_FORMAT_HELP}`,
+  );
+}
+
+/**
+ * npm บน Windows มักกลืน `--source-key-range` แล้วส่งแค่ `19` `469`
+ * @param {string | null} profileKey
+ * @param {string[]} rawArgs argv หลัง profile
+ * @param {string[]} [fullArgv] process.argv ทั้งก้อน (ตรวจว่ามี flag จริงหรือไม่)
+ */
+export function assertNpmSwallowedSourceKeyRange(
+  profileKey,
+  rawArgs,
+  fullArgv = [],
+) {
+  if (profileKey != null && !(profileKey in SOURCE_KEY_RANGE_SUPPORTED)) {
+    return;
+  }
+
+  const bare = collectBareMigrateArgvTokens(rawArgs);
+  const numericOnly = bare.filter((t) => /^-?\d+$/.test(t));
+  const hasExplicitKeyRangeFlag = fullArgv.some(
+    (a) =>
+      String(a) === "--source-key-range" ||
+      String(a).toLowerCase().startsWith("--source-key-range="),
+  );
+  const npmAte =
+    String(process.env.npm_config_source_key_range ?? "")
+      .trim()
+      .toLowerCase() === "true";
+
+  if (
+    numericOnly.length >= 2 &&
+    (npmAte || !hasExplicitKeyRangeFlag)
+  ) {
+    if (shouldTreatBareNumericPairAsSourceIds(profileKey, fullArgv)) {
+      throwNpmSplitSourceIdsMistake(numericOnly, profileKey ?? "billing");
+    }
+    throwCommaKeyRangeMistake(numericOnly);
+  }
+
+  for (const token of bare) {
+    if (/^-?\d+$/.test(token)) continue;
+    const spacedParts = parseSpacedNumericIdsParts(token);
+    if (
+      spacedParts != null &&
+      shouldTreatBareNumericPairAsSourceIds(profileKey, fullArgv)
+    ) {
+      throwNpmSplitSourceIdsMistake(spacedParts);
+    }
+    if (
+      shouldSkipKeyRangeValidationForToken(
+        token,
+        profileKey,
+        fullArgv,
+        rawArgs,
+      )
+    ) {
+      continue;
+    }
+    validateSourceKeyRangeToken(token);
+  }
+  if (numericOnly.length === 1 && !hasExplicitKeyRangeFlag) {
+    validateSourceKeyRangeToken(numericOnly[0]);
+  }
+}
+
+/**
+ * ตรวจ argv หลัง normalize — กรณี PowerShell แยก `19,469` เป็น `19` กับ `469`
+ * @param {string[]} argv
+ */
+export function assertSourceKeyRangeArgvShape(argv) {
+  const idx = argv.indexOf("--source-key-range");
+  if (idx < 0) return;
+  const valIdx = idx + 1;
+  if (valIdx >= argv.length || String(argv[valIdx]).startsWith("-")) {
+    throw new Error(
+      `--source-key-range ต้องมีค่าช่วง — ${SOURCE_KEY_RANGE_FORMAT_HELP}`,
+    );
+  }
+  const val = String(argv[valIdx]).trim();
+  const next = argv[valIdx + 1];
+  if (
+    next != null &&
+    !String(next).startsWith("-") &&
+    /^-?\d+$/.test(val) &&
+    /^-?\d+$/.test(String(next).trim())
+  ) {
+    throw new Error(
+      `พบ --source-key-range ${val} แล้วตามด้วย ${String(next).trim()} — ใช้ช่วงด้วย - เช่น --source-key-range ${val}-${String(next).trim()}`,
+    );
+  }
+  validateSourceKeyRangeToken(val, "--source-key-range");
+}
+
+/**
+ * ตรวจ argv หลัง normalize — กรณี PowerShell แยกช่วง index เป็นหลาย arg
+ * @param {string[]} argv
+ */
+export function assertSourceIndexRangeArgvShape(argv) {
+  const idx = argv.indexOf("--source-index-range");
+  if (idx < 0) return;
+  const valIdx = idx + 1;
+  if (valIdx >= argv.length || String(argv[valIdx]).startsWith("-")) {
+    throw new Error(
+      `--source-index-range ต้องมีค่าช่วง — ${SOURCE_INDEX_RANGE_FORMAT_HELP}`,
+    );
+  }
+  const val = String(argv[valIdx]).trim();
+  const next = argv[valIdx + 1];
+  if (
+    next != null &&
+    !String(next).startsWith("-") &&
+    /^\d+$/.test(val) &&
+    /^\d+$/.test(String(next).trim())
+  ) {
+    throw new Error(
+      `พบ --source-index-range ${val} แล้วตามด้วย ${String(next).trim()} — ใช้ช่วงด้วย - เช่น --source-index-range ${val}-${String(next).trim()}`,
+    );
+  }
+  validateSourceIndexRangeToken(val, "--source-index-range");
+}
+
+/**
+ * @param {string} rangeStr เช่น 1-100, 1-all, all, 50- (ต้องมี - ยกเว้น all)
  * @returns {{ min: bigint|null, max: bigint|null }}
  */
 export function parseSourceKeyRangeString(rangeStr) {
-  const s = String(rangeStr).trim().toLowerCase();
+  const raw = String(rangeStr).trim();
+  validateSourceKeyRangeToken(raw);
+  const s = raw.toLowerCase();
   if (s === "all" || s === "*") {
     return { min: null, max: null };
   }
@@ -180,13 +498,8 @@ export function parseSourceKeyRangeString(rangeStr) {
   if (openLo) {
     return { min: null, max: BigInt(openLo[1]) };
   }
-  const single = s.match(/^(-?\d+)$/);
-  if (single) {
-    const v = BigInt(single[1]);
-    return { min: v, max: v };
-  }
   throw new Error(
-    `--source-key-range ไม่ถูกต้อง "${rangeStr}" — ใช้รูป เช่น 1-100, 1-all, all, 50-`,
+    `--source-key-range ไม่ถูกต้อง (${raw}) — ${SOURCE_KEY_RANGE_FORMAT_HELP}`,
   );
 }
 
@@ -361,7 +674,9 @@ function argvHas(argv, name) {
  * @returns {{ from: number|null, to: number|null }}
  */
 export function parseSourceIndexRangeString(rangeStr) {
-  const s = String(rangeStr).trim().toLowerCase();
+  const raw = String(rangeStr).trim();
+  validateSourceIndexRangeToken(raw);
+  const s = raw.toLowerCase();
   if (s === "all" || s === "*") return { from: null, to: null };
   const m = s.match(/^(\d+)\s*-\s*(\d+|all)$/);
   if (m) {
@@ -370,13 +685,8 @@ export function parseSourceIndexRangeString(rangeStr) {
       to: m[2] === "all" ? null : Number.parseInt(m[2], 10),
     };
   }
-  const single = s.match(/^(\d+)$/);
-  if (single) {
-    const v = Number.parseInt(single[1], 10);
-    return { from: v, to: v };
-  }
   throw new Error(
-    `--source-index-range ไม่ถูกต้อง "${rangeStr}" — ใช้รูป เช่น 1-100, 100-all, all`,
+    `--source-index-range ไม่ถูกต้อง (${raw}) — ${SOURCE_INDEX_RANGE_FORMAT_HELP}`,
   );
 }
 

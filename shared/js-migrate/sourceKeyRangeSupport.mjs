@@ -4,6 +4,7 @@ import { hasNumericSourceRange } from "./migrateMssqlBindings.mjs";
 export const SOURCE_KEY_RANGE_SUPPORTED = {
   examination: { field: "Exam_ID", table: "dbo.examination" },
   examination_general: { field: "Exam_ID", table: "dbo.examination_general" },
+  billing: { field: "Exam_ID", table: "dbo.billing" },
   procedure: { field: "Exam_ID", table: "dbo.biopsy" },
   ultrasound: { field: "Exam_ID", table: "dbo.ultrasound" },
   ultrasound_mass: { field: "Exam_ID", table: "dbo.ultrasound_mass" },
