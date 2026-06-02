@@ -1,6 +1,45 @@
 const INT_RE = /^-?\d+$/;
 const STAGING = "migrate_stg.billing_mssql";
 
+/**
+ * MSSQL master patient_type.ID → public.payment_type.id (Directus)
+ * ไม่ลง billing.patient_type — ใช้เฉพาะ map เป็น payment_type
+ */
+export const MSSQL_PATIENT_TYPE_TO_PAYMENT_TYPE_ID = {
+  1: 1, // ผู้ป่วยนอกเบิกได้จากราชการ → ผู้ป่วยนอก สิทธิเบิกจ่ายตรง กรมบัญชีกลาง
+  2: 2, // ผู้ป่วยนอกเบิกได้จากปกติ → ผู้ป่วยนอก สิทธิเบิกหน่วยงานอื่นๆ
+  3: 7, // ผู้ป่วยนอกเบิกไม่ได้ → เบิกไม่ได้
+  4: 7, // ผู้ป่วยในเบิกไม่ได้ → เบิกไม่ได้
+  5: 3, // ผู้ป่วยนอกประกันสังคมศิริราช
+  6: 4, // ผู้ป่วยนอกประกันสังคมโรงพยาบาลอื่น
+  7: 5, // ผู้ป่วยนอกบัตร 30 บาทศิริราช
+  8: 6, // ผู้ป่วยนอกบัตร 30 บาทโรงพยาบาลอื่น
+  9: 19, // ผู้ป่วยในเบิกหน่วยงานอื่น
+  10: 20, // ผู้ป่วยในประกันสังคมศิริราช
+  11: 21, // ผู้ป่วยในประกันสังคมโรงพยาบาลอื่น
+  12: 22, // ผู้ป่วยในบัตร 30 บาทศิริราช
+  13: 23, // ผู้ป่วยในบัตร 30 บาทโรงพยาบาลอื่น
+  14: 18, // ผู้ป่วยในเบิกต้นสังกัด → ผู้ป่วยใน สิทธิเบิกจ่ายตรง กรมบัญชีกลาง
+  15: 8, // ผู้ป่วยรายได้น้อยตรวจฟรี
+  16: 9, // ผู้ป่วยรายได้น้อยจ่ายบางส่วน
+  17: 10, // ผู้มีอุปการะคุณ
+  18: 11, // ผู้ทรงศีล
+  19: 16, // ผู้ป่วยอื่นๆของศูนย์
+  20: 17, // ผู้ป่วยอื่นๆของศิริราช
+};
+
+function sqlMapMssqlPatientTypeToPaymentType(
+  stagingExpr = "NULLIF(btrim(s.patient_type), '')",
+) {
+  const whens = Object.entries(MSSQL_PATIENT_TYPE_TO_PAYMENT_TYPE_ID)
+    .map(([mssqlId, paymentTypeId]) => `WHEN '${mssqlId}' THEN ${paymentTypeId}`)
+    .join("\n      ");
+  return `CASE ${stagingExpr}
+      ${whens}
+      ELSE NULL
+    END`;
+}
+
 const INT_RE_STAGING = "^[0-9]+$";
 const NUMERIC_RE = /^-?\d+(\.\d+)?$/;
 
@@ -286,9 +325,8 @@ WHERE ${stgExamJoin}
     if (name === "exam") expr = "em.exam_id";
     else if (name === "patient") expr = "p.id";
     else if (name === "appointment") expr = "em.appointment";
-    else if (name === "patient_type") {
-      const raw = "NULLIF(btrim(s.patient_type), '')";
-      expr = toSqlValueExpr(raw, meta);
+    else if (name === "payment_type") {
+      expr = sqlMapMssqlPatientTypeToPaymentType();
     } else if (SOURCE_FIELD_BY_TARGET[name]) {
       const raw = `NULLIF(btrim(s.${SOURCE_FIELD_BY_TARGET[name]}), '')`;
       expr = toSqlValueExpr(raw, meta);

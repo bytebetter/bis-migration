@@ -3,6 +3,7 @@ node_modules/
 
 # Migration run output
 **/js-migrate/logs/
+**/js-migrate/checkpoints/
 *.log
 
 # Environment / secrets
