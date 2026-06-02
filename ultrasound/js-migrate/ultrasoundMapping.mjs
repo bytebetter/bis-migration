@@ -1,3 +1,5 @@
+import { ensurePlaceholderPatientInfoFromStaging } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
+
 const INT_RE = /^-?\d+$/;
 
 function nullIfTrimEmpty(v) {
@@ -91,6 +93,8 @@ export async function runUltrasoundChunkPostLoad(
   pgClient,
   stagingFromClause = "migrate_stg.ultrasound_mssql",
 ) {
+  await ensurePlaceholderPatientInfoFromStaging(pgClient, stagingFromClause);
+
   const cols = await existingColumns(pgClient, "ultrasound");
   if (!cols.has("old_exam_id")) {
     throw new Error("target public.ultrasound must have old_exam_id");
@@ -105,6 +109,22 @@ export async function runUltrasoundChunkPostLoad(
   const stgExamExpr = oldExamIsInt
     ? "NULLIF(btrim(s.exam_id), '')::int"
     : "NULLIF(btrim(s.exam_id), '')";
+
+  if (cols.has("id")) {
+    await pgClient.query(`
+      CREATE TEMP TABLE IF NOT EXISTS ultrasound_keep_id (
+        old_exam_id TEXT PRIMARY KEY,
+        id BIGINT NOT NULL
+      ) ON COMMIT PRESERVE ROWS;
+      TRUNCATE ultrasound_keep_id;
+      INSERT INTO ultrasound_keep_id (old_exam_id, id)
+      SELECT NULLIF(btrim(s.exam_id), '')::text, t.id::bigint
+      FROM ${stagingFromClause} s
+      INNER JOIN public.ultrasound t
+        ON t.old_exam_id = ${stgExamExpr}
+      WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$';
+    `);
+  }
 
   await pgClient.query(
     `DELETE FROM public.ultrasound
@@ -156,7 +176,12 @@ export async function runUltrasoundChunkPostLoad(
   const selectExprs = [];
   for (const [name, meta] of cols.entries()) {
     let expr = null;
-    if (name === "exam") expr = "e.id";
+    if (name === "id")
+      expr = `COALESCE(
+        id_keep.id,
+        nextval(pg_get_serial_sequence('public.ultrasound', 'id'))
+      )`;
+    else if (name === "exam") expr = "e.id";
     else if (name === "exam_id") {
       const rawExamId = "NULLIF(btrim(s.exam_id), '')";
       expr = toSqlValueExpr(rawExamId, meta) ?? `${rawExamId}::bigint`;
@@ -184,6 +209,11 @@ export async function runUltrasoundChunkPostLoad(
     throw new Error("no compatible columns found on public.ultrasound");
   }
 
+  const idKeepJoin = cols.has("id")
+    ? `LEFT JOIN ultrasound_keep_id id_keep
+  ON id_keep.old_exam_id = NULLIF(btrim(s.exam_id), '')`
+    : "";
+
   const sql = `
 INSERT INTO public.ultrasound (${insertColumns.join(", ")})
 SELECT
@@ -193,6 +223,7 @@ LEFT JOIN public.examination e
   ON e.old_exam_id::text = NULLIF(btrim(s.exam_id), '')
 LEFT JOIN public.patient_info p
   ON p.pid::text = NULLIF(btrim(s.pid), '')
+${idKeepJoin}
 WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$';
 `.trim();
   await pgClient.query(sql);

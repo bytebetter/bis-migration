@@ -10,7 +10,7 @@
     .\run-migrate-all.ps1 -Tables appointment,examination
     .\run-migrate-all.ps1 -Tables examination -MigrateRunMode overwrite
     .\run-migrate-all.ps1 -Tables examination -MigrateRunMode repair-from-log
-    .\run-migrate-all.ps1 -SourceKeyFrom 100 -SourceKeyTo 200 -SkipInstall
+    .\run-migrate-all.ps1 -SourceIndexFrom 100 -SourceIndexTo 200 -SkipInstall
 
   -MigrateRunMode resume (ดีฟอลต์) = ต่อจาก checkpoint, ไม่ทับแถวที่มีใน Postgres แล้ว
   -MigrateRunMode overwrite = migrate ทั้งชุดจากต้น, เขียนทับข้อมูลเดิม
@@ -27,9 +27,9 @@ param(
   [ValidateSet("", "resume", "overwrite", "repair-from-log", "full")]
   [string] $MigrateRunMode = "",
   [string] $MigrateMode = "",
-  [string] $SourceKeyRange = "",
-  [string] $SourceKeyFrom = "",
-  [string] $SourceKeyTo = ""
+  [string] $SourceIndexRange = "",
+  [string] $SourceIndexFrom = "",
+  [string] $SourceIndexTo = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -79,16 +79,18 @@ function Set-MigrateStatus {
 $steps = @(
   @{ N = 1;  Table = "patient_info";        Script = "patient-info/js-migrate/run-migrate.ps1" },
   @{ N = 2;  Table = "appointment";         Script = "appointment/js-migrate/run-migrate.ps1" },
-  @{ N = 3;  Table = "examination";         Script = "examination/js-migrate/run-migrate.ps1" },
-  @{ N = 4;  Table = "examination_general"; Script = "examination-general/js-migrate/run-migrate.ps1" },
-  @{ N = 5;  Table = "pacs_sync_info";      Script = "pacs-sync-info/js-migrate/run-migrate.ps1" },
-  @{ N = 6;  Table = "procedure";           Script = "procedure/js-migrate/run-migrate.ps1" },
-  @{ N = 7;  Table = "ultrasound";          Script = "ultrasound/js-migrate/run-migrate.ps1" },
-  @{ N = 8;  Table = "mammogram";           Script = "mam/js-migrate/run-migrate.ps1" },
-  @{ N = 9;  Table = "mammogram_cal";       Script = "mam-cal/js-migrate/run-migrate.ps1" },
-  @{ N = 10; Table = "mammogram_mass";      Script = "mam-mass/js-migrate/run-migrate.ps1" },
-  @{ N = 11; Table = "ultrasound_cyst";     Script = "ultrasound-cyst/js-migrate/run-migrate.ps1" },
-  @{ N = 12; Table = "ultrasound_mass";     Script = "ultrasound-mass/js-migrate/run-migrate.ps1" }
+  @{ N = 3;  Table = "appointment_reschedules"; Script = "appointment-reschedules/js-migrate/run-migrate.ps1" },
+  @{ N = 4;  Table = "examination";         Script = "examination/js-migrate/run-migrate.ps1" },
+  @{ N = 5;  Table = "billing";             Script = "billing/js-migrate/run-migrate.ps1" },
+  @{ N = 6;  Table = "examination_general"; Script = "examination-general/js-migrate/run-migrate.ps1" },
+  @{ N = 7;  Table = "pacs_sync_info";      Script = "pacs-sync-info/js-migrate/run-migrate.ps1" },
+  @{ N = 8;  Table = "procedure";           Script = "procedure/js-migrate/run-migrate.ps1" },
+  @{ N = 9;  Table = "ultrasound";          Script = "ultrasound/js-migrate/run-migrate.ps1" },
+  @{ N = 10; Table = "mammogram";           Script = "mam/js-migrate/run-migrate.ps1" },
+  @{ N = 11; Table = "mammogram_cal";       Script = "mam-cal/js-migrate/run-migrate.ps1" },
+  @{ N = 12; Table = "mammogram_mass";      Script = "mam-mass/js-migrate/run-migrate.ps1" },
+  @{ N = 13; Table = "ultrasound_cyst";     Script = "ultrasound-cyst/js-migrate/run-migrate.ps1" },
+  @{ N = 14; Table = "ultrasound_mass";     Script = "ultrasound-mass/js-migrate/run-migrate.ps1" }
 )
 
 $tableFilter = foreach ($t in $Tables) {
@@ -109,6 +111,17 @@ Write-MigrateLog "Log file: $LogPath"
 Write-MigrateLog "Status file: $statusPath"
 if ($StartFrom -gt 1) { Write-MigrateLog "StartFrom step: $StartFrom" }
 Write-MigrateLog "MigrateRunMode: $effectiveRunMode (resume=checkpoint+skip-existing, overwrite=full-replace, repair-from-log=ids-from-log)"
+$idxRangeLog = if ($SourceIndexRange) { $SourceIndexRange.Trim() } else { "" }
+if ($idxRangeLog -eq "") {
+  $sf = if ($SourceIndexFrom) { $SourceIndexFrom.Trim() } else { "" }
+  $st = if ($SourceIndexTo) { $SourceIndexTo.Trim() } else { "" }
+  if ($sf -ne "" -or $st -ne "") {
+    $idxRangeLog = "$(if ($sf) { $sf } else { 'all' })-$(if ($st) { $st } else { 'all' })"
+  }
+}
+if ($idxRangeLog -ne "") {
+  Write-MigrateLog ('SourceIndexRange: {0} — row index 1-based inclusive, per table ORDER BY' -f $idxRangeLog)
+}
 if (-not $runAllTables) {
   Write-MigrateLog "Tables filter: $($tableFilter -join ', ') (MSSQL key filter: appointment Schedule_ID / examination Exam_ID)"
 }
@@ -147,15 +160,15 @@ foreach ($step in $steps) {
     MigrateRunMode  = $effectiveRunMode
   }
   if ($MigrateMode -eq "insert-only") { $invokeArgs.MigrateMode = "insert-only" }
-  $skr = if ($SourceKeyRange) { $SourceKeyRange.Trim() } else { "" }
+  $skr = if ($SourceIndexRange) { $SourceIndexRange.Trim() } else { "" }
   if ($skr -ne "") {
-    $invokeArgs.SourceKeyRange = $skr
+    $invokeArgs.SourceIndexRange = $skr
   }
   else {
-    $sf = if ($SourceKeyFrom) { $SourceKeyFrom.Trim() } else { "" }
-    $st = if ($SourceKeyTo) { $SourceKeyTo.Trim() } else { "" }
-    if ($sf -ne "") { $invokeArgs.SourceKeyFrom = $sf }
-    if ($st -ne "") { $invokeArgs.SourceKeyTo = $st }
+    $sf = if ($SourceIndexFrom) { $SourceIndexFrom.Trim() } else { "" }
+    $st = if ($SourceIndexTo) { $SourceIndexTo.Trim() } else { "" }
+    if ($sf -ne "") { $invokeArgs.SourceIndexFrom = $sf }
+    if ($st -ne "") { $invokeArgs.SourceIndexTo = $st }
   }
 
   $stepStarted = Get-Date

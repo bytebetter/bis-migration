@@ -10,6 +10,7 @@
  *   npm run migrate:all -- -MigrateRunMode overwrite -SkipInstall
  *   npm run migrate:all -- --migrate-run-mode overwrite
  *   npm run migrate:all -- overwrite
+ *   npm run migrate:all -- --source-index-range 1-100
  */
 import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
@@ -30,12 +31,19 @@ const RUN_MODE_FLAGS = new Set([
  * @param {string[]} argv process.argv.slice(2)
  * @returns {string[]} args สำหรับ powershell -File run-migrate-all.ps1
  */
+/**
+ * @param {string[]} argv
+ * @returns {string[]}
+ */
 export function normalizeMigrateAllPsArgs(argv) {
   /** @type {string[]} */
   const out = [];
   let migrateRunMode = "";
   let migrateMode = "";
   let skipInstall = false;
+  let sourceIndexRange = "";
+  let sourceIndexFrom = "";
+  let sourceIndexTo = "";
 
   const pushRest = (token) => {
     if (token != null && String(token).trim() !== "") out.push(String(token));
@@ -45,6 +53,31 @@ export function normalizeMigrateAllPsArgs(argv) {
     const raw = argv[i];
     const a = String(raw).trim();
     const low = a.toLowerCase();
+
+    if (low === "-sourceindexrange" || low === "--source-index-range") {
+      const next = argv[i + 1];
+      if (next != null && !String(next).startsWith("-")) {
+        sourceIndexRange = String(next).trim();
+        i++;
+      }
+      continue;
+    }
+    if (low === "-sourceindexfrom" || low === "--source-index-from") {
+      const next = argv[i + 1];
+      if (next != null && !String(next).startsWith("-")) {
+        sourceIndexFrom = String(next).trim();
+        i++;
+      }
+      continue;
+    }
+    if (low === "-sourceindexto" || low === "--source-index-to") {
+      const next = argv[i + 1];
+      if (next != null && !String(next).startsWith("-")) {
+        sourceIndexTo = String(next).trim();
+        i++;
+      }
+      continue;
+    }
 
     if (RUN_MODE_FLAGS.has(low) || low.startsWith("-migraterunmode:")) {
       const inline = a.includes(":") ? a.split(":").slice(1).join(":").trim() : "";
@@ -77,13 +110,84 @@ export function normalizeMigrateAllPsArgs(argv) {
     pushRest(a);
   }
 
+  const indexPicked = {
+    sourceIndexRange,
+    sourceIndexFrom,
+    sourceIndexTo,
+  };
+  rebuildBareMigrateAllTokens(out, indexPicked);
+
   /** @type {string[]} */
   const ps = [];
   if (migrateRunMode) ps.push("-MigrateRunMode", migrateRunMode);
   if (migrateMode) ps.push("-MigrateMode", migrateMode);
   if (skipInstall) ps.push("-SkipInstall");
+  if (indexPicked.sourceIndexRange) {
+    ps.push("-SourceIndexRange", indexPicked.sourceIndexRange);
+  }
+  if (indexPicked.sourceIndexFrom) {
+    ps.push("-SourceIndexFrom", indexPicked.sourceIndexFrom);
+  }
+  if (indexPicked.sourceIndexTo) {
+    ps.push("-SourceIndexTo", indexPicked.sourceIndexTo);
+  }
   ps.push(...out);
   return ps;
+}
+
+const RANGE_VALUE_RE = /^\d+\s*-\s*(\d+|all)$/i;
+const SINGLE_INDEX_RE = /^\d+$/i;
+
+/**
+ * แปลง token ที่ npm กลืน flag (เช่น 1-10) ก่อนส่งเข้า PowerShell
+ * @param {string[]} rest
+ * @param {{ sourceIndexRange: string, sourceIndexFrom: string, sourceIndexTo: string }} picked
+ */
+function rebuildBareMigrateAllTokens(rest, picked) {
+  if (!picked.sourceIndexRange) {
+    const envIndexRange = readEnvArg("npm_config_source_index_range");
+    if (envIndexRange) picked.sourceIndexRange = envIndexRange;
+  }
+
+  /** @type {string[]} */
+  const kept = [];
+
+  for (const a of rest) {
+    if (a.startsWith("-")) {
+      kept.push(a);
+      continue;
+    }
+    if (
+      !picked.sourceIndexRange &&
+      !picked.sourceIndexFrom &&
+      !picked.sourceIndexTo &&
+      (RANGE_VALUE_RE.test(a) || SINGLE_INDEX_RE.test(a))
+    ) {
+      picked.sourceIndexRange = a;
+      continue;
+    }
+    kept.push(a);
+  }
+
+  rest.length = 0;
+  rest.push(...kept);
+}
+
+function readEnvArg(name) {
+  const v = process.env[name];
+  if (v == null) return "";
+  const s = String(v).trim();
+  if (s === "" || s.toLowerCase() === "true" || s.toLowerCase() === "false") {
+    return "";
+  }
+  return s;
+}
+
+function hasEnvFlag(name) {
+  const v = process.env[name];
+  if (v == null) return false;
+  const s = String(v).trim().toLowerCase();
+  return s === "true" || s === "1";
 }
 
 function main() {

@@ -52,6 +52,8 @@ FROM (
     [Exam_ID]
   FROM {{sourceObject}}
   WHERE [Exam_ID] > @afterExamId
+    AND (@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
+    AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)
   ORDER BY [Exam_ID] ASC
 ) s
 `.trim();

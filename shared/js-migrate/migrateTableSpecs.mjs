@@ -63,6 +63,22 @@ export const REPAIR_SPEC_EXAMINATION_GENERAL = {
 };
 
 /** @type {RepairSpec} */
+export const REPAIR_SPEC_BILLING = {
+  tableLabel: "billing",
+  recordIdLabel: "exam_id",
+  runLogPattern: /^migrate-.*\.json$/i,
+  fieldIssuePattern: /^migration-field-issues-billing-.*\.json$/i,
+  collectIdsFromRunLog(runLog, idSet) {
+    collectIdsFromRunLogCommon(runLog, idSet, {
+      failedChunkIdFields: ["firstExamId", "lastExamId"],
+    });
+  },
+  collectIdsFromFieldIssueLog(payload, idSet) {
+    collectIdsFromFieldIssueLogCommon(payload, idSet, "exam_id");
+  },
+};
+
+/** @type {RepairSpec} */
 export const REPAIR_SPEC_PACS_SYNC_INFO = {
   tableLabel: "pacs_sync_info",
   recordIdLabel: "accession_id",
@@ -225,12 +241,31 @@ export const REPAIR_SPEC_PATIENT_INFO = {
   },
 };
 
+/** @type {RepairSpec} */
+export const REPAIR_SPEC_APPOINTMENT_RESCHEDULES = {
+  tableLabel: "appointment_reschedules",
+  recordIdLabel: "log_key",
+  runLogPattern: /^migrate-.*\.json$/i,
+  fieldIssuePattern:
+    /^migration-field-issues-appointment_reschedules-.*\.json$/i,
+  collectIdsFromRunLog(runLog, idSet) {
+    collectIdsFromRunLogCommon(runLog, idSet, {
+      failedChunkIdFields: ["firstKey", "lastKey"],
+    });
+  },
+  collectIdsFromFieldIssueLog(payload, idSet) {
+    collectIdsFromFieldIssueLogCommon(payload, idSet, "log_key");
+  },
+};
+
 /** profile → spec (ทุกตารางใน pipeline) */
 export const REPAIR_SPEC_BY_PROFILE = {
   patient_info: REPAIR_SPEC_PATIENT_INFO,
   appointment: REPAIR_SPEC_APPOINTMENT,
+  appointment_reschedules: REPAIR_SPEC_APPOINTMENT_RESCHEDULES,
   examination: REPAIR_SPEC_EXAMINATION,
   examination_general: REPAIR_SPEC_EXAMINATION_GENERAL,
+  billing: REPAIR_SPEC_BILLING,
   pacs_sync_info: REPAIR_SPEC_PACS_SYNC_INFO,
   procedure: REPAIR_SPEC_PROCEDURE,
   ultrasound: REPAIR_SPEC_ULTRASOUND,

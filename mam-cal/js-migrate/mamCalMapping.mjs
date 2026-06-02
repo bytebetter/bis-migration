@@ -1,3 +1,5 @@
+import { ensurePlaceholderPatientInfoFromStaging } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
+
 const INT_RE = /^-?\d+$/;
 
 function nullIfTrimEmpty(v) {
@@ -91,6 +93,8 @@ export async function runMamCalChunkPostLoad(
   pgClient,
   stagingFromClause = "migrate_stg.mammogram_cal_mssql",
 ) {
+  await ensurePlaceholderPatientInfoFromStaging(pgClient, stagingFromClause);
+
   const cols = await existingColumns(pgClient, "mammogram_cal");
   if (!cols.has("described_cal_id")) {
     throw new Error("target public.mammogram_cal must have described_cal_id");
@@ -113,6 +117,29 @@ export async function runMamCalChunkPostLoad(
       : "NULLIF(btrim(s.exam_id), '')";
     const stgChildExpr = "NULLIF(btrim(s.described_cal_id), '')::int";
 
+    if (cols.has("id")) {
+      await pgClient.query(`
+        CREATE TEMP TABLE IF NOT EXISTS mammogram_cal_keep_id (
+          old_exam_id TEXT NOT NULL,
+          described_cal_id INTEGER NOT NULL,
+          id BIGINT NOT NULL,
+          PRIMARY KEY (old_exam_id, described_cal_id)
+        ) ON COMMIT PRESERVE ROWS;
+        TRUNCATE mammogram_cal_keep_id;
+        INSERT INTO mammogram_cal_keep_id (old_exam_id, described_cal_id, id)
+        SELECT
+          NULLIF(btrim(s.exam_id), '')::text,
+          NULLIF(btrim(s.described_cal_id), '')::int,
+          t.id::bigint
+        FROM ${stagingFromClause} s
+        INNER JOIN public.mammogram_cal t
+          ON t.old_exam_id = ${stgExamExpr}
+         AND t.described_cal_id = ${stgChildExpr}
+        WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$'
+          AND NULLIF(btrim(s.described_cal_id), '') ~ '^[0-9]+$';
+      `);
+    }
+
     await pgClient.query(
       `DELETE FROM public.mammogram_cal t
        USING ${stagingFromClause} s
@@ -122,6 +149,30 @@ export async function runMamCalChunkPostLoad(
          AND NULLIF(btrim(s.described_cal_id), '') ~ '^[0-9]+$';`,
     );
   } else {
+    if (cols.has("id")) {
+      await pgClient.query(`
+        CREATE TEMP TABLE IF NOT EXISTS mammogram_cal_keep_id (
+          old_exam_id TEXT NOT NULL,
+          described_cal_id INTEGER NOT NULL,
+          id BIGINT NOT NULL,
+          PRIMARY KEY (old_exam_id, described_cal_id)
+        ) ON COMMIT PRESERVE ROWS;
+        TRUNCATE mammogram_cal_keep_id;
+        INSERT INTO mammogram_cal_keep_id (old_exam_id, described_cal_id, id)
+        SELECT
+          NULLIF(btrim(s.exam_id), '')::text,
+          NULLIF(btrim(s.described_cal_id), '')::int,
+          t.id::bigint
+        FROM ${stagingFromClause} s
+        INNER JOIN public.examination e
+          ON e.old_exam_id::text = NULLIF(btrim(s.exam_id), '')
+        INNER JOIN public.mammogram_cal t
+          ON t.exam = e.id
+         AND t.described_cal_id = NULLIF(btrim(s.described_cal_id), '')::int
+        WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$'
+          AND NULLIF(btrim(s.described_cal_id), '') ~ '^[0-9]+$';
+      `);
+    }
     await pgClient.query(
       `DELETE FROM public.mammogram_cal t
        USING ${stagingFromClause} s
@@ -166,7 +217,12 @@ export async function runMamCalChunkPostLoad(
   const selectExprs = [];
   for (const [name, meta] of cols.entries()) {
     let expr = null;
-    if (name === "exam") expr = "e.id";
+    if (name === "id")
+      expr = `COALESCE(
+        id_keep.id,
+        nextval(pg_get_serial_sequence('public.mammogram_cal', 'id'))
+      )`;
+    else if (name === "exam") expr = "e.id";
     else if (name === "exam_id") {
       const rawExamId = "NULLIF(btrim(s.exam_id), '')";
       expr = toSqlValueExpr(rawExamId, meta) ?? `${rawExamId}::bigint`;
@@ -197,6 +253,11 @@ export async function runMamCalChunkPostLoad(
     ? `LEFT JOIN public.patient_info p
   ON p.pid::text = NULLIF(btrim(s.pid), '')`
     : "";
+  const idKeepJoin = cols.has("id")
+    ? `LEFT JOIN mammogram_cal_keep_id id_keep
+  ON id_keep.old_exam_id = NULLIF(btrim(s.exam_id), '')
+ AND id_keep.described_cal_id = NULLIF(btrim(s.described_cal_id), '')::int`
+    : "";
 
   const sql = `
 INSERT INTO public.mammogram_cal (${insertColumns.join(", ")})
@@ -206,6 +267,7 @@ FROM ${stagingFromClause} s
 LEFT JOIN public.examination e
   ON e.old_exam_id::text = NULLIF(btrim(s.exam_id), '')
 ${patientJoin}
+${idKeepJoin}
 WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$'
   AND NULLIF(btrim(s.described_cal_id), '') ~ '^[0-9]+$';
 `.trim();

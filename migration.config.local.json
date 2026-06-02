@@ -1,0 +1,51 @@
+{
+  "defaultProfile": "patient_info",
+  "shared": {
+    "source": {
+      "server": "10.12.10.104",
+      "port": 1433,
+      "database": "BISInfo",
+      "user": "bisdev",
+      "password": "Thanya1234",
+      "encrypt": true,
+      "trustServerCertificate": true,
+      "requestTimeout": 0,
+      "connectTimeout": 60000,
+      "cancelTimeout": 0
+    },
+    "target": {
+      "postgresHost": "127.0.0.1",
+      "postgresPort": 5432,
+      "postgresUser": "bis",
+      "postgresPassword": "Thanya@sj1",
+      "postgresDatabase": "bisinfo"
+    },
+    "migration": {
+      "batchSize": 2000
+    }
+  },
+  "profiles": {
+    "patient_info": {},
+    "examination": {},
+    "billing": {},
+    "examination_general": {},
+    "appointment": {},
+    "appointment_reschedules": {
+      "migration": {
+        "batchSize": 10000
+      }
+    },
+    "procedure": {},
+    "pacs_sync_info": {
+      "migration": {
+        "mssqlPagination": "keyset_plus_null"
+      }
+    },
+    "ultrasound": {},
+    "ultrasound_mass": {},
+    "ultrasound_cyst": {},
+    "mam": {},
+    "mam_mass": {},
+    "mam_cal": {}
+  }
+}

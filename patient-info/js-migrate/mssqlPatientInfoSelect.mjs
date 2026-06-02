@@ -36,6 +36,8 @@ SELECT
   CAST([Mobile_Phone] AS NVARCHAR(MAX)) AS mobile_phone,
   CAST([Email] AS NVARCHAR(MAX)) AS email
 FROM {{sourceObject}}
+WHERE (@migrateSrcKeyMin IS NULL OR TRY_CAST([PID] AS BIGINT) >= @migrateSrcKeyMin)
+  AND (@migrateSrcKeyMax IS NULL OR TRY_CAST([PID] AS BIGINT) <= @migrateSrcKeyMax)
 ORDER BY {{orderBy}}
 OFFSET @offset ROWS FETCH NEXT @page ROWS ONLY;
 `.trim();

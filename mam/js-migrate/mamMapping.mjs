@@ -1,4 +1,5 @@
 import sql from "mssql";
+import { ensurePlaceholderPatientInfoFromStaging } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
 
 const INT_RE = /^-?\d+$/;
 
@@ -93,6 +94,8 @@ export async function runMamChunkPostLoad(
   pgClient,
   stagingFromClause = "migrate_stg.mam_mssql",
 ) {
+  await ensurePlaceholderPatientInfoFromStaging(pgClient, stagingFromClause);
+
   const cols = await existingColumns(pgClient, "mammogram");
   if (!cols.has("old_exam_id") && !cols.has("exam")) {
     throw new Error("target public.mammogram must have exam or old_exam_id");
@@ -109,6 +112,22 @@ export async function runMamChunkPostLoad(
       ? "NULLIF(btrim(s.exam_id), '')::int"
       : "NULLIF(btrim(s.exam_id), '')";
 
+    if (cols.has("id")) {
+      await pgClient.query(`
+        CREATE TEMP TABLE IF NOT EXISTS mammogram_keep_id (
+          old_exam_id TEXT PRIMARY KEY,
+          id BIGINT NOT NULL
+        ) ON COMMIT PRESERVE ROWS;
+        TRUNCATE mammogram_keep_id;
+        INSERT INTO mammogram_keep_id (old_exam_id, id)
+        SELECT NULLIF(btrim(s.exam_id), '')::text, t.id::bigint
+        FROM ${stagingFromClause} s
+        INNER JOIN public.mammogram t
+          ON t.old_exam_id = ${stgExamExpr}
+        WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$';
+      `);
+    }
+
     await pgClient.query(
       `DELETE FROM public.mammogram
        WHERE old_exam_id IN (
@@ -118,6 +137,23 @@ export async function runMamChunkPostLoad(
        );`,
     );
   } else {
+    if (cols.has("id")) {
+      await pgClient.query(`
+        CREATE TEMP TABLE IF NOT EXISTS mammogram_keep_id (
+          old_exam_id TEXT PRIMARY KEY,
+          id BIGINT NOT NULL
+        ) ON COMMIT PRESERVE ROWS;
+        TRUNCATE mammogram_keep_id;
+        INSERT INTO mammogram_keep_id (old_exam_id, id)
+        SELECT NULLIF(btrim(s.exam_id), '')::text, m.id::bigint
+        FROM ${stagingFromClause} s
+        INNER JOIN public.examination e
+          ON e.old_exam_id::text = NULLIF(btrim(s.exam_id), '')
+        INNER JOIN public.mammogram m
+          ON m.exam = e.id
+        WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$';
+      `);
+    }
     await pgClient.query(
       `DELETE FROM public.mammogram m
        USING ${stagingFromClause} s
@@ -194,7 +230,12 @@ export async function runMamChunkPostLoad(
   const selectExprs = [];
   for (const [name, meta] of cols.entries()) {
     let expr = null;
-    if (name === "exam") expr = "e.id";
+    if (name === "id")
+      expr = `COALESCE(
+        id_keep.id,
+        nextval(pg_get_serial_sequence('public.mammogram', 'id'))
+      )`;
+    else if (name === "exam") expr = "e.id";
     else if (name === "exam_id") {
       const rawExamId = "NULLIF(btrim(s.exam_id), '')";
       expr = toSqlValueExpr(rawExamId, meta) ?? `${rawExamId}::bigint`;
@@ -225,6 +266,10 @@ export async function runMamChunkPostLoad(
     ? `LEFT JOIN public.patient_info p
   ON p.pid::text = NULLIF(btrim(s.pid), '')`
     : "";
+  const idKeepJoin = cols.has("id")
+    ? `LEFT JOIN mammogram_keep_id id_keep
+  ON id_keep.old_exam_id = NULLIF(btrim(s.exam_id), '')`
+    : "";
 
   const sql = `
 INSERT INTO public.mammogram (${insertColumns.join(", ")})
@@ -234,6 +279,7 @@ FROM ${stagingFromClause} s
 LEFT JOIN public.examination e
   ON e.old_exam_id::text = NULLIF(btrim(s.exam_id), '')
 ${patientJoin}
+${idKeepJoin}
 WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$';
 `.trim();
   await pgClient.query(sql);

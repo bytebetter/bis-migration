@@ -30,14 +30,25 @@ import {
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
 import {
-  migrateCliOverridesFromArgv,
   readNumericSourceKeyBounds,
   bindMigrateSrcNumericRange,
 } from "../../shared/js-migrate/migrateCliArgs.mjs";
+import {
+  logByIdMigrationRun,
+  plannedProgressForSourceIds,
+} from "../../shared/js-migrate/sourceIdsSupport.mjs";
+import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
+import {
+  applySourceIndexToMigrateJob,
+  buildIndexCheckpointSuffix,
+  isIndexWindowComplete,
+  narrowPlannedRowsForIndex,
+  resolvePageSize,
+} from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import {
   batchIds,
-  resolveRepairSourceIds,
+  resolveMigrationSourceIds,
 } from "../../shared/js-migrate/repairFromLog.mjs";
 import {
   finalizeRepairFromLog,
@@ -460,10 +471,13 @@ async function runTableJob({
   fs.mkdirSync(checkpointDir, { recursive: true });
 
   const kb = readNumericSourceKeyBounds(migrationConfig);
+  const indexCkSuffix = buildIndexCheckpointSuffix(migrationConfig);
   const rowModeSlug =
     migrationConfig.migrateRowMode === "insert-only" ? "ins" : "ovr";
   let checkpointBasename = key;
-  if (
+  if (indexCkSuffix) {
+    checkpointBasename = `${key}${indexCkSuffix}`;
+  } else if (
     kb.min != null ||
     kb.max != null ||
     migrationConfig.migrateRowMode === "insert-only"
@@ -524,6 +538,15 @@ async function runTableJob({
       `>>> [${key}] resume: ใช้ OFFSET (checkpoint เก่า) — รอบนี้จะช้า; ลบไฟล์ checkpoint แล้วรันตั้งแต่ 0 จะใช้ keyset เร็วกว่า`,
     );
   }
+  const idx = applySourceIndexToMigrateJob({
+    key,
+    migrationConfig,
+    checkpointEnabled,
+    offset,
+    useMssqlKeyset,
+  });
+  offset = idx.offset;
+  useMssqlKeyset = idx.useMssqlKeyset;
 
   const selectSql = (() => {
     const tpl = selectSqlFile
@@ -649,8 +672,16 @@ async function runTableJob({
       plannedRows = null;
     }
   }
-  const progressTotal = plannedRows ?? null;
-  const plannedChunks =
+  if (idx.indexLimited) {
+    plannedRows = narrowPlannedRowsForIndex({
+      plannedRows,
+      offset,
+      sourceIndexFrom: idx.sourceIndexFrom,
+      sourceIndexTo: idx.sourceIndexTo,
+    });
+  }
+  let progressTotal = plannedRows ?? null;
+  let plannedChunks =
     plannedRows != null && plannedRows > 0
       ? Math.ceil(plannedRows / batchSize)
       : null;
@@ -673,7 +704,7 @@ async function runTableJob({
   const logsDir = path.resolve(__dirname, "logs");
   const repairSourceIds =
     isExaminationBuiltin
-      ? resolveRepairSourceIds(
+      ? resolveMigrationSourceIds(
           migrationConfig,
           logsDir,
           REPAIR_SPEC_EXAMINATION,
@@ -705,16 +736,28 @@ async function runTableJob({
     };
   }
   if (repairSourceIds != null) {
-    console.error(
-      `>>> [${key}] migrateRunMode=repair-from-log (${repairSourceIds.length} exam_id)`,
+    const idPlan = plannedProgressForSourceIds(repairSourceIds, batchSize);
+    if (idPlan) {
+      plannedRows = idPlan.plannedRows;
+      plannedChunks = idPlan.plannedChunks;
+      progressTotal = idPlan.plannedRows;
+    }
+    logByIdMigrationRun(
+      key,
+      repairSourceIds.length,
+      "exam_id",
+      migrationConfig,
     );
   }
 
   while (true) {
-    const remaining = sourceLimit == null ? null : sourceLimit - total;
-    if (remaining != null && remaining <= 0) break;
-    const pageSize =
-      remaining == null ? batchSize : Math.min(batchSize, remaining);
+    const pageSize = resolvePageSize({
+      batchSize,
+      total,
+      sourceLimit,
+      plannedRows: idx.indexLimited ? plannedRows : null,
+    });
+    if (pageSize <= 0) break;
     const nextChunkIndex = chunkIndex + 1;
     if (debugLogs && !singleLineUi && useMssqlKeyset) {
       writeOutLine(
@@ -1142,9 +1185,15 @@ LIMIT 200;
         });
       }
     }
-    const isLastPage = repairBatches
-      ? repairBatchIndex >= repairBatches.length
-      : isLastKeysetPage(keysetAdvance, pageSize);
+    const isLastPage =
+      isIndexWindowComplete({
+        indexLimited: idx.indexLimited,
+        plannedRows,
+        rowsReadInWindow: total,
+      }) ||
+      (repairBatches
+        ? repairBatchIndex >= repairBatches.length
+        : isLastKeysetPage(keysetAdvance, pageSize));
     if (debugLogs && !singleLineUi) {
       writeOutLine(
         `>>> [${key}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(
@@ -1306,10 +1355,10 @@ async function main() {
           mssqlPool: pool,
           pgClient: client,
           sqlBaseDir,
-          migrationConfig: {
-          ...(config.migration ?? {}),
-          ...migrateCliOverridesFromArgv(process.argv),
-        },
+          migrationConfig: mergeMigrationWithCli(
+            config?.migration,
+            "examination",
+          ),
           tableJob,
         });
         runLog.tableResults.push(result);

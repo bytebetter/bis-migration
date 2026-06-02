@@ -32,9 +32,18 @@ import {
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
+import { bindMigrateSrcNumericRange } from "../../shared/js-migrate/migrateCliArgs.mjs";
+import {
+  applySourceIndexToMigrateJob,
+  buildIndexCheckpointSuffix,
+  isIndexWindowComplete,
+  narrowPlannedRowsForIndex,
+  resolvePageSize,
+} from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import { REPAIR_SPEC_MAM_CAL } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
+  explicitIdsProgressPlan,
   prepareRepairRun,
   repairRunIsDone,
   repairRunIsEmpty,
@@ -245,7 +254,8 @@ async function main() {
     migration.checkpointDir ?? "./checkpoints",
   );
   fs.mkdirSync(checkpointDir, { recursive: true });
-  const checkpointPath = path.join(checkpointDir, `${KEY}.json`);
+  const indexCkSuffix = buildIndexCheckpointSuffix(migration);
+  const checkpointPath = path.join(checkpointDir, `${KEY}${indexCkSuffix}.json`);
   const checkpoint = readJsonIfExists(checkpointPath, {
     key: KEY,
     offset: 0,
@@ -299,6 +309,14 @@ async function main() {
 
       let offset = Number(checkpointEnabled ? checkpoint.offset : 0);
       if (!Number.isFinite(offset) || offset < 0) offset = 0;
+      const idx = applySourceIndexToMigrateJob({
+        key: KEY,
+        migrationConfig: migration,
+        checkpointEnabled,
+        offset,
+        useMssqlKeyset: true,
+      });
+      offset = idx.offset;
       let afterExamId = Number(checkpointEnabled ? checkpoint.afterExamId : 0);
       if (!Number.isFinite(afterExamId) || afterExamId < 0) afterExamId = 0;
       const fieldIssueAcc = createFieldIssueAccumulator("record_key");
@@ -320,8 +338,16 @@ async function main() {
           plannedRows = null;
         }
       }
-      const progressTotal = plannedRows ?? null;
-      const plannedChunks =
+      if (idx.indexLimited) {
+        plannedRows = narrowPlannedRowsForIndex({
+          plannedRows,
+          offset,
+          sourceIndexFrom: idx.sourceIndexFrom,
+          sourceIndexTo: idx.sourceIndexTo,
+        });
+      }
+      let progressTotal = plannedRows ?? null;
+      let plannedChunks =
         plannedRows != null && plannedRows > 0
           ? Math.ceil(plannedRows / batchSize)
           : null;
@@ -336,6 +362,12 @@ async function main() {
         REPAIR_SPEC_MAM_CAL,
         batchSize,
       );
+      const idPlan = explicitIdsProgressPlan(repairRun, batchSize);
+      if (idPlan) {
+        plannedRows = idPlan.plannedRows;
+        plannedChunks = idPlan.plannedChunks;
+        progressTotal = idPlan.plannedRows;
+      }
       if (repairRunIsEmpty(repairRun)) {
         runLog.status = "success";
         return;
@@ -349,6 +381,13 @@ async function main() {
       const startedAt = Date.now();
       while (true) {
         const chunkStartedAt = Date.now();
+        const rowsInIndexWindow = Math.max(0, offset - idx.indexStartOffset);
+        const pageSize = resolvePageSize({
+          batchSize,
+          total: rowsInIndexWindow,
+          plannedRows: idx.indexLimited ? plannedRows : null,
+        });
+        if (pageSize <= 0) break;
         let rows = [];
         let fetchMs = 0;
 
@@ -373,11 +412,12 @@ async function main() {
             );
           }
           const fetchStartedAt = Date.now();
-          const res = await pool
-            .request()
+          const keysetReq = pool.request();
+          bindMigrateSrcNumericRange(keysetReq, migration, sql);
+          const res = await keysetReq
             .input("afterExamId", sql.BigInt, afterExamId)
             .input("afterChildId", sql.Int, afterChildId)
-            .input("page", sql.Int, batchSize)
+            .input("page", sql.Int, pageSize)
             .query(keysetSql);
           fetchMs = Date.now() - fetchStartedAt;
           rows = res.recordset || [];
@@ -478,7 +518,14 @@ async function main() {
 
         if (repairRun.active) {
           if (repairRunIsDone(repairRun)) break;
-        } else if (rows.length < batchSize) {
+        } else if (
+          isIndexWindowComplete({
+            indexLimited: idx.indexLimited,
+            plannedRows,
+            rowsReadInWindow: Math.max(0, offset - idx.indexStartOffset),
+          }) ||
+          rows.length < pageSize
+        ) {
           break;
         }
       }

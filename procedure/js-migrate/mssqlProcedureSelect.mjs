@@ -76,6 +76,8 @@ SELECT
   CAST([Location_Right_Other] AS NVARCHAR(MAX)) AS location_right_other,
   CAST(CAST([last_exam_id] AS NVARCHAR(50)) AS NVARCHAR(MAX)) AS last_exam_id
 FROM {{sourceObject}}
+WHERE (@migrateSrcKeyMin IS NULL OR TRY_CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
+  AND (@migrateSrcKeyMax IS NULL OR TRY_CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)
 ORDER BY {{orderBy}}
 OFFSET @offset ROWS FETCH NEXT @page ROWS ONLY;
 `.trim();

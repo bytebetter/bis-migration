@@ -1,38 +1,15 @@
-# Node สำหรับ MSSQL migrate ทั้ง repo (mssql / pg — โฟลเดอร์ <table>/js-migrate ไม่ต้อง npm i ซ้ำ)
-/node_modules/
+# Dependencies
+node_modules/
 
-patient-info/imports/*.csv
-patient-info/tools/node_modules/
-patient-info/js-migrate/node_modules/
-patient-info/js-migrate/logs/
-patient-info/js-migrate/checkpoints/
-examination/tools/node_modules/
-examination/js-migrate/node_modules/
-examination/js-migrate/logs/
-examination/js-migrate/checkpoints/
-appointment/js-migrate/node_modules/
-appointment/js-migrate/logs/
-appointment/js-migrate/checkpoints/
-ultrasound/js-migrate/node_modules/
-ultrasound/js-migrate/logs/
-ultrasound-mass/js-migrate/node_modules/
-ultrasound-mass/js-migrate/logs/
-ultrasound-mass/js-migrate/checkpoints/
-ultrasound-cyst/js-migrate/node_modules/
-ultrasound-cyst/js-migrate/logs/
-ultrasound-cyst/js-migrate/checkpoints/
-mam/js-migrate/node_modules/
-mam/js-migrate/logs/
-mam/js-migrate/checkpoints/
-mam-mass/js-migrate/node_modules/
-mam-mass/js-migrate/logs/
-mam-mass/js-migrate/checkpoints/
-mam-cal/js-migrate/node_modules/
-mam-cal/js-migrate/logs/
-mam-cal/js-migrate/checkpoints/
-logs/
-exports/*.json
-migration.config.local.json
+# Migration run output
+**/js-migrate/logs/
+**/js-migrate/checkpoints/
+*.log
+
+# Environment / secrets
 .env
 .env.*
-!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db

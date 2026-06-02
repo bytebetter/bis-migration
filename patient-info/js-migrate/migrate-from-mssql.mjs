@@ -29,12 +29,20 @@ import {
   renderProgress,
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
+import {
+  logByIdMigrationRun,
+  plannedProgressForSourceIds,
+} from "../../shared/js-migrate/sourceIdsSupport.mjs";
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
+import {
+  bindMigrateSrcNumericRange,
+  readNumericSourceKeyBounds,
+} from "../../shared/js-migrate/migrateCliArgs.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import { REPAIR_SPEC_PATIENT_INFO } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
   batchIds,
-  resolveRepairSourceIds,
+  resolveMigrationSourceIds,
 } from "../../shared/js-migrate/repairFromLog.mjs";
 import {
   finalizeRepairFromLog,
@@ -350,6 +358,27 @@ function buildTableJobs(config) {
   ];
 }
 
+function buildRangeCheckpointSuffix(migrationConfig) {
+  const { min, max } = readNumericSourceKeyBounds(migrationConfig);
+  const from = min == null ? "all" : min.toString();
+  const to = max == null ? "all" : max.toString();
+  const keyPart = min == null && max == null ? "" : `-k-${from}-${to}`;
+  const iFrom = readPositiveIndex(migrationConfig?.sourceIndexFrom);
+  const iTo = readPositiveIndex(migrationConfig?.sourceIndexTo);
+  const idxPart =
+    iFrom == null && iTo == null
+      ? ""
+      : `-i-${iFrom == null ? "all" : iFrom}-${iTo == null ? "all" : iTo}`;
+  return `${keyPart}${idxPart}`;
+}
+
+function readPositiveIndex(v) {
+  if (v == null || String(v).trim() === "") return null;
+  const n = Number.parseInt(String(v).trim(), 10);
+  if (!Number.isFinite(n) || n < 1) return null;
+  return n;
+}
+
 async function runTableJob({
   mssqlPool,
   pgClient,
@@ -378,7 +407,11 @@ async function runTableJob({
     migrationConfig.checkpointDir ?? "./checkpoints",
   );
   fs.mkdirSync(checkpointDir, { recursive: true });
-  const checkpointPath = path.join(checkpointDir, `${key}.json`);
+  const checkpointSuffix = buildRangeCheckpointSuffix(migrationConfig);
+  const checkpointPath = path.join(
+    checkpointDir,
+    `${key}${checkpointSuffix}.json`,
+  );
 
   const isPatientInfoBuiltin =
     key === "patient_info" ||
@@ -410,6 +443,20 @@ async function runTableJob({
     tableJob.startOffset ?? (checkpointEnabled ? checkpoint.offset : 0),
   );
   if (!Number.isFinite(offset) || offset < 0) offset = 0;
+  const sourceIndexFrom = readPositiveIndex(migrationConfig?.sourceIndexFrom);
+  const sourceIndexTo = readPositiveIndex(migrationConfig?.sourceIndexTo);
+  const indexStartOffset = sourceIndexFrom != null ? sourceIndexFrom - 1 : 0;
+  const indexLimited = sourceIndexFrom != null || sourceIndexTo != null;
+  const isRepairFromLogRun =
+    String(migrationConfig?.migrateRunMode ?? "").toLowerCase() ===
+    "repair-from-log";
+  if (indexLimited && !isRepairFromLogRun) {
+    if (checkpointEnabled) {
+      offset = Math.max(offset, indexStartOffset);
+    } else {
+      offset = indexStartOffset;
+    }
+  }
   const progressEnabled = migrationConfig.progressUi !== false;
   const debugLogs = migrationConfig.debugLogs === true;
   const progressStartedAt = Date.now();
@@ -418,18 +465,34 @@ async function runTableJob({
   let plannedRows = null;
   if (progressEnabled) {
     try {
-      const countRes = await mssqlPool
-        .request()
-        .query(`SELECT COUNT_BIG(1) AS total FROM ${sourceObject};`);
-      plannedRows = Number(countRes.recordset?.[0]?.total ?? 0);
+      const countReq = mssqlPool.request();
+      bindMigrateSrcNumericRange(countReq, migrationConfig, sql);
+      const countRes = await countReq.query(
+        `SELECT COUNT_BIG(1) AS total
+         FROM ${sourceObject}
+         WHERE (@migrateSrcKeyMin IS NULL OR TRY_CAST([PID] AS BIGINT) >= @migrateSrcKeyMin)
+           AND (@migrateSrcKeyMax IS NULL OR TRY_CAST([PID] AS BIGINT) <= @migrateSrcKeyMax);`,
+      );
+      const plannedTotal = Number(countRes.recordset?.[0]?.total ?? 0);
+      let effectiveFrom = offset + 1;
+      if (sourceIndexFrom != null) {
+        effectiveFrom = Math.max(effectiveFrom, sourceIndexFrom);
+      }
+      let effectiveTo = plannedTotal;
+      if (sourceIndexTo != null) {
+        effectiveTo = Math.min(effectiveTo, sourceIndexTo);
+      }
+      plannedRows =
+        effectiveTo >= effectiveFrom ? effectiveTo - effectiveFrom + 1 : 0;
     } catch {
       plannedRows = null;
     }
   }
-  const plannedChunks =
+  const plannedChunksInitial =
     plannedRows != null && plannedRows > 0
       ? Math.ceil(plannedRows / batchSize)
       : null;
+  let plannedChunks = plannedChunksInitial;
   if (debugLogs && plannedRows != null && plannedChunks != null) {
     writeOutLine(
       `>>> [${key}] plan: ~${plannedRows} rows, ~${plannedChunks} chunks`,
@@ -467,7 +530,7 @@ async function runTableJob({
   let chunkIndex = 0;
 
   const logsDir = path.resolve(sqlBaseDir, "logs");
-  const repairSourceIds = resolveRepairSourceIds(
+  const repairSourceIds = resolveMigrationSourceIds(
     migrationConfig,
     logsDir,
     REPAIR_SPEC_PATIENT_INFO,
@@ -490,8 +553,16 @@ async function runTableJob({
     };
   }
   if (repairSourceIds != null) {
-    console.error(
-      `>>> [${key}] migrateRunMode=repair-from-log (${repairSourceIds.length} pid)`,
+    const idPlan = plannedProgressForSourceIds(repairSourceIds, batchSize);
+    if (idPlan) {
+      plannedRows = idPlan.plannedRows;
+      plannedChunks = idPlan.plannedChunks;
+    }
+    logByIdMigrationRun(
+      key,
+      repairSourceIds.length,
+      "pid",
+      migrationConfig,
     );
   }
   const pidDetailTemplate = MSSQL_PATIENT_INFO_BY_PIDS_SELECT.replaceAll(
@@ -520,10 +591,14 @@ async function runTableJob({
       }
       if (rows.length === 0) continue;
     } else {
-      const r = await mssqlPool
-        .request()
+      const req = mssqlPool.request();
+      bindMigrateSrcNumericRange(req, migrationConfig, sql);
+      const remaining = plannedRows != null ? plannedRows - total : null;
+      const page = remaining == null ? batchSize : Math.max(0, Math.min(batchSize, remaining));
+      if (page <= 0) break;
+      const r = await req
         .input("offset", sql.Int, offset)
-        .input("page", sql.Int, batchSize)
+        .input("page", sql.Int, page)
         .query(selectSql);
       rows = r.recordset || [];
       if (rows.length === 0) break;

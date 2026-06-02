@@ -40,10 +40,22 @@ import {
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
+import {
+  logByIdMigrationRun,
+  plannedProgressForSourceIds,
+} from "../../shared/js-migrate/sourceIdsSupport.mjs";
+import { bindMigrateSrcNumericRange } from "../../shared/js-migrate/migrateCliArgs.mjs";
+import {
+  applySourceIndexToMigrateJob,
+  buildIndexCheckpointSuffix,
+  isIndexWindowComplete,
+  narrowPlannedRowsForIndex,
+  resolvePageSize,
+} from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { REPAIR_SPEC_PACS_SYNC_INFO } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
   batchIds,
-  resolveRepairSourceIds,
+  resolveMigrationSourceIds,
 } from "../../shared/js-migrate/repairFromLog.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -476,7 +488,7 @@ async function main() {
    */
   const mssqlPagination =
     config?.migration?.mssqlPagination ?? "keyset_plus_null";
-  const useOffsetPagination = mssqlPagination === "offset";
+  let useOffsetPagination = mssqlPagination === "offset";
   const useKeysetPlusNull = mssqlPagination === "keyset_plus_null";
 
   const mssqlDetailInChunkSize = Math.max(
@@ -553,7 +565,8 @@ async function main() {
     config?.migration?.checkpointDir ?? "./checkpoints",
   );
   fs.mkdirSync(checkpointDir, { recursive: true });
-  const checkpointPath = path.join(checkpointDir, `${KEY}.json`);
+  const indexCkSuffix = buildIndexCheckpointSuffix(migration);
+  const checkpointPath = path.join(checkpointDir, `${KEY}${indexCkSuffix}.json`);
   const checkpoint = readJsonIfExists(checkpointPath, {
     key: KEY,
     offset: 0,
@@ -695,13 +708,24 @@ async function main() {
       }
 
       let offset = Number(checkpointEnabled ? checkpoint.offset : 0);
+      const idx = applySourceIndexToMigrateJob({
+        key: KEY,
+        migrationConfig: migration,
+        checkpointEnabled,
+        offset,
+        useMssqlKeyset: true,
+      });
+      offset = idx.offset;
+      if (idx.indexLimited && idx.indexStartOffset > 0) {
+        useOffsetPagination = true;
+      }
       const fieldIssueAcc = createFieldIssueAccumulator("accession_id");
       const fieldIssueLogPath = path.join(
         logsDir,
         `migration-field-issues-pacs_sync_info-${nowStamp()}.json`,
       );
 
-      const repairSourceIds = resolveRepairSourceIds(
+      const repairSourceIds = resolveMigrationSourceIds(
         migration,
         logsDir,
         REPAIR_SPEC_PACS_SYNC_INFO,
@@ -710,8 +734,11 @@ async function main() {
         if (repairSourceIds.length === 0) {
           console.error(`>>> [${KEY}] repair-from-log: ไม่มี id ให้ migrate`);
         } else {
-          console.error(
-            `>>> [${KEY}] migrateRunMode=repair-from-log (${repairSourceIds.length} accession_id)`,
+          logByIdMigrationRun(
+            KEY,
+            repairSourceIds.length,
+            "accession_id",
+            migration,
           );
           const repairDetailTpl =
             detailSqlTemplate ??
@@ -919,6 +946,14 @@ async function main() {
           plannedRows = null;
         }
       }
+      if (idx.indexLimited) {
+        plannedRows = narrowPlannedRowsForIndex({
+          plannedRows,
+          offset,
+          sourceIndexFrom: idx.sourceIndexFrom,
+          sourceIndexTo: idx.sourceIndexTo,
+        });
+      }
       runLog.plannedRows = plannedRows;
       const progressTotal = plannedRows ?? null;
       const plannedChunks =
@@ -949,6 +984,13 @@ async function main() {
       if (!onlyNullTail) {
         while (true) {
           const chunkStartedAt = Date.now();
+          const rowsInIndexWindow = Math.max(0, offset - idx.indexStartOffset);
+          const pageSize = resolvePageSize({
+            batchSize,
+            total: rowsInIndexWindow,
+            plannedRows: idx.indexLimited ? plannedRows : null,
+          });
+          if (pageSize <= 0) break;
           const useStartSqlAcc = useCompositeAcc
             ? accLegCursor == null
             : isCheckpointStart(afterAccessionId);
@@ -957,8 +999,8 @@ async function main() {
           if (debugLogs && !singleLineUi) {
             writeOutLine(
               useCompositeAcc
-                ? `>>> [${KEY}] fetch chunk ${nextProbeLabel}: composite acc leg, page=${batchSize}, start=${useStartSqlAcc}`
-                : `>>> [${KEY}] fetch chunk ${nextProbeLabel}: afterAccessionId=${afterAccessionId ?? "(start)"}, page=${batchSize}, start=${useStartSqlAcc}`,
+                ? `>>> [${KEY}] fetch chunk ${nextProbeLabel}: composite acc leg, page=${pageSize}, start=${useStartSqlAcc}`
+                : `>>> [${KEY}] fetch chunk ${nextProbeLabel}: afterAccessionId=${afterAccessionId ?? "(start)"}, page=${pageSize}, start=${useStartSqlAcc}`,
               uiState,
             );
           }
@@ -974,8 +1016,9 @@ async function main() {
           if (useOffsetPagination && chunkSqlOffset) {
             const offReq = pool
               .request()
-              .input("page", sql.Int, batchSize)
+              .input("page", sql.Int, pageSize)
               .input("offset", sql.Int, offset);
+            bindMigrateSrcNumericRange(offReq, migration, sql);
             const tOff = Date.now();
             const offRes = await offReq.query(chunkSqlOffset);
             fetchMs = Date.now() - tOff;
@@ -989,7 +1032,8 @@ async function main() {
               );
             }
           } else if (useCompositeAcc) {
-            const joinReq = pool.request().input("page", sql.Int, batchSize);
+            const joinReq = pool.request().input("page", sql.Int, pageSize);
+            bindMigrateSrcNumericRange(joinReq, migration, sql);
             if (!useStartSqlAcc) {
               attachAccLegCompositeParams(joinReq, accLegCursor);
             }
@@ -1013,7 +1057,8 @@ async function main() {
             chunkSqlOptFirst &&
             chunkSqlOptKeyset
           ) {
-            const joinReq = pool.request().input("page", sql.Int, batchSize);
+            const joinReq = pool.request().input("page", sql.Int, pageSize);
+            bindMigrateSrcNumericRange(joinReq, migration, sql);
             if (!useStartSqlAcc) {
               const pk = mssqlParamForAccessionKey(afterAccessionId);
               joinReq.input("afterAccessionKey", pk.type, pk.val);
@@ -1032,7 +1077,8 @@ async function main() {
               );
             }
           } else {
-            const probeReq = pool.request().input("page", sql.Int, batchSize);
+            const probeReq = pool.request().input("page", sql.Int, pageSize);
+            bindMigrateSrcNumericRange(probeReq, migration, sql);
             if (!useStartSqlAcc) {
               const pk = mssqlParamForAccessionKey(afterAccessionId);
               probeReq.input("afterAccessionKey", pk.type, pk.val);
@@ -1232,28 +1278,53 @@ async function main() {
             );
           }
 
-          if (rows.length < batchSize) break;
+          if (
+            isIndexWindowComplete({
+              indexLimited: idx.indexLimited,
+              plannedRows,
+              rowsReadInWindow: Math.max(0, offset - idx.indexStartOffset),
+            }) ||
+            rows.length < pageSize
+          ) {
+            break;
+          }
         }
       }
 
+      const indexWindowFull =
+        idx.indexLimited &&
+        isIndexWindowComplete({
+          indexLimited: idx.indexLimited,
+          plannedRows,
+          rowsReadInWindow: Math.max(0, offset - idx.indexStartOffset),
+        });
       if (
         useKeysetPlusNull &&
         mssqlOptimizeSingleQuery &&
         nullAccSqlFirst &&
-        nullAccSqlKeyset
+        nullAccSqlKeyset &&
+        !indexWindowFull
       ) {
         if (!onlyNullTail) {
           console.error(
-            `>>> [${KEY}] เน€เธเธช 2: เนเธ–เธงเธ—เธตเน [Accession_ID] IS NULL (keyset เน€เธฃเนเธง)`,
+            `>>> [${KEY}] เน€เธเธช 2: เนเธถเธงเธ—เธตเน [Accession_ID] IS NULL (keyset เน€เธฃเนเธง)`,
           );
         }
         let nullCk = nullTailCursor;
         while (true) {
           const chunkStartedAt = Date.now();
+          const rowsInNullWindow = Math.max(0, offset - idx.indexStartOffset);
+          const nullPageSize = resolvePageSize({
+            batchSize,
+            total: rowsInNullWindow,
+            plannedRows: idx.indexLimited ? plannedRows : null,
+          });
+          if (nullPageSize <= 0) break;
           const nextProbeLabel = chunkIndex + 1;
           let rows = [];
           let fetchMs = 0;
-          const nullReq = pool.request().input("page", sql.Int, batchSize);
+          const nullReq = pool.request().input("page", sql.Int, nullPageSize);
+          bindMigrateSrcNumericRange(nullReq, migration, sql);
           if (nullCk == null) {
             const t0 = Date.now();
             const res = await nullReq.query(nullAccSqlFirst);
@@ -1365,7 +1436,16 @@ async function main() {
             );
           }
 
-          if (rows.length < batchSize) break;
+          if (
+            isIndexWindowComplete({
+              indexLimited: idx.indexLimited,
+              plannedRows,
+              rowsReadInWindow: Math.max(0, offset - idx.indexStartOffset),
+            }) ||
+            rows.length < nullPageSize
+          ) {
+            break;
+          }
         }
       }
 

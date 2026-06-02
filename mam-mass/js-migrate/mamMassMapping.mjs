@@ -1,3 +1,5 @@
+import { ensurePlaceholderPatientInfoFromStaging } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
+
 const INT_RE = /^-?\d+$/;
 
 function nullIfTrimEmpty(v) {
@@ -99,6 +101,8 @@ export async function runMamMassChunkPostLoad(
   pgClient,
   stagingFromClause = "migrate_stg.mammogram_mass_mssql",
 ) {
+  await ensurePlaceholderPatientInfoFromStaging(pgClient, stagingFromClause);
+
   const cols = await existingColumns(pgClient, "mammogram_mass");
   if (!cols.has("described_mass_id")) {
     throw new Error("target public.mammogram_mass must have described_mass_id");
@@ -121,6 +125,29 @@ export async function runMamMassChunkPostLoad(
       : "NULLIF(btrim(s.exam_id), '')";
     const stgChildExpr = "NULLIF(btrim(s.described_mass_id), '')::int";
 
+    if (cols.has("id")) {
+      await pgClient.query(`
+        CREATE TEMP TABLE IF NOT EXISTS mammogram_mass_keep_id (
+          old_exam_id TEXT NOT NULL,
+          described_mass_id INTEGER NOT NULL,
+          id BIGINT NOT NULL,
+          PRIMARY KEY (old_exam_id, described_mass_id)
+        ) ON COMMIT PRESERVE ROWS;
+        TRUNCATE mammogram_mass_keep_id;
+        INSERT INTO mammogram_mass_keep_id (old_exam_id, described_mass_id, id)
+        SELECT
+          NULLIF(btrim(s.exam_id), '')::text,
+          NULLIF(btrim(s.described_mass_id), '')::int,
+          t.id::bigint
+        FROM ${stagingFromClause} s
+        INNER JOIN public.mammogram_mass t
+          ON t.old_exam_id = ${stgExamExpr}
+         AND t.described_mass_id = ${stgChildExpr}
+        WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$'
+          AND NULLIF(btrim(s.described_mass_id), '') ~ '^[0-9]+$';
+      `);
+    }
+
     await pgClient.query(
       `DELETE FROM public.mammogram_mass t
        USING ${stagingFromClause} s
@@ -130,6 +157,30 @@ export async function runMamMassChunkPostLoad(
          AND NULLIF(btrim(s.described_mass_id), '') ~ '^[0-9]+$';`,
     );
   } else {
+    if (cols.has("id")) {
+      await pgClient.query(`
+        CREATE TEMP TABLE IF NOT EXISTS mammogram_mass_keep_id (
+          old_exam_id TEXT NOT NULL,
+          described_mass_id INTEGER NOT NULL,
+          id BIGINT NOT NULL,
+          PRIMARY KEY (old_exam_id, described_mass_id)
+        ) ON COMMIT PRESERVE ROWS;
+        TRUNCATE mammogram_mass_keep_id;
+        INSERT INTO mammogram_mass_keep_id (old_exam_id, described_mass_id, id)
+        SELECT
+          NULLIF(btrim(s.exam_id), '')::text,
+          NULLIF(btrim(s.described_mass_id), '')::int,
+          t.id::bigint
+        FROM ${stagingFromClause} s
+        INNER JOIN public.examination e
+          ON e.old_exam_id::text = NULLIF(btrim(s.exam_id), '')
+        INNER JOIN public.mammogram_mass t
+          ON t.exam = e.id
+         AND t.described_mass_id = NULLIF(btrim(s.described_mass_id), '')::int
+        WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$'
+          AND NULLIF(btrim(s.described_mass_id), '') ~ '^[0-9]+$';
+      `);
+    }
     await pgClient.query(
       `DELETE FROM public.mammogram_mass t
        USING ${stagingFromClause} s
@@ -181,7 +232,12 @@ export async function runMamMassChunkPostLoad(
   const selectExprs = [];
   for (const [name, meta] of cols.entries()) {
     let expr = null;
-    if (name === "exam") expr = "e.id";
+    if (name === "id")
+      expr = `COALESCE(
+        id_keep.id,
+        nextval(pg_get_serial_sequence('public.mammogram_mass', 'id'))
+      )`;
+    else if (name === "exam") expr = "e.id";
     else if (name === "exam_id") {
       const rawExamId = "NULLIF(btrim(s.exam_id), '')";
       expr = toSqlValueExpr(rawExamId, meta) ?? `${rawExamId}::bigint`;
@@ -212,6 +268,11 @@ export async function runMamMassChunkPostLoad(
     ? `LEFT JOIN public.patient_info p
   ON p.pid::text = NULLIF(btrim(s.pid), '')`
     : "";
+  const idKeepJoin = cols.has("id")
+    ? `LEFT JOIN mammogram_mass_keep_id id_keep
+  ON id_keep.old_exam_id = NULLIF(btrim(s.exam_id), '')
+ AND id_keep.described_mass_id = NULLIF(btrim(s.described_mass_id), '')::int`
+    : "";
 
   const sql = `
 INSERT INTO public.mammogram_mass (${insertColumns.join(", ")})
@@ -221,6 +282,7 @@ FROM ${stagingFromClause} s
 LEFT JOIN public.examination e
   ON e.old_exam_id::text = NULLIF(btrim(s.exam_id), '')
 ${patientJoin}
+${idKeepJoin}
 WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$'
   AND NULLIF(btrim(s.described_mass_id), '') ~ '^[0-9]+$';
 `.trim();

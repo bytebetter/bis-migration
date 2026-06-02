@@ -23,7 +23,19 @@ import {
   renderProgress,
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
+import {
+  logByIdMigrationRun,
+  plannedProgressForSourceIds,
+} from "../../shared/js-migrate/sourceIdsSupport.mjs";
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
+import { bindMigrateSrcNumericRange } from "../../shared/js-migrate/migrateCliArgs.mjs";
+import {
+  applySourceIndexToMigrateJob,
+  buildIndexCheckpointSuffix,
+  isIndexWindowComplete,
+  narrowPlannedRowsForIndex,
+  resolvePageSize,
+} from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import { REPAIR_SPEC_PROCEDURE } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
@@ -32,7 +44,7 @@ import {
 } from "../../shared/js-migrate/repairSummary.mjs";
 import {
   batchIds,
-  resolveRepairSourceIds,
+  resolveMigrationSourceIds,
 } from "../../shared/js-migrate/repairFromLog.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -304,7 +316,11 @@ async function runProcedureTableJob({
     migrationConfig.checkpointDir ?? "./checkpoints",
   );
   fs.mkdirSync(checkpointDir, { recursive: true });
-  const checkpointPath = path.join(checkpointDir, `${key}.json`);
+  const indexCkSuffix = buildIndexCheckpointSuffix(migrationConfig);
+  const checkpointPath = path.join(
+    checkpointDir,
+    `${key}${indexCkSuffix}.json`,
+  );
   const checkpoint = readJsonIfExists(checkpointPath, {
     key,
     offset: 0,
@@ -315,6 +331,14 @@ async function runProcedureTableJob({
     migrationConfig.startOffset ?? (checkpointEnabled ? checkpoint.offset : 0),
   );
   if (!Number.isFinite(offset) || offset < 0) offset = 0;
+  const idx = applySourceIndexToMigrateJob({
+    key,
+    migrationConfig,
+    checkpointEnabled,
+    offset,
+    useMssqlKeyset: false,
+  });
+  offset = idx.offset;
 
   const sourceSchema = source?.schema ?? "dbo";
   const sourceTable = source?.table ?? "biopsy";
@@ -332,7 +356,7 @@ async function runProcedureTableJob({
     sourceObject,
   );
   const logsDir = path.resolve(__dirname, "logs");
-  const repairSourceIds = resolveRepairSourceIds(
+  const repairSourceIds = resolveMigrationSourceIds(
     migrationConfig,
     logsDir,
     REPAIR_SPEC_PROCEDURE,
@@ -356,9 +380,17 @@ async function runProcedureTableJob({
     };
   }
   if (repairSourceIds != null) {
-    writeOutLine(
-      `>>> [${key}] migrateRunMode=repair-from-log (${repairSourceIds.length} old_db_id)`,
-      uiState,
+    const idPlan = plannedProgressForSourceIds(repairSourceIds, batchSize);
+    if (idPlan) {
+      plannedRows = idPlan.plannedRows;
+      plannedChunks = idPlan.plannedChunks;
+      progressTotal = idPlan.plannedRows;
+    }
+    logByIdMigrationRun(
+      key,
+      repairSourceIds.length,
+      "old_db_id",
+      migrationConfig,
     );
   }
 
@@ -388,8 +420,16 @@ async function runProcedureTableJob({
       plannedRows = null;
     }
   }
-  const progressTotal = plannedRows ?? null;
-  const plannedChunks =
+  if (idx.indexLimited) {
+    plannedRows = narrowPlannedRowsForIndex({
+      plannedRows,
+      offset,
+      sourceIndexFrom: idx.sourceIndexFrom,
+      sourceIndexTo: idx.sourceIndexTo,
+    });
+  }
+  let progressTotal = plannedRows ?? null;
+  let plannedChunks =
     plannedRows != null && plannedRows > 0
       ? Math.ceil(plannedRows / batchSize)
       : null;
@@ -432,10 +472,13 @@ async function runProcedureTableJob({
 
   while (true) {
     const chunkT0 = Date.now();
-    const remaining = sourceLimit == null ? null : sourceLimit - total;
-    if (remaining != null && remaining <= 0) break;
-    const pageSize =
-      remaining == null ? batchSize : Math.min(batchSize, remaining);
+    const pageSize = resolvePageSize({
+      batchSize,
+      total,
+      sourceLimit,
+      plannedRows: idx.indexLimited ? plannedRows : null,
+    });
+    if (pageSize <= 0) break;
     const nextChunkIndex = chunkIndex + 1;
     if (debugLogs) {
       writeOutLine(
@@ -468,8 +511,9 @@ async function runProcedureTableJob({
       if (rows.length === 0) continue;
     } else {
       const fetchStartedAt = Date.now();
-      const r = await mssqlPool
-        .request()
+      const req = mssqlPool.request();
+      bindMigrateSrcNumericRange(req, migrationConfig, sql);
+      const r = await req
         .input("offset", sql.Int, offset)
         .input("page", sql.Int, pageSize)
         .query(selectSql);
@@ -582,7 +626,12 @@ async function runProcedureTableJob({
         updatedAt: new Date().toISOString(),
       });
     }
-    const isLastPage = n < pageSize;
+    const isLastPage =
+      isIndexWindowComplete({
+        indexLimited: idx.indexLimited,
+        plannedRows,
+        rowsReadInWindow: total,
+      }) || n < pageSize;
     if (debugLogs) {
       writeOutLine(
         `>>> [${key}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(

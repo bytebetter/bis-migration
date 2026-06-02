@@ -1,10 +1,29 @@
 import fs from "node:fs";
 import path from "node:path";
 import { sortRecordIds } from "./fieldIssueLog.mjs";
+import {
+  hasExplicitSourceIds,
+  normalizeSourceIdsArray,
+} from "./sourceIdsSupport.mjs";
 
 /** @typedef {import("./migrateTableSpecs.mjs").RepairSpec} RepairSpec */
 
 const MAX_RANGE_EXPAND = 50_000;
+
+/**
+ * โหมด by-id: `--source-ids` หรือ config `sourceIds` — มาก่อน repair-from-log
+ *
+ * @param {Record<string, unknown>} migrationConfig
+ * @param {string} logsDir
+ * @param {RepairSpec} spec
+ * @returns {string[] | null} null = โหมด full/scan, [] = by-id/repair แต่ไม่มี id
+ */
+export function resolveMigrationSourceIds(migrationConfig, logsDir, spec) {
+  if (hasExplicitSourceIds(migrationConfig)) {
+    return sortRecordIds(normalizeSourceIdsArray(migrationConfig.sourceIds));
+  }
+  return resolveRepairSourceIds(migrationConfig, logsDir, spec);
+}
 
 /**
  * @param {Record<string, unknown>} migrationConfig
