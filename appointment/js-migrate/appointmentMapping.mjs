@@ -122,7 +122,6 @@ export function mapScheduleRowToAppointment(row) {
     prefix: nullIfTrimEmpty(getField(row, "Prefix")),
     first_name: nullIfTrimEmpty(getField(row, "Name")),
     last_name: nullIfTrimEmpty(getField(row, "Surname")),
-    payment_type: toInt(getField(row, "Payment_Type")),
     receive_date: toDirectusDateTime(getField(row, "Receive_Date")),
     old_login_name: nullIfTrimEmpty(getField(row, "LoginName")),
     memo_detail: nullIfTrimEmpty(getField(row, "MemoDetail")),
@@ -365,7 +364,6 @@ function buildAppointmentColumnArrays(payloads, patientColumn) {
     prefix: [],
     first_name: [],
     last_name: [],
-    payment_type: [],
     receive_date: [],
     old_login_name: [],
     memo_detail: [],
@@ -392,7 +390,6 @@ function buildAppointmentColumnArrays(payloads, patientColumn) {
     arrays.prefix.push(item.prefix);
     arrays.first_name.push(item.first_name);
     arrays.last_name.push(item.last_name);
-    arrays.payment_type.push(item.payment_type);
     arrays.receive_date.push(item.receive_date);
     arrays.old_login_name.push(item.old_login_name);
     arrays.memo_detail.push(item.memo_detail);
@@ -422,7 +419,6 @@ function buildAppointmentInsertDefs(arrays, patientColumn) {
     ["prefix", "text[]", arrays.prefix],
     ["first_name", "text[]", arrays.first_name],
     ["last_name", "text[]", arrays.last_name],
-    ["payment_type", "int4[]", arrays.payment_type],
     ["receive_date", "timestamp[]", arrays.receive_date],
     ["old_login_name", "text[]", arrays.old_login_name],
     ["memo_detail", "text[]", arrays.memo_detail],
@@ -817,7 +813,6 @@ const APPOINTMENT_MSSQL_SOURCE = {
   prefix: "prefix",
   first_name: "name",
   last_name: "surname",
-  payment_type: "payment_type",
   receive_date: "receive_date",
   old_login_name: "login_name",
   memo_detail: "memo_detail",
@@ -889,7 +884,6 @@ function collectAppointmentFieldIssues(row, mapped, ctx) {
     if (
       [
         "appointment_no",
-        "payment_type",
         "fail",
         "inventional",
         "right_id",
@@ -920,7 +914,6 @@ export const SCHEDULE_TO_APPOINTMENT_FIELD_MAP = [
   ["Prefix", "prefix"],
   ["Name", "first_name"],
   ["Surname", "last_name"],
-  ["Payment_Type", "payment_type"],
   ["Patient_Type", "patient_info.patient_category"],
   ["Receive_Date", "receive_date"],
   ["LoginName", "old_login_name"],
