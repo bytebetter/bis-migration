@@ -6,7 +6,12 @@ function Ensure-MigrateNodeModules {
 
   $mssqlMod = Join-Path $RepoRoot "node_modules/mssql/package.json"
   $pgMod = Join-Path $RepoRoot "node_modules/pg/package.json"
-  if ((Test-Path -LiteralPath $mssqlMod) -and (Test-Path -LiteralPath $pgMod)) {
+  $tediousConnStrMod = Join-Path $RepoRoot "node_modules/@tediousjs/connection-string/package.json"
+  if (
+    (Test-Path -LiteralPath $mssqlMod) -and
+    (Test-Path -LiteralPath $pgMod) -and
+    (Test-Path -LiteralPath $tediousConnStrMod)
+  ) {
     return
   }
 
