@@ -303,6 +303,7 @@ export async function prepareBillingPostLoad(
   migrateRowMode = "overwrite",
 ) {
   const mode = migrateRowMode === "insert-only" ? "insert-only" : "overwrite";
+  const keepExistingId = mode !== "insert-only";
   if (billingPostLoadSqlCache?.mode === mode) return billingPostLoadSqlCache;
 
   const cols = await getCachedBillingTargetColumns(pgClient);
@@ -360,12 +361,16 @@ WHERE NULLIF(btrim(s.exam_id), '') ~ '${INT_RE_STAGING}';
   const selectExprs = [];
   for (const [name, meta] of cols.entries()) {
     let expr = null;
-    if (name === "id")
-      expr = `COALESCE(
+    if (name === "id") {
+      if (keepExistingId) {
+        expr = `COALESCE(
         id_keep.id,
         nextval(pg_get_serial_sequence('public.billing', 'id'))
       )`;
-    else if (name === "exam") expr = "em.exam_id";
+      } else {
+        expr = "nextval(pg_get_serial_sequence('public.billing', 'id'))";
+      }
+    } else if (name === "exam") expr = "em.exam_id";
     else if (name === "patient") expr = "p.id";
     else if (name === "appointment") expr = "em.appointment";
     else if (name === "payment_type") {
@@ -395,8 +400,7 @@ LEFT JOIN migrate_stg.billing_exam_map em
   ON em.old_exam_id = NULLIF(btrim(s.exam_id), '')
 LEFT JOIN public.patient_info p
   ON p.pid::text = NULLIF(btrim(s.pid), '')
-LEFT JOIN billing_keep_id id_keep
-  ON id_keep.old_exam_id = NULLIF(btrim(s.exam_id), '')
+${keepExistingId ? "LEFT JOIN billing_keep_id id_keep\n  ON id_keep.old_exam_id = NULLIF(btrim(s.exam_id), '')" : ""}
 WHERE NULLIF(btrim(s.exam_id), '') ~ '${INT_RE_STAGING}'${insertOnlyGuard};
 `.trim();
 
