@@ -1071,7 +1071,7 @@ export async function runExaminationChunkPostLoad(
   }
 
   // หลัง insert: sync sequence เผื่อกรณีมี row ที่ไม่เคยมีใน PG
-  if (cols.has("id")) {
+  if (colNames.includes("id")) {
     await pgClient.query(`
       SELECT setval(
         pg_get_serial_sequence('public.examination', 'id'),
