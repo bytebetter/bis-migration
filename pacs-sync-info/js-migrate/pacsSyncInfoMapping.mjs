@@ -195,6 +195,24 @@ export async function runPacsSyncInfoChunkPostLoad(pgClient) {
     );
   }
 
+  if (cols.has("id")) {
+    await pgClient.query(
+      `
+      CREATE TEMP TABLE IF NOT EXISTS pacs_sync_info_keep_id (
+        accession_id TEXT PRIMARY KEY,
+        id BIGINT NOT NULL
+      ) ON COMMIT PRESERVE ROWS;
+      TRUNCATE pacs_sync_info_keep_id;
+      INSERT INTO pacs_sync_info_keep_id (accession_id, id)
+      SELECT NULLIF(btrim(s.accession_id::text), ''), p.id::bigint
+      FROM migrate_stg.pacs_sync_info_mssql s
+      INNER JOIN public.pacs_sync_info p
+        ON p.accession_id::text = s.accession_id::text
+      WHERE NULLIF(btrim(s.accession_id::text), '') IS NOT NULL
+      `,
+    );
+  }
+
   await pgClient.query(
     `
     DELETE FROM public.pacs_sync_info p
@@ -215,7 +233,12 @@ export async function runPacsSyncInfoChunkPostLoad(pgClient) {
     if (SKIP_TARGET_COLS.has(name)) continue;
 
     let expr = null;
-    if (name === "accession_id") {
+    if (name === "id") {
+      expr = `COALESCE(
+        id_keep.id,
+        nextval(pg_get_serial_sequence('public.pacs_sync_info', 'id'))
+      )`;
+    } else if (name === "accession_id") {
       expr = toSqlValueExpr(`s.accession_id`, meta) ?? `NULLIF(btrim(s.accession_id::text), '')`;
     } else if (name === "patient") {
       expr = `pat.id`;
@@ -238,6 +261,10 @@ export async function runPacsSyncInfoChunkPostLoad(pgClient) {
   if (insertColumns.length === 0) {
     throw new Error("no writable columns mapped for public.pacs_sync_info");
   }
+  const idKeepJoin = cols.has("id")
+    ? `LEFT JOIN pacs_sync_info_keep_id id_keep
+  ON id_keep.accession_id = NULLIF(btrim(s.accession_id::text), '')`
+    : "";
 
   const sql = `
 INSERT INTO public.pacs_sync_info (${insertColumns.join(", ")})
@@ -261,6 +288,7 @@ LEFT JOIN LATERAL (
 LEFT JOIN public.examination e
   ON NULLIF(btrim(s.exam_id::text), '') ~ '^[0-9]+$'
  AND e.old_exam_id::text = NULLIF(btrim(s.exam_id::text), '')
+${idKeepJoin}
 `.trim();
 
   await pgClient.query(sql);

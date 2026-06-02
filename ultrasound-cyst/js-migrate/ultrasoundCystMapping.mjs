@@ -125,6 +125,29 @@ export async function runUltrasoundCystChunkPostLoad(
       : "NULLIF(btrim(s.exam_id), '')";
     const stgChildExpr = "NULLIF(btrim(s.described_cyst_id), '')::int";
 
+    if (cols.has("id")) {
+      await pgClient.query(`
+        CREATE TEMP TABLE IF NOT EXISTS ultrasound_cyst_keep_id (
+          old_exam_id TEXT NOT NULL,
+          described_cyst_id INTEGER NOT NULL,
+          id BIGINT NOT NULL,
+          PRIMARY KEY (old_exam_id, described_cyst_id)
+        ) ON COMMIT PRESERVE ROWS;
+        TRUNCATE ultrasound_cyst_keep_id;
+        INSERT INTO ultrasound_cyst_keep_id (old_exam_id, described_cyst_id, id)
+        SELECT
+          NULLIF(btrim(s.exam_id), '')::text,
+          NULLIF(btrim(s.described_cyst_id), '')::int,
+          t.id::bigint
+        FROM ${stagingFromClause} s
+        INNER JOIN public.ultrasound_cyst t
+          ON t.old_exam_id = ${stgExamExpr}
+         AND t.described_cyst_id = ${stgChildExpr}
+        WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$'
+          AND NULLIF(btrim(s.described_cyst_id), '') ~ '^[0-9]+$';
+      `);
+    }
+
     await pgClient.query(
       `DELETE FROM public.ultrasound_cyst t
        USING ${stagingFromClause} s
@@ -134,6 +157,30 @@ export async function runUltrasoundCystChunkPostLoad(
          AND NULLIF(btrim(s.described_cyst_id), '') ~ '^[0-9]+$';`,
     );
   } else {
+    if (cols.has("id")) {
+      await pgClient.query(`
+        CREATE TEMP TABLE IF NOT EXISTS ultrasound_cyst_keep_id (
+          old_exam_id TEXT NOT NULL,
+          described_cyst_id INTEGER NOT NULL,
+          id BIGINT NOT NULL,
+          PRIMARY KEY (old_exam_id, described_cyst_id)
+        ) ON COMMIT PRESERVE ROWS;
+        TRUNCATE ultrasound_cyst_keep_id;
+        INSERT INTO ultrasound_cyst_keep_id (old_exam_id, described_cyst_id, id)
+        SELECT
+          NULLIF(btrim(s.exam_id), '')::text,
+          NULLIF(btrim(s.described_cyst_id), '')::int,
+          t.id::bigint
+        FROM ${stagingFromClause} s
+        INNER JOIN public.examination e
+          ON e.old_exam_id::text = NULLIF(btrim(s.exam_id), '')
+        INNER JOIN public.ultrasound_cyst t
+          ON t.exam = e.id
+         AND t.described_cyst_id = NULLIF(btrim(s.described_cyst_id), '')::int
+        WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$'
+          AND NULLIF(btrim(s.described_cyst_id), '') ~ '^[0-9]+$';
+      `);
+    }
     await pgClient.query(
       `DELETE FROM public.ultrasound_cyst t
        USING ${stagingFromClause} s
@@ -183,7 +230,12 @@ export async function runUltrasoundCystChunkPostLoad(
   const selectExprs = [];
   for (const [name, meta] of cols.entries()) {
     let expr = null;
-    if (name === "exam") expr = "e.id";
+    if (name === "id")
+      expr = `COALESCE(
+        id_keep.id,
+        nextval(pg_get_serial_sequence('public.ultrasound_cyst', 'id'))
+      )`;
+    else if (name === "exam") expr = "e.id";
     else if (name === "exam_id") {
       const rawExamId = "NULLIF(btrim(s.exam_id), '')";
       expr = toSqlValueExpr(rawExamId, meta) ?? `${rawExamId}::bigint`;
@@ -214,6 +266,11 @@ export async function runUltrasoundCystChunkPostLoad(
     ? `LEFT JOIN public.patient_info p
   ON p.pid::text = NULLIF(btrim(s.pid), '')`
     : "";
+  const idKeepJoin = cols.has("id")
+    ? `LEFT JOIN ultrasound_cyst_keep_id id_keep
+  ON id_keep.old_exam_id = NULLIF(btrim(s.exam_id), '')
+ AND id_keep.described_cyst_id = NULLIF(btrim(s.described_cyst_id), '')::int`
+    : "";
 
   const sql = `
 INSERT INTO public.ultrasound_cyst (${insertColumns.join(", ")})
@@ -223,6 +280,7 @@ FROM ${stagingFromClause} s
 LEFT JOIN public.examination e
   ON e.old_exam_id::text = NULLIF(btrim(s.exam_id), '')
 ${patientJoin}
+${idKeepJoin}
 WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$'
   AND NULLIF(btrim(s.described_cyst_id), '') ~ '^[0-9]+$';
 `.trim();

@@ -40,6 +40,27 @@ function sqlMapMssqlPatientTypeToPaymentType(
     END`;
 }
 
+/**
+ * billing.care_type จาก public.payment_type.care_type หลัง map payment_type
+ * ยกเว้นเบิกไม่ได้ (payment_type 7, care_type null): แยกจาก MSSQL patient_type
+ *   3 ผู้ป่วยนอกเบิกไม่ได้ → "1", 4 ผู้ป่วยในเบิกไม่ได้ → "2"
+ */
+function sqlCareTypeFromMappedPaymentType(
+  stagingExpr = "NULLIF(btrim(s.patient_type), '')",
+) {
+  const paymentTypeIdExpr = sqlMapMssqlPatientTypeToPaymentType(stagingExpr);
+  const fromPaymentType = `(
+    SELECT NULLIF(btrim(pt.care_type::text), '')
+    FROM public.payment_type pt
+    WHERE pt.id = (${paymentTypeIdExpr})
+  )`;
+  return `CASE ${stagingExpr}
+      WHEN '3' THEN '1'
+      WHEN '4' THEN '2'
+      ELSE ${fromPaymentType}
+    END`;
+}
+
 const INT_RE_STAGING = "^[0-9]+$";
 const NUMERIC_RE = /^-?\d+(\.\d+)?$/;
 
@@ -116,7 +137,7 @@ export function resetBillingTargetColumnCache() {
   billingPostLoadSqlCache = null;
 }
 
-/** @type {{ mode: string, deleteSql: string | null, insertSql: string, examMapSql: string } | null} */
+/** @type {{ mode: string, idMapSql: string | null, deleteSql: string | null, insertSql: string, examMapSql: string } | null} */
 let billingPostLoadSqlCache = null;
 
 const BILLING_DATE_STAGING_COLS = new Set(["exam_date", "schedule_date"]);
@@ -309,6 +330,23 @@ WHERE ${stgExamJoin}
   AND NULLIF(btrim(s.exam_id), '') ~ '${INT_RE_STAGING}';
 `.trim();
 
+  const idMapSql =
+    mode === "insert-only"
+      ? null
+      : `
+CREATE TEMP TABLE IF NOT EXISTS billing_keep_id (
+  old_exam_id TEXT PRIMARY KEY,
+  id BIGINT NOT NULL
+) ON COMMIT PRESERVE ROWS;
+TRUNCATE billing_keep_id;
+INSERT INTO billing_keep_id (old_exam_id, id)
+SELECT b.old_exam_id::text, b.id::bigint
+FROM public.billing AS b
+INNER JOIN ${STAGING} AS s
+  ON ${stgExamJoin}
+WHERE NULLIF(btrim(s.exam_id), '') ~ '${INT_RE_STAGING}';
+`.trim();
+
   const insertOnlyGuard =
     mode === "insert-only"
       ? `
@@ -322,11 +360,18 @@ WHERE ${stgExamJoin}
   const selectExprs = [];
   for (const [name, meta] of cols.entries()) {
     let expr = null;
-    if (name === "exam") expr = "em.exam_id";
+    if (name === "id")
+      expr = `COALESCE(
+        id_keep.id,
+        nextval(pg_get_serial_sequence('public.billing', 'id'))
+      )`;
+    else if (name === "exam") expr = "em.exam_id";
     else if (name === "patient") expr = "p.id";
     else if (name === "appointment") expr = "em.appointment";
     else if (name === "payment_type") {
       expr = sqlMapMssqlPatientTypeToPaymentType();
+    } else if (name === "care_type") {
+      expr = sqlCareTypeFromMappedPaymentType();
     } else if (SOURCE_FIELD_BY_TARGET[name]) {
       const raw = `NULLIF(btrim(s.${SOURCE_FIELD_BY_TARGET[name]}), '')`;
       expr = toSqlValueExpr(raw, meta);
@@ -350,6 +395,8 @@ LEFT JOIN migrate_stg.billing_exam_map em
   ON em.old_exam_id = NULLIF(btrim(s.exam_id), '')
 LEFT JOIN public.patient_info p
   ON p.pid::text = NULLIF(btrim(s.pid), '')
+LEFT JOIN billing_keep_id id_keep
+  ON id_keep.old_exam_id = NULLIF(btrim(s.exam_id), '')
 WHERE NULLIF(btrim(s.exam_id), '') ~ '${INT_RE_STAGING}'${insertOnlyGuard};
 `.trim();
 
@@ -363,7 +410,7 @@ INNER JOIN ${STAGING} s
 WHERE NULLIF(btrim(s.exam_id), '') ~ '${INT_RE_STAGING}';
 `.trim();
 
-  billingPostLoadSqlCache = { mode, deleteSql, insertSql, examMapSql };
+  billingPostLoadSqlCache = { mode, idMapSql, deleteSql, insertSql, examMapSql };
   return billingPostLoadSqlCache;
 }
 
@@ -411,13 +458,14 @@ export async function runBillingChunkPostLoad(
   migrateRowMode = "overwrite",
 ) {
   const postgresStartedAt = Date.now();
-  const { deleteSql, insertSql, examMapSql } = await prepareBillingPostLoad(
+  const { idMapSql, deleteSql, insertSql, examMapSql } = await prepareBillingPostLoad(
     pgClient,
     migrateRowMode,
   );
 
   const mapStartedAt = Date.now();
   await pgClient.query(examMapSql);
+  if (idMapSql) await pgClient.query(idMapSql);
   const mapMs = Date.now() - mapStartedAt;
 
   const deleteStartedAt = Date.now();

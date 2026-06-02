@@ -924,19 +924,8 @@ export async function runExaminationChunkPostLoad(
     }
   }
 
-  if (migrateRowMode !== "insert-only" && examIds.length > 0) {
-    await pgClient.query(
-      "DELETE FROM public.examination WHERE old_exam_id = ANY($1::text[])",
-      [examIds],
-    );
-  }
-  await pgClient.query(`
-    SELECT setval(
-      pg_get_serial_sequence('public.examination', 'id'),
-      COALESCE((SELECT MAX(id) + 1 FROM public.examination), 1),
-      false
-    );
-  `);
+  // overwrite mode: คง `id` เดิมของแถวที่มีอยู่ โดยไม่ใช้ DELETE+INSERT
+  // (ถ้าแถวเก่าอยู่แล้ว เราจะ UPDATE ด้วย `old_exam_id`; ถ้าไม่มีก็ INSERT ใหม่)
 
   const referringIdx = INSERT_DEFS.findIndex(
     ([name]) => name === "referring_md",
@@ -1039,16 +1028,59 @@ export async function runExaminationChunkPostLoad(
     ([, type], idx) => `$${idx + 1}::${type}[]`,
   ).join(", ");
 
+  const colNames = INSERT_DEFS.map(([name], idx) => (idx === 2 ? patientCol : name));
+  const unnestFrom = `FROM unnest(${unnestArgs}) AS src(${colNames.join(", ")})`;
+  const setExprs = colNames
+    .map((c) => `${c} = src.${c}`)
+    .join(", ");
+
+  let upd;
+  if (migrateRowMode !== "insert-only") {
+    upd = await pgClient.query(
+      `
+      UPDATE public.examination AS t
+      SET ${setExprs}
+      ${unnestFrom}
+      WHERE t.old_exam_id::text = src.old_exam_id::text;
+      `,
+      arrays,
+    );
+  }
+
   const ins = await pgClient.query(
     `
     INSERT INTO public.examination (${colList})
-    SELECT * FROM unnest(${unnestArgs});
+    SELECT ${colList}
+    ${unnestFrom}
+    WHERE NOT EXISTS (
+      SELECT 1 FROM public.examination t2
+      WHERE t2.old_exam_id::text = src.old_exam_id::text
+    );
     `,
     arrays,
   );
-  log(
-    `>>> [examination] post-load: insert public.examination แล้ว ${ins.rowCount ?? arrays[0].length} แถว (คอลัมน์ patient → ${patientCol})`,
-  );
+
+  if (migrateRowMode !== "insert-only") {
+    log(
+      `>>> [examination] post-load: update+insert public.examination (update=${upd?.rowCount ?? 0}, insert=${ins.rowCount ?? arrays[0].length}) แถว (คอลัมน์ patient → ${patientCol})`,
+    );
+  } else {
+    log(
+      `>>> [examination] post-load: insert public.examination แล้ว ${ins.rowCount ?? arrays[0].length} แถว (คอลัมน์ patient → ${patientCol})`,
+    );
+  }
+
+  // หลัง insert: sync sequence เผื่อกรณีมี row ที่ไม่เคยมีใน PG
+  if (cols.has("id")) {
+    await pgClient.query(`
+      SELECT setval(
+        pg_get_serial_sequence('public.examination', 'id'),
+        COALESCE((SELECT MAX(id) + 1 FROM public.examination), 1),
+        false
+      )
+      WHERE pg_get_serial_sequence('public.examination', 'id') IS NOT NULL;
+    `);
+  }
 
   // หลัง migrate: ตรวจว่าแถวที่ควร insert มีจริงใน PG
   if (insertedExamIds.length > 0) {
