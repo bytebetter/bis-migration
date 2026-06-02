@@ -18,8 +18,11 @@
     "migrate:procedure": "node ./scripts/run-migrate-table-cli.mjs procedure",
     "migrate:ultrasound": "node ./scripts/run-migrate-table-cli.mjs ultrasound",
     "migrate:mam": "node ./scripts/run-migrate-table-cli.mjs mam",
+    "migrate:mammogram": "node ./scripts/run-migrate-table-cli.mjs mam",
     "migrate:mam_cal": "node ./scripts/run-migrate-table-cli.mjs mam_cal",
+    "migrate:mammogram_cal": "node ./scripts/run-migrate-table-cli.mjs mam_cal",
     "migrate:mam_mass": "node ./scripts/run-migrate-table-cli.mjs mam_mass",
+    "migrate:mammogram_mass": "node ./scripts/run-migrate-table-cli.mjs mam_mass",
     "migrate:ultrasound_cyst": "node ./scripts/run-migrate-table-cli.mjs ultrasound_cyst",
     "migrate:ultrasound_mass": "node ./scripts/run-migrate-table-cli.mjs ultrasound_mass"
   },
