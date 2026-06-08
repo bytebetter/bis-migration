@@ -273,7 +273,10 @@ async function main() {
   );
   fs.mkdirSync(checkpointDir, { recursive: true });
   const indexCkSuffix = buildIndexCheckpointSuffix(migration);
-  const checkpointPath = path.join(checkpointDir, `${KEY}${indexCkSuffix}.json`);
+  const checkpointPath = path.join(
+    checkpointDir,
+    `${KEY}${indexCkSuffix}.json`,
+  );
   const checkpoint = readJsonIfExists(checkpointPath, {
     key: KEY,
     offset: 0,
@@ -330,9 +333,6 @@ async function main() {
             updatedAt: new Date().toISOString(),
           });
         }
-        console.error(
-          `>>> [${KEY}] public.billing ว่าง — เริ่มจาก Exam_ID 1 (afterExamId=0, id ลำดับ Postgres เริ่มที่ 1)${hadCheckpointProgress ? " (ลบ checkpoint เก่า)" : ""}`,
-        );
       }
 
       const idx = applySourceIndexToMigrateJob({
@@ -563,7 +563,13 @@ async function main() {
         let step = "begin";
         let loaded = 0;
         let stagingResult = { loaded: 0, stagingMs: 0 };
-        let pgTimings = { postgresMs: 0, mapMs: 0, deleteMs: 0, insertMs: 0 };
+        let pgTimings = {
+          postgresMs: 0,
+          mapMs: 0,
+          deleteMs: 0,
+          insertMs: 0,
+          updateAppointmentMs: 0,
+        };
         try {
           step = "BEGIN";
           await client.query("BEGIN");

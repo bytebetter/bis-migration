@@ -2,6 +2,7 @@
 node_modules/
 
 # Migration run output
+logs/
 **/js-migrate/logs/
 **/js-migrate/checkpoints/
 *.log

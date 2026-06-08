@@ -14,6 +14,7 @@
     "migrate:examination": "node ./scripts/run-migrate-table-cli.mjs examination",
     "migrate:billing": "node ./scripts/run-migrate-table-cli.mjs billing",
     "migrate:examination_general": "node ./scripts/run-migrate-table-cli.mjs examination_general",
+    "migrate:exam_recommend_birads45": "node ./scripts/run-migrate-table-cli.mjs exam_recommend_birads45",
     "migrate:pacs_sync_info": "node ./scripts/run-migrate-table-cli.mjs pacs_sync_info",
     "migrate:procedure": "node ./scripts/run-migrate-table-cli.mjs procedure",
     "migrate:ultrasound": "node ./scripts/run-migrate-table-cli.mjs ultrasound",

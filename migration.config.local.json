@@ -29,6 +29,7 @@
     "examination": {},
     "billing": {},
     "examination_general": {},
+    "exam_recommend_birads45": {},
     "appointment": {},
     "appointment_reschedules": {
       "migration": {
