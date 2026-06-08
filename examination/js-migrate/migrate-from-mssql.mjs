@@ -18,7 +18,10 @@ import {
   getField,
   mergeFieldIssueChunk,
   normExamId,
+  countExaminationTargetRows,
+  resetExaminationIdSequenceIfEmpty,
   runExaminationChunkPostLoad,
+  syncExaminationIdSequenceOnce,
   writeFieldIssueLogFile,
 } from "./examinationMapping.mjs";
 import {
@@ -612,6 +615,7 @@ async function runTableJob({
     );
     await ensureExaminationStagingDdl(pgClient);
     await ensureExaminationOldExamIdIndex(pgClient);
+    await resetExaminationIdSequenceIfEmpty(pgClient);
   }
   for (const sqlFile of toArray(tableJob.preLoadSqlFiles)) {
     console.error(`>>> [${key}] run pre-load SQL: ${sqlFile}`);
@@ -702,19 +706,17 @@ async function runTableJob({
   }
 
   const logsDir = path.resolve(__dirname, "logs");
-  const repairSourceIds =
-    isExaminationBuiltin
-      ? resolveMigrationSourceIds(
-          migrationConfig,
-          logsDir,
-          REPAIR_SPEC_EXAMINATION,
-        )
-      : null;
+  const repairSourceIds = isExaminationBuiltin
+    ? resolveMigrationSourceIds(
+        migrationConfig,
+        logsDir,
+        REPAIR_SPEC_EXAMINATION,
+      )
+    : null;
   const repairBatches =
     repairSourceIds != null ? [...batchIds(repairSourceIds, batchSize)] : null;
   let repairBatchIndex = 0;
-  const repairNotFoundInSource =
-    repairSourceIds != null ? new Set() : null;
+  const repairNotFoundInSource = repairSourceIds != null ? new Set() : null;
   if (repairSourceIds != null && repairSourceIds.length === 0) {
     console.error(`>>> [${key}] repair-from-log: ไม่มี id ให้ migrate`);
     return {
@@ -748,6 +750,34 @@ async function runTableJob({
       "exam_id",
       migrationConfig,
     );
+  }
+
+  if (isExaminationBuiltin && repairSourceIds == null) {
+    const targetRowCount = await countExaminationTargetRows(pgClient);
+    if (targetRowCount === 0) {
+      const keysetAfterNum =
+        mssqlKeysetAfter == null ? -1 : Number(mssqlKeysetAfter);
+      const hadCheckpointProgress =
+        offset > 0 ||
+        (useMssqlKeyset &&
+          Number.isFinite(keysetAfterNum) &&
+          keysetAfterNum > -1) ||
+        checkpoint.completed === true;
+      offset = 0;
+      if (useMssqlKeyset) mssqlKeysetAfter = -1;
+      await resetExaminationIdSequenceIfEmpty(pgClient);
+      if (checkpointEnabled) {
+        writeJson(checkpointPath, {
+          key,
+          offset: 0,
+          ...(useMssqlKeyset
+            ? { mssqlKeysetAfter: keysetIdForCheckpoint(-1) }
+            : { mssqlKeysetAfter: null }),
+          completed: false,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    }
   }
 
   while (true) {
@@ -1219,6 +1249,10 @@ LIMIT 200;
   }
 
   if (progressEnabled) endProgress(uiState);
+
+  if (isExaminationBuiltin) {
+    await syncExaminationIdSequenceOnce(pgClient);
+  }
 
   if (checkpointEnabled) {
     writeJson(checkpointPath, {

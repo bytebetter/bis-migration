@@ -83,14 +83,15 @@ $steps = @(
   @{ N = 4;  Table = "examination";         Script = "examination/js-migrate/run-migrate.ps1" },
   @{ N = 5;  Table = "billing";             Script = "billing/js-migrate/run-migrate.ps1" },
   @{ N = 6;  Table = "examination_general"; Script = "examination-general/js-migrate/run-migrate.ps1" },
-  @{ N = 7;  Table = "pacs_sync_info";      Script = "pacs-sync-info/js-migrate/run-migrate.ps1" },
-  @{ N = 8;  Table = "procedure";           Script = "procedure/js-migrate/run-migrate.ps1" },
-  @{ N = 9;  Table = "ultrasound";          Script = "ultrasound/js-migrate/run-migrate.ps1" },
-  @{ N = 10; Table = "mammogram";           Script = "mam/js-migrate/run-migrate.ps1" },
-  @{ N = 11; Table = "mammogram_cal";       Script = "mam-cal/js-migrate/run-migrate.ps1" },
-  @{ N = 12; Table = "mammogram_mass";      Script = "mam-mass/js-migrate/run-migrate.ps1" },
-  @{ N = 13; Table = "ultrasound_cyst";     Script = "ultrasound-cyst/js-migrate/run-migrate.ps1" },
-  @{ N = 14; Table = "ultrasound_mass";     Script = "ultrasound-mass/js-migrate/run-migrate.ps1" }
+  @{ N = 7;  Table = "exam_recommend_birads45"; Script = "exam-recommend-birads45/js-migrate/run-migrate.ps1" },
+  @{ N = 8;  Table = "pacs_sync_info";      Script = "pacs-sync-info/js-migrate/run-migrate.ps1" },
+  @{ N = 9;  Table = "procedure";           Script = "procedure/js-migrate/run-migrate.ps1" },
+  @{ N = 10; Table = "ultrasound";          Script = "ultrasound/js-migrate/run-migrate.ps1" },
+  @{ N = 11; Table = "mammogram";           Script = "mam/js-migrate/run-migrate.ps1" },
+  @{ N = 12; Table = "mammogram_cal";       Script = "mam-cal/js-migrate/run-migrate.ps1" },
+  @{ N = 13; Table = "mammogram_mass";      Script = "mam-mass/js-migrate/run-migrate.ps1" },
+  @{ N = 14; Table = "ultrasound_cyst";     Script = "ultrasound-cyst/js-migrate/run-migrate.ps1" },
+  @{ N = 15; Table = "ultrasound_mass";     Script = "ultrasound-mass/js-migrate/run-migrate.ps1" }
 )
 
 $tableFilter = foreach ($t in $Tables) {

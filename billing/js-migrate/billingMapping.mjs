@@ -131,13 +131,15 @@ async function existingColumns(pgClient, tableName) {
 }
 
 let billingTargetColumnsCache = null;
+let appointmentTargetColumnsCache = null;
 
 export function resetBillingTargetColumnCache() {
   billingTargetColumnsCache = null;
+  appointmentTargetColumnsCache = null;
   billingPostLoadSqlCache = null;
 }
 
-/** @type {{ mode: string, idMapSql: string | null, deleteSql: string | null, insertSql: string, examMapSql: string } | null} */
+/** @type {{ mode: string, idMapSql: string | null, deleteSql: string | null, insertSql: string, examMapSql: string, updateAppointmentSql: string | null } | null} */
 let billingPostLoadSqlCache = null;
 
 const BILLING_DATE_STAGING_COLS = new Set(["exam_date", "schedule_date"]);
@@ -146,6 +148,30 @@ async function getCachedBillingTargetColumns(pgClient) {
   if (billingTargetColumnsCache) return billingTargetColumnsCache;
   billingTargetColumnsCache = await existingColumns(pgClient, "billing");
   return billingTargetColumnsCache;
+}
+
+async function getCachedAppointmentTargetColumns(pgClient) {
+  if (appointmentTargetColumnsCache) return appointmentTargetColumnsCache;
+  appointmentTargetColumnsCache = await existingColumns(pgClient, "appointment");
+  return appointmentTargetColumnsCache;
+}
+
+/** appointment.care_type เป็น integer; billing ใช้ varchar "1"/"2"/"3" */
+function sqlAppointmentCareTypeFromStaging(stagingExpr, careColMeta) {
+  const raw = sqlCareTypeFromMappedPaymentType(stagingExpr);
+  if (
+    careColMeta &&
+    (careColMeta.data_type === "integer" ||
+      careColMeta.data_type === "smallint" ||
+      careColMeta.data_type === "bigint")
+  ) {
+    return `CASE
+      WHEN (${raw}) IS NULL OR btrim((${raw})::text) = '' THEN NULL
+      WHEN btrim((${raw})::text) ~ '^[0-9]+$' THEN btrim((${raw})::text)::integer
+      ELSE NULL
+    END`;
+  }
+  return raw;
 }
 
 function toSqlValueExpr(baseExpr, colMeta) {
@@ -414,7 +440,62 @@ INNER JOIN ${STAGING} s
 WHERE NULLIF(btrim(s.exam_id), '') ~ '${INT_RE_STAGING}';
 `.trim();
 
-  billingPostLoadSqlCache = { mode, idMapSql, deleteSql, insertSql, examMapSql };
+  const aptCols = await getCachedAppointmentTargetColumns(pgClient);
+  const aptHasPayment = aptCols.has("payment_type");
+  const aptHasCare = aptCols.has("care_type");
+  let updateAppointmentSql = null;
+  if (aptHasPayment || aptHasCare) {
+    const pickSelect = [];
+    if (aptHasPayment) {
+      pickSelect.push(
+        `${sqlMapMssqlPatientTypeToPaymentType()} AS payment_type`,
+      );
+    }
+    if (aptHasCare) {
+      pickSelect.push(
+        `${sqlAppointmentCareTypeFromStaging(
+          "NULLIF(btrim(s.patient_type), '')",
+          aptCols.get("care_type"),
+        )} AS care_type`,
+      );
+    }
+    const setClauses = [];
+    if (aptHasPayment) setClauses.push("payment_type = picked.payment_type");
+    if (aptHasCare) setClauses.push("care_type = picked.care_type");
+
+    updateAppointmentSql = `
+UPDATE public.appointment AS a
+SET
+  ${setClauses.join(",\n  ")}
+FROM (
+  SELECT DISTINCT ON (em.appointment)
+    em.appointment AS appointment_id,
+    ${pickSelect.join(",\n    ")}
+  FROM ${STAGING} s
+  INNER JOIN migrate_stg.billing_exam_map em
+    ON em.old_exam_id = NULLIF(btrim(s.exam_id), '')
+  WHERE em.appointment IS NOT NULL
+    AND NULLIF(btrim(s.exam_id), '') ~ '${INT_RE_STAGING}'
+  ORDER BY
+    em.appointment,
+    NULLIF(btrim(s.exam_id), '')::bigint DESC NULLS LAST,
+    CASE
+      WHEN NULLIF(btrim(s.exam_date), '') IS NULL OR btrim(s.exam_date) = '' THEN NULL
+      ELSE btrim(s.exam_date)::timestamp
+    END DESC NULLS LAST
+) AS picked
+WHERE a.id = picked.appointment_id;
+`.trim();
+  }
+
+  billingPostLoadSqlCache = {
+    mode,
+    idMapSql,
+    deleteSql,
+    insertSql,
+    examMapSql,
+    updateAppointmentSql,
+  };
   return billingPostLoadSqlCache;
 }
 
@@ -455,17 +536,15 @@ export async function countBillingTargetRows(pgClient) {
 }
 
 /**
- * @returns {{ mapMs: number, deleteMs: number, insertMs: number, postgresMs: number }}
+ * @returns {{ mapMs: number, deleteMs: number, insertMs: number, updateAppointmentMs: number, postgresMs: number }}
  */
 export async function runBillingChunkPostLoad(
   pgClient,
   migrateRowMode = "overwrite",
 ) {
   const postgresStartedAt = Date.now();
-  const { idMapSql, deleteSql, insertSql, examMapSql } = await prepareBillingPostLoad(
-    pgClient,
-    migrateRowMode,
-  );
+  const { idMapSql, deleteSql, insertSql, examMapSql, updateAppointmentSql } =
+    await prepareBillingPostLoad(pgClient, migrateRowMode);
 
   const mapStartedAt = Date.now();
   await pgClient.query(examMapSql);
@@ -480,10 +559,15 @@ export async function runBillingChunkPostLoad(
   await pgClient.query(insertSql);
   const insertMs = Date.now() - insertStartedAt;
 
+  const updateAppointmentStartedAt = Date.now();
+  if (updateAppointmentSql) await pgClient.query(updateAppointmentSql);
+  const updateAppointmentMs = Date.now() - updateAppointmentStartedAt;
+
   return {
     mapMs,
     deleteMs,
     insertMs,
+    updateAppointmentMs,
     postgresMs: Date.now() - postgresStartedAt,
   };
 }

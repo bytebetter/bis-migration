@@ -1,0 +1,482 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import sql from "mssql";
+import pg from "pg";
+import {
+  MSSQL_EXAM_RECOMMEND_BIRADS45_DETAIL_BY_IDS_SELECT,
+  MSSQL_EXAM_RECOMMEND_BIRADS45_ID_SELECT,
+} from "./mssqlExamRecommendBirads45Select.mjs";
+import { ensureExamRecommendBirads45PipelineDdl } from "./examRecommendBirads45PgDdl.mjs";
+import {
+  loadChunkToStaging,
+  normalizeMssqlRow,
+  runExamRecommendBirads45ChunkPostLoad,
+} from "./examRecommendBirads45Mapping.mjs";
+import {
+  createUiState,
+  endProgress,
+  formatSec,
+  renderProgress,
+  writeOutLine,
+} from "../../shared/js-migrate/progressUi.mjs";
+import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
+import { bindMigrateSrcNumericRange } from "../../shared/js-migrate/migrateCliArgs.mjs";
+import {
+  applySourceIndexToMigrateJob,
+  buildIndexCheckpointSuffix,
+  isIndexWindowComplete,
+  narrowPlannedRowsForIndex,
+  resolvePageSize,
+} from "../../shared/js-migrate/sourceIndexRange.mjs";
+import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
+import { REPAIR_SPEC_EXAM_RECOMMEND_BIRADS45 } from "../../shared/js-migrate/migrateTableSpecs.mjs";
+import {
+  finishRepairRunSummary,
+  noteRepairBatchFetch,
+  explicitIdsProgressPlan,
+  prepareRepairRun,
+  repairRunIsDone,
+  repairRunIsEmpty,
+  takeNextRepairBatch,
+} from "../../shared/js-migrate/repairRun.mjs";
+import {
+  formatAdvanceLog,
+  isLastKeysetPage,
+} from "../../shared/js-migrate/twoStepKeyset.mjs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const KEY = "exam_recommend_birads45";
+
+function getConfigPath() {
+  const idx = process.argv.indexOf("--config");
+  if (idx >= 0 && process.argv[idx + 1]) return process.argv[idx + 1];
+  return "../../migration.config.local.json";
+}
+
+function getProfileName() {
+  const idx = process.argv.indexOf("--profile");
+  if (idx >= 0 && process.argv[idx + 1]) return process.argv[idx + 1];
+  return process.env.MIGRATION_PROFILE || null;
+}
+
+function nowStamp() {
+  return new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
+}
+
+function parseMssqlUrl(rawUrl) {
+  const normalized = rawUrl.replace(/^microsoftsqlserver:\/\//i, "mssql://");
+  const u = new URL(normalized);
+  return {
+    server: u.hostname,
+    port: u.port ? Number(u.port) : 1433,
+    database: u.pathname.replace(/^\/+/, ""),
+    user: decodeURIComponent(u.username || ""),
+    password: decodeURIComponent(u.password || ""),
+    options: {
+      encrypt: true,
+      trustServerCertificate: true,
+    },
+    pool: { max: 5, min: 0 },
+  };
+}
+
+function tediousOptionsFromSource(sourceConfig = {}) {
+  return {
+    encrypt: sourceConfig.encrypt !== false,
+    trustServerCertificate: sourceConfig.trustServerCertificate !== false,
+    requestTimeout:
+      sourceConfig.requestTimeout == null
+        ? 0
+        : Number(sourceConfig.requestTimeout),
+    connectTimeout:
+      sourceConfig.connectTimeout == null
+        ? 60000
+        : Number(sourceConfig.connectTimeout),
+    cancelTimeout:
+      sourceConfig.cancelTimeout == null
+        ? 0
+        : Number(sourceConfig.cancelTimeout),
+  };
+}
+
+function buildMssqlConfig(sourceConfig = {}) {
+  const timeouts = tediousOptionsFromSource(sourceConfig);
+  if (sourceConfig.mssqlUrl) {
+    const base = parseMssqlUrl(sourceConfig.mssqlUrl);
+    return {
+      ...base,
+      options: {
+        ...base.options,
+        ...timeouts,
+      },
+    };
+  }
+  return {
+    server: sourceConfig.server,
+    port: Number(sourceConfig.port ?? 1433),
+    database: sourceConfig.database,
+    user: sourceConfig.user,
+    password: sourceConfig.password,
+    options: timeouts,
+    pool: { max: 5, min: 0 },
+  };
+}
+
+function resolveRuntimeConfig(rawConfig, fallbackProfile) {
+  if (!rawConfig?.profiles) return rawConfig;
+  const selectedProfile =
+    getProfileName() ?? rawConfig.defaultProfile ?? fallbackProfile;
+  const profileConfig = rawConfig.profiles[selectedProfile];
+  if (!profileConfig) {
+    throw new Error(
+      `Profile '${selectedProfile}' not found in config.profiles`,
+    );
+  }
+  const shared = rawConfig.shared ?? {};
+  return {
+    ...shared,
+    ...profileConfig,
+    source: { ...(shared.source ?? {}), ...(profileConfig.source ?? {}) },
+    target: { ...(shared.target ?? {}), ...(profileConfig.target ?? {}) },
+    migration: {
+      ...(shared.migration ?? {}),
+      ...(profileConfig.migration ?? {}),
+    },
+    __profileName: selectedProfile,
+  };
+}
+
+function bracketIdent(value) {
+  return `[${String(value).replace(/]/g, "]]")}]`;
+}
+
+function readJsonIfExists(filePath, fallbackValue) {
+  if (!fs.existsSync(filePath)) return fallbackValue;
+  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+}
+
+function writeJson(filePath, value) {
+  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+async function main() {
+  const configPath = path.resolve(process.cwd(), getConfigPath());
+  const rawConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  const config = resolveRuntimeConfig(rawConfig, KEY);
+  const migration = mergeMigrationWithCli(config?.migration, KEY);
+  if (config.__profileName) {
+    console.error(`>>> using config profile: ${config.__profileName}`);
+  }
+
+  const sourceSchema = config.source?.schema ?? "dbo";
+  const sourceTable = config.source?.table ?? "EXAM_Recommend_BIRADS45";
+  const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
+  const sourceObjectNoLock = `${sourceObject} WITH (NOLOCK)`;
+  const probeSql = MSSQL_EXAM_RECOMMEND_BIRADS45_ID_SELECT.replaceAll(
+    "{{sourceObject}}",
+    sourceObjectNoLock,
+  );
+  const detailSqlTemplate =
+    MSSQL_EXAM_RECOMMEND_BIRADS45_DETAIL_BY_IDS_SELECT.replaceAll(
+      "{{sourceObject}}",
+      sourceObjectNoLock,
+    );
+
+  const batchSize = Math.max(
+    100,
+    Math.min(5000, Number(migration.batchSize ?? 2000)),
+  );
+  const progressEnabled = migration.progressUi !== false;
+  const singleLineUi = migration.singleLineUi !== false;
+  const debugLogs = migration.debugLogs === true;
+  const uiState = createUiState();
+
+  const pgPool = new pg.Pool({
+    host: config.target.postgresHost,
+    port: Number(config.target.postgresPort ?? 5432),
+    user: config.target.postgresUser,
+    password: config.target.postgresPassword,
+    database: config.target.postgresDatabase ?? "bisinfo_dev_clone",
+    max: 3,
+  });
+
+  const logsDir = path.resolve(__dirname, "logs");
+  fs.mkdirSync(logsDir, { recursive: true });
+  const logPath = path.join(logsDir, `migrate-${nowStamp()}.json`);
+  const runLog = {
+    startedAt: new Date().toISOString(),
+    status: "running",
+    sourceObject: `${sourceSchema}.${sourceTable}`,
+    batchSize,
+    rowsLoadedToStaging: 0,
+    rowsUpdated: 0,
+    examsProcessed: 0,
+    examsMissingTarget: 0,
+    skipped: 0,
+    error: null,
+  };
+  const checkpointEnabled = migration.enableCheckpoint !== false;
+  const checkpointDir = path.resolve(
+    __dirname,
+    migration.checkpointDir ?? "./checkpoints",
+  );
+  fs.mkdirSync(checkpointDir, { recursive: true });
+  const indexCkSuffix = buildIndexCheckpointSuffix(migration);
+  const checkpointPath = path.join(checkpointDir, `${KEY}${indexCkSuffix}.json`);
+  const checkpoint = readJsonIfExists(checkpointPath, {
+    key: KEY,
+    offset: 0,
+    afterExamId: 0,
+    completed: false,
+    updatedAt: null,
+  });
+
+  const mssqlConfig = buildMssqlConfig(config.source);
+  const pool = await sql.connect(mssqlConfig);
+  try {
+    const client = await pgPool.connect();
+    try {
+      await ensureExamRecommendBirads45PipelineDdl(client);
+      console.error(`>>> [${KEY}] source: ${sourceObject}`);
+      console.error(
+        `>>> [${KEY}] target: ${config.target.postgresDatabase} public.examination_general.recommendation_des (update-only, batchSize=${batchSize})`,
+      );
+
+      let offset = Number(checkpointEnabled ? checkpoint.offset : 0);
+      if (!Number.isFinite(offset) || offset < 0) offset = 0;
+      const idx = applySourceIndexToMigrateJob({
+        key: KEY,
+        migrationConfig: migration,
+        checkpointEnabled,
+        offset,
+        useMssqlKeyset: true,
+      });
+      offset = idx.offset;
+      let afterExamId = Number(checkpointEnabled ? checkpoint.afterExamId : 0);
+      if (!Number.isFinite(afterExamId) || afterExamId < 0) afterExamId = 0;
+
+      let chunkIndex = 0;
+      let plannedRows = null;
+      if (progressEnabled) {
+        try {
+          const countRes = await pool.request().query(`
+SELECT COUNT_BIG(DISTINCT [Exam_ID]) AS total
+FROM ${sourceObjectNoLock};`);
+          plannedRows = Number(countRes.recordset?.[0]?.total ?? 0);
+        } catch {
+          plannedRows = null;
+        }
+      }
+      if (idx.indexLimited) {
+        plannedRows = narrowPlannedRowsForIndex({
+          plannedRows,
+          offset,
+          sourceIndexFrom: idx.sourceIndexFrom,
+          sourceIndexTo: idx.sourceIndexTo,
+        });
+      }
+      let progressTotal = plannedRows ?? null;
+      let plannedChunks =
+        plannedRows != null && plannedRows > 0
+          ? Math.ceil(plannedRows / batchSize)
+          : null;
+      if (plannedChunks != null) {
+        console.error(
+          `>>> [${KEY}] plan: ${plannedRows} exams, ~${plannedChunks} chunks`,
+        );
+      }
+
+      const repairRun = prepareRepairRun(
+        migration,
+        logsDir,
+        REPAIR_SPEC_EXAM_RECOMMEND_BIRADS45,
+        batchSize,
+      );
+      const idPlan = explicitIdsProgressPlan(repairRun, batchSize);
+      if (idPlan) {
+        plannedRows = idPlan.plannedRows;
+        plannedChunks = idPlan.plannedChunks;
+        progressTotal = idPlan.plannedRows;
+      }
+      if (repairRunIsEmpty(repairRun)) {
+        runLog.status = "success";
+        return;
+      }
+
+      const startedAt = Date.now();
+      while (true) {
+        const chunkStartedAt = Date.now();
+        const rowsInIndexWindow = Math.max(0, offset - idx.indexStartOffset);
+        const pageSize = resolvePageSize({
+          batchSize,
+          total: rowsInIndexWindow,
+          plannedRows: idx.indexLimited ? plannedRows : null,
+        });
+        if (pageSize <= 0) break;
+
+        /** @type {string[]} */
+        let ids = [];
+        /** @type {object[]} */
+        let rows = [];
+        let fetchMs = 0;
+
+        if (repairRun.active) {
+          const idBatch = takeNextRepairBatch(repairRun);
+          if (!idBatch) break;
+          ids = idBatch.map(String);
+          const detailStartedAt = Date.now();
+          rows = await fetchMssqlRowsByIds(pool, sql, {
+            ids,
+            detailSqlTemplate,
+          });
+          fetchMs = Date.now() - detailStartedAt;
+          noteRepairBatchFetch(repairRun, ids, rows, (r) =>
+            String(r?.exam_id ?? r?.Exam_ID ?? "").trim(),
+          );
+          if (rows.length === 0) continue;
+        } else {
+          const probeStartedAt = Date.now();
+          const probeReq = pool.request();
+          bindMigrateSrcNumericRange(probeReq, migration, sql);
+          const idRes = await probeReq
+            .input("afterExamId", sql.BigInt, afterExamId)
+            .input("page", sql.Int, pageSize)
+            .query(probeSql);
+          const probeMs = Date.now() - probeStartedAt;
+          const idRows = idRes.recordset || [];
+          ids = idRows
+            .map((r) => Number.parseInt(r?.exam_id ?? "", 10))
+            .filter((v) => Number.isFinite(v))
+            .map(String);
+          if (ids.length === 0) break;
+
+          const idPlaceholders = ids.map((_, i) => `@id${i}`).join(", ");
+          const detailSql = detailSqlTemplate.replace(
+            "{{idPlaceholders}}",
+            idPlaceholders,
+          );
+          const detailReq = pool.request();
+          ids.forEach((id, i) => detailReq.input(`id${i}`, sql.BigInt, id));
+          const detailStartedAt = Date.now();
+          const detailRes = await detailReq.query(detailSql);
+          fetchMs = probeMs + (Date.now() - detailStartedAt);
+          rows = detailRes.recordset || [];
+        }
+        if (rows.length === 0) break;
+
+        chunkIndex += 1;
+        const normalized = rows.map(normalizeMssqlRow).filter(Boolean);
+        const skipped = rows.length - normalized.length;
+
+        let step = "begin";
+        try {
+          step = "BEGIN";
+          await client.query("BEGIN");
+          step = "load to staging";
+          const loaded = await loadChunkToStaging(client, normalized);
+          runLog.rowsLoadedToStaging += loaded;
+          runLog.skipped += skipped;
+          step = "post-load mapping (update recommendation_des)";
+          const postResult = await runExamRecommendBirads45ChunkPostLoad(client);
+          runLog.rowsUpdated += postResult.rowsUpdated ?? 0;
+          runLog.examsProcessed += postResult.examsProcessed ?? 0;
+          runLog.examsMissingTarget += postResult.examsMissingTarget ?? 0;
+          step = "COMMIT";
+          await client.query("COMMIT");
+        } catch (err) {
+          await client.query("ROLLBACK");
+          throw new Error(
+            `[${KEY}] failed chunk ${chunkIndex} at step '${step}': ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        }
+
+        const keysetAdvance = ids.length;
+        if (!repairRun.active) {
+          offset += keysetAdvance;
+          if (ids.length > 0) {
+            afterExamId = Number.parseInt(ids[ids.length - 1], 10) || afterExamId;
+          }
+        }
+        if (checkpointEnabled && !repairRun.active) {
+          writeJson(checkpointPath, {
+            key: KEY,
+            offset,
+            afterExamId,
+            completed: false,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+        if (debugLogs && !singleLineUi) {
+          writeOutLine(
+            `>>> [${KEY}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(
+              Date.now() - chunkStartedAt,
+            )} ${formatAdvanceLog(keysetAdvance, rows.length)} total=${offset}/${plannedRows ?? "?"} fetch=${formatSec(fetchMs)}`,
+            uiState,
+          );
+        }
+        if (progressEnabled) {
+          renderProgress(
+            offset,
+            progressTotal,
+            startedAt,
+            chunkIndex,
+            plannedChunks,
+            uiState,
+          );
+        }
+
+        if (repairRun.active) {
+          if (repairRunIsDone(repairRun)) break;
+        } else if (
+          isIndexWindowComplete({
+            indexLimited: idx.indexLimited,
+            plannedRows,
+            rowsReadInWindow: Math.max(0, offset - idx.indexStartOffset),
+          }) ||
+          isLastKeysetPage(keysetAdvance, pageSize)
+        ) {
+          break;
+        }
+      }
+
+      if (checkpointEnabled) {
+        writeJson(checkpointPath, {
+          key: KEY,
+          offset,
+          afterExamId,
+          completed: true,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      if (progressEnabled) endProgress(uiState);
+
+      runLog.repairSummary = finishRepairRunSummary(
+        KEY,
+        REPAIR_SPEC_EXAM_RECOMMEND_BIRADS45,
+        repairRun,
+        {},
+      );
+      runLog.status = "success";
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    runLog.status = "failed";
+    runLog.error = err instanceof Error ? err.message : String(err);
+    throw err;
+  } finally {
+    await pool.close();
+    await pgPool.end();
+    runLog.finishedAt = new Date().toISOString();
+    fs.writeFileSync(logPath, `${JSON.stringify(runLog, null, 2)}\n`, "utf8");
+    console.error(`>>> migration log saved: ${logPath}`);
+  }
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

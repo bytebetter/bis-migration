@@ -49,6 +49,7 @@ const PROFILE_DIR = {
   appointment_reschedules: "appointment-reschedules",
   examination: "examination",
   examination_general: "examination-general",
+  exam_recommend_birads45: "exam-recommend-birads45",
   billing: "billing",
   pacs_sync_info: "pacs-sync-info",
   procedure: "procedure",

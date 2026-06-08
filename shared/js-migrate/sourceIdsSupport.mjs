@@ -20,6 +20,11 @@ export const SOURCE_IDS_PK_PROFILES = {
     table: "dbo.examination_general",
     hint: "เลข เช่น 5000",
   },
+  exam_recommend_birads45: {
+    pkLabel: "Exam_ID",
+    table: "dbo.EXAM_Recommend_BIRADS45",
+    hint: "เลข Exam_ID — ดึงทุก recommend ของ exam",
+  },
   billing: {
     pkLabel: "Exam_ID",
     table: "dbo.billing",

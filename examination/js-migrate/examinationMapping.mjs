@@ -789,6 +789,42 @@ export async function resolvePublicExaminationPatientColumn(pgClient) {
   return cachedPublicExaminationPatientCol;
 }
 
+/** ตารางว่าง → id ถัดไปเริ่มที่ 1 (แบบ appointment/billing) */
+export async function resetExaminationIdSequenceIfEmpty(pgClient) {
+  await pgClient.query(`
+    WITH cnt AS (
+      SELECT COUNT(*)::bigint AS c FROM public.examination
+    )
+    SELECT setval(
+      pg_get_serial_sequence('public.examination', 'id'),
+      1,
+      false
+    )
+    FROM cnt
+    WHERE cnt.c = 0
+      AND pg_get_serial_sequence('public.examination', 'id') IS NOT NULL;
+  `);
+}
+
+/** @returns {Promise<number>} */
+export async function countExaminationTargetRows(pgClient) {
+  const r = await pgClient.query(
+    "SELECT COUNT(*)::bigint AS c FROM public.examination",
+  );
+  return Number(r.rows[0]?.c ?? 0);
+}
+
+export async function syncExaminationIdSequenceOnce(pgClient) {
+  await pgClient.query(`
+    SELECT setval(
+      pg_get_serial_sequence('public.examination', 'id'),
+      COALESCE((SELECT MAX(id) + 1 FROM public.examination), 1),
+      false
+    )
+    WHERE pg_get_serial_sequence('public.examination', 'id') IS NOT NULL;
+  `);
+}
+
 /**
  * จับ patient จากข้อมูลบน staging ที่ load ลง PG จริง (ตรงกับ unnest) แทน in-memory จาก mssql
  * เพื่อไม่เสีย key เวลา pid รูปแบบ/ชนิดต่างจาก getField+String
@@ -1070,16 +1106,8 @@ export async function runExaminationChunkPostLoad(
     );
   }
 
-  // หลัง insert: sync sequence เผื่อกรณีมี row ที่ไม่เคยมีใน PG
   if (colNames.includes("id")) {
-    await pgClient.query(`
-      SELECT setval(
-        pg_get_serial_sequence('public.examination', 'id'),
-        COALESCE((SELECT MAX(id) + 1 FROM public.examination), 1),
-        false
-      )
-      WHERE pg_get_serial_sequence('public.examination', 'id') IS NOT NULL;
-    `);
+    await syncExaminationIdSequenceOnce(pgClient);
   }
 
   // หลัง migrate: ตรวจว่าแถวที่ควร insert มีจริงใน PG

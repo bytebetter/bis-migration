@@ -63,6 +63,23 @@ export const REPAIR_SPEC_EXAMINATION_GENERAL = {
 };
 
 /** @type {RepairSpec} */
+export const REPAIR_SPEC_EXAM_RECOMMEND_BIRADS45 = {
+  tableLabel: "exam_recommend_birads45",
+  recordIdLabel: "exam_id",
+  runLogPattern: /^migrate-.*\.json$/i,
+  fieldIssuePattern:
+    /^migration-field-issues-exam_recommend_birads45-.*\.json$/i,
+  collectIdsFromRunLog(runLog, idSet) {
+    collectIdsFromRunLogCommon(runLog, idSet, {
+      failedChunkIdFields: ["firstExamId", "lastExamId"],
+    });
+  },
+  collectIdsFromFieldIssueLog(payload, idSet) {
+    collectIdsFromFieldIssueLogCommon(payload, idSet, "exam_id");
+  },
+};
+
+/** @type {RepairSpec} */
 export const REPAIR_SPEC_BILLING = {
   tableLabel: "billing",
   recordIdLabel: "exam_id",
@@ -265,6 +282,7 @@ export const REPAIR_SPEC_BY_PROFILE = {
   appointment_reschedules: REPAIR_SPEC_APPOINTMENT_RESCHEDULES,
   examination: REPAIR_SPEC_EXAMINATION,
   examination_general: REPAIR_SPEC_EXAMINATION_GENERAL,
+  exam_recommend_birads45: REPAIR_SPEC_EXAM_RECOMMEND_BIRADS45,
   billing: REPAIR_SPEC_BILLING,
   pacs_sync_info: REPAIR_SPEC_PACS_SYNC_INFO,
   procedure: REPAIR_SPEC_PROCEDURE,
