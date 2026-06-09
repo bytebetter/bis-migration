@@ -43,11 +43,18 @@ npm run migrate:patient_info
 
 Log: `logs/migrate-*.json` — checkpoint: `checkpoints/<key>.json`
 
+### ลำดับ PID และ checkpoint (resume)
+
+- เรียง MSSQL ด้วย **sort key**: PID ตัวเลขก่อน (เรียงตามค่าตัวเลข เช่น `2` ก่อน `10`) แล้วตามด้วย non-numeric (เช่น `T998`)
+- ใช้ **keyset** (`sort_key > checkpoint`) แทน OFFSET — ไม่พลาดแถวใหม่ที่แทรกกลางลำดับเมื่อรัน resume รายวัน
+- หลังรอบก่อน `completed: true` รอบ resume ถัดไปจะ **สแกน MSSQL ตั้งแต่ต้น** (insert-only ข้ามที่มีใน Postgres แล้ว) — จับ PID ใหม่เช่น `1234` แม้เคย migrate ถึง `T998` แล้ว
+- checkpoint เก็บ `offset` (จำนวนแถวที่สแกนจาก MSSQL) และ `mssqlKeysetAfter` (sort key ล่าสุด) — **ไม่เกี่ยวกับจำนวนแถวใน Postgres**
+
 ### โหมดรัน (`migrateRunMode` / `-MigrateRunMode`)
 
 | โหมด | พฤติกรรม `patient_info` |
 |------|-------------------------|
-| **resume** (`insert-only`) | เพิ่มเฉพาะ PID ที่ยังไม่มีใน Postgres — **ไม่แตะ** `id` เดิม |
+| **resume** (`insert-only`) | เพิ่มเฉพาะ PID ที่ยังไม่มีใน Postgres — **ไม่แตะ**แถวจริงเดิม; แถว placeholder `ไม่ทราบชื่อ` จาก appointment/ตารางอื่น **ยังคงไว้** และยัง INSERT แถวจาก MSSQL ได้ (รวมแล้วได้ 1,010 + 200 = 1,210 ตามตัวอย่าง checkpoint รายวัน) |
 | **overwrite** | PID ที่มีแล้ว → **UPDATE** ตาม `patient_info.id` (คง `id` เดิม) แล้วลบ/ใส่ `address` ใหม่; PID ใหม่ → INSERT |
 | **repair-from-log** | เหมือน overwrite แต่ดึงเฉพาะ PID จาก log ล่าสุด — จบแล้วแสดงจำนวนจาก log / สำเร็จ / ไม่สำเร็จ |
 

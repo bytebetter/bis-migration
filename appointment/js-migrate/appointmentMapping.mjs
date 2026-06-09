@@ -2,6 +2,7 @@
  * Mapping: MSSQL dbo.schedule -> Directus appointment payload
  */
 
+import { isPlaceholderAppointmentRow } from "../../shared/js-migrate/ensurePlaceholderAppointment.mjs";
 import { ensurePlaceholderPatientInfo } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
 
 function getField(row, key) {
@@ -442,7 +443,10 @@ function buildAppointmentInsertDefs(arrays, patientColumn) {
   ];
 }
 
-async function loadExistingAppointmentIdByOldDbId(
+/**
+ * @returns {Map<string, { id: number, isPlaceholder: boolean }>}
+ */
+async function loadExistingAppointmentMetaByOldDbId(
   pgClient,
   oldDbIds,
   oldDbIdTextLike,
@@ -450,19 +454,34 @@ async function loadExistingAppointmentIdByOldDbId(
   if (oldDbIds.length === 0) return new Map();
   const { rows } = await pgClient.query(
     oldDbIdTextLike
-      ? `SELECT id, btrim(old_db_id::text) AS k
+      ? `SELECT id, btrim(old_db_id::text) AS k, first_name
          FROM public.appointment
          WHERE btrim(old_db_id::text) = ANY($1::text[])`
-      : `SELECT id, btrim(old_db_id::text) AS k
+      : `SELECT id, btrim(old_db_id::text) AS k, first_name
          FROM public.appointment
          WHERE old_db_id::text = ANY($1::text[])`,
     [oldDbIds],
   );
+  /** @type {Map<string, { id: number, isPlaceholder: boolean }>} */
   const map = new Map();
   for (const row of rows) {
     if (row.k == null) continue;
+    const meta = {
+      id: row.id,
+      isPlaceholder: isPlaceholderAppointmentRow(row),
+    };
     const prev = map.get(row.k);
-    if (prev == null || row.id < prev) map.set(row.k, row.id);
+    if (prev == null) {
+      map.set(row.k, meta);
+      continue;
+    }
+    if (prev.isPlaceholder && !meta.isPlaceholder) {
+      map.set(row.k, meta);
+    } else if (!prev.isPlaceholder && meta.isPlaceholder) {
+      continue;
+    } else if (row.id < prev.id) {
+      map.set(row.k, meta);
+    }
   }
   return map;
 }
@@ -598,11 +617,13 @@ export async function runAppointmentChunkPostLoad(
     .filter((v) => v != null);
 
   const oldDbIdTextLike = await isOldDbIdTextLike(pgClient);
-  const existingIdByOldDbId = await loadExistingAppointmentIdByOldDbId(
+  const existingMetaByOldDbId = await loadExistingAppointmentMetaByOldDbId(
     pgClient,
     oldDbIds,
     oldDbIdTextLike,
   );
+  const migrateRowMode = options.migrateRowMode ?? "overwrite";
+  const insertOnly = migrateRowMode === "insert-only";
 
   const fkMeta = await getAppointmentForeignKeyMeta(pgClient);
   const patientColumn = await resolveAppointmentPatientColumn(pgClient);
@@ -708,8 +729,16 @@ export async function runAppointmentChunkPostLoad(
   const updatePayloads = [];
   for (const p of payloads) {
     const key = String(p.old_db_id);
-    if (existingIdByOldDbId.has(key)) updatePayloads.push(p);
-    else insertPayloads.push(p);
+    const existing = existingMetaByOldDbId.get(key);
+    if (existing == null) {
+      insertPayloads.push(p);
+      continue;
+    }
+    if (insertOnly) {
+      if (existing.isPlaceholder) insertPayloads.push(p);
+      continue;
+    }
+    updatePayloads.push(p);
   }
 
   let rowsInserted = 0;
@@ -721,10 +750,7 @@ export async function runAppointmentChunkPostLoad(
     const insertDefs = buildAppointmentInsertDefs(insertArrays, patientColumn);
     rowsInserted += await bulkInsertAppointments(pgClient, insertDefs);
   }
-  if (
-    updatePayloads.length > 0 &&
-    (options.migrateRowMode ?? "overwrite") !== "insert-only"
-  ) {
+  if (updatePayloads.length > 0 && !insertOnly) {
     const updateArrays = buildAppointmentColumnArrays(
       updatePayloads,
       patientColumn,

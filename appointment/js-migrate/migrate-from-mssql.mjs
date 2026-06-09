@@ -468,7 +468,7 @@ async function runAppointmentTableJob({
 
   if (migrationConfig.migrateRowMode === "insert-only") {
     console.error(
-      `>>> [${key}] migrateRowMode=insert-only (เพิ่มเท่าที่ยังไม่มีใน Postgres เท่านั้น — ข้ามอัปเดตของเดิม)`,
+      `>>> [${key}] migrateRowMode=insert-only (เพิ่มแถวใหม่ — ข้ามอัปเดตแถวจริงเดิม; แถว placeholder ไม่ทราบชื่อจาก examination ยังคงไว้และ INSERT จาก MSSQL ได้)`,
     );
   } else if (kb.min != null || kb.max != null) {
     console.error(

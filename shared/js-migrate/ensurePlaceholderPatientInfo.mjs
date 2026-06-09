@@ -3,6 +3,11 @@ import { normPid } from "../../patient-info/js-migrate/patientInfoMapping.mjs";
 /** ชื่อจริงใน public.patient_info */
 export const PLACEHOLDER_FIRST_NAME_TH = "ไม่ทราบชื่อ";
 
+/** แถว patient_info ที่สร้างจาก ensurePlaceholderPatientInfo */
+export function isPlaceholderPatientRow(row) {
+  return row?.first_name_th === PLACEHOLDER_FIRST_NAME_TH;
+}
+
 /**
  * ตาราง migrate ที่ถ้าไม่พบ patient_info ตาม pid จะสร้าง placeholder ก่อนแมป
  * (ไม่นับเป็น patient_not_resolved)

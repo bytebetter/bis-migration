@@ -41,7 +41,7 @@ cd .\appointment\js-migrate
 .\run-migrate.ps1 -ConfigPath "..\..\migration.config.local.json" -Profile appointment `
   -SourceKeyRange "1-100"
 
-# เฉพาะคิวที่ยังไม่มีใน Postgres (ไม่เรียก UPDATE เดิม)
+# เฉพาะคิวที่ยังไม่มีใน Postgres (ไม่เรียก UPDATE แถวจริงเดิม; placeholder ไม่ทราบชื่อจาก examination ยังคงไว้และ INSERT จาก MSSQL ได้)
 .\run-migrate.ps1 -MigrateMode insert-only -SourceKeyFrom 101 -SourceKeyTo 150
 ```
 
@@ -55,7 +55,7 @@ node appointment/js-migrate/migrate-from-mssql.mjs --config ./migration.config.l
 
 ## ปรับพฤติกรรม (ใน `profiles.appointment.migration` หรือ `shared.migration`)
 
-- `migrateRowMode`: `overwrite` (ดีฟอลต์) หรือ `insert-only` — จาก CLI มีเฉพาะ `insert-only` (`--migrate-mode insert-only`)
+- `migrateRowMode`: `overwrite` (ดีฟอลต์) หรือ `insert-only` — จาก CLI มีเฉพาะ `insert-only` (`--migrate-mode insert-only`); โหมด resume ไม่ทับแถวจริงเดิม แต่ยัง INSERT แถว MSSQL ได้แม้มี placeholder `ไม่ทราบชื่อ` อยู่แล้ว (จาก `examination`)
 - `sourceKeyNumericMin` / `sourceKeyNumericMax` — จำกัดช่วง `Schedule_ID` ฝั่ง MSSQL (เลขทั้งชุด, inclusive) เทียบ `CAST([Schedule_ID] AS BIGINT)`
 - `batchSize` — ขนาด chunk
 - `chunkLogMode`: `compact` (แนะนำ), `full`, `none`
