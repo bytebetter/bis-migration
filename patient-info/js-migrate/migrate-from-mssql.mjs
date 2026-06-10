@@ -1,4 +1,4 @@
-﻿import fs from "node:fs";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sql from "mssql";
@@ -6,6 +6,11 @@ import pg from "pg";
 import {
   MSSQL_PATIENT_INFO_BY_PIDS_SELECT,
   MSSQL_PATIENT_INFO_SELECT,
+  MSSQL_PID_ORDER_BY,
+  buildMssqlPatientInfoIdProbeKeysetSelect,
+  buildMssqlPatientInfoKeysetSelect,
+  buildMssqlPatientInfoSortKeyTailCountSql,
+  buildMssqlPatientInfoSourceFingerprintSql,
 } from "./mssqlPatientInfoSelect.mjs";
 import {
   ensurePatientInfoShortNoteColumn,
@@ -36,8 +41,15 @@ import {
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
 import {
   bindMigrateSrcNumericRange,
+  logMigrationRunMode,
   readNumericSourceKeyBounds,
 } from "../../shared/js-migrate/migrateCliArgs.mjs";
+import {
+  applySourceIndexToMigrateJob,
+  isIndexWindowComplete,
+  narrowPlannedRowsForIndex,
+  resolvePageSize,
+} from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import { REPAIR_SPEC_PATIENT_INFO } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
@@ -48,7 +60,6 @@ import {
   finalizeRepairFromLog,
   noteRepairBatchNotFoundInSource,
 } from "../../shared/js-migrate/repairSummary.mjs";
-
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -317,7 +328,7 @@ function buildTableJobs(config) {
       key: "patient_info",
       sourceSchema: config.source?.schema ?? "dbo",
       sourceTable: config.source?.table ?? "patient_info",
-      orderBy: "[PID]",
+      orderBy: MSSQL_PID_ORDER_BY,
       columns: [
         "pid",
         "prefix",
@@ -379,6 +390,192 @@ function readPositiveIndex(v) {
   return n;
 }
 
+/** @typedef {{ rowCount: number, maxSortKey: string }} PatientInfoSourceFingerprint */
+
+/**
+ * @param {import("mssql").ConnectionPool} mssqlPool
+ * @param {object} migrationConfig
+ * @param {string} sourceObject
+ * @param {string} fingerprintSql
+ */
+async function queryPatientInfoSourceFingerprint(
+  mssqlPool,
+  migrationConfig,
+  sourceObject,
+  fingerprintSql,
+) {
+  const req = mssqlPool.request();
+  bindMigrateSrcNumericRange(req, migrationConfig, sql);
+  const res = await req.query(fingerprintSql);
+  const row = res.recordset?.[0] ?? {};
+  return {
+    rowCount: Number(row.total_n ?? 0),
+    maxSortKey:
+      row.max_sort_key == null ? "" : String(row.max_sort_key),
+  };
+}
+
+/**
+ * @param {import("mssql").ConnectionPool} mssqlPool
+ * @param {object} migrationConfig
+ * @param {string} sourceObject
+ * @param {string} tailCountSql
+ * @param {string} afterExclusive
+ * @param {string} maxInclusive
+ */
+async function countPatientInfoTailRows(
+  mssqlPool,
+  migrationConfig,
+  sourceObject,
+  tailCountSql,
+  afterExclusive,
+  maxInclusive,
+) {
+  if (afterExclusive === "" && maxInclusive === "") return 0;
+  if (maxInclusive <= afterExclusive) return 0;
+  const req = mssqlPool.request();
+  bindMigrateSrcNumericRange(req, migrationConfig, sql);
+  const res = await req
+    .input("afterSortKeyExclusive", sql.NVarChar(sql.MAX), afterExclusive)
+    .input("maxSortKeyInclusive", sql.NVarChar(sql.MAX), maxInclusive)
+    .query(tailCountSql);
+  return Number(res.recordset?.[0]?.tail_n ?? 0);
+}
+
+/**
+ * ตรวจสัญญาณแถวแทรกกลาง (ต้องมี fingerprint ใน checkpoint แล้ว)
+ * @param {PatientInfoSourceFingerprint} fingerprint
+ * @param {number} ckCount
+ * @param {string} ckMax
+ * @param {number | null} tailRowCount
+ */
+function patientInfoMiddleInsertSuspected(
+  fingerprint,
+  ckCount,
+  ckMax,
+  tailRowCount,
+) {
+  if (!Number.isFinite(ckCount) || ckMax === "") return false;
+  const countDelta = fingerprint.rowCount - ckCount;
+  if (countDelta === 0 && fingerprint.maxSortKey === ckMax) return false;
+  if (countDelta < 0) return true;
+  if (countDelta > 0 && fingerprint.maxSortKey <= ckMax) return true;
+  if (
+    countDelta > 0 &&
+    fingerprint.maxSortKey > ckMax &&
+    tailRowCount != null &&
+    tailRowCount !== countDelta
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * ค่าเริ่มต้น = keyset ต่อท้าย (วิธีเดิม); full catch-up เฉพาะเมื่อสงสัยแทรกกลาง
+ * @param {{
+ *   checkpoint: Record<string, unknown>,
+ *   fingerprint: PatientInfoSourceFingerprint,
+ *   tailRowCount: number | null,
+ *   migrationConfig: Record<string, unknown>,
+ *   nowMs?: number,
+ * }} p
+ * @returns {{ mode: 'skip'|'forward'|'full', reason: string }}
+ */
+function resolvePatientInfoSmartResumeMode(p) {
+  const {
+    checkpoint,
+    fingerprint,
+    tailRowCount,
+    migrationConfig,
+    nowMs = Date.now(),
+  } = p;
+  const ckCount = Number(checkpoint.sourceRowCount);
+  const ckMax =
+    checkpoint.sourceMaxSortKey == null
+      ? ""
+      : String(checkpoint.sourceMaxSortKey);
+  const forceFull = migrationConfig.patientInfoForceFullCatchUp === true;
+  const fullCatchUpDays = Math.max(
+    0,
+    Number(migrationConfig.patientInfoFullCatchUpDays ?? 0),
+  );
+
+  if (forceFull) {
+    return { mode: "full", reason: "patientInfoForceFullCatchUp=true" };
+  }
+
+  const lastFullRaw = checkpoint.lastFullCatchUpAt;
+  if (fullCatchUpDays > 0 && lastFullRaw != null) {
+    const lastFull = new Date(String(lastFullRaw));
+    if (!Number.isNaN(lastFull.getTime())) {
+      const daysSince = (nowMs - lastFull.getTime()) / 86_400_000;
+      if (daysSince >= fullCatchUpDays) {
+        return {
+          mode: "full",
+          reason: `full catch-up ตามรอบ (${fullCatchUpDays} วัน)`,
+        };
+      }
+    }
+  }
+
+  if (
+    Number.isFinite(ckCount) &&
+    ckMax !== "" &&
+    fingerprint.rowCount === ckCount &&
+    fingerprint.maxSortKey === ckMax
+  ) {
+    return { mode: "skip", reason: "fingerprint ต้นทางไม่เปลี่ยน" };
+  }
+
+  if (
+    patientInfoMiddleInsertSuspected(
+      fingerprint,
+      ckCount,
+      ckMax,
+      tailRowCount,
+    )
+  ) {
+    const countDelta = fingerprint.rowCount - ckCount;
+    return {
+      mode: "full",
+      reason:
+        countDelta > 0 && fingerprint.maxSortKey <= ckMax
+          ? "COUNT เพิ่มแต่ MAX(sort_key) ไม่เลื่อน — แทรกกลาง"
+          : "มีแถวใหม่นอกช่วงท้าย (แทรกกลาง)",
+    };
+  }
+
+  const countDelta = Number.isFinite(ckCount)
+    ? fingerprint.rowCount - ckCount
+    : null;
+  if (countDelta != null && countDelta > 0) {
+    return {
+      mode: "forward",
+      reason: `แถวใหม่ ${countDelta} แถวท้ายลำดับ — keyset ต่อท้าย`,
+    };
+  }
+  if (!Number.isFinite(ckCount) || ckMax === "") {
+    return {
+      mode: "forward",
+      reason: "ยังไม่มี fingerprint — keyset ต่อท้ายจาก checkpoint",
+    };
+  }
+
+  return {
+    mode: "forward",
+    reason: "ต้นทางเปลี่ยนเล็กน้อย — keyset ต่อท้าย",
+  };
+}
+
+/** @param {import("pg").PoolClient} pgClient */
+async function countPatientInfoTargetRows(pgClient) {
+  const res = await pgClient.query(
+    "SELECT COUNT(1)::bigint AS n FROM public.patient_info",
+  );
+  return Number(res.rows[0]?.n ?? 0);
+}
+
 async function runTableJob({
   mssqlPool,
   pgClient,
@@ -429,13 +626,39 @@ async function runTableJob({
   const selectTemplate = selectSqlFile
     ? readSql(sqlBaseDir, selectSqlFile)
     : MSSQL_PATIENT_INFO_SELECT;
-  const selectSql = selectTemplate
+  const offsetSelectSql = selectTemplate
     .replaceAll("{{sourceObject}}", sourceObject)
     .replaceAll("{{orderBy}}", orderBy);
+  const keysetSelectSql = buildMssqlPatientInfoKeysetSelect().replaceAll(
+    "{{sourceObject}}",
+    sourceObject,
+  );
+  const idProbeSelectSql =
+    buildMssqlPatientInfoIdProbeKeysetSelect().replaceAll(
+      "{{sourceObject}}",
+      sourceObject,
+    );
+  const fingerprintSql = buildMssqlPatientInfoSourceFingerprintSql().replaceAll(
+    "{{sourceObject}}",
+    sourceObject,
+  );
+  const tailCountSql = buildMssqlPatientInfoSortKeyTailCountSql().replaceAll(
+    "{{sourceObject}}",
+    sourceObject,
+  );
+
+  const logsDir = path.resolve(sqlBaseDir, "logs");
+  const repairSourceIds = resolveMigrationSourceIds(
+    migrationConfig,
+    logsDir,
+    REPAIR_SPEC_PATIENT_INFO,
+  );
+  const isRepairFromLogRun = repairSourceIds != null;
 
   const checkpoint = readJsonIfExists(checkpointPath, {
     key,
     offset: 0,
+    mssqlKeysetAfter: null,
     completed: false,
     updatedAt: null,
   });
@@ -443,27 +666,269 @@ async function runTableJob({
     tableJob.startOffset ?? (checkpointEnabled ? checkpoint.offset : 0),
   );
   if (!Number.isFinite(offset) || offset < 0) offset = 0;
-  const sourceIndexFrom = readPositiveIndex(migrationConfig?.sourceIndexFrom);
-  const sourceIndexTo = readPositiveIndex(migrationConfig?.sourceIndexTo);
-  const indexStartOffset = sourceIndexFrom != null ? sourceIndexFrom - 1 : 0;
-  const indexLimited = sourceIndexFrom != null || sourceIndexTo != null;
-  const isRepairFromLogRun =
-    String(migrationConfig?.migrateRunMode ?? "").toLowerCase() ===
-    "repair-from-log";
-  if (indexLimited && !isRepairFromLogRun) {
-    if (checkpointEnabled) {
-      offset = Math.max(offset, indexStartOffset);
+
+  const insertOnly =
+    (migrationConfig.migrateRowMode ?? "insert-only") === "insert-only";
+  const isResumeRun =
+    String(migrationConfig?.migrateRunMode ?? "resume").toLowerCase() ===
+    "resume";
+
+  let useMssqlKeyset =
+    isPatientInfoBuiltin &&
+    !selectSqlFile &&
+    (migrationConfig.useMssqlKeyset === undefined ||
+      migrationConfig.useMssqlKeyset === true);
+  let mssqlKeysetAfter =
+    checkpoint.mssqlKeysetAfter == null
+      ? ""
+      : String(checkpoint.mssqlKeysetAfter);
+  let legacyCatchUpFromStart = false;
+  if (useMssqlKeyset && offset > 0 && checkpoint.mssqlKeysetAfter == null) {
+    if (
+      checkpoint.completed === true &&
+      isResumeRun &&
+      insertOnly &&
+      !isRepairFromLogRun
+    ) {
+      legacyCatchUpFromStart = true;
+      mssqlKeysetAfter = "";
+      offset = 0;
+      console.error(
+        `>>> [${key}] resume: checkpoint เก่า (OFFSET) ที่ completed แล้ว → สแกน MSSQL ใหม่ด้วย keyset ตั้งแต่ต้น`,
+      );
     } else {
-      offset = indexStartOffset;
+      useMssqlKeyset = false;
+      console.error(
+        `>>> [${key}] resume: checkpoint เก่า (OFFSET เท่านั้น) — ใช้ OFFSET ต่อรอบนี้; หลัง completed รอบถัดไปจะสแกน MSSQL ใหม่ด้วย keyset`,
+      );
     }
   }
+
+  const idx = applySourceIndexToMigrateJob({
+    key,
+    migrationConfig,
+    checkpointEnabled,
+    offset,
+    useMssqlKeyset,
+  });
+  offset = idx.offset;
+  useMssqlKeyset = idx.useMssqlKeyset;
+  const { sourceIndexFrom, sourceIndexTo, indexLimited } = idx;
+
+  if (!useMssqlKeyset) mssqlKeysetAfter = null;
+
+  const incompleteCheckpointResume =
+    checkpointEnabled &&
+    !isRepairFromLogRun &&
+    checkpoint.completed === false &&
+    useMssqlKeyset &&
+    (offset > 0 ||
+      (mssqlKeysetAfter != null && String(mssqlKeysetAfter).trim() !== ""));
+
+  /** @type {'normal'|'skip'|'forward'|'full'} */
+  let resumeCatchUpMode = "normal";
+  let resumeCatchUpReason = "";
+
+  let targetRowCount = 0;
+  if (isPatientInfoBuiltin) {
+    targetRowCount = await countPatientInfoTargetRows(pgClient);
+    if (
+      targetRowCount === 0 &&
+      checkpointEnabled &&
+      !isRepairFromLogRun &&
+      (offset > 0 ||
+        (mssqlKeysetAfter != null && String(mssqlKeysetAfter).trim() !== "") ||
+        checkpoint.completed === true)
+    ) {
+      offset = 0;
+      mssqlKeysetAfter = "";
+      legacyCatchUpFromStart = false;
+      resumeCatchUpMode = "normal";
+      checkpoint.offset = 0;
+      checkpoint.mssqlKeysetAfter = useMssqlKeyset ? "" : null;
+      checkpoint.completed = false;
+      writeJson(checkpointPath, {
+        key,
+        offset: 0,
+        mssqlKeysetAfter: useMssqlKeyset ? "" : null,
+        completed: false,
+        updatedAt: new Date().toISOString(),
+      });
+      console.error(
+        `>>> [${key}] Postgres ว่าง — เริ่ม migrate ใหม่จากต้น (keyset เต็มแถวต่อ chunk, ไม่ใช้ id probe)`,
+      );
+    }
+  }
+
+  const smartResumeEligible =
+    checkpointEnabled &&
+    isResumeRun &&
+    insertOnly &&
+    checkpoint.completed === true &&
+    !isRepairFromLogRun &&
+    !indexLimited &&
+    useMssqlKeyset &&
+    !legacyCatchUpFromStart &&
+    isPatientInfoBuiltin &&
+    targetRowCount > 0 &&
+    migrationConfig.patientInfoSmartResume !== false;
+
+  if (legacyCatchUpFromStart) {
+    resumeCatchUpMode = "full";
+    resumeCatchUpReason = "checkpoint เก่า OFFSET → full catch-up";
+    mssqlKeysetAfter = "";
+    offset = 0;
+    console.error(`>>> [${key}] resume: ${resumeCatchUpReason}`);
+  } else if (smartResumeEligible) {
+    const fingerprint = await queryPatientInfoSourceFingerprint(
+      mssqlPool,
+      migrationConfig,
+      sourceObject,
+      fingerprintSql,
+    );
+    const ckMax =
+      checkpoint.sourceMaxSortKey == null
+        ? ""
+        : String(checkpoint.sourceMaxSortKey);
+    const ckCount = Number(checkpoint.sourceRowCount);
+    let tailRowCount = null;
+    const countDelta = fingerprint.rowCount - ckCount;
+    if (
+      Number.isFinite(ckCount) &&
+      ckMax !== "" &&
+      countDelta > 0 &&
+      fingerprint.maxSortKey > ckMax
+    ) {
+      tailRowCount = await countPatientInfoTailRows(
+        mssqlPool,
+        migrationConfig,
+        sourceObject,
+        tailCountSql,
+        ckMax,
+        fingerprint.maxSortKey,
+      );
+    }
+    const decision = resolvePatientInfoSmartResumeMode({
+      checkpoint,
+      fingerprint,
+      tailRowCount,
+      migrationConfig,
+    });
+    resumeCatchUpMode = decision.mode;
+    resumeCatchUpReason = decision.reason;
+
+    if (decision.mode === "skip") {
+      console.error(
+        `>>> [${key}] resume smart: ข้าม — ${decision.reason} (COUNT=${fingerprint.rowCount}, maxSortKey=${fingerprint.maxSortKey || "(empty)"})`,
+      );
+      return {
+        key,
+        totalRowsRead: 0,
+        source_cases: 0,
+        patient_success_cases: 0,
+        patient_fail_cases: 0,
+        address_success_cases: 0,
+        failedPids: [],
+        fieldIssueLogPath: null,
+        checkpointPath: checkpointEnabled ? checkpointPath : null,
+        chunkCount: 0,
+        chunkResults: [],
+        repairSummary: null,
+        resumeCatchUpMode: "skip",
+        resumeCatchUpReason: decision.reason,
+      };
+    }
+
+    if (decision.mode === "forward") {
+      mssqlKeysetAfter =
+        checkpoint.mssqlKeysetAfter == null
+          ? ""
+          : String(checkpoint.mssqlKeysetAfter);
+      offset = Number(checkpoint.offset ?? 0);
+      if (!Number.isFinite(offset) || offset < 0) offset = 0;
+      console.error(
+        `>>> [${key}] resume: ${decision.reason} (keysetAfter=${JSON.stringify(mssqlKeysetAfter)})`,
+      );
+    } else {
+      mssqlKeysetAfter = "";
+      offset = 0;
+      console.error(
+        `>>> [${key}] resume: full catch-up — ${decision.reason} (สแกนทั้งตาราง, insert-only ข้ามที่มีใน Postgres)`,
+      );
+    }
+  } else if (
+    checkpointEnabled &&
+    isResumeRun &&
+    insertOnly &&
+    checkpoint.completed === true &&
+    !isRepairFromLogRun &&
+    !indexLimited &&
+    useMssqlKeyset &&
+    !legacyCatchUpFromStart &&
+    isPatientInfoBuiltin &&
+    targetRowCount > 0 &&
+    migrationConfig.patientInfoSmartResume === false
+  ) {
+    mssqlKeysetAfter =
+      checkpoint.mssqlKeysetAfter == null
+        ? ""
+        : String(checkpoint.mssqlKeysetAfter);
+    offset = Number(checkpoint.offset ?? 0);
+    if (!Number.isFinite(offset) || offset < 0) offset = 0;
+    resumeCatchUpMode = "forward";
+    resumeCatchUpReason = "patientInfoSmartResume=false — keyset ต่อท้าย";
+    console.error(`>>> [${key}] resume: ${resumeCatchUpReason}`);
+  }
+
+  const useIdProbe =
+    useMssqlKeyset &&
+    insertOnly &&
+    isPatientInfoBuiltin &&
+    targetRowCount > 0 &&
+    !incompleteCheckpointResume &&
+    migrationConfig.patientInfoIdProbe !== false;
+  if (
+    isPatientInfoBuiltin &&
+    useMssqlKeyset &&
+    insertOnly &&
+    (targetRowCount === 0 || incompleteCheckpointResume) &&
+    migrationConfig.patientInfoIdProbe !== false
+  ) {
+    console.error(
+      incompleteCheckpointResume
+        ? `>>> [${key}] ต่อ checkpoint ไม่จบ — ปิด id probe ใช้ keyset ดึง detail ต่อท้าย (เร็วกว่า)`
+        : `>>> [${key}] Postgres ว่าง — ปิด id probe ใช้ keyset ดึง detail ครั้งเดียวต่อ chunk (เร็วกว่า)`,
+    );
+  }
+
   const progressEnabled = migrationConfig.progressUi !== false;
   const debugLogs = migrationConfig.debugLogs === true;
   const progressStartedAt = Date.now();
   const uiState = createUiState();
-  if (debugLogs) writeOutLine(`>>> [${key}] start offset: ${offset}`, uiState);
+  if (isPatientInfoBuiltin) {
+    logMigrationRunMode(migrationConfig, key);
+  }
+  if (debugLogs) {
+    writeOutLine(
+      `>>> [${key}] start offset: ${offset}${useMssqlKeyset ? ` keysetAfter=${JSON.stringify(mssqlKeysetAfter)}` : ""}`,
+      uiState,
+    );
+    if (useMssqlKeyset) {
+      writeOutLine(
+        `>>> [${key}] ORDER BY: numeric PID ก่อน (เรียงตัวเลข) แล้วตามด้วย non-numeric`,
+        uiState,
+      );
+    }
+  }
   let plannedRows = null;
+  /** @type {number | null} */
+  let progressTotalFull = null;
   if (progressEnabled) {
+    if (incompleteCheckpointResume) {
+      console.error(
+        `>>> [${key}] นับแถวต้นทาง (COUNT) เพื่อคำนวณ progress…`,
+      );
+    }
     try {
       const countReq = mssqlPool.request();
       bindMigrateSrcNumericRange(countReq, migrationConfig, sql);
@@ -474,25 +939,34 @@ async function runTableJob({
            AND (@migrateSrcKeyMax IS NULL OR TRY_CAST([PID] AS BIGINT) <= @migrateSrcKeyMax);`,
       );
       const plannedTotal = Number(countRes.recordset?.[0]?.total ?? 0);
-      let effectiveFrom = offset + 1;
-      if (sourceIndexFrom != null) {
-        effectiveFrom = Math.max(effectiveFrom, sourceIndexFrom);
-      }
-      let effectiveTo = plannedTotal;
-      if (sourceIndexTo != null) {
-        effectiveTo = Math.min(effectiveTo, sourceIndexTo);
-      }
-      plannedRows =
-        effectiveTo >= effectiveFrom ? effectiveTo - effectiveFrom + 1 : 0;
+      progressTotalFull = plannedTotal;
+      plannedRows = narrowPlannedRowsForIndex({
+        plannedRows: plannedTotal,
+        offset,
+        sourceIndexFrom,
+        sourceIndexTo,
+      });
     } catch {
       plannedRows = null;
     }
+  }
+  if (incompleteCheckpointResume) {
+    console.error(
+      `>>> [${key}] ต่อ checkpoint ที่ขาด: offset=${offset}, keysetAfter=${JSON.stringify(mssqlKeysetAfter)}, เหลือ ~${plannedRows ?? "?"} / ${progressTotalFull ?? "?"} แถว (ไม่ใช่เริ่มใหม่ทั้งตาราง)`,
+    );
   }
   const plannedChunksInitial =
     plannedRows != null && plannedRows > 0
       ? Math.ceil(plannedRows / batchSize)
       : null;
-  let plannedChunks = plannedChunksInitial;
+  let plannedChunks =
+    incompleteCheckpointResume &&
+    progressTotalFull != null &&
+    progressTotalFull > 0
+      ? Math.ceil(progressTotalFull / batchSize)
+      : plannedChunksInitial;
+  const progressDisplayTotal = progressTotalFull ?? plannedRows;
+  const progressRowBase = incompleteCheckpointResume ? offset : 0;
   if (debugLogs && plannedRows != null && plannedChunks != null) {
     writeOutLine(
       `>>> [${key}] plan: ~${plannedRows} rows, ~${plannedChunks} chunks`,
@@ -527,19 +1001,14 @@ async function runTableJob({
       )
     : null;
   const chunkResults = [];
-  let chunkIndex = 0;
+  let chunkIndex = incompleteCheckpointResume
+    ? Math.floor(offset / batchSize)
+    : 0;
 
-  const logsDir = path.resolve(sqlBaseDir, "logs");
-  const repairSourceIds = resolveMigrationSourceIds(
-    migrationConfig,
-    logsDir,
-    REPAIR_SPEC_PATIENT_INFO,
-  );
   const repairBatches =
     repairSourceIds != null ? [...batchIds(repairSourceIds, batchSize)] : null;
   let repairBatchIndex = 0;
-  const repairNotFoundInSource =
-    repairSourceIds != null ? new Set() : null;
+  const repairNotFoundInSource = repairSourceIds != null ? new Set() : null;
   if (repairSourceIds != null && repairSourceIds.length === 0) {
     console.error(`>>> [${key}] repair-from-log: ไม่มี pid ให้ migrate`);
     return {
@@ -549,7 +1018,12 @@ async function runTableJob({
       checkpointPath: checkpointEnabled ? checkpointPath : null,
       chunkCount: 0,
       chunkResults: [],
-      repairSummary: finalizeRepairFromLog(key, REPAIR_SPEC_PATIENT_INFO, [], {}),
+      repairSummary: finalizeRepairFromLog(
+        key,
+        REPAIR_SPEC_PATIENT_INFO,
+        [],
+        {},
+      ),
     };
   }
   if (repairSourceIds != null) {
@@ -558,12 +1032,7 @@ async function runTableJob({
       plannedRows = idPlan.plannedRows;
       plannedChunks = idPlan.plannedChunks;
     }
-    logByIdMigrationRun(
-      key,
-      repairSourceIds.length,
-      "pid",
-      migrationConfig,
-    );
+    logByIdMigrationRun(key, repairSourceIds.length, "pid", migrationConfig);
   }
   const pidDetailTemplate = MSSQL_PATIENT_INFO_BY_PIDS_SELECT.replaceAll(
     "{{sourceObject}}",
@@ -572,6 +1041,9 @@ async function runTableJob({
 
   while (true) {
     let rows = [];
+    let rowsScanned = 0;
+    let lastSortKey = mssqlKeysetAfter;
+    let fetchPageSize = batchSize;
     if (repairBatches) {
       if (repairBatchIndex >= repairBatches.length) break;
       const pidBatch = repairBatches[repairBatchIndex++];
@@ -590,24 +1062,149 @@ async function runTableJob({
         );
       }
       if (rows.length === 0) continue;
+      rowsScanned = rows.length;
     } else {
-      const req = mssqlPool.request();
-      bindMigrateSrcNumericRange(req, migrationConfig, sql);
-      const remaining = plannedRows != null ? plannedRows - total : null;
-      const page = remaining == null ? batchSize : Math.max(0, Math.min(batchSize, remaining));
-      if (page <= 0) break;
-      const r = await req
-        .input("offset", sql.Int, offset)
-        .input("page", sql.Int, page)
-        .query(selectSql);
-      rows = r.recordset || [];
+      fetchPageSize = resolvePageSize({
+        batchSize,
+        total,
+        plannedRows,
+      });
+      if (fetchPageSize <= 0) break;
+
+      if (useMssqlKeyset && useIdProbe) {
+        const probeReq = mssqlPool.request();
+        bindMigrateSrcNumericRange(probeReq, migrationConfig, sql);
+        const probeRes = await probeReq
+          .input(
+            "afterPidSortKey",
+            sql.NVarChar(sql.MAX),
+            mssqlKeysetAfter ?? "",
+          )
+          .input("page", sql.Int, fetchPageSize)
+          .query(idProbeSelectSql);
+        const probeRows = probeRes.recordset || [];
+        if (probeRows.length === 0) break;
+
+        rowsScanned = probeRows.length;
+        lastSortKey =
+          probeRows[probeRows.length - 1]?.__mssql_pid_sort_key ?? lastSortKey;
+
+        const probePids = [
+          ...new Set(
+            probeRows.map((r) => normPid(r.pid)).filter((p) => p !== ""),
+          ),
+        ];
+        let missingPids = probePids;
+        if (probePids.length > 0) {
+          const { rows: found } = await pgClient.query(
+            `
+            SELECT DISTINCT u.k
+            FROM unnest($1::text[]) AS u(k)
+            WHERE EXISTS (
+              SELECT 1 FROM public.patient_info pi
+              WHERE migrate_stg.norm_pid(pi.pid::text) = u.k
+                 OR migrate_stg.norm_pid(pi.old_db_id::text) = u.k
+            )
+            `,
+            [probePids],
+          );
+          const foundSet = new Set(found.map((r) => r.k));
+          missingPids = probePids.filter((p) => !foundSet.has(p));
+        }
+
+        if (missingPids.length > 0) {
+          rows = await fetchMssqlRowsByIds(mssqlPool, sql, {
+            ids: missingPids,
+            detailSqlTemplate: pidDetailTemplate,
+            idType: "nvarchar",
+            nvarcharLength: 50,
+          });
+          const orderMap = new Map(probePids.map((p, i) => [p, i]));
+          rows.sort(
+            (a, b) =>
+              (orderMap.get(normPid(a.pid)) ?? 0) -
+              (orderMap.get(normPid(b.pid)) ?? 0),
+          );
+        }
+      } else if (useMssqlKeyset) {
+        const req = mssqlPool.request();
+        bindMigrateSrcNumericRange(req, migrationConfig, sql);
+        const r = await req
+          .input(
+            "afterPidSortKey",
+            sql.NVarChar(sql.MAX),
+            mssqlKeysetAfter ?? "",
+          )
+          .input("page", sql.Int, fetchPageSize)
+          .query(keysetSelectSql);
+        rows = r.recordset || [];
+        rowsScanned = rows.length;
+        if (rows.length > 0) {
+          lastSortKey =
+            rows[rows.length - 1]?.__mssql_pid_sort_key ?? lastSortKey;
+        }
+      } else {
+        const req = mssqlPool.request();
+        bindMigrateSrcNumericRange(req, migrationConfig, sql);
+        const r = await req
+          .input("offset", sql.Int, offset)
+          .input("page", sql.Int, fetchPageSize)
+          .query(offsetSelectSql);
+        rows = r.recordset || [];
+        rowsScanned = rows.length;
+      }
+
+      if (rowsScanned === 0) break;
+
+      if (rows.length === 0 && useMssqlKeyset) {
+        chunkIndex += 1;
+        total += rowsScanned;
+        offset += rowsScanned;
+        mssqlKeysetAfter = lastSortKey;
+        if (checkpointEnabled) {
+          writeJson(checkpointPath, {
+            key,
+            offset,
+            mssqlKeysetAfter,
+            completed: false,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+        if (progressEnabled) {
+          renderProgress(
+            progressRowBase + total,
+            progressDisplayTotal,
+            progressStartedAt,
+            chunkIndex,
+            plannedChunks,
+            uiState,
+          );
+        } else if (debugLogs) {
+          writeOutLine(
+            `... [${key}] skip chunk ${chunkIndex} (all ${rowsScanned} PIDs exist in Postgres) keyset=${JSON.stringify(mssqlKeysetAfter)}`,
+            uiState,
+          );
+        }
+        if (
+          rowsScanned < fetchPageSize ||
+          isIndexWindowComplete({
+            indexLimited,
+            plannedRows,
+            rowsReadInWindow: total,
+          })
+        ) {
+          break;
+        }
+        continue;
+      }
+
       if (rows.length === 0) break;
     }
 
     const n = rows.length;
     chunkIndex += 1;
     const sourceOffsetStart = offset;
-    const sourceOffsetEnd = offset + n - 1;
+    const sourceOffsetEnd = offset + Math.max(0, rowsScanned - 1);
     const firstPid = normPid(rows[0]?.pid);
     const lastPid = normPid(rows[n - 1]?.pid);
     const arrays = columns.map(() => new Array(n));
@@ -815,20 +1412,27 @@ LIMIT 200;
       throw migrationErr;
     }
 
-    total += n;
-    if (!repairBatches) offset += n;
+    const advance = repairBatches ? n : rowsScanned;
+    total += advance;
+    if (!repairBatches) {
+      offset += advance;
+      if (useMssqlKeyset && lastSortKey != null) {
+        mssqlKeysetAfter = lastSortKey;
+      }
+    }
     if (checkpointEnabled && !repairBatches) {
       writeJson(checkpointPath, {
         key,
         offset,
+        ...(useMssqlKeyset ? { mssqlKeysetAfter } : { mssqlKeysetAfter: null }),
         completed: false,
         updatedAt: new Date().toISOString(),
       });
     }
     if (progressEnabled) {
       renderProgress(
-        total,
-        plannedRows,
+        progressRowBase + total,
+        progressDisplayTotal,
         progressStartedAt,
         chunkIndex,
         plannedChunks,
@@ -840,17 +1444,54 @@ LIMIT 200;
         uiState,
       );
     }
-    if (rows.length < batchSize) break;
+    if (repairBatches) {
+      if (n < batchSize) break;
+    } else if (
+      rowsScanned < fetchPageSize ||
+      isIndexWindowComplete({
+        indexLimited,
+        plannedRows,
+        rowsReadInWindow: total,
+      })
+    ) {
+      break;
+    }
   }
 
   if (progressEnabled) endProgress(uiState);
 
   if (checkpointEnabled) {
+    /** @type {PatientInfoSourceFingerprint | null} */
+    let endFingerprint = null;
+    if (isPatientInfoBuiltin && useMssqlKeyset) {
+      try {
+        endFingerprint = await queryPatientInfoSourceFingerprint(
+          mssqlPool,
+          migrationConfig,
+          sourceObject,
+          fingerprintSql,
+        );
+      } catch {
+        endFingerprint = null;
+      }
+    }
+    const didFullCatchUp =
+      resumeCatchUpMode === "full" || legacyCatchUpFromStart;
     writeJson(checkpointPath, {
       key,
       offset,
+      ...(useMssqlKeyset ? { mssqlKeysetAfter } : { mssqlKeysetAfter: null }),
       completed: true,
       updatedAt: new Date().toISOString(),
+      ...(endFingerprint
+        ? {
+            sourceRowCount: endFingerprint.rowCount,
+            sourceMaxSortKey: endFingerprint.maxSortKey,
+          }
+        : {}),
+      lastFullCatchUpAt: didFullCatchUp
+        ? new Date().toISOString()
+        : (checkpoint.lastFullCatchUpAt ?? null),
     });
   }
 

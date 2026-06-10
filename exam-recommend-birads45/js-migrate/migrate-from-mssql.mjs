@@ -44,6 +44,14 @@ import {
   formatAdvanceLog,
   isLastKeysetPage,
 } from "../../shared/js-migrate/twoStepKeyset.mjs";
+import { createChunkResultsLogger } from "../../shared/js-migrate/chunkResultsLog.mjs";
+import {
+  buildFieldIssueLogPayload,
+  createFieldIssueAccumulator,
+  mergeFieldIssueChunk,
+  writeFieldIssueLogFile,
+} from "../../shared/js-migrate/fieldIssueLog.mjs";
+import { runExamRecommendBirads45StagingFieldIssuePipeline } from "../../shared/js-migrate/stagingFieldIssues.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KEY = "exam_recommend_birads45";
@@ -216,6 +224,7 @@ async function main() {
     skipped: 0,
     error: null,
   };
+  const chunkLog = createChunkResultsLogger(migration);
   const checkpointEnabled = migration.enableCheckpoint !== false;
   const checkpointDir = path.resolve(
     __dirname,
@@ -255,6 +264,12 @@ async function main() {
       offset = idx.offset;
       let afterExamId = Number(checkpointEnabled ? checkpoint.afterExamId : 0);
       if (!Number.isFinite(afterExamId) || afterExamId < 0) afterExamId = 0;
+
+      const fieldIssueAcc = createFieldIssueAccumulator("exam_id");
+      const fieldIssueLogPath = path.join(
+        logsDir,
+        `migration-field-issues-exam_recommend_birads45-${nowStamp()}.json`,
+      );
 
       let chunkIndex = 0;
       let plannedRows = null;
@@ -301,6 +316,7 @@ FROM ${sourceObjectNoLock};`);
       }
       if (repairRunIsEmpty(repairRun)) {
         runLog.status = "success";
+        chunkLog.attachTo(runLog);
         return;
       }
 
@@ -370,6 +386,8 @@ FROM ${sourceObjectNoLock};`);
         const skipped = rows.length - normalized.length;
 
         let step = "begin";
+        /** @type {{ rowsUpdated?: number, examsProcessed?: number, examsMissingTarget?: number }} */
+        let postResult = {};
         try {
           step = "BEGIN";
           await client.query("BEGIN");
@@ -378,20 +396,52 @@ FROM ${sourceObjectNoLock};`);
           runLog.rowsLoadedToStaging += loaded;
           runLog.skipped += skipped;
           step = "post-load mapping (update recommendation_des)";
-          const postResult = await runExamRecommendBirads45ChunkPostLoad(client);
+          postResult = await runExamRecommendBirads45ChunkPostLoad(client);
           runLog.rowsUpdated += postResult.rowsUpdated ?? 0;
           runLog.examsProcessed += postResult.examsProcessed ?? 0;
           runLog.examsMissingTarget += postResult.examsMissingTarget ?? 0;
+          const issueResult = await runExamRecommendBirads45StagingFieldIssuePipeline(
+            client,
+            rows,
+            normalizeMssqlRow,
+            normalized.length,
+          );
+          mergeFieldIssueChunk(fieldIssueAcc, issueResult);
           step = "COMMIT";
           await client.query("COMMIT");
         } catch (err) {
           await client.query("ROLLBACK");
+          chunkLog.recordFailure({
+            chunkIndex,
+            failedAtStep: step,
+            rowCount: ids.length,
+            rowsFetched: rows.length,
+            firstExamId: ids[0] ?? null,
+            lastExamId: ids.length > 0 ? ids[ids.length - 1] : null,
+            fetchMs,
+            chunkTotalMs: Date.now() - chunkStartedAt,
+            error: err instanceof Error ? err.message : String(err),
+          });
           throw new Error(
             `[${KEY}] failed chunk ${chunkIndex} at step '${step}': ${
               err instanceof Error ? err.message : String(err)
             }`,
           );
         }
+
+        chunkLog.record({
+          chunkIndex,
+          status: "success",
+          rowCount: ids.length,
+          rowsFetched: rows.length,
+          firstExamId: ids[0] ?? null,
+          lastExamId: ids.length > 0 ? ids[ids.length - 1] : null,
+          rowsUpdated: postResult.rowsUpdated ?? 0,
+          examsProcessed: postResult.examsProcessed ?? 0,
+          examsMissingTarget: postResult.examsMissingTarget ?? 0,
+          fetchMs,
+          chunkTotalMs: Date.now() - chunkStartedAt,
+        });
 
         const keysetAdvance = ids.length;
         if (!repairRun.active) {
@@ -453,11 +503,27 @@ FROM ${sourceObjectNoLock};`);
       }
       if (progressEnabled) endProgress(uiState);
 
+      let fieldIssueLogWritten = null;
+      if (fieldIssueAcc.totalFieldIssueCount > 0) {
+        const payload = buildFieldIssueLogPayload(fieldIssueAcc, {
+          migrationKey: KEY,
+          logType: "exam_recommend_birads45_field_issues",
+          recordIdKey: "exam_id",
+          buildRecord: (rec) => ({
+            exam_id: String(rec.exam_id),
+            pid: rec.pid ?? null,
+            fieldIssues: rec.fieldIssues ?? [],
+          }),
+        });
+        writeFieldIssueLogFile(fieldIssueLogPath, payload);
+        fieldIssueLogWritten = fieldIssueLogPath;
+      }
+      runLog.fieldIssueLogPath = fieldIssueLogWritten;
       runLog.repairSummary = finishRepairRunSummary(
         KEY,
         REPAIR_SPEC_EXAM_RECOMMEND_BIRADS45,
         repairRun,
-        {},
+        { fieldIssueAcc },
       );
       runLog.status = "success";
     } finally {
@@ -471,8 +537,12 @@ FROM ${sourceObjectNoLock};`);
     await pool.close();
     await pgPool.end();
     runLog.finishedAt = new Date().toISOString();
+    chunkLog.attachTo(runLog);
     fs.writeFileSync(logPath, `${JSON.stringify(runLog, null, 2)}\n`, "utf8");
     console.error(`>>> migration log saved: ${logPath}`);
+    if (runLog.fieldIssueLogPath) {
+      console.error(`>>> field issue log: ${runLog.fieldIssueLogPath}`);
+    }
   }
 }
 

@@ -580,4 +580,90 @@ export async function runPacsSyncStagingFieldIssuePipeline(
   return merged;
 }
 
+/**
+ * update-only: exam_id ใน staging ไม่มีแถวเป้าหมายใน public.examination_general
+ */
+export async function verifyExaminationGeneralUpdateTargetChunk(
+  pgClient,
+  options = {},
+) {
+  const {
+    recordIdKey = "exam_id",
+    stagingFromClause = "migrate_stg.exam_recommend_birads45_mssql",
+    stagingExamCol = "exam_id",
+    stagingPidCol = "pid",
+    buildMeta,
+  } = options;
+
+  const collector = createChunkFieldIssueCollector(recordIdKey);
+  const stgExam = `NULLIF(btrim(s.${stagingExamCol}), '')`;
+  const stgPid = `NULLIF(btrim(s.${stagingPidCol}), '')`;
+
+  const { rows } = await pgClient.query(
+    `
+    SELECT DISTINCT ${stgExam} AS exam_id, ${stgPid} AS pid
+    FROM ${stagingFromClause} s
+    LEFT JOIN public.examination_general t
+      ON t.old_exam_id::text = ${stgExam}
+    WHERE ${stgExam} ~ '^[0-9]+$'
+      AND t.id IS NULL
+    `,
+  );
+  for (const r of rows) {
+    collector.recordIssues(
+      String(r.exam_id),
+      buildMeta?.(r) ?? { pid: r.pid ?? null },
+      [
+        {
+          field: "examination_general",
+          reason: "update_target_missing",
+          message:
+            "มี exam_id ในแหล่งข้อมูล แต่ไม่พบแถวใน public.examination_general สำหรับ update recommendation_des",
+          source_raw: r.exam_id,
+          mapped: null,
+        },
+      ],
+    );
+  }
+
+  return collector.buildChunkResult(0);
+}
+
+export async function runExamRecommendBirads45StagingFieldIssuePipeline(
+  pgClient,
+  mssqlRows,
+  normalizeFn,
+  rowsLoaded = 0,
+  stagingFromClause = "migrate_stg.exam_recommend_birads45_mssql",
+) {
+  const normIssues = collectStagingNormalizeFieldIssues(mssqlRows, normalizeFn, {
+    recordIdKey: "exam_id",
+    getRecordIdFromRaw: (r) => r?.exam_id ?? r?.Exam_ID,
+    getRecordIdFromNorm: (n) => n.exam_id,
+    compositeInvalid: {
+      fields: ["exam_id", "recommend_id"],
+      reason: "invalid_recommend_row",
+      message:
+        "exam_id หรือ recommend_id ในแหล่งข้อมูลไม่ใช่ตัวเลขที่ใช้ migrate ได้",
+      buildId: (raw) => {
+        const exam = String(raw?.exam_id ?? raw?.Exam_ID ?? "").trim();
+        if (exam) return exam;
+        const rec = String(raw?.recommend_id ?? raw?.Recommend_ID ?? "").trim();
+        return rec || "?";
+      },
+    },
+    timestampFields: ["exam_date"],
+    buildMeta: (raw, norm) => ({
+      pid: norm?.pid ?? raw?.pid ?? raw?.PID ?? null,
+    }),
+  });
+  const verifyIssues = await verifyExaminationGeneralUpdateTargetChunk(pgClient, {
+    stagingFromClause,
+    buildMeta: (r) => ({ pid: r.pid ?? null }),
+  });
+  const merged = mergeStagingFieldIssueParts(normIssues, verifyIssues);
+  if (merged.fieldIssues) merged.fieldIssues.rowsInserted = rowsLoaded;
+  return merged;
+}
+
 export { getField, INT_RE };

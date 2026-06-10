@@ -536,7 +536,7 @@ async function runAppointmentReschedulesTableJob({
   const repairNotFoundInSource = repairSourceIds != null ? new Set() : null;
 
   const chunkLogMode = String(
-    migrationConfig.chunkLogMode ?? "compact",
+    migrationConfig.chunkLogMode ?? "full",
   ).toLowerCase();
   const chunkSampleEvery = Math.max(
     1,

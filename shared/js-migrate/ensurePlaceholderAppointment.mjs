@@ -3,6 +3,11 @@ const INT_RE = /^-?\d+$/;
 /** ชื่อใน public.appointment (first_name / last_name ไม่ใช่ _th) */
 export const PLACEHOLDER_APPOINTMENT_FIRST_NAME = "ไม่ทราบชื่อ";
 
+/** แถว appointment ที่สร้างจาก ensurePlaceholderAppointment */
+export function isPlaceholderAppointmentRow(row) {
+  return row?.first_name === PLACEHOLDER_APPOINTMENT_FIRST_NAME;
+}
+
 /**
  * ตารางที่อ้าง appointment ผ่าน schedule_id → old_db_id และสร้าง placeholder ถ้าไม่พบ
  */

@@ -14,6 +14,7 @@ import {
   mssqlRowValidForStaging,
   countBillingTargetRows,
   filterBillingFetchRowsInsertOnly,
+  normalizeMssqlRow,
   prepareBillingPostLoad,
   resetBillingIdSequenceIfEmpty,
   resetBillingTargetColumnCache,
@@ -21,6 +22,13 @@ import {
   stagingCellFromMssql,
   syncBillingIdSequenceOnce,
 } from "./billingMapping.mjs";
+import {
+  buildFieldIssueLogPayload,
+  createFieldIssueAccumulator,
+  mergeFieldIssueChunk,
+  writeFieldIssueLogFile,
+} from "../../shared/js-migrate/fieldIssueLog.mjs";
+import { runExamKeyedStagingFieldIssuePipeline } from "../../shared/js-migrate/stagingFieldIssues.mjs";
 import {
   createUiState,
   endProgress,
@@ -56,6 +64,7 @@ import {
   isLastKeysetPage,
   resolveKeysetAdvance,
 } from "../../shared/js-migrate/twoStepKeyset.mjs";
+import { createChunkResultsLogger } from "../../shared/js-migrate/chunkResultsLog.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KEY = "billing";
@@ -266,6 +275,7 @@ async function main() {
     skipped: 0,
     error: null,
   };
+  const chunkLog = createChunkResultsLogger(migration);
   const checkpointEnabled = migration.enableCheckpoint !== false;
   const checkpointDir = path.resolve(
     __dirname,
@@ -362,6 +372,11 @@ async function main() {
         );
       }
 
+      const fieldIssueAcc = createFieldIssueAccumulator("exam_id");
+      const fieldIssueLogPath = path.join(
+        logsDir,
+        `migration-field-issues-billing-${nowStamp()}.json`,
+      );
       let chunkIndex = 0;
       let plannedRows = sourceLimit;
       if (plannedRows == null && progressEnabled) {
@@ -412,6 +427,7 @@ async function main() {
       }
       if (repairRunIsEmpty(repairRun)) {
         runLog.status = "success";
+        chunkLog.attachTo(runLog);
         return;
       }
       let total = 0;
@@ -553,6 +569,16 @@ async function main() {
               uiState,
             );
           }
+          chunkLog.record({
+            chunkIndex,
+            status: "skipped",
+            rowCount: keysetAdvance,
+            rowsFetched: rows.length,
+            firstExamId: ids[0] ?? null,
+            lastExamId: ids.length > 0 ? ids[ids.length - 1] : null,
+            fetchMs,
+            reason: "insert-only-all-exist",
+          });
           const emptyLast = repairRun.active
             ? repairRunIsDone(repairRun)
             : isLastKeysetPage(keysetAdvance, pageSize);
@@ -580,17 +606,65 @@ async function main() {
           runLog.skipped += Math.max(0, rows.length - loaded);
           step = "post-load mapping";
           pgTimings = await runBillingChunkPostLoad(client, migrateRowMode);
+          const issueResult = await runExamKeyedStagingFieldIssuePipeline(
+            client,
+            stagingRows,
+            normalizeMssqlRow,
+            {
+              recordIdKey: "exam_id",
+              getRecordIdFromRaw: (r) => r?.exam_id ?? r?.Exam_ID,
+              getRecordIdFromNorm: (n) => n.exam_id,
+              timestampFields: ["exam_date", "schedule_date"],
+              buildMeta: (raw, norm) => ({
+                pid: norm?.pid ?? raw?.pid ?? raw?.PID ?? null,
+              }),
+            },
+            {
+              recordIdKey: "exam_id",
+              targetTable: "billing",
+              stagingFromClause: "migrate_stg.billing_mssql",
+              buildMeta: (r) => ({ pid: r.pid ?? null }),
+            },
+            loaded,
+          );
+          mergeFieldIssueChunk(fieldIssueAcc, issueResult);
           runLog.rowsUpserted += loaded;
           step = "COMMIT";
           await client.query("COMMIT");
         } catch (err) {
           await client.query("ROLLBACK");
+          chunkLog.recordFailure({
+            chunkIndex,
+            failedAtStep: step,
+            rowCount: keysetAdvance,
+            rowsFetched: rows.length,
+            firstExamId: ids[0] ?? null,
+            lastExamId: ids.length > 0 ? ids[ids.length - 1] : null,
+            fetchMs,
+            chunkTotalMs: Date.now() - chunkStartedAt,
+            error: err instanceof Error ? err.message : String(err),
+          });
           throw new Error(
             `[${KEY}] failed chunk ${chunkIndex} at step '${step}': ${
               err instanceof Error ? err.message : String(err)
             }`,
           );
         }
+
+        const postLoadMs = stagingResult.stagingMs + pgTimings.postgresMs;
+        chunkLog.record({
+          chunkIndex,
+          status: "success",
+          rowCount: keysetAdvance,
+          rowsFetched: rows.length,
+          stagingRows: loaded,
+          firstExamId: ids[0] ?? null,
+          lastExamId: ids.length > 0 ? ids[ids.length - 1] : null,
+          fetchMs,
+          stagingMs: stagingResult.stagingMs,
+          postLoadMs,
+          chunkTotalMs: Date.now() - chunkStartedAt,
+        });
 
         total += keysetAdvance;
         if (!repairRun.active) {
@@ -610,7 +684,6 @@ async function main() {
           }
         }
 
-        const postLoadMs = stagingResult.stagingMs + pgTimings.postgresMs;
         if (probeTiming && !singleLineUi && (idFetchMs > 0 || detailMs > 0)) {
           writeOutLine(
             `>>> [${KEY}] chunk ${chunkIndex} id_fetch_ms=${idFetchMs} detail_fetch_ms=${detailMs}`,
@@ -664,11 +737,28 @@ async function main() {
       if (progressEnabled) endProgress(uiState);
 
       await syncBillingIdSequenceOnce(client);
+
+      let fieldIssueLogWritten = null;
+      if (fieldIssueAcc.totalFieldIssueCount > 0) {
+        const payload = buildFieldIssueLogPayload(fieldIssueAcc, {
+          migrationKey: KEY,
+          logType: "billing_field_issues",
+          recordIdKey: "exam_id",
+          buildRecord: (rec) => ({
+            exam_id: String(rec.exam_id),
+            pid: rec.pid ?? null,
+            fieldIssues: rec.fieldIssues ?? [],
+          }),
+        });
+        writeFieldIssueLogFile(fieldIssueLogPath, payload);
+        fieldIssueLogWritten = fieldIssueLogPath;
+      }
+      runLog.fieldIssueLogPath = fieldIssueLogWritten;
       runLog.repairSummary = finishRepairRunSummary(
         KEY,
         REPAIR_SPEC_BILLING,
         repairRun,
-        {},
+        { fieldIssueAcc },
       );
       runLog.status = "success";
     } finally {
@@ -682,8 +772,12 @@ async function main() {
     await pool.close();
     await pgPool.end();
     runLog.finishedAt = new Date().toISOString();
+    chunkLog.attachTo(runLog);
     fs.writeFileSync(logPath, `${JSON.stringify(runLog, null, 2)}\n`, "utf8");
     console.error(`>>> migration log saved: ${logPath}`);
+    if (runLog.fieldIssueLogPath) {
+      console.error(`>>> field issue log: ${runLog.fieldIssueLogPath}`);
+    }
   }
 }
 
