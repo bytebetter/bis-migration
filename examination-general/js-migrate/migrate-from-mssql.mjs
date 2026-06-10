@@ -52,6 +52,7 @@ import {
   formatAdvanceLog,
   isLastKeysetPage,
 } from "../../shared/js-migrate/twoStepKeyset.mjs";
+import { createChunkResultsLogger } from "../../shared/js-migrate/chunkResultsLog.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KEY = "examination_general";
@@ -303,6 +304,7 @@ async function main() {
     skipped: 0,
     error: null,
   };
+  const chunkLog = createChunkResultsLogger(migration);
   const checkpointEnabled = migration.enableCheckpoint !== false;
   const checkpointDir = path.resolve(
     __dirname,
@@ -426,6 +428,7 @@ async function main() {
       }
       if (repairRunIsEmpty(repairRun)) {
         runLog.status = "success";
+        chunkLog.attachTo(runLog);
         return;
       }
       if (debugLogs) {
@@ -573,12 +576,36 @@ async function main() {
           commitMs = Date.now() - commitStartedAt;
         } catch (err) {
           await client.query("ROLLBACK");
+          chunkLog.recordFailure({
+            chunkIndex,
+            failedAtStep: step,
+            rowCount: ids.length,
+            rowsFetched: rows.length,
+            firstExamId: ids[0] ?? null,
+            lastExamId: ids.length > 0 ? ids[ids.length - 1] : null,
+            fetchMs,
+            chunkTotalMs: Date.now() - chunkStartedAt,
+            error: err instanceof Error ? err.message : String(err),
+          });
           throw new Error(
             `[${KEY}] failed chunk ${chunkIndex} at step '${step}': ${
               err instanceof Error ? err.message : String(err)
             }`,
           );
         }
+
+        chunkLog.record({
+          chunkIndex,
+          status: "success",
+          rowCount: ids.length,
+          rowsFetched: rows.length,
+          firstExamId: ids[0] ?? null,
+          lastExamId: ids.length > 0 ? ids[ids.length - 1] : null,
+          fetchMs,
+          stagingMs,
+          postLoadMs,
+          chunkTotalMs: Date.now() - chunkStartedAt,
+        });
 
         const keysetAdvance = ids.length;
         if (!repairRun.active) {
@@ -678,6 +705,7 @@ async function main() {
     await pool.close();
     await pgPool.end();
     runLog.finishedAt = new Date().toISOString();
+    chunkLog.attachTo(runLog);
     fs.writeFileSync(logPath, `${JSON.stringify(runLog, null, 2)}\n`, "utf8");
     console.error(`>>> migration log saved: ${logPath}`);
     if (runLog.fieldIssueLogPath) {

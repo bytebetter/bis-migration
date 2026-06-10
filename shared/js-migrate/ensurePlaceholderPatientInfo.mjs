@@ -46,11 +46,7 @@ export function placeholderLastNameTh(pid) {
  */
 export async function ensurePlaceholderPatientInfo(pgClient, rawPids) {
   const pids = [
-    ...new Set(
-      (rawPids ?? [])
-        .map((p) => normPid(p))
-        .filter((p) => p !== ""),
-    ),
+    ...new Set((rawPids ?? []).map((p) => normPid(p)).filter((p) => p !== "")),
   ];
   if (pids.length === 0) return { inserted: 0 };
 

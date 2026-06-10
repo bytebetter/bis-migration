@@ -641,7 +641,7 @@ async function runTableJob({
   let successChunkCount = 0;
   let failedChunkCount = 0;
   const chunkLogMode = String(
-    migrationConfig.chunkLogMode ?? "compact",
+    migrationConfig.chunkLogMode ?? "full",
   ).toLowerCase();
   const chunkSampleEvery = Math.max(
     1,

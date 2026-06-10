@@ -50,6 +50,10 @@ import {
   noteRepairBatchFetch,
   takeNextRepairBatch,
 } from "../../shared/js-migrate/repairRun.mjs";
+import {
+  createChunkResultsLogger,
+  firstLastCompositeKey,
+} from "../../shared/js-migrate/chunkResultsLog.mjs";
 
 const COMPOSITE_FIELD_ISSUE = buildCompositeStagingFieldIssueConfig(
   "described_mass_id",
@@ -247,6 +251,7 @@ async function main() {
     skipped: 0,
     error: null,
   };
+  const chunkLog = createChunkResultsLogger(migration);
   const checkpointEnabled = migration.enableCheckpoint !== false;
   const checkpointDir = path.resolve(
     __dirname,
@@ -369,6 +374,7 @@ async function main() {
       }
       if (repairRunIsEmpty(repairRun)) {
         runLog.status = "success";
+        chunkLog.attachTo(runLog);
         return;
       }
       if (debugLogs) {
@@ -430,6 +436,11 @@ async function main() {
         }
 
         chunkIndex += 1;
+        const { firstKey, lastKey } = firstLastCompositeKey(
+          rows,
+          "exam_id",
+          "described_mass_id",
+        );
         const normalized = rows.map(normalizeMssqlRow).filter(Boolean);
         const skipped = rows.length - normalized.length;
 
@@ -469,12 +480,34 @@ async function main() {
           commitMs = Date.now() - commitStartedAt;
         } catch (err) {
           await client.query("ROLLBACK");
+          chunkLog.recordFailure({
+            chunkIndex,
+            failedAtStep: step,
+            rowCount: rows.length,
+            firstKey,
+            lastKey,
+            fetchMs,
+            chunkTotalMs: Date.now() - chunkStartedAt,
+            error: err instanceof Error ? err.message : String(err),
+          });
           throw new Error(
             `[${KEY}] failed chunk ${chunkIndex} at step '${step}': ${
               err instanceof Error ? err.message : String(err)
             }`,
           );
         }
+
+        chunkLog.record({
+          chunkIndex,
+          status: "success",
+          rowCount: rows.length,
+          firstKey,
+          lastKey,
+          fetchMs,
+          stagingMs,
+          postLoadMs,
+          chunkTotalMs: Date.now() - chunkStartedAt,
+        });
 
         offset += rows.length;
         const last = rows[rows.length - 1];
@@ -577,6 +610,7 @@ async function main() {
     await pool.close();
     await pgPool.end();
     runLog.finishedAt = new Date().toISOString();
+    chunkLog.attachTo(runLog);
     fs.writeFileSync(logPath, `${JSON.stringify(runLog, null, 2)}\n`, "utf8");
     writeOutLine(`>>> migration log saved: ${logPath}`, uiState);
     if (runLog.fieldIssueLogPath) {

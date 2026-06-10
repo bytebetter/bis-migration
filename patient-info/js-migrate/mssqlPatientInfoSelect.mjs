@@ -101,6 +101,28 @@ ORDER BY ${MSSQL_PID_ORDER_BY};
 `.trim();
 }
 
+/** สรุปต้นทางสำหรับ smart resume (COUNT + MAX sort_key) */
+export function buildMssqlPatientInfoSourceFingerprintSql() {
+  return `
+SELECT
+  COUNT_BIG(1) AS total_n,
+  MAX(${MSSQL_PID_SORT_KEY_EXPR}) AS max_sort_key
+FROM {{sourceObject}}
+WHERE ${MSSQL_PATIENT_INFO_SRC_WHERE};
+`.trim();
+}
+
+/** นับแถวในช่วง sort_key (after, max] — ตรวจว่าแถวใหม่ทั้งหมดอยู่ท้ายลำดับหรือไม่ */
+export function buildMssqlPatientInfoSortKeyTailCountSql() {
+  return `
+SELECT COUNT_BIG(1) AS tail_n
+FROM {{sourceObject}}
+WHERE ${MSSQL_PID_SORT_KEY_EXPR} > @afterSortKeyExclusive
+  AND ${MSSQL_PID_SORT_KEY_EXPR} <= @maxSortKeyInclusive
+  AND ${MSSQL_PATIENT_INFO_SRC_WHERE};
+`.trim();
+}
+
 /** repair-from-log / ดึงตามรายการ PID */
 export const MSSQL_PATIENT_INFO_BY_PIDS_SELECT = `
 SELECT

@@ -948,7 +948,11 @@ export async function runPatientInfoChunkPostLoad(
     patientRowsUpdated,
   );
 
-  function buildChunkFieldIssueResult(patientInserted, addressInserted, patientUpdated) {
+  function buildChunkFieldIssueResult(
+    patientInserted,
+    addressInserted,
+    patientUpdated,
+  ) {
     const failedPids = sortPids(failingPidSet);
     const hasIssues = totalFieldIssueCount > 0;
     return {

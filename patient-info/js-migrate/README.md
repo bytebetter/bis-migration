@@ -2,12 +2,12 @@
 
 ## ไฟล์สำคัญ
 
-| ไฟล์ | บทบาท |
-|------|--------|
-| `migrate-from-mssql.mjs` | อ่าน config, ดึง MSSQL แบทช์, ลง staging, เรียกแมป |
-| `mssqlPatientInfoSelect.mjs` | สตริง `SELECT` จาก `dbo.patient_info` (แทน `.sql` เดิม) |
-| `patientInfoPgDdl.mjs` | สร้าง `migrate_stg` + ตาราง staging + ฟังก์ชัน `norm_pid` |
-| `patientInfoMapping.mjs` | แมป `staging → public.patient_info` + `public.address` (แทน `02_` / `03_` SQL เดิม) |
+| ไฟล์                         | บทบาท                                                                               |
+| ---------------------------- | ----------------------------------------------------------------------------------- |
+| `migrate-from-mssql.mjs`     | อ่าน config, ดึง MSSQL แบทช์, ลง staging, เรียกแมป                                  |
+| `mssqlPatientInfoSelect.mjs` | สตริง `SELECT` จาก `dbo.patient_info` (แทน `.sql` เดิม)                             |
+| `patientInfoPgDdl.mjs`       | สร้าง `migrate_stg` + ตาราง staging + ฟังก์ชัน `norm_pid`                           |
+| `patientInfoMapping.mjs`     | แมป `staging → public.patient_info` + `public.address` (แทน `02_` / `03_` SQL เดิม) |
 
 ## Checklist
 
@@ -47,16 +47,22 @@ Log: `logs/migrate-*.json` — checkpoint: `checkpoints/<key>.json`
 
 - เรียง MSSQL ด้วย **sort key**: PID ตัวเลขก่อน (เรียงตามค่าตัวเลข เช่น `2` ก่อน `10`) แล้วตามด้วย non-numeric (เช่น `T998`)
 - ใช้ **keyset** (`sort_key > checkpoint`) แทน OFFSET — ไม่พลาดแถวใหม่ที่แทรกกลางลำดับเมื่อรัน resume รายวัน
-- หลังรอบก่อน `completed: true` รอบ resume ถัดไปจะ **สแกน MSSQL ตั้งแต่ต้น** (insert-only ข้ามที่มีใน Postgres แล้ว) — จับ PID ใหม่เช่น `1234` แม้เคย migrate ถึง `T998` แล้ว
-- checkpoint เก็บ `offset` (จำนวนแถวที่สแกนจาก MSSQL) และ `mssqlKeysetAfter` (sort key ล่าสุด) — **ไม่เกี่ยวกับจำนวนแถวใน Postgres**
+- **Postgres ว่าง** → migrate จากต้น (keyset เต็มแถว/chunk, ปิด id probe) รีเซ็ต checkpoint
+- **ต่อ checkpoint ไม่จบ** (`completed: false`, มี `offset`/`mssqlKeysetAfter`) → keyset ต่อท้าย ~แถวที่เหลือ, **ปิด id probe**, progress แสดง `210000/214944` ไม่ใช่เริ่ม `0/214944`
+- **มีข้อมูล + checkpoint แล้ว** → ค่าเริ่มต้น **keyset ต่อท้าย** (วิธีเดิม เร็ว)
+- **smart resume** (ค่าเริ่มต้นเปิด) เพิ่มเติม:
+  - **ข้าม** — fingerprint ต้นทางไม่เปลี่ยน (~วินาที)
+  - **full catch-up** — เฉพาะเมื่อสงสัย **แทรกกลาง** (COUNT เพิ่มแต่ MAX ไม่เลื่อน หรือมีแถวใหม่นอกช่วงท้าย)
+- checkpoint เก็บ `offset`, `mssqlKeysetAfter`, `sourceRowCount`, `sourceMaxSortKey`, `lastFullCatchUpAt`
+- config: `patientInfoSmartResume` (default true), `patientInfoFullCatchUpDays` (default 0 = ปิด), `patientInfoForceFullCatchUp`
 
 ### โหมดรัน (`migrateRunMode` / `-MigrateRunMode`)
 
-| โหมด | พฤติกรรม `patient_info` |
-|------|-------------------------|
+| โหมด                       | พฤติกรรม `patient_info`                                                                                                                                                                                                           |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **resume** (`insert-only`) | เพิ่มเฉพาะ PID ที่ยังไม่มีใน Postgres — **ไม่แตะ**แถวจริงเดิม; แถว placeholder `ไม่ทราบชื่อ` จาก appointment/ตารางอื่น **ยังคงไว้** และยัง INSERT แถวจาก MSSQL ได้ (รวมแล้วได้ 1,010 + 200 = 1,210 ตามตัวอย่าง checkpoint รายวัน) |
-| **overwrite** | PID ที่มีแล้ว → **UPDATE** ตาม `patient_info.id` (คง `id` เดิม) แล้วลบ/ใส่ `address` ใหม่; PID ใหม่ → INSERT |
-| **repair-from-log** | เหมือน overwrite แต่ดึงเฉพาะ PID จาก log ล่าสุด — จบแล้วแสดงจำนวนจาก log / สำเร็จ / ไม่สำเร็จ |
+| **overwrite**              | PID ที่มีแล้ว → **UPDATE** ตาม `patient_info.id` (คง `id` เดิม) แล้วลบ/ใส่ `address` ใหม่; PID ใหม่ → INSERT                                                                                                                      |
+| **repair-from-log**        | เหมือน overwrite แต่ดึงเฉพาะ PID จาก log ล่าสุด — จบแล้วแสดงจำนวนจาก log / สำเร็จ / ไม่สำเร็จ                                                                                                                                     |
 
 ```powershell
 npm run migrate:patient_info -- --migrate-run-mode overwrite

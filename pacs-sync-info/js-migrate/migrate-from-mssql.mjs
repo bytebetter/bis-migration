@@ -44,7 +44,10 @@ import {
   logByIdMigrationRun,
   plannedProgressForSourceIds,
 } from "../../shared/js-migrate/sourceIdsSupport.mjs";
-import { bindMigrateSrcNumericRange } from "../../shared/js-migrate/migrateCliArgs.mjs";
+import {
+  bindMigrateSrcNumericRange,
+  logMigrationRunMode,
+} from "../../shared/js-migrate/migrateCliArgs.mjs";
 import {
   applySourceIndexToMigrateJob,
   buildIndexCheckpointSuffix,
@@ -57,6 +60,10 @@ import {
   batchIds,
   resolveMigrationSourceIds,
 } from "../../shared/js-migrate/repairFromLog.mjs";
+import {
+  createChunkResultsLogger,
+  firstLastRowField,
+} from "../../shared/js-migrate/chunkResultsLog.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KEY = "pacs_sync_info";
@@ -256,7 +263,28 @@ function rowColCi(row, name) {
   return hit ? row[hit] : undefined;
 }
 
-/** เธเนเธฒเธชเธณเธซเธฃเธฑเธ keyset เน€เธเธช Accession_ID IS NULL */
+/** นับแถวต้นทาง MSSQL — total = acc + null (ใช้ sync offset/progress ให้ตรง COUNT) */
+async function queryPacsSyncSourceRowCounts(pool, sourceObjectNoLock) {
+  try {
+    const res = await pool.request().query(`
+      SELECT
+        COUNT_BIG(1) AS total_n,
+        SUM(CASE WHEN [Accession_ID] IS NOT NULL THEN 1 ELSE 0 END) AS acc_n,
+        SUM(CASE WHEN [Accession_ID] IS NULL THEN 1 ELSE 0 END) AS null_n
+      FROM ${sourceObjectNoLock};
+    `);
+    const row = res.recordset?.[0] ?? {};
+    return {
+      total: Number(row.total_n ?? 0),
+      accOnly: Number(row.acc_n ?? 0),
+      nullOnly: Number(row.null_n ?? 0),
+    };
+  } catch {
+    return { total: null, accOnly: null, nullOnly: null };
+  }
+}
+
+/** ค่าสำหรับ keyset เน€เธเธช Accession_ID IS NULL */
 function readNullTailCheckpointFromRow(row) {
   const examRaw = rowColCi(row, "__null_ck_exam");
   const dlRaw = rowColCi(row, "__null_ck_dl");
@@ -613,6 +641,7 @@ async function main() {
     plannedRows: null,
     plannedChunks: null,
   };
+  const chunkLog = createChunkResultsLogger(migration);
 
   const mssqlConfig = buildMssqlConfig(config.source);
   let mssqlServerHint = config.source?.server ?? "?";
@@ -635,19 +664,31 @@ async function main() {
     );
   }
 
+  const isResumeRun =
+    String(migration.migrateRunMode ?? "resume").toLowerCase() === "resume";
+  let dailyCatchUpReset = false;
+
   try {
     if (
       checkpointEnabled &&
       checkpoint.completed === true &&
       checkpoint.nullTailDone === true
     ) {
-      runLog.status = "skipped";
-      runLog.migrationLeg = checkpoint.migrationLeg ?? "done";
-      runLog.nullTailDone = true;
-      console.error(
-        `>>> [${KEY}] checkpoint: เธขเนเธฒเธขเธเธฃเธเนเธฅเนเธง (เธฃเธงเธกเนเธ–เธง Accession_ID NULL) โ€” เนเธกเนเธฃเธฑเธเธเนเธณ`,
-      );
-      return;
+      if (isResumeRun) {
+        dailyCatchUpReset = true;
+        console.error(
+          `>>> [${KEY}] resume catch-up: สแกน MSSQL ใหม่ทั้งตาราง (upsert ตาม accession_id — progress นับแถวต้นทางให้ตรง COUNT)`,
+        );
+      } else {
+        runLog.status = "skipped";
+        runLog.migrationLeg = checkpoint.migrationLeg ?? "done";
+        runLog.nullTailDone = true;
+        console.error(
+          `>>> [${KEY}] checkpoint: ข้ามครบแล้ว (รวมแถว Accession_ID NULL) — ไม่รันซ้ำ (migrateRunMode ไม่ใช่ resume)`,
+        );
+        chunkLog.attachTo(runLog);
+        return;
+      }
     }
 
     const probeStartedAt = Date.now();
@@ -695,6 +736,7 @@ async function main() {
       console.error(
         `>>> [${KEY}] target: ${config.target.postgresDatabase} public.pacs_sync_info (batchSize=${batchSize}${fetchModeLabel})`,
       );
+      logMigrationRunMode(migration, KEY);
       if (debugLogs && !singleLineUi) {
         const sdHint =
           !Number.isFinite(studyDescriptionMaxChars) ||
@@ -707,7 +749,15 @@ async function main() {
         );
       }
 
-      let offset = Number(checkpointEnabled ? checkpoint.offset : 0);
+      /** แถวที่ดึงจาก MSSQL แล้ว (สะสม acc + null-tail) — ใช้แสดง progress ให้ตรง COUNT */
+      let rowsProcessed = Number(checkpointEnabled ? checkpoint.offset : 0);
+      if (!Number.isFinite(rowsProcessed) || rowsProcessed < 0) {
+        rowsProcessed = 0;
+      }
+      if (dailyCatchUpReset) {
+        rowsProcessed = 0;
+      }
+      let offset = rowsProcessed;
       const idx = applySourceIndexToMigrateJob({
         key: KEY,
         migrationConfig: migration,
@@ -845,7 +895,10 @@ async function main() {
         return;
       }
 
-      if (!Number.isFinite(offset) || offset < 0) offset = 0;
+      if (!Number.isFinite(offset) || offset < 0) {
+        offset = 0;
+        rowsProcessed = 0;
+      }
       let afterAccessionId =
         checkpointEnabled && checkpoint.afterAccessionId != null
           ? String(checkpoint.afterAccessionId)
@@ -866,6 +919,7 @@ async function main() {
         const ckMode = checkpoint.mssqlPagination;
         if (ckMode != null && ckMode !== mssqlPagination) {
           offset = 0;
+          rowsProcessed = 0;
           afterAccessionId = null;
           migrationLeg = "acc";
           nullTailCursor = null;
@@ -875,6 +929,7 @@ async function main() {
           );
         } else if (useOffsetPagination && ckMode == null) {
           offset = 0;
+          rowsProcessed = 0;
           afterAccessionId = null;
           migrationLeg = "acc";
           nullTailCursor = null;
@@ -895,9 +950,19 @@ async function main() {
 
       if (fpVerMismatch) {
         offset = 0;
+        rowsProcessed = 0;
         afterAccessionId = null;
         accLegCursor = null;
         nullTailCursor = null;
+      }
+
+      if (dailyCatchUpReset) {
+        offset = 0;
+        rowsProcessed = 0;
+        afterAccessionId = null;
+        migrationLeg = "acc";
+        nullTailCursor = null;
+        accLegCursor = null;
       }
 
       if (
@@ -912,15 +977,17 @@ async function main() {
           (afterAccessionId != null && String(afterAccessionId).trim() !== ""))
       ) {
         offset = 0;
+        rowsProcessed = 0;
         afterAccessionId = null;
         accLegCursor = null;
         nullTailCursor = null;
         console.error(
-          `>>> [${KEY}] keyset composite: checkpoint เนเธกเนเธกเธต accLegCursor โ€” เธฃเธตเน€เธเนเธ•เน€เธเธช 1 (เธ”เธถเธเธเนเธณ Accession เธเธฃเธ)`,
+          `>>> [${KEY}] keyset composite: checkpoint ไม่มี accLegCursor — รีเซ็ตเฟส 1 (ดึงซ้ำ Accession ครบ)`,
         );
       }
 
       const onlyNullTail =
+        !dailyCatchUpReset &&
         useKeysetPlusNull &&
         mssqlOptimizeSingleQuery &&
         nullAccSqlFirst != null &&
@@ -955,7 +1022,7 @@ async function main() {
         });
       }
       runLog.plannedRows = plannedRows;
-      const progressTotal = plannedRows ?? null;
+      let progressTotal = plannedRows ?? null;
       const plannedChunks =
         plannedRows != null && plannedRows > 0
           ? Math.ceil(plannedRows / batchSize)
@@ -1162,6 +1229,12 @@ async function main() {
           if (rows.length === 0) break;
 
           chunkIndex += 1;
+          const { first: firstAccessionId, last: lastAccessionId } =
+            firstLastRowField(rows, "accession_id", (v) => {
+              if (v == null) return null;
+              const s = String(v).trim();
+              return s === "" ? null : s;
+            });
           const normalized = rows.map((r, i) =>
             normalizePacsSyncMssqlRow(r, offset + i),
           );
@@ -1205,12 +1278,37 @@ async function main() {
             commitMs = Date.now() - commitStartedAt;
           } catch (err) {
             await client.query("ROLLBACK");
+            chunkLog.recordFailure({
+              chunkIndex,
+              migrationLeg: "acc",
+              failedAtStep: step,
+              rowCount: rows.length,
+              firstAccessionId,
+              lastAccessionId,
+              fetchMs,
+              chunkTotalMs: Date.now() - chunkStartedAt,
+              error: err instanceof Error ? err.message : String(err),
+            });
             throw new Error(
               `[${KEY}] failed chunk ${chunkIndex} at step '${step}': ${err instanceof Error ? err.message : String(err)}`,
             );
           }
 
-          offset += rows.length;
+          chunkLog.record({
+            chunkIndex,
+            status: "success",
+            migrationLeg: "acc",
+            rowCount: rows.length,
+            firstAccessionId,
+            lastAccessionId,
+            fetchMs,
+            stagingMs,
+            postLoadMs,
+            chunkTotalMs: Date.now() - chunkStartedAt,
+          });
+
+          rowsProcessed += rows.length;
+          offset = rowsProcessed;
           /** @type {unknown} */
           let ckKey = null;
           if (useOffsetPagination) {
@@ -1269,7 +1367,9 @@ async function main() {
           }
           if (progressEnabled) {
             renderProgress(
-              offset,
+              progressTotal != null
+                ? Math.min(rowsProcessed, progressTotal)
+                : rowsProcessed,
               progressTotal,
               startedAt,
               chunkIndex,
@@ -1307,8 +1407,37 @@ async function main() {
       ) {
         if (!onlyNullTail) {
           console.error(
-            `>>> [${KEY}] เน€เธเธช 2: เนเธถเธงเธ—เธตเน [Accession_ID] IS NULL (keyset เน€เธฃเนเธง)`,
+            `>>> [${KEY}] เฟส 2: แถวที่ [Accession_ID] IS NULL (keyset เรียง)`,
           );
+        }
+        const sourceCounts = await queryPacsSyncSourceRowCounts(
+          pool,
+          sourceObjectNoLock,
+        );
+        let accBaseline = rowsProcessed;
+        let nullRowsDone = 0;
+        if (
+          sourceCounts.accOnly != null &&
+          Number.isFinite(sourceCounts.accOnly) &&
+          sourceCounts.accOnly >= 0
+        ) {
+          accBaseline = sourceCounts.accOnly;
+          if (rowsProcessed !== accBaseline) {
+            console.error(
+              `>>> [${KEY}] เฟส null-tail: ปรับ baseline acc ${rowsProcessed} -> ${accBaseline} (ไม่นับซ้ำกับเฟส acc)`,
+            );
+            rowsProcessed = accBaseline;
+            offset = accBaseline;
+          }
+        }
+        if (
+          sourceCounts.total != null &&
+          Number.isFinite(sourceCounts.total) &&
+          sourceCounts.total > 0
+        ) {
+          plannedRows = sourceCounts.total;
+          progressTotal = sourceCounts.total;
+          runLog.plannedRows = plannedRows;
         }
         let nullCk = nullTailCursor;
         while (true) {
@@ -1346,6 +1475,12 @@ async function main() {
           if (rows.length === 0) break;
 
           chunkIndex += 1;
+          const { first: firstAccessionId, last: lastAccessionId } =
+            firstLastRowField(rows, "accession_id", (v) => {
+              if (v == null) return null;
+              const s = String(v).trim();
+              return s === "" ? null : s;
+            });
           const normalized = rows.map((r, i) =>
             normalizePacsSyncMssqlRow(r, offset + i),
           );
@@ -1389,18 +1524,47 @@ async function main() {
             commitMs = Date.now() - commitStartedAt;
           } catch (err) {
             await client.query("ROLLBACK");
+            chunkLog.recordFailure({
+              chunkIndex,
+              migrationLeg: "null_acc",
+              failedAtStep: step,
+              rowCount: rows.length,
+              firstAccessionId,
+              lastAccessionId,
+              fetchMs,
+              chunkTotalMs: Date.now() - chunkStartedAt,
+              error: err instanceof Error ? err.message : String(err),
+            });
             throw new Error(
               `[${KEY}] null-tail failed chunk ${chunkIndex} at step '${step}': ${err instanceof Error ? err.message : String(err)}`,
             );
           }
 
-          offset += rows.length;
+          chunkLog.record({
+            chunkIndex,
+            status: "success",
+            migrationLeg: "null_acc",
+            rowCount: rows.length,
+            firstAccessionId,
+            lastAccessionId,
+            fetchMs,
+            stagingMs,
+            postLoadMs,
+            chunkTotalMs: Date.now() - chunkStartedAt,
+          });
+
+          nullRowsDone += rows.length;
+          rowsProcessed = accBaseline + nullRowsDone;
+          offset = rowsProcessed;
           nullCk = readNullTailCheckpointFromRow(rows[rows.length - 1]);
 
           if (checkpointEnabled) {
             writeJson(checkpointPath, {
               key: KEY,
-              offset,
+              offset:
+                progressTotal != null
+                  ? Math.min(offset, progressTotal)
+                  : offset,
               afterAccessionId: null,
               mssqlPagination,
               migrationLeg: "null_acc",
@@ -1427,7 +1591,9 @@ async function main() {
           }
           if (progressEnabled) {
             renderProgress(
-              offset,
+              progressTotal != null
+                ? Math.min(rowsProcessed, progressTotal)
+                : rowsProcessed,
               progressTotal,
               startedAt,
               chunkIndex,
@@ -1442,10 +1608,38 @@ async function main() {
               plannedRows,
               rowsReadInWindow: Math.max(0, offset - idx.indexStartOffset),
             }) ||
-            rows.length < nullPageSize
+            rows.length < nullPageSize ||
+            (sourceCounts.nullOnly != null &&
+              nullRowsDone >= sourceCounts.nullOnly)
           ) {
             break;
           }
+        }
+      }
+
+      const finalCounts = await queryPacsSyncSourceRowCounts(
+        pool,
+        sourceObjectNoLock,
+      );
+      if (
+        finalCounts.total != null &&
+        Number.isFinite(finalCounts.total) &&
+        finalCounts.total >= 0
+      ) {
+        rowsProcessed = finalCounts.total;
+        offset = finalCounts.total;
+        plannedRows = finalCounts.total;
+      }
+
+      runLog.rowsProcessed = rowsProcessed;
+      if (plannedRows != null) {
+        console.error(
+          `>>> [${KEY}] migrated: ${rowsProcessed} / ${plannedRows} rows`,
+        );
+        if (rowsProcessed !== plannedRows) {
+          console.error(
+            `>>> [${KEY}] หมายเหตุ: แถวที่ประมวลผล (${rowsProcessed}) ไม่เท่า plan COUNT (${plannedRows}), ต่าง ${rowsProcessed - plannedRows}`,
+          );
         }
       }
 
@@ -1499,6 +1693,7 @@ async function main() {
     await pool.close();
     await pgPool.end();
     runLog.finishedAt = new Date().toISOString();
+    chunkLog.attachTo(runLog);
     fs.writeFileSync(logPath, `${JSON.stringify(runLog, null, 2)}\n`, "utf8");
     console.error(`>>> migration log saved: ${logPath}`);
     if (runLog.fieldIssueLogPath) {

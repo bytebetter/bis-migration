@@ -29,9 +29,7 @@ import {
   renderProgress,
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
-import {
-  readNumericSourceKeyBounds,
-} from "../../shared/js-migrate/migrateCliArgs.mjs";
+import { readNumericSourceKeyBounds } from "../../shared/js-migrate/migrateCliArgs.mjs";
 import {
   logByIdMigrationRun,
   plannedProgressForSourceIds,
@@ -477,7 +475,7 @@ async function runAppointmentTableJob({
   }
 
   const chunkLogMode = String(
-    migrationConfig.chunkLogMode ?? "compact",
+    migrationConfig.chunkLogMode ?? "full",
   ).toLowerCase();
   const chunkSampleEvery = Math.max(
     1,
@@ -574,8 +572,7 @@ END $$;
   const repairBatches =
     repairSourceIds != null ? [...batchIds(repairSourceIds, batchSize)] : null;
   let repairBatchIndex = 0;
-  const repairNotFoundInSource =
-    repairSourceIds != null ? new Set() : null;
+  const repairNotFoundInSource = repairSourceIds != null ? new Set() : null;
   if (repairSourceIds != null && repairSourceIds.length === 0) {
     console.error(`>>> [${key}] repair-from-log: ไม่มี id ให้ migrate`);
     return {
