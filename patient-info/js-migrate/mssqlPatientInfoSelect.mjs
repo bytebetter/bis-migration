@@ -27,6 +27,9 @@ END`;
 
 export const MSSQL_PID_ORDER_BY = `${MSSQL_PID_SORT_KEY_EXPR} ASC`;
 
+/** ORDER BY เร็วสำหรับ bulk migrate ครั้งแรก (Postgres ว่าง) — ไม่คำนวณ sort_key ทุกแถวบน MSSQL */
+export const MSSQL_PID_FAST_ORDER_BY = "[PID] ASC";
+
 export const MSSQL_PATIENT_INFO_SRC_WHERE = `
 (@migrateSrcKeyMin IS NULL OR ${MSSQL_PID_NUMERIC_BIGINT_EXPR} >= @migrateSrcKeyMin)
   AND (@migrateSrcKeyMax IS NULL OR ${MSSQL_PID_NUMERIC_BIGINT_EXPR} <= @migrateSrcKeyMax)`;

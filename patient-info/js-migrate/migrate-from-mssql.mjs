@@ -6,6 +6,7 @@ import pg from "pg";
 import {
   MSSQL_PATIENT_INFO_BY_PIDS_SELECT,
   MSSQL_PATIENT_INFO_SELECT,
+  MSSQL_PID_FAST_ORDER_BY,
   MSSQL_PID_ORDER_BY,
   buildMssqlPatientInfoIdProbeKeysetSelect,
   buildMssqlPatientInfoKeysetSelect,
@@ -629,6 +630,10 @@ async function runTableJob({
   const offsetSelectSql = selectTemplate
     .replaceAll("{{sourceObject}}", sourceObject)
     .replaceAll("{{orderBy}}", orderBy);
+  const bulkOffsetSelectSql = MSSQL_PATIENT_INFO_SELECT.replaceAll(
+    "{{sourceObject}}",
+    sourceObject,
+  ).replaceAll("{{orderBy}}", MSSQL_PID_FAST_ORDER_BY);
   const keysetSelectSql = buildMssqlPatientInfoKeysetSelect().replaceAll(
     "{{sourceObject}}",
     sourceObject,
@@ -755,7 +760,7 @@ async function runTableJob({
         updatedAt: new Date().toISOString(),
       });
       console.error(
-        `>>> [${key}] Postgres ว่าง — เริ่ม migrate ใหม่จากต้น (keyset เต็มแถวต่อ chunk, ไม่ใช้ id probe)`,
+        `>>> [${key}] Postgres ว่าง — รีเซ็ต checkpoint เริ่ม migrate ใหม่จากต้น`,
       );
     }
   }
@@ -880,24 +885,37 @@ async function runTableJob({
     console.error(`>>> [${key}] resume: ${resumeCatchUpReason}`);
   }
 
+  /** Postgres ว่าง → OFFSET + ORDER BY [PID] อัตโนมัติ; มีข้อมูลแล้ว → keyset/smart resume */
+  const useBulkOffsetFetch =
+    isPatientInfoBuiltin &&
+    !isRepairFromLogRun &&
+    targetRowCount === 0 &&
+    offset === 0 &&
+    !incompleteCheckpointResume &&
+    (resumeCatchUpMode === "normal" || resumeCatchUpMode === "full");
+  const fetchUsesOffset = useBulkOffsetFetch || !useMssqlKeyset;
+
   const useIdProbe =
+    !fetchUsesOffset &&
     useMssqlKeyset &&
     insertOnly &&
     isPatientInfoBuiltin &&
     targetRowCount > 0 &&
     !incompleteCheckpointResume &&
     migrationConfig.patientInfoIdProbe !== false;
-  if (
+  if (useBulkOffsetFetch) {
+    console.error(
+      `>>> [${key}] auto: Postgres ว่าง → OFFSET + ORDER BY [PID] (bulk เร็ว)`,
+    );
+  } else if (
     isPatientInfoBuiltin &&
     useMssqlKeyset &&
     insertOnly &&
-    (targetRowCount === 0 || incompleteCheckpointResume) &&
+    incompleteCheckpointResume &&
     migrationConfig.patientInfoIdProbe !== false
   ) {
     console.error(
-      incompleteCheckpointResume
-        ? `>>> [${key}] ต่อ checkpoint ไม่จบ — ปิด id probe ใช้ keyset ดึง detail ต่อท้าย (เร็วกว่า)`
-        : `>>> [${key}] Postgres ว่าง — ปิด id probe ใช้ keyset ดึง detail ครั้งเดียวต่อ chunk (เร็วกว่า)`,
+      `>>> [${key}] ต่อ checkpoint ไม่จบ — ปิด id probe ใช้ keyset ดึง detail ต่อท้าย`,
     );
   }
 
@@ -910,10 +928,10 @@ async function runTableJob({
   }
   if (debugLogs) {
     writeOutLine(
-      `>>> [${key}] start offset: ${offset}${useMssqlKeyset ? ` keysetAfter=${JSON.stringify(mssqlKeysetAfter)}` : ""}`,
+      `>>> [${key}] start offset: ${offset}${fetchUsesOffset ? " (OFFSET fetch)" : ` keysetAfter=${JSON.stringify(mssqlKeysetAfter)}`}`,
       uiState,
     );
-    if (useMssqlKeyset) {
+    if (!fetchUsesOffset) {
       writeOutLine(
         `>>> [${key}] ORDER BY: numeric PID ก่อน (เรียงตัวเลข) แล้วตามด้วย non-numeric`,
         uiState,
@@ -1071,7 +1089,7 @@ async function runTableJob({
       });
       if (fetchPageSize <= 0) break;
 
-      if (useMssqlKeyset && useIdProbe) {
+      if (!fetchUsesOffset && useIdProbe) {
         const probeReq = mssqlPool.request();
         bindMigrateSrcNumericRange(probeReq, migrationConfig, sql);
         const probeRes = await probeReq
@@ -1126,7 +1144,7 @@ async function runTableJob({
               (orderMap.get(normPid(b.pid)) ?? 0),
           );
         }
-      } else if (useMssqlKeyset) {
+      } else if (!fetchUsesOffset) {
         const req = mssqlPool.request();
         bindMigrateSrcNumericRange(req, migrationConfig, sql);
         const r = await req
@@ -1149,14 +1167,14 @@ async function runTableJob({
         const r = await req
           .input("offset", sql.Int, offset)
           .input("page", sql.Int, fetchPageSize)
-          .query(offsetSelectSql);
+          .query(useBulkOffsetFetch ? bulkOffsetSelectSql : offsetSelectSql);
         rows = r.recordset || [];
         rowsScanned = rows.length;
       }
 
       if (rowsScanned === 0) break;
 
-      if (rows.length === 0 && useMssqlKeyset) {
+      if (rows.length === 0 && !fetchUsesOffset) {
         chunkIndex += 1;
         total += rowsScanned;
         offset += rowsScanned;
@@ -1463,7 +1481,7 @@ LIMIT 200;
   if (checkpointEnabled) {
     /** @type {PatientInfoSourceFingerprint | null} */
     let endFingerprint = null;
-    if (isPatientInfoBuiltin && useMssqlKeyset) {
+    if (isPatientInfoBuiltin && (useMssqlKeyset || useBulkOffsetFetch)) {
       try {
         endFingerprint = await queryPatientInfoSourceFingerprint(
           mssqlPool,
@@ -1477,10 +1495,17 @@ LIMIT 200;
     }
     const didFullCatchUp =
       resumeCatchUpMode === "full" || legacyCatchUpFromStart;
+    const finalKeysetAfter = useMssqlKeyset
+      ? mssqlKeysetAfter
+      : useBulkOffsetFetch && endFingerprint?.maxSortKey
+        ? String(endFingerprint.maxSortKey)
+        : null;
     writeJson(checkpointPath, {
       key,
       offset,
-      ...(useMssqlKeyset ? { mssqlKeysetAfter } : { mssqlKeysetAfter: null }),
+      ...(finalKeysetAfter != null
+        ? { mssqlKeysetAfter: finalKeysetAfter }
+        : { mssqlKeysetAfter: null }),
       completed: true,
       updatedAt: new Date().toISOString(),
       ...(endFingerprint
