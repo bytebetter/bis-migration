@@ -43,18 +43,18 @@ npm run migrate:patient_info
 
 Log: `logs/migrate-*.json` — checkpoint: `checkpoints/<key>.json`
 
-### ลำดับ PID และ checkpoint (resume)
+### ลำดับ CreatedDate และ checkpoint (resume)
 
-- เรียง MSSQL ด้วย **sort key**: PID ตัวเลขก่อน (เรียงตามค่าตัวเลข เช่น `2` ก่อน `10`) แล้วตามด้วย non-numeric (เช่น `T998`)
-- ใช้ **keyset** (`sort_key > checkpoint`) แทน OFFSET — ไม่พลาดแถวใหม่ที่แทรกกลางลำดับเมื่อรัน resume รายวัน
+- เรียง MSSQL ด้วย **sort key**: `CreatedDate` เป็น NULL ก่อน (ข้อมูลเก่า) แล้วตามวันที่สร้างจากเก่า→ใหม่ ใช้ PID เป็น tiebreaker
+- คนไข้ใหม่หลังเพิ่มฟิลด์ `CreatedDate` จะมีวันที่สร้างติดมา — แถวใหม่จึงอยู่ท้ายลำดับเสมอ ไม่แทรกกลาง checkpoint
+- ใช้ **keyset** (`sort_key > checkpoint`) แทน OFFSET — ไม่พลาดแถวใหม่เมื่อรัน resume รายวัน
 - **Postgres ว่าง** → migrate จากต้น (keyset เต็มแถว/chunk, ปิด id probe) รีเซ็ต checkpoint
 - **ต่อ checkpoint ไม่จบ** (`completed: false`, มี `offset`/`mssqlKeysetAfter`) → keyset ต่อท้าย ~แถวที่เหลือ, **ปิด id probe**, progress แสดง `210000/214944` ไม่ใช่เริ่ม `0/214944`
 - **มีข้อมูล + checkpoint แล้ว** → ค่าเริ่มต้น **keyset ต่อท้าย** (วิธีเดิม เร็ว)
-- **smart resume** (ค่าเริ่มต้นเปิด) เพิ่มเติม:
-  - **ข้าม** — fingerprint ต้นทางไม่เปลี่ยน (~วินาที)
-  - **full catch-up** — เฉพาะเมื่อสงสัย **แทรกกลาง** (COUNT เพิ่มแต่ MAX ไม่เลื่อน หรือมีแถวใหม่นอกช่วงท้าย)
-- checkpoint เก็บ `offset`, `mssqlKeysetAfter`, `sourceRowCount`, `sourceMaxSortKey`, `lastFullCatchUpAt`
-- config: `patientInfoSmartResume` (default true), `patientInfoFullCatchUpDays` (default 0 = ปิด), `patientInfoForceFullCatchUp`
+- **smart resume** (ค่าเริ่มต้นเปิด): **ข้าม** เมื่อ fingerprint ต้นทางไม่เปลี่ยน มิฉะนั้น **keyset ต่อท้าย** (แถวใหม่อยู่ท้ายลำดับเสมอเพราะเรียง CreatedDate)
+- checkpoint เก็บ `offset`, `mssqlKeysetAfter`, `sortKeyVersion` (v2 = CreatedDate), `sourceRowCount`, `sourceMaxSortKey`
+- อัปเกรดจาก checkpoint เก่า (เรียง PID) → รีเซ็ต keyset แล้วสแกนต่อด้วย id probe (insert-only ข้ามที่มีใน Postgres)
+- config: `patientInfoSmartResume` (default true)
 
 ### โหมดรัน (`migrateRunMode` / `-MigrateRunMode`)
 
