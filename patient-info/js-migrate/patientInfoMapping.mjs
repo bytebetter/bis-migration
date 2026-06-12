@@ -1,4 +1,5 @@
 import { isPlaceholderPatientRow } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
+import { PATIENT_INFO_MIGRATE_PLACEHOLDER_LOGIC_ENABLED } from "../../shared/js-migrate/placeholderMigrateFlags.mjs";
 
 /**
  * แมป staging row / แถวจาก MSSQL → public.patient_info + public.address
@@ -429,7 +430,9 @@ async function loadExistingPatientMetaByNpid(pgClient, npids) {
     if (!row.npid) continue;
     const meta = {
       id: row.id,
-      isPlaceholder: isPlaceholderPatientRow(row),
+      isPlaceholder:
+        PATIENT_INFO_MIGRATE_PLACEHOLDER_LOGIC_ENABLED &&
+        isPlaceholderPatientRow(row),
     };
     const prev = map.get(row.npid);
     if (prev == null) {
@@ -437,10 +440,14 @@ async function loadExistingPatientMetaByNpid(pgClient, npids) {
       continue;
     }
     // ถ้ามีทั้ง placeholder และแถวจริง ให้ prefer แถวจริงสำหรับการตัดสิน insert-only
-    if (prev.isPlaceholder && !meta.isPlaceholder) {
-      map.set(row.npid, meta);
-    } else if (!prev.isPlaceholder && meta.isPlaceholder) {
-      continue;
+    if (PATIENT_INFO_MIGRATE_PLACEHOLDER_LOGIC_ENABLED) {
+      if (prev.isPlaceholder && !meta.isPlaceholder) {
+        map.set(row.npid, meta);
+      } else if (!prev.isPlaceholder && meta.isPlaceholder) {
+        continue;
+      } else if (row.id < prev.id) {
+        map.set(row.npid, meta);
+      }
     } else if (row.id < prev.id) {
       map.set(row.npid, meta);
     }
@@ -859,7 +866,12 @@ export async function runPatientInfoChunkPostLoad(
     const existing = existingMetaByNpid.get(np);
     if (existing != null) {
       if (insertOnly) {
-        if (!existing.isPlaceholder) continue;
+        if (
+          !PATIENT_INFO_MIGRATE_PLACEHOLDER_LOGIC_ENABLED ||
+          !existing.isPlaceholder
+        ) {
+          continue;
+        }
         toInsert.push(item);
       } else {
         toUpdate.push({ ...item, patientInfoId: existing.id });
@@ -928,7 +940,14 @@ export async function runPatientInfoChunkPostLoad(
 
   for (const np of npids) {
     const existing = existingMetaByNpid.get(np);
-    if (insertOnly && existing != null && !existing.isPlaceholder) continue;
+    if (
+      insertOnly &&
+      existing != null &&
+      (!PATIENT_INFO_MIGRATE_PLACEHOLDER_LOGIC_ENABLED ||
+        !existing.isPlaceholder)
+    ) {
+      continue;
+    }
     if (!idByNpid.has(np)) {
       recordPidIssues(np, { pidRaw: np, patientInfoId: null }, [
         {

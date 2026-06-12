@@ -673,18 +673,12 @@ END $$;
         rows = [];
         fetchElapsedMs = probeMs;
       } else {
-        const placeholders = ids.map((_, i) => `@id${i}`).join(", ");
-        const detailSql = detailSqlTemplate.replace(
-          "{{idPlaceholders}}",
-          placeholders,
-        );
-        const detailReq = mssqlPool.request();
-        ids.forEach((id, i) => detailReq.input(`id${i}`, sql.BigInt, id));
         const detailStartedAt = Date.now();
-        const detailRes = await detailReq.query(detailSql);
-        const detailMs = Date.now() - detailStartedAt;
-        rows = detailRes.recordset || [];
-        fetchElapsedMs = probeMs + detailMs;
+        rows = await fetchMssqlRowsByIds(mssqlPool, sql, {
+          ids,
+          detailSqlTemplate,
+        });
+        fetchElapsedMs = probeMs + (Date.now() - detailStartedAt);
       }
     } else {
       const fetchStartedAt = Date.now();
