@@ -1,3 +1,5 @@
+import { ENSURE_PLACEHOLDER_APPOINTMENT_ENABLED } from "./placeholderMigrateFlags.mjs";
+
 const INT_RE = /^-?\d+$/;
 
 /** ชื่อใน public.appointment (first_name / last_name ไม่ใช่ _th) */
@@ -43,6 +45,8 @@ export function normScheduleOldDbId(v) {
  * @returns {{ inserted: number }}
  */
 export async function ensurePlaceholderAppointment(pgClient, rawScheduleIds) {
+  if (!ENSURE_PLACEHOLDER_APPOINTMENT_ENABLED) return { inserted: 0 };
+
   const keys = [
     ...new Set(
       (rawScheduleIds ?? [])

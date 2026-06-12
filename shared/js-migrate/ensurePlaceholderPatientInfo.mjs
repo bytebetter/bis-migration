@@ -1,4 +1,5 @@
 import { normPid } from "../../patient-info/js-migrate/patientInfoMapping.mjs";
+import { ENSURE_PLACEHOLDER_PATIENT_INFO_ENABLED } from "./placeholderMigrateFlags.mjs";
 
 /** ชื่อจริงใน public.patient_info */
 export const PLACEHOLDER_FIRST_NAME_TH = "ไม่ทราบชื่อ";
@@ -45,6 +46,8 @@ export function placeholderLastNameTh(pid) {
  * @returns {{ inserted: number }}
  */
 export async function ensurePlaceholderPatientInfo(pgClient, rawPids) {
+  if (!ENSURE_PLACEHOLDER_PATIENT_INFO_ENABLED) return { inserted: 0 };
+
   const pids = [
     ...new Set((rawPids ?? []).map((p) => normPid(p)).filter((p) => p !== "")),
   ];
