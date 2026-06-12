@@ -4,14 +4,9 @@ import { fileURLToPath } from "node:url";
 import sql from "mssql";
 import pg from "pg";
 import {
-  MSSQL_PATIENT_INFO_BY_PIDS_SELECT,
   MSSQL_PATIENT_INFO_SELECT,
-  MSSQL_PID_FAST_ORDER_BY,
-  MSSQL_PID_ORDER_BY,
-  buildMssqlPatientInfoIdProbeKeysetSelect,
-  buildMssqlPatientInfoKeysetSelect,
-  buildMssqlPatientInfoSortKeyTailCountSql,
-  buildMssqlPatientInfoSourceFingerprintSql,
+  createMssqlPatientInfoSelectBundle,
+  resolvePatientInfoCreatedDateColumn,
 } from "./mssqlPatientInfoSelect.mjs";
 import {
   ensurePatientInfoShortNoteColumn,
@@ -329,7 +324,7 @@ function buildTableJobs(config) {
       key: "patient_info",
       sourceSchema: config.source?.schema ?? "dbo",
       sourceTable: config.source?.table ?? "patient_info",
-      orderBy: MSSQL_PID_ORDER_BY,
+      orderBy: null,
       columns: [
         "pid",
         "prefix",
@@ -417,108 +412,21 @@ async function queryPatientInfoSourceFingerprint(
 }
 
 /**
- * @param {import("mssql").ConnectionPool} mssqlPool
- * @param {object} migrationConfig
- * @param {string} sourceObject
- * @param {string} tailCountSql
- * @param {string} afterExclusive
- * @param {string} maxInclusive
- */
-async function countPatientInfoTailRows(
-  mssqlPool,
-  migrationConfig,
-  sourceObject,
-  tailCountSql,
-  afterExclusive,
-  maxInclusive,
-) {
-  if (afterExclusive === "" && maxInclusive === "") return 0;
-  if (maxInclusive <= afterExclusive) return 0;
-  const req = mssqlPool.request();
-  bindMigrateSrcNumericRange(req, migrationConfig, sql);
-  const res = await req
-    .input("afterSortKeyExclusive", sql.NVarChar(sql.MAX), afterExclusive)
-    .input("maxSortKeyInclusive", sql.NVarChar(sql.MAX), maxInclusive)
-    .query(tailCountSql);
-  return Number(res.recordset?.[0]?.tail_n ?? 0);
-}
-
-/**
- * ตรวจสัญญาณแถวแทรกกลาง (ต้องมี fingerprint ใน checkpoint แล้ว)
- * @param {PatientInfoSourceFingerprint} fingerprint
- * @param {number} ckCount
- * @param {string} ckMax
- * @param {number | null} tailRowCount
- */
-function patientInfoMiddleInsertSuspected(
-  fingerprint,
-  ckCount,
-  ckMax,
-  tailRowCount,
-) {
-  if (!Number.isFinite(ckCount) || ckMax === "") return false;
-  const countDelta = fingerprint.rowCount - ckCount;
-  if (countDelta === 0 && fingerprint.maxSortKey === ckMax) return false;
-  if (countDelta < 0) return true;
-  if (countDelta > 0 && fingerprint.maxSortKey <= ckMax) return true;
-  if (
-    countDelta > 0 &&
-    fingerprint.maxSortKey > ckMax &&
-    tailRowCount != null &&
-    tailRowCount !== countDelta
-  ) {
-    return true;
-  }
-  return false;
-}
-
-/**
- * ค่าเริ่มต้น = keyset ต่อท้าย (วิธีเดิม); full catch-up เฉพาะเมื่อสงสัยแทรกกลาง
+ * smart resume: ข้ามเมื่อ fingerprint ไม่เปลี่ยน มิฉะนั้น keyset ต่อท้าย
+ * (เรียง CreatedDate แล้ว — แถวใหม่อยู่ท้ายลำดับเสมอ ไม่ต้อง full catch-up)
  * @param {{
  *   checkpoint: Record<string, unknown>,
  *   fingerprint: PatientInfoSourceFingerprint,
- *   tailRowCount: number | null,
- *   migrationConfig: Record<string, unknown>,
- *   nowMs?: number,
  * }} p
- * @returns {{ mode: 'skip'|'forward'|'full', reason: string }}
+ * @returns {{ mode: 'skip'|'forward', reason: string }}
  */
 function resolvePatientInfoSmartResumeMode(p) {
-  const {
-    checkpoint,
-    fingerprint,
-    tailRowCount,
-    migrationConfig,
-    nowMs = Date.now(),
-  } = p;
+  const { checkpoint, fingerprint } = p;
   const ckCount = Number(checkpoint.sourceRowCount);
   const ckMax =
     checkpoint.sourceMaxSortKey == null
       ? ""
       : String(checkpoint.sourceMaxSortKey);
-  const forceFull = migrationConfig.patientInfoForceFullCatchUp === true;
-  const fullCatchUpDays = Math.max(
-    0,
-    Number(migrationConfig.patientInfoFullCatchUpDays ?? 0),
-  );
-
-  if (forceFull) {
-    return { mode: "full", reason: "patientInfoForceFullCatchUp=true" };
-  }
-
-  const lastFullRaw = checkpoint.lastFullCatchUpAt;
-  if (fullCatchUpDays > 0 && lastFullRaw != null) {
-    const lastFull = new Date(String(lastFullRaw));
-    if (!Number.isNaN(lastFull.getTime())) {
-      const daysSince = (nowMs - lastFull.getTime()) / 86_400_000;
-      if (daysSince >= fullCatchUpDays) {
-        return {
-          mode: "full",
-          reason: `full catch-up ตามรอบ (${fullCatchUpDays} วัน)`,
-        };
-      }
-    }
-  }
 
   if (
     Number.isFinite(ckCount) &&
@@ -529,31 +437,13 @@ function resolvePatientInfoSmartResumeMode(p) {
     return { mode: "skip", reason: "fingerprint ต้นทางไม่เปลี่ยน" };
   }
 
-  if (
-    patientInfoMiddleInsertSuspected(
-      fingerprint,
-      ckCount,
-      ckMax,
-      tailRowCount,
-    )
-  ) {
-    const countDelta = fingerprint.rowCount - ckCount;
-    return {
-      mode: "full",
-      reason:
-        countDelta > 0 && fingerprint.maxSortKey <= ckMax
-          ? "COUNT เพิ่มแต่ MAX(sort_key) ไม่เลื่อน — แทรกกลาง"
-          : "มีแถวใหม่นอกช่วงท้าย (แทรกกลาง)",
-    };
-  }
-
   const countDelta = Number.isFinite(ckCount)
     ? fingerprint.rowCount - ckCount
     : null;
   if (countDelta != null && countDelta > 0) {
     return {
       mode: "forward",
-      reason: `แถวใหม่ ${countDelta} แถวท้ายลำดับ — keyset ต่อท้าย`,
+      reason: `แถวใหม่ ${countDelta} แถว — keyset ต่อท้าย`,
     };
   }
   if (!Number.isFinite(ckCount) || ckMax === "") {
@@ -565,7 +455,7 @@ function resolvePatientInfoSmartResumeMode(p) {
 
   return {
     mode: "forward",
-    reason: "ต้นทางเปลี่ยนเล็กน้อย — keyset ต่อท้าย",
+    reason: "ต้นทางเปลี่ยน — keyset ต่อท้าย",
   };
 }
 
@@ -624,33 +514,53 @@ async function runTableJob({
   }
 
   const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
+
+  let patientInfoSelectBundle = null;
+  let patientInfoSortKeyVersion = 1;
+  if (isPatientInfoBuiltin && !selectSqlFile) {
+    const createdDateColumn = await resolvePatientInfoCreatedDateColumn(
+      mssqlPool,
+      migrationConfig,
+      sourceSchema,
+      sourceTable,
+    );
+    patientInfoSelectBundle =
+      createMssqlPatientInfoSelectBundle(createdDateColumn);
+    patientInfoSortKeyVersion = patientInfoSelectBundle.sortKeyVersion;
+    console.error(
+      `>>> [${key}] sort: ${createdDateColumn} NULL ก่อน → วันที่เก่า→ใหม่ + PID`,
+    );
+  }
+
   const selectTemplate = selectSqlFile
     ? readSql(sqlBaseDir, selectSqlFile)
     : MSSQL_PATIENT_INFO_SELECT;
   const offsetSelectSql = selectTemplate
     .replaceAll("{{sourceObject}}", sourceObject)
-    .replaceAll("{{orderBy}}", orderBy);
-  const bulkOffsetSelectSql = MSSQL_PATIENT_INFO_SELECT.replaceAll(
-    "{{sourceObject}}",
-    sourceObject,
-  ).replaceAll("{{orderBy}}", MSSQL_PID_FAST_ORDER_BY);
-  const keysetSelectSql = buildMssqlPatientInfoKeysetSelect().replaceAll(
-    "{{sourceObject}}",
-    sourceObject,
-  );
-  const idProbeSelectSql =
-    buildMssqlPatientInfoIdProbeKeysetSelect().replaceAll(
-      "{{sourceObject}}",
-      sourceObject,
+    .replaceAll(
+      "{{orderBy}}",
+      patientInfoSelectBundle?.orderBy ?? orderBy ?? "[PID] ASC",
     );
-  const fingerprintSql = buildMssqlPatientInfoSourceFingerprintSql().replaceAll(
-    "{{sourceObject}}",
-    sourceObject,
-  );
-  const tailCountSql = buildMssqlPatientInfoSortKeyTailCountSql().replaceAll(
-    "{{sourceObject}}",
-    sourceObject,
-  );
+  const bulkOffsetSelectSql = (
+    patientInfoSelectBundle?.offsetSelect ?? MSSQL_PATIENT_INFO_SELECT
+  )
+    .replaceAll("{{sourceObject}}", sourceObject)
+    .replaceAll(
+      "{{orderBy}}",
+      patientInfoSelectBundle?.fastOrderBy ?? "[PID] ASC",
+    );
+  const keysetSelectSql = (
+    patientInfoSelectBundle?.keysetSelect ?? ""
+  ).replaceAll("{{sourceObject}}", sourceObject);
+  const idProbeSelectSql = (
+    patientInfoSelectBundle?.idProbeSelect ?? ""
+  ).replaceAll("{{sourceObject}}", sourceObject);
+  const fingerprintSql = (
+    patientInfoSelectBundle?.fingerprintSql ?? ""
+  ).replaceAll("{{sourceObject}}", sourceObject);
+  const pidDetailTemplate = (
+    patientInfoSelectBundle?.byPidsSelect ?? ""
+  ).replaceAll("{{sourceObject}}", sourceObject);
 
   const logsDir = path.resolve(sqlBaseDir, "logs");
   const repairSourceIds = resolveMigrationSourceIds(
@@ -722,6 +632,23 @@ async function runTableJob({
 
   if (!useMssqlKeyset) mssqlKeysetAfter = null;
 
+  const checkpointSortKeyVersion = Number(checkpoint.sortKeyVersion ?? 1);
+  let sortKeyVersionUpgraded = false;
+  if (
+    isPatientInfoBuiltin &&
+    useMssqlKeyset &&
+    checkpointSortKeyVersion < patientInfoSortKeyVersion &&
+    mssqlKeysetAfter != null &&
+    String(mssqlKeysetAfter).trim() !== ""
+  ) {
+    sortKeyVersionUpgraded = true;
+    mssqlKeysetAfter = "";
+    offset = 0;
+    console.error(
+      `>>> [${key}] sort key เปลี่ยน (v${checkpointSortKeyVersion}→v${patientInfoSortKeyVersion}) — รีเซ็ต keyset; insert-only ข้ามแถวที่มีใน Postgres`,
+    );
+  }
+
   const incompleteCheckpointResume =
     checkpointEnabled &&
     !isRepairFromLogRun &&
@@ -730,7 +657,7 @@ async function runTableJob({
     (offset > 0 ||
       (mssqlKeysetAfter != null && String(mssqlKeysetAfter).trim() !== ""));
 
-  /** @type {'normal'|'skip'|'forward'|'full'} */
+  /** @type {'normal'|'skip'|'forward'} */
   let resumeCatchUpMode = "normal";
   let resumeCatchUpReason = "";
 
@@ -756,6 +683,7 @@ async function runTableJob({
         key,
         offset: 0,
         mssqlKeysetAfter: useMssqlKeyset ? "" : null,
+        sortKeyVersion: patientInfoSortKeyVersion,
         completed: false,
         updatedAt: new Date().toISOString(),
       });
@@ -774,50 +702,21 @@ async function runTableJob({
     !indexLimited &&
     useMssqlKeyset &&
     !legacyCatchUpFromStart &&
+    !sortKeyVersionUpgraded &&
     isPatientInfoBuiltin &&
     targetRowCount > 0 &&
     migrationConfig.patientInfoSmartResume !== false;
 
-  if (legacyCatchUpFromStart) {
-    resumeCatchUpMode = "full";
-    resumeCatchUpReason = "checkpoint เก่า OFFSET → full catch-up";
-    mssqlKeysetAfter = "";
-    offset = 0;
-    console.error(`>>> [${key}] resume: ${resumeCatchUpReason}`);
-  } else if (smartResumeEligible) {
+  if (smartResumeEligible) {
     const fingerprint = await queryPatientInfoSourceFingerprint(
       mssqlPool,
       migrationConfig,
       sourceObject,
       fingerprintSql,
     );
-    const ckMax =
-      checkpoint.sourceMaxSortKey == null
-        ? ""
-        : String(checkpoint.sourceMaxSortKey);
-    const ckCount = Number(checkpoint.sourceRowCount);
-    let tailRowCount = null;
-    const countDelta = fingerprint.rowCount - ckCount;
-    if (
-      Number.isFinite(ckCount) &&
-      ckMax !== "" &&
-      countDelta > 0 &&
-      fingerprint.maxSortKey > ckMax
-    ) {
-      tailRowCount = await countPatientInfoTailRows(
-        mssqlPool,
-        migrationConfig,
-        sourceObject,
-        tailCountSql,
-        ckMax,
-        fingerprint.maxSortKey,
-      );
-    }
     const decision = resolvePatientInfoSmartResumeMode({
       checkpoint,
       fingerprint,
-      tailRowCount,
-      migrationConfig,
     });
     resumeCatchUpMode = decision.mode;
     resumeCatchUpReason = decision.reason;
@@ -844,23 +743,15 @@ async function runTableJob({
       };
     }
 
-    if (decision.mode === "forward") {
-      mssqlKeysetAfter =
-        checkpoint.mssqlKeysetAfter == null
-          ? ""
-          : String(checkpoint.mssqlKeysetAfter);
-      offset = Number(checkpoint.offset ?? 0);
-      if (!Number.isFinite(offset) || offset < 0) offset = 0;
-      console.error(
-        `>>> [${key}] resume: ${decision.reason} (keysetAfter=${JSON.stringify(mssqlKeysetAfter)})`,
-      );
-    } else {
-      mssqlKeysetAfter = "";
-      offset = 0;
-      console.error(
-        `>>> [${key}] resume: full catch-up — ${decision.reason} (สแกนทั้งตาราง, insert-only ข้ามที่มีใน Postgres)`,
-      );
-    }
+    mssqlKeysetAfter =
+      checkpoint.mssqlKeysetAfter == null
+        ? ""
+        : String(checkpoint.mssqlKeysetAfter);
+    offset = Number(checkpoint.offset ?? 0);
+    if (!Number.isFinite(offset) || offset < 0) offset = 0;
+    console.error(
+      `>>> [${key}] resume: ${decision.reason} (keysetAfter=${JSON.stringify(mssqlKeysetAfter)})`,
+    );
   } else if (
     checkpointEnabled &&
     isResumeRun &&
@@ -892,7 +783,7 @@ async function runTableJob({
     targetRowCount === 0 &&
     offset === 0 &&
     !incompleteCheckpointResume &&
-    (resumeCatchUpMode === "normal" || resumeCatchUpMode === "full");
+    resumeCatchUpMode === "normal";
   const fetchUsesOffset = useBulkOffsetFetch || !useMssqlKeyset;
 
   const useIdProbe =
@@ -905,7 +796,7 @@ async function runTableJob({
     migrationConfig.patientInfoIdProbe !== false;
   if (useBulkOffsetFetch) {
     console.error(
-      `>>> [${key}] auto: Postgres ว่าง → OFFSET + ORDER BY [PID] (bulk เร็ว)`,
+      `>>> [${key}] auto: Postgres ว่าง → OFFSET + ORDER BY ${patientInfoSelectBundle?.createdDateColumn ?? "CreatedDate"}, PID (bulk เร็ว)`,
     );
   } else if (
     isPatientInfoBuiltin &&
@@ -933,7 +824,7 @@ async function runTableJob({
     );
     if (!fetchUsesOffset) {
       writeOutLine(
-        `>>> [${key}] ORDER BY: numeric PID ก่อน (เรียงตัวเลข) แล้วตามด้วย non-numeric`,
+        `>>> [${key}] ORDER BY: ${patientInfoSelectBundle?.createdDateColumn ?? "CreatedDate"} NULL ก่อน แล้วตามวันที่สร้าง (เก่า→ใหม่) + PID tiebreaker`,
         uiState,
       );
     }
@@ -1052,10 +943,6 @@ async function runTableJob({
     }
     logByIdMigrationRun(key, repairSourceIds.length, "pid", migrationConfig);
   }
-  const pidDetailTemplate = MSSQL_PATIENT_INFO_BY_PIDS_SELECT.replaceAll(
-    "{{sourceObject}}",
-    sourceObject,
-  );
 
   while (true) {
     let rows = [];
@@ -1093,11 +980,7 @@ async function runTableJob({
         const probeReq = mssqlPool.request();
         bindMigrateSrcNumericRange(probeReq, migrationConfig, sql);
         const probeRes = await probeReq
-          .input(
-            "afterPidSortKey",
-            sql.NVarChar(sql.MAX),
-            mssqlKeysetAfter ?? "",
-          )
+          .input("afterSortKey", sql.NVarChar(sql.MAX), mssqlKeysetAfter ?? "")
           .input("page", sql.Int, fetchPageSize)
           .query(idProbeSelectSql);
         const probeRows = probeRes.recordset || [];
@@ -1105,7 +988,9 @@ async function runTableJob({
 
         rowsScanned = probeRows.length;
         lastSortKey =
-          probeRows[probeRows.length - 1]?.__mssql_pid_sort_key ?? lastSortKey;
+          probeRows[probeRows.length - 1]?.__mssql_sort_key ??
+          probeRows[probeRows.length - 1]?.__mssql_pid_sort_key ??
+          lastSortKey;
 
         const probePids = [
           ...new Set(
@@ -1148,18 +1033,16 @@ async function runTableJob({
         const req = mssqlPool.request();
         bindMigrateSrcNumericRange(req, migrationConfig, sql);
         const r = await req
-          .input(
-            "afterPidSortKey",
-            sql.NVarChar(sql.MAX),
-            mssqlKeysetAfter ?? "",
-          )
+          .input("afterSortKey", sql.NVarChar(sql.MAX), mssqlKeysetAfter ?? "")
           .input("page", sql.Int, fetchPageSize)
           .query(keysetSelectSql);
         rows = r.recordset || [];
         rowsScanned = rows.length;
         if (rows.length > 0) {
           lastSortKey =
-            rows[rows.length - 1]?.__mssql_pid_sort_key ?? lastSortKey;
+            rows[rows.length - 1]?.__mssql_sort_key ??
+            rows[rows.length - 1]?.__mssql_pid_sort_key ??
+            lastSortKey;
         }
       } else {
         const req = mssqlPool.request();
@@ -1184,6 +1067,7 @@ async function runTableJob({
             key,
             offset,
             mssqlKeysetAfter,
+            sortKeyVersion: patientInfoSortKeyVersion,
             completed: false,
             updatedAt: new Date().toISOString(),
           });
@@ -1443,6 +1327,7 @@ LIMIT 200;
         key,
         offset,
         ...(useMssqlKeyset ? { mssqlKeysetAfter } : { mssqlKeysetAfter: null }),
+        sortKeyVersion: patientInfoSortKeyVersion,
         completed: false,
         updatedAt: new Date().toISOString(),
       });
@@ -1493,8 +1378,6 @@ LIMIT 200;
         endFingerprint = null;
       }
     }
-    const didFullCatchUp =
-      resumeCatchUpMode === "full" || legacyCatchUpFromStart;
     const finalKeysetAfter = useMssqlKeyset
       ? mssqlKeysetAfter
       : useBulkOffsetFetch && endFingerprint?.maxSortKey
@@ -1506,6 +1389,7 @@ LIMIT 200;
       ...(finalKeysetAfter != null
         ? { mssqlKeysetAfter: finalKeysetAfter }
         : { mssqlKeysetAfter: null }),
+      sortKeyVersion: patientInfoSortKeyVersion,
       completed: true,
       updatedAt: new Date().toISOString(),
       ...(endFingerprint
@@ -1514,9 +1398,6 @@ LIMIT 200;
             sourceMaxSortKey: endFingerprint.maxSortKey,
           }
         : {}),
-      lastFullCatchUpAt: didFullCatchUp
-        ? new Date().toISOString()
-        : (checkpoint.lastFullCatchUpAt ?? null),
     });
   }
 

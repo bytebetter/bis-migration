@@ -1,8 +1,10 @@
+import sql from "mssql";
+
 /**
  * คิวรีอ่าน dbo.patient_info จาก MSSQL แบ่งหน้า
  *
- * เรียง PID: ตัวเลขก่อน (เรียงตามค่าตัวเลข) แล้วตามด้วย non-numeric (เรียงตามข้อความ)
- * ใช้ sort_key สำหรับ keyset pagination แทน OFFSET ในโหมด resume
+ * มี CreatedDate: NULL ก่อน (ข้อมูลเก่า) แล้วตามวันที่สร้างจากเก่า→ใหม่ + PID tiebreaker
+ * ไม่มี CreatedDate: เรียง PID (ตัวเลขก่อน) แบบเดิม
  */
 
 export const MSSQL_PID_TRIM_EXPR = `LTRIM(RTRIM(CAST([PID] AS NVARCHAR(4000))))`;
@@ -11,8 +13,7 @@ export const MSSQL_PID_TRIM_EXPR = `LTRIM(RTRIM(CAST([PID] AS NVARCHAR(4000))))`
 export const MSSQL_PID_NUMERIC_BIGINT_EXPR = `TRY_CAST(${MSSQL_PID_TRIM_EXPR} AS BIGINT)`;
 
 /**
- * คีย์เรียงคงที่: N'0' + zero-pad 20 หลักสำหรับตัวเลข, N'1' + ข้อความสำหรับ non-numeric
- * ตัวอย่าง: 1234 → 0...001234, T998 → 1T998
+ * tiebreaker ตาม PID: N'0' + zero-pad 20 หลักสำหรับตัวเลข, N'1' + ข้อความสำหรับ non-numeric
  */
 export const MSSQL_PID_SORT_KEY_EXPR = `CASE WHEN ${MSSQL_PID_NUMERIC_BIGINT_EXPR} IS NOT NULL
   THEN CONCAT(
@@ -26,9 +27,6 @@ export const MSSQL_PID_SORT_KEY_EXPR = `CASE WHEN ${MSSQL_PID_NUMERIC_BIGINT_EXP
 END`;
 
 export const MSSQL_PID_ORDER_BY = `${MSSQL_PID_SORT_KEY_EXPR} ASC`;
-
-/** ORDER BY เร็วสำหรับ bulk migrate ครั้งแรก (Postgres ว่าง) — ไม่คำนวณ sort_key ทุกแถวบน MSSQL */
-export const MSSQL_PID_FAST_ORDER_BY = "[PID] ASC";
 
 export const MSSQL_PATIENT_INFO_SRC_WHERE = `
 (@migrateSrcKeyMin IS NULL OR ${MSSQL_PID_NUMERIC_BIGINT_EXPR} >= @migrateSrcKeyMin)
@@ -68,8 +66,50 @@ const MSSQL_PATIENT_INFO_DETAIL_COLUMNS = `
   CAST([Mobile_Phone] AS NVARCHAR(MAX)) AS mobile_phone,
   CAST([Email] AS NVARCHAR(MAX)) AS email`.trim();
 
-/** OFFSET (legacy) — ยังใช้ ORDER BY sort_key เดียวกัน */
-export const MSSQL_PATIENT_INFO_SELECT = `
+function bracketMssqlIdent(name) {
+  return `[${String(name).replace(/]/g, "]]")}]`;
+}
+
+function buildSortExprs(createdDateColumn) {
+  if (createdDateColumn == null || String(createdDateColumn).trim() === "") {
+    return {
+      sortKeyVersion: 1,
+      createdDateColumn: null,
+      sortKeyExpr: MSSQL_PID_SORT_KEY_EXPR,
+      orderBy: MSSQL_PID_ORDER_BY,
+      fastOrderBy: "[PID] ASC",
+    };
+  }
+
+  const cd = bracketMssqlIdent(String(createdDateColumn).trim());
+  const sortKeyExpr = `CASE WHEN ${cd} IS NULL
+  THEN CONCAT(N'0', ${MSSQL_PID_SORT_KEY_EXPR})
+  ELSE CONCAT(
+    N'1',
+    CONVERT(VARCHAR(23), ${cd}, 126),
+    N'_',
+    ${MSSQL_PID_SORT_KEY_EXPR}
+  )
+END`;
+  const orderBy = `CASE WHEN ${cd} IS NULL THEN 0 ELSE 1 END ASC, ${cd} ASC, ${MSSQL_PID_SORT_KEY_EXPR} ASC`;
+  const fastOrderBy = `${cd} ASC, [PID] ASC`;
+
+  return {
+    sortKeyVersion: 2,
+    createdDateColumn: String(createdDateColumn).trim(),
+    sortKeyExpr,
+    orderBy,
+    fastOrderBy,
+  };
+}
+
+/**
+ * @param {string | null | undefined} createdDateColumn ชื่อคอลัมน์ MSSQL หรือ null = เรียง PID
+ */
+export function createMssqlPatientInfoSelectBundle(createdDateColumn) {
+  const sort = buildSortExprs(createdDateColumn);
+
+  const offsetSelect = `
 SELECT
   ${MSSQL_PATIENT_INFO_DETAIL_COLUMNS}
 FROM {{sourceObject}}
@@ -78,59 +118,116 @@ ORDER BY {{orderBy}}
 OFFSET @offset ROWS FETCH NEXT @page ROWS ONLY;
 `.trim();
 
-/** keyset: อ่านชุดถัดไปหลัง sort_key ล่าสุด */
-export function buildMssqlPatientInfoKeysetSelect() {
-  return `
+  const keysetSelect = `
 SELECT TOP (@page)
   ${MSSQL_PATIENT_INFO_DETAIL_COLUMNS},
-  ${MSSQL_PID_SORT_KEY_EXPR} AS __mssql_pid_sort_key
+  ${sort.sortKeyExpr} AS __mssql_sort_key
 FROM {{sourceObject}}
-WHERE ${MSSQL_PID_SORT_KEY_EXPR} > @afterPidSortKey
+WHERE ${sort.sortKeyExpr} > @afterSortKey
   AND ${MSSQL_PATIENT_INFO_SRC_WHERE}
-ORDER BY ${MSSQL_PID_ORDER_BY};
+ORDER BY ${sort.orderBy};
 `.trim();
-}
 
-/** keyset เบา: ดึงเฉพาะ PID + sort_key ก่อน (insert-only ข้ามที่มีใน Postgres แล้ว) */
-export function buildMssqlPatientInfoIdProbeKeysetSelect() {
-  return `
+  const idProbeSelect = `
 SELECT TOP (@page)
   CAST([PID] AS NVARCHAR(MAX)) AS pid,
-  ${MSSQL_PID_SORT_KEY_EXPR} AS __mssql_pid_sort_key
+  ${sort.sortKeyExpr} AS __mssql_sort_key
 FROM {{sourceObject}}
-WHERE ${MSSQL_PID_SORT_KEY_EXPR} > @afterPidSortKey
+WHERE ${sort.sortKeyExpr} > @afterSortKey
   AND ${MSSQL_PATIENT_INFO_SRC_WHERE}
-ORDER BY ${MSSQL_PID_ORDER_BY};
+ORDER BY ${sort.orderBy};
 `.trim();
-}
 
-/** สรุปต้นทางสำหรับ smart resume (COUNT + MAX sort_key) */
-export function buildMssqlPatientInfoSourceFingerprintSql() {
-  return `
+  const fingerprintSql = `
 SELECT
   COUNT_BIG(1) AS total_n,
-  MAX(${MSSQL_PID_SORT_KEY_EXPR}) AS max_sort_key
+  MAX(${sort.sortKeyExpr}) AS max_sort_key
 FROM {{sourceObject}}
 WHERE ${MSSQL_PATIENT_INFO_SRC_WHERE};
 `.trim();
-}
 
-/** นับแถวในช่วง sort_key (after, max] — ตรวจว่าแถวใหม่ทั้งหมดอยู่ท้ายลำดับหรือไม่ */
-export function buildMssqlPatientInfoSortKeyTailCountSql() {
-  return `
-SELECT COUNT_BIG(1) AS tail_n
-FROM {{sourceObject}}
-WHERE ${MSSQL_PID_SORT_KEY_EXPR} > @afterSortKeyExclusive
-  AND ${MSSQL_PID_SORT_KEY_EXPR} <= @maxSortKeyInclusive
-  AND ${MSSQL_PATIENT_INFO_SRC_WHERE};
-`.trim();
-}
-
-/** repair-from-log / ดึงตามรายการ PID */
-export const MSSQL_PATIENT_INFO_BY_PIDS_SELECT = `
+  const byPidsSelect = `
 SELECT
   ${MSSQL_PATIENT_INFO_DETAIL_COLUMNS}
 FROM {{sourceObject}}
 WHERE [PID] IN ({{idPlaceholders}})
-ORDER BY ${MSSQL_PID_ORDER_BY}
+ORDER BY ${sort.orderBy}
 `.trim();
+
+  return {
+    ...sort,
+    offsetSelect,
+    keysetSelect,
+    idProbeSelect,
+    fingerprintSql,
+    byPidsSelect,
+  };
+}
+
+/** bundle ค่าเริ่มต้น (CreatedDate) — ใช้ createMssqlPatientInfoSelectBundle หลัง resolve คอลัมน์จริง */
+export const defaultMssqlPatientInfoSelectBundle =
+  createMssqlPatientInfoSelectBundle("CreatedDate");
+
+export const MSSQL_PATIENT_INFO_SELECT = defaultMssqlPatientInfoSelectBundle.offsetSelect;
+export const MSSQL_PATIENT_INFO_ORDER_BY = defaultMssqlPatientInfoSelectBundle.orderBy;
+export const MSSQL_PATIENT_INFO_FAST_ORDER_BY =
+  defaultMssqlPatientInfoSelectBundle.fastOrderBy;
+export const MSSQL_PATIENT_INFO_SORT_KEY_EXPR =
+  defaultMssqlPatientInfoSelectBundle.sortKeyExpr;
+export const MSSQL_PID_FAST_ORDER_BY = MSSQL_PATIENT_INFO_FAST_ORDER_BY;
+
+export function buildMssqlPatientInfoKeysetSelect(createdDateColumn) {
+  return createMssqlPatientInfoSelectBundle(createdDateColumn).keysetSelect;
+}
+
+export function buildMssqlPatientInfoIdProbeKeysetSelect(createdDateColumn) {
+  return createMssqlPatientInfoSelectBundle(createdDateColumn).idProbeSelect;
+}
+
+export function buildMssqlPatientInfoSourceFingerprintSql(createdDateColumn) {
+  return createMssqlPatientInfoSelectBundle(createdDateColumn).fingerprintSql;
+}
+
+export const MSSQL_PATIENT_INFO_BY_PIDS_SELECT =
+  defaultMssqlPatientInfoSelectBundle.byPidsSelect;
+
+const DEFAULT_CREATED_DATE_COLUMN = "CreatedDate";
+
+/**
+ * ชื่อคอลัมน์ CreatedDate บน MSSQL (ค่าเริ่มต้น CreatedDate)
+ * override ได้ด้วย migration.patientInfoCreatedDateColumn
+ * @throws {Error} ถ้าคอลัมน์ไม่มีบน server ที่เชื่อมอยู่
+ */
+export async function resolvePatientInfoCreatedDateColumn(
+  mssqlPool,
+  migrationConfig,
+  sourceSchema = "dbo",
+  sourceTable = "patient_info",
+) {
+  const column =
+    typeof migrationConfig?.patientInfoCreatedDateColumn === "string" &&
+    migrationConfig.patientInfoCreatedDateColumn.trim() !== ""
+      ? migrationConfig.patientInfoCreatedDateColumn.trim()
+      : DEFAULT_CREATED_DATE_COLUMN;
+
+  const req = mssqlPool.request();
+  req.input("schema", sql.NVarChar(128), sourceSchema);
+  req.input("table", sql.NVarChar(128), sourceTable);
+  req.input("column", sql.NVarChar(128), column);
+  const res = await req.query(`
+    SELECT 1 AS ok
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = @schema
+      AND TABLE_NAME = @table
+      AND COLUMN_NAME = @column
+  `);
+  if ((res.recordset?.length ?? 0) === 0) {
+    throw new Error(
+      `[patient_info] MSSQL ${sourceSchema}.${sourceTable} ไม่มีคอลัมน์ '${column}' ` +
+        `(server/database ที่ config ชี้อยู่ยังไม่ได้ sync schema) — ` +
+        `ถ้าชื่อคอลัมน์ต่างจาก CreatedDate ตั้ง migration.patientInfoCreatedDateColumn`,
+    );
+  }
+  return column;
+}
+
