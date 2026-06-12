@@ -4,6 +4,7 @@
 
 import { isPlaceholderAppointmentRow } from "../../shared/js-migrate/ensurePlaceholderAppointment.mjs";
 import { ensurePlaceholderPatientInfo } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
+import { APPOINTMENT_MIGRATE_PLACEHOLDER_LOGIC_ENABLED } from "../../shared/js-migrate/placeholderMigrateFlags.mjs";
 
 function getField(row, key) {
   if (row == null) return undefined;
@@ -468,17 +469,23 @@ async function loadExistingAppointmentMetaByOldDbId(
     if (row.k == null) continue;
     const meta = {
       id: row.id,
-      isPlaceholder: isPlaceholderAppointmentRow(row),
+      isPlaceholder:
+        APPOINTMENT_MIGRATE_PLACEHOLDER_LOGIC_ENABLED &&
+        isPlaceholderAppointmentRow(row),
     };
     const prev = map.get(row.k);
     if (prev == null) {
       map.set(row.k, meta);
       continue;
     }
-    if (prev.isPlaceholder && !meta.isPlaceholder) {
-      map.set(row.k, meta);
-    } else if (!prev.isPlaceholder && meta.isPlaceholder) {
-      continue;
+    if (APPOINTMENT_MIGRATE_PLACEHOLDER_LOGIC_ENABLED) {
+      if (prev.isPlaceholder && !meta.isPlaceholder) {
+        map.set(row.k, meta);
+      } else if (!prev.isPlaceholder && meta.isPlaceholder) {
+        continue;
+      } else if (row.id < prev.id) {
+        map.set(row.k, meta);
+      }
     } else if (row.id < prev.id) {
       map.set(row.k, meta);
     }
@@ -631,10 +638,12 @@ export async function runAppointmentChunkPostLoad(
   const chunkPids = rows
     .map((r) => normPid(getField(r, "pid") ?? getField(r, "PID")))
     .filter((p) => p != null);
-  const { inserted: placeholderPatientInserted } =
-    await ensurePlaceholderPatientInfo(pgClient, chunkPids);
-  if (placeholderPatientInserted > 0) {
-    invalidateCachedAllowedFkSet("public", "patient_info", "id");
+  if (APPOINTMENT_MIGRATE_PLACEHOLDER_LOGIC_ENABLED) {
+    const { inserted: placeholderPatientInserted } =
+      await ensurePlaceholderPatientInfo(pgClient, chunkPids);
+    if (placeholderPatientInserted > 0) {
+      invalidateCachedAllowedFkSet("public", "patient_info", "id");
+    }
   }
   const patientIdByPid = await resolvePatientIdByPidMap(pgClient, rows);
   /** @type {{ patientInfoId: number, patientCategory: string }[]} */
@@ -735,7 +744,12 @@ export async function runAppointmentChunkPostLoad(
       continue;
     }
     if (insertOnly) {
-      if (existing.isPlaceholder) insertPayloads.push(p);
+      if (
+        APPOINTMENT_MIGRATE_PLACEHOLDER_LOGIC_ENABLED &&
+        existing.isPlaceholder
+      ) {
+        insertPayloads.push(p);
+      }
       continue;
     }
     updatePayloads.push(p);

@@ -25,7 +25,11 @@
     }
   },
   "profiles": {
-    "patient_info": {},
+    "patient_info": {
+      "migration": {
+        "batchSize": 5000
+      }
+    },
     "examination": {},
     "billing": {},
     "examination_general": {},
