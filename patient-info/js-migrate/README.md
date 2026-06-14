@@ -50,7 +50,7 @@ Log: `logs/migrate-*.json` — checkpoint: `checkpoints/<key>.json`
 - คนไข้ใหม่ที่มี `CreatedDate` อยู่ท้ายลำดับ — resume ดึงต่อจาก `mssqlKeysetAfter` ใน checkpoint
 - ใช้ **keyset** (`sort_key > checkpoint`) แทน OFFSET — ไม่พลาดแถวใหม่ท้ายตารางเมื่อรัน resume รายวัน
 - **Postgres ว่าง** → migrate จากต้น (keyset เต็มแถว/chunk, ปิด id probe) รีเซ็ต checkpoint
-- **ต่อ checkpoint ไม่จบ** (`completed: false`) → keyset ต่อท้าย ~แถวที่เหลือ, **ปิด id probe**
+- **ต่อ checkpoint ไม่จบ** (`completed: false`, Ctrl+C / migrate:all หยุดกลางทาง) → **สแกน id probe ตั้งแต่ต้น** เติม PID ที่ขาดใน Postgres (ไม่ต่อท้ายอย่างเดียว — แก้ช่องว่างช่วงต้น); config `patientInfoInterruptedGapHeal` (default `true`)
 - **daily sync** (ค่าเริ่มต้นเปิด, `patientInfoDailySync`) หลัง `completed: true` + โหมด resume:
   - **ไม่ข้าม job** แม้ fingerprint MSSQL เท่าเดิม — probe ท้ายตารางเสมอ (เร็วถ้าไม่มีแถวใหม่)
   - **catch-up**: ถ้า MSSQL เพิ่มแถว หรือ Postgres ขาดกว่า COUNT (ไม่นับ placeholder) → สแกนตั้งแต่ต้นด้วย id probe เติม PID ที่ขาด (รวมแถวใหม่ `CreatedDate` NULL ที่ไม่อยู่ท้าย)
