@@ -681,13 +681,14 @@ async function runTableJob({
     );
   }
 
-  const incompleteCheckpointResume =
+  const incompleteCheckpointResumeInitial =
     checkpointEnabled &&
     !isRepairFromLogRun &&
     checkpoint.completed === false &&
     useMssqlKeyset &&
     (offset > 0 ||
       (mssqlKeysetAfter != null && String(mssqlKeysetAfter).trim() !== ""));
+  let incompleteCheckpointResume = incompleteCheckpointResumeInitial;
 
   /** @type {'normal'|'forward'|'catch-up'} */
   let resumeCatchUpMode = "normal";
@@ -727,6 +728,27 @@ async function runTableJob({
         `>>> [${key}] Postgres ว่าง — รีเซ็ต checkpoint เริ่ม migrate ใหม่จากต้น`,
       );
     }
+  }
+
+  /** Ctrl+C / migrate:all หยุดกลางทาง — ต่อท้ายอย่างเดียวพลาดแถวช่วงต้น → สแกน id probe ตั้งแต่ต้นเติมที่ขาด */
+  let interruptedGapHeal = false;
+  if (
+    incompleteCheckpointResumeInitial &&
+    isResumeRun &&
+    insertOnly &&
+    isPatientInfoBuiltin &&
+    targetRowCount > 0 &&
+    migrationConfig.patientInfoInterruptedGapHeal !== false
+  ) {
+    interruptedGapHeal = true;
+    const savedOffset = offset;
+    const savedKeyset = mssqlKeysetAfter;
+    offset = 0;
+    mssqlKeysetAfter = "";
+    incompleteCheckpointResume = false;
+    resumeCatchUpMode = "catch-up";
+    resumeCatchUpReason = `checkpoint ค้าง (offset=${savedOffset}, keysetAfter=${JSON.stringify(savedKeyset)}) — สแกน id probe ตั้งแต่ต้นเติม PID ที่ขาด`;
+    console.error(`>>> [${key}] ${resumeCatchUpReason}`);
   }
 
   const dailySyncEnabled =
@@ -832,11 +854,10 @@ async function runTableJob({
     isPatientInfoBuiltin &&
     useMssqlKeyset &&
     insertOnly &&
-    incompleteCheckpointResume &&
-    migrationConfig.patientInfoIdProbe !== false
+    useIdProbe
   ) {
     console.error(
-      `>>> [${key}] ต่อ checkpoint ไม่จบ — ปิด id probe ใช้ keyset ดึง detail ต่อท้าย`,
+      `>>> [${key}] id probe: ดึงเฉพาะ PID ที่ยังไม่มีใน Postgres (ข้าม chunk ที่มีครบแล้ว)`,
     );
   }
 
@@ -1413,7 +1434,10 @@ LIMIT 200;
       }
     }
     const finalKeysetAfter = useMssqlKeyset
-      ? mssqlKeysetAfter
+      ? endFingerprint?.maxSortKey != null &&
+        String(endFingerprint.maxSortKey).trim() !== ""
+        ? String(endFingerprint.maxSortKey)
+        : mssqlKeysetAfter
       : useBulkOffsetFetch && endFingerprint?.maxSortKey
         ? String(endFingerprint.maxSortKey)
         : null;
@@ -1481,6 +1505,7 @@ LIMIT 200;
     resumeCatchUpMode,
     resumeCatchUpReason,
     dailyTailUpsert,
+    interruptedGapHeal,
   };
 
   if (debugLogs) {
