@@ -560,9 +560,34 @@ async function bulkInsertPatients(pgClient, arrays) {
       short_note,
       disease,
       mobile_phone,
-      email
+      email,
+      date_created
     )
-    SELECT * FROM unnest(
+    SELECT
+      t.old_db_id,
+      t.pid,
+      t.prefix_th,
+      t.first_name_th,
+      t.last_name_th,
+      t.date_of_birth,
+      t.marital_status,
+      t.phone_biz,
+      t.phone_home,
+      t.height,
+      t.weight,
+      t.donate_type,
+      t.prefix_en,
+      t.first_name_en,
+      t.last_name_en,
+      t.soc_id,
+      t.hn,
+      t.gender,
+      t.short_note,
+      t.disease,
+      t.mobile_phone,
+      t.email,
+      now() AS date_created
+    FROM unnest(
       $1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::date[],
       $7::text[], $8::text[], $9::text[], $10::float4[], $11::float4[], $12::int[],
       $13::text[], $14::text[], $15::text[], $16::text[], $17::text[], $18::text[],

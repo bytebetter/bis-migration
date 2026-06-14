@@ -18,6 +18,7 @@ import {
   mergeFieldIssueChunk,
   writeFieldIssueLogFile,
 } from "../../shared/js-migrate/fieldIssueLog.mjs";
+import { PLACEHOLDER_FIRST_NAME_TH } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
 import {
   distinctOnNormPid,
   normPid,
@@ -412,50 +413,71 @@ async function queryPatientInfoSourceFingerprint(
 }
 
 /**
- * smart resume: ข้ามเมื่อ fingerprint ไม่เปลี่ยน มิฉะนั้น keyset ต่อท้าย
- * (เรียง CreatedDate แล้ว — แถวใหม่อยู่ท้ายลำดับเสมอ ไม่ต้อง full catch-up)
+ * daily resume หลัง checkpoint completed (เรียง CreatedDate v2)
+ * - catch-up: สแกนตั้งแต่ต้นด้วย id probe เติม PID ที่ขาด (รวมแถวใหม่ CreatedDate NULL ที่ไม่อยู่ท้าย)
+ * - forward: probe ท้ายตารางจาก keyset — ไม่ข้าม job แม้ fingerprint เท่าเดิม
  * @param {{
  *   checkpoint: Record<string, unknown>,
  *   fingerprint: PatientInfoSourceFingerprint,
+ *   nonPlaceholderCount: number,
  * }} p
- * @returns {{ mode: 'skip'|'forward', reason: string }}
+ * @returns {{ mode: 'catch-up'|'forward', reason: string, tailUpsert: boolean }}
  */
-function resolvePatientInfoSmartResumeMode(p) {
-  const { checkpoint, fingerprint } = p;
+function resolvePatientInfoDailyResumeMode(p) {
+  const { checkpoint, fingerprint, nonPlaceholderCount } = p;
   const ckCount = Number(checkpoint.sourceRowCount);
   const ckMax =
     checkpoint.sourceMaxSortKey == null
       ? ""
       : String(checkpoint.sourceMaxSortKey);
 
-  if (
-    Number.isFinite(ckCount) &&
+  const countIncreased =
+    Number.isFinite(ckCount) && fingerprint.rowCount > ckCount;
+  const maxSortKeyAdvanced =
     ckMax !== "" &&
-    fingerprint.rowCount === ckCount &&
-    fingerprint.maxSortKey === ckMax
-  ) {
-    return { mode: "skip", reason: "fingerprint ต้นทางไม่เปลี่ยน" };
-  }
+    fingerprint.maxSortKey !== "" &&
+    fingerprint.maxSortKey > ckMax;
+  const pgBehind =
+    nonPlaceholderCount > 0 &&
+    nonPlaceholderCount < fingerprint.rowCount;
 
-  const countDelta = Number.isFinite(ckCount)
-    ? fingerprint.rowCount - ckCount
-    : null;
-  if (countDelta != null && countDelta > 0) {
+  if (countIncreased || pgBehind) {
+    const parts = [];
+    if (countIncreased) {
+      parts.push(`MSSQL +${fingerprint.rowCount - ckCount} แถว`);
+    }
+    if (pgBehind) {
+      parts.push(
+        `Postgres ขาด ~${fingerprint.rowCount - nonPlaceholderCount} (ไม่นับ placeholder)`,
+      );
+    }
     return {
-      mode: "forward",
-      reason: `แถวใหม่ ${countDelta} แถว — keyset ต่อท้าย`,
+      mode: "catch-up",
+      reason: `เติมแถวที่ขาด — ${parts.join(", ")}`,
+      tailUpsert: false,
     };
   }
+
+  if (maxSortKeyAdvanced) {
+    return {
+      mode: "forward",
+      reason: "maxSortKey ใหม่ — sync ท้ายตาราง (upsert แถวที่ดึง)",
+      tailUpsert: true,
+    };
+  }
+
   if (!Number.isFinite(ckCount) || ckMax === "") {
     return {
       mode: "forward",
-      reason: "ยังไม่มี fingerprint — keyset ต่อท้ายจาก checkpoint",
+      reason: "ยังไม่มี fingerprint — probe ท้ายจาก checkpoint",
+      tailUpsert: false,
     };
   }
 
   return {
     mode: "forward",
-    reason: "ต้นทางเปลี่ยน — keyset ต่อท้าย",
+    reason: "daily probe ท้ายตาราง (ไม่ข้าม job)",
+    tailUpsert: false,
   };
 }
 
@@ -463,6 +485,16 @@ function resolvePatientInfoSmartResumeMode(p) {
 async function countPatientInfoTargetRows(pgClient) {
   const res = await pgClient.query(
     "SELECT COUNT(1)::bigint AS n FROM public.patient_info",
+  );
+  return Number(res.rows[0]?.n ?? 0);
+}
+
+/** นับแถวจริง (ไม่รวม placeholder ไม่ทราบชื่อ) — ใช้เทียบกับ COUNT MSSQL */
+async function countNonPlaceholderPatientInfoRows(pgClient) {
+  const res = await pgClient.query(
+    `SELECT COUNT(1)::bigint AS n FROM public.patient_info
+     WHERE first_name_th IS DISTINCT FROM $1`,
+    [PLACEHOLDER_FIRST_NAME_TH],
   );
   return Number(res.rows[0]?.n ?? 0);
 }
@@ -657,13 +689,17 @@ async function runTableJob({
     (offset > 0 ||
       (mssqlKeysetAfter != null && String(mssqlKeysetAfter).trim() !== ""));
 
-  /** @type {'normal'|'skip'|'forward'} */
+  /** @type {'normal'|'forward'|'catch-up'} */
   let resumeCatchUpMode = "normal";
   let resumeCatchUpReason = "";
+  /** resume รายวัน: upsert แถวท้ายตารางที่ดึงจาก MSSQL (ไม่ใช่ insert-only) */
+  let dailyTailUpsert = false;
 
   let targetRowCount = 0;
+  let nonPlaceholderCount = 0;
   if (isPatientInfoBuiltin) {
     targetRowCount = await countPatientInfoTargetRows(pgClient);
+    nonPlaceholderCount = await countNonPlaceholderPatientInfoRows(pgClient);
     if (
       targetRowCount === 0 &&
       checkpointEnabled &&
@@ -693,7 +729,11 @@ async function runTableJob({
     }
   }
 
-  const smartResumeEligible =
+  const dailySyncEnabled =
+    migrationConfig.patientInfoDailySync !== false &&
+    migrationConfig.patientInfoSmartResume !== false;
+
+  const dailyResumeEligible =
     checkpointEnabled &&
     isResumeRun &&
     insertOnly &&
@@ -705,53 +745,41 @@ async function runTableJob({
     !sortKeyVersionUpgraded &&
     isPatientInfoBuiltin &&
     targetRowCount > 0 &&
-    migrationConfig.patientInfoSmartResume !== false;
+    patientInfoSortKeyVersion >= 2 &&
+    dailySyncEnabled;
 
-  if (smartResumeEligible) {
+  if (dailyResumeEligible) {
     const fingerprint = await queryPatientInfoSourceFingerprint(
       mssqlPool,
       migrationConfig,
       sourceObject,
       fingerprintSql,
     );
-    const decision = resolvePatientInfoSmartResumeMode({
+    const decision = resolvePatientInfoDailyResumeMode({
       checkpoint,
       fingerprint,
+      nonPlaceholderCount,
     });
     resumeCatchUpMode = decision.mode;
     resumeCatchUpReason = decision.reason;
+    dailyTailUpsert = decision.tailUpsert;
 
-    if (decision.mode === "skip") {
+    if (decision.mode === "catch-up") {
+      mssqlKeysetAfter = "";
+      offset = 0;
+      dailyTailUpsert = false;
+      console.error(`>>> [${key}] daily catch-up: ${decision.reason}`);
+    } else {
+      mssqlKeysetAfter =
+        checkpoint.mssqlKeysetAfter == null
+          ? ""
+          : String(checkpoint.mssqlKeysetAfter);
+      offset = Number(checkpoint.offset ?? 0);
+      if (!Number.isFinite(offset) || offset < 0) offset = 0;
       console.error(
-        `>>> [${key}] resume smart: ข้าม — ${decision.reason} (COUNT=${fingerprint.rowCount}, maxSortKey=${fingerprint.maxSortKey || "(empty)"})`,
+        `>>> [${key}] daily resume: ${decision.reason} (keysetAfter=${JSON.stringify(mssqlKeysetAfter)}, tailUpsert=${dailyTailUpsert})`,
       );
-      return {
-        key,
-        totalRowsRead: 0,
-        source_cases: 0,
-        patient_success_cases: 0,
-        patient_fail_cases: 0,
-        address_success_cases: 0,
-        failedPids: [],
-        fieldIssueLogPath: null,
-        checkpointPath: checkpointEnabled ? checkpointPath : null,
-        chunkCount: 0,
-        chunkResults: [],
-        repairSummary: null,
-        resumeCatchUpMode: "skip",
-        resumeCatchUpReason: decision.reason,
-      };
     }
-
-    mssqlKeysetAfter =
-      checkpoint.mssqlKeysetAfter == null
-        ? ""
-        : String(checkpoint.mssqlKeysetAfter);
-    offset = Number(checkpoint.offset ?? 0);
-    if (!Number.isFinite(offset) || offset < 0) offset = 0;
-    console.error(
-      `>>> [${key}] resume: ${decision.reason} (keysetAfter=${JSON.stringify(mssqlKeysetAfter)})`,
-    );
   } else if (
     checkpointEnabled &&
     isResumeRun &&
@@ -763,7 +791,8 @@ async function runTableJob({
     !legacyCatchUpFromStart &&
     isPatientInfoBuiltin &&
     targetRowCount > 0 &&
-    migrationConfig.patientInfoSmartResume === false
+    (migrationConfig.patientInfoDailySync === false ||
+      migrationConfig.patientInfoSmartResume === false)
   ) {
     mssqlKeysetAfter =
       checkpoint.mssqlKeysetAfter == null
@@ -772,7 +801,8 @@ async function runTableJob({
     offset = Number(checkpoint.offset ?? 0);
     if (!Number.isFinite(offset) || offset < 0) offset = 0;
     resumeCatchUpMode = "forward";
-    resumeCatchUpReason = "patientInfoSmartResume=false — keyset ต่อท้าย";
+    resumeCatchUpReason =
+      "patientInfoDailySync=false — keyset ต่อท้าย (insert-only)";
     console.error(`>>> [${key}] resume: ${resumeCatchUpReason}`);
   }
 
@@ -998,7 +1028,7 @@ async function runTableJob({
           ),
         ];
         let missingPids = probePids;
-        if (probePids.length > 0) {
+        if (probePids.length > 0 && !dailyTailUpsert) {
           const { rows: found } = await pgClient.query(
             `
             SELECT DISTINCT u.k
@@ -1015,9 +1045,10 @@ async function runTableJob({
           missingPids = probePids.filter((p) => !foundSet.has(p));
         }
 
-        if (missingPids.length > 0) {
+        const pidsToFetch = dailyTailUpsert ? probePids : missingPids;
+        if (pidsToFetch.length > 0) {
           rows = await fetchMssqlRowsByIds(mssqlPool, sql, {
-            ids: missingPids,
+            ids: pidsToFetch,
             detailSqlTemplate: pidDetailTemplate,
             idType: "nvarchar",
             nvarcharLength: 50,
@@ -1145,7 +1176,10 @@ async function runTableJob({
           {
             migrationKey: key,
             chunkIndex,
-            migrateRowMode: migrationConfig.migrateRowMode ?? "overwrite",
+            migrateRowMode:
+              dailyTailUpsert && insertOnly
+                ? "overwrite"
+                : (migrationConfig.migrateRowMode ?? "overwrite"),
           },
         );
         mergeFieldIssueChunk(fieldIssueAcc, postLoadResult);
@@ -1444,6 +1478,9 @@ LIMIT 200;
     chunkCount: chunkIndex,
     chunkResults,
     repairSummary,
+    resumeCatchUpMode,
+    resumeCatchUpReason,
+    dailyTailUpsert,
   };
 
   if (debugLogs) {
