@@ -196,7 +196,8 @@ const DEFAULT_CREATED_DATE_COLUMN = "CreatedDate";
 /**
  * ชื่อคอลัมน์ CreatedDate บน MSSQL (ค่าเริ่มต้น CreatedDate)
  * override ได้ด้วย migration.patientInfoCreatedDateColumn
- * @throws {Error} ถ้าคอลัมน์ไม่มีบน server ที่เชื่อมอยู่
+ * คืน null เมื่อไม่มีคอลัมน์ (หรือตั้งเป็น "" / false) → เรียง PID อย่างเดียว
+ * @throws {Error} ถ้าตั้ง patientInfoCreatedDateColumn เป็นชื่ออื่นแต่คอลัมน์ไม่มี
  */
 export async function resolvePatientInfoCreatedDateColumn(
   mssqlPool,
@@ -204,11 +205,13 @@ export async function resolvePatientInfoCreatedDateColumn(
   sourceSchema = "dbo",
   sourceTable = "patient_info",
 ) {
-  const column =
-    typeof migrationConfig?.patientInfoCreatedDateColumn === "string" &&
-    migrationConfig.patientInfoCreatedDateColumn.trim() !== ""
-      ? migrationConfig.patientInfoCreatedDateColumn.trim()
-      : DEFAULT_CREATED_DATE_COLUMN;
+  const cfg = migrationConfig?.patientInfoCreatedDateColumn;
+  if (cfg === false || cfg === null) return null;
+  if (typeof cfg === "string" && cfg.trim() === "") return null;
+
+  const explicitColumn =
+    typeof cfg === "string" && cfg.trim() !== "" ? cfg.trim() : null;
+  const column = explicitColumn ?? DEFAULT_CREATED_DATE_COLUMN;
 
   const req = mssqlPool.request();
   req.input("schema", sql.NVarChar(128), sourceSchema);
@@ -222,10 +225,11 @@ export async function resolvePatientInfoCreatedDateColumn(
       AND COLUMN_NAME = @column
   `);
   if ((res.recordset?.length ?? 0) === 0) {
+    if (explicitColumn == null) return null;
     throw new Error(
       `[patient_info] MSSQL ${sourceSchema}.${sourceTable} ไม่มีคอลัมน์ '${column}' ` +
         `(server/database ที่ config ชี้อยู่ยังไม่ได้ sync schema) — ` +
-        `ถ้าชื่อคอลัมน์ต่างจาก CreatedDate ตั้ง migration.patientInfoCreatedDateColumn`,
+        `ตรวจ migration.patientInfoCreatedDateColumn หรือตั้งเป็น "" เพื่อเรียง PID อย่างเดียว`,
     );
   }
   return column;

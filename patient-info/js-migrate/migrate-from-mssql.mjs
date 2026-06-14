@@ -560,7 +560,9 @@ async function runTableJob({
       createMssqlPatientInfoSelectBundle(createdDateColumn);
     patientInfoSortKeyVersion = patientInfoSelectBundle.sortKeyVersion;
     console.error(
-      `>>> [${key}] sort: ${createdDateColumn} NULL ก่อน → วันที่เก่า→ใหม่ + PID`,
+      createdDateColumn
+        ? `>>> [${key}] sort: ${createdDateColumn} NULL ก่อน → วันที่เก่า→ใหม่ + PID`
+        : `>>> [${key}] sort: ไม่มี CreatedDate — เรียง PID เท่านั้น`,
     );
   }
 
@@ -629,8 +631,11 @@ async function runTableJob({
     checkpoint.mssqlKeysetAfter == null
       ? ""
       : String(checkpoint.mssqlKeysetAfter);
+  const checkpointHasKeysetCursor =
+    checkpoint.mssqlKeysetAfter != null &&
+    String(checkpoint.mssqlKeysetAfter).trim() !== "";
   let legacyCatchUpFromStart = false;
-  if (useMssqlKeyset && offset > 0 && checkpoint.mssqlKeysetAfter == null) {
+  if (useMssqlKeyset && offset > 0 && !checkpointHasKeysetCursor) {
     if (
       checkpoint.completed === true &&
       isResumeRun &&
@@ -685,9 +690,8 @@ async function runTableJob({
     checkpointEnabled &&
     !isRepairFromLogRun &&
     checkpoint.completed === false &&
-    useMssqlKeyset &&
-    (offset > 0 ||
-      (mssqlKeysetAfter != null && String(mssqlKeysetAfter).trim() !== ""));
+    offset > 0 &&
+    (!useMssqlKeyset || checkpointHasKeysetCursor);
   let incompleteCheckpointResume = incompleteCheckpointResumeInitial;
 
   /** @type {'normal'|'forward'|'catch-up'} */
@@ -734,6 +738,8 @@ async function runTableJob({
   let interruptedGapHeal = false;
   if (
     incompleteCheckpointResumeInitial &&
+    useMssqlKeyset &&
+    checkpointHasKeysetCursor &&
     isResumeRun &&
     insertOnly &&
     isPatientInfoBuiltin &&
@@ -837,6 +843,12 @@ async function runTableJob({
     !incompleteCheckpointResume &&
     resumeCatchUpMode === "normal";
   const fetchUsesOffset = useBulkOffsetFetch || !useMssqlKeyset;
+  /** OFFSET + ORDER BY [PID] — ใช้ได้เมื่อไม่มี CreatedDate (รวมต่อ checkpoint ที่หยุดกลาง bulk) */
+  const useFastOffsetFetch =
+    fetchUsesOffset &&
+    isPatientInfoBuiltin &&
+    !selectSqlFile &&
+    patientInfoSelectBundle?.createdDateColumn == null;
 
   const useIdProbe =
     !fetchUsesOffset &&
@@ -848,7 +860,11 @@ async function runTableJob({
     migrationConfig.patientInfoIdProbe !== false;
   if (useBulkOffsetFetch) {
     console.error(
-      `>>> [${key}] auto: Postgres ว่าง → OFFSET + ORDER BY ${patientInfoSelectBundle?.createdDateColumn ?? "CreatedDate"}, PID (bulk เร็ว)`,
+      `>>> [${key}] auto: Postgres ว่าง → OFFSET + ORDER BY ${patientInfoSelectBundle?.createdDateColumn ?? "PID"} (bulk เร็ว)`,
+    );
+  } else if (useFastOffsetFetch && incompleteCheckpointResume) {
+    console.error(
+      `>>> [${key}] ต่อ OFFSET จาก checkpoint — ORDER BY PID (bulk เร็ว, ตรงกับรอบแรก)`,
     );
   } else if (
     isPatientInfoBuiltin &&
@@ -875,7 +891,9 @@ async function runTableJob({
     );
     if (!fetchUsesOffset) {
       writeOutLine(
-        `>>> [${key}] ORDER BY: ${patientInfoSelectBundle?.createdDateColumn ?? "CreatedDate"} NULL ก่อน แล้วตามวันที่สร้าง (เก่า→ใหม่) + PID tiebreaker`,
+        patientInfoSelectBundle?.createdDateColumn
+          ? `>>> [${key}] ORDER BY: ${patientInfoSelectBundle.createdDateColumn} NULL ก่อน แล้วตามวันที่สร้าง (เก่า→ใหม่) + PID tiebreaker`
+          : `>>> [${key}] ORDER BY: PID (ตัวเลขก่อน)`,
         uiState,
       );
     }
@@ -1102,7 +1120,7 @@ async function runTableJob({
         const r = await req
           .input("offset", sql.Int, offset)
           .input("page", sql.Int, fetchPageSize)
-          .query(useBulkOffsetFetch ? bulkOffsetSelectSql : offsetSelectSql);
+          .query(useFastOffsetFetch ? bulkOffsetSelectSql : offsetSelectSql);
         rows = r.recordset || [];
         rowsScanned = rows.length;
       }
@@ -1381,7 +1399,11 @@ LIMIT 200;
       writeJson(checkpointPath, {
         key,
         offset,
-        ...(useMssqlKeyset ? { mssqlKeysetAfter } : { mssqlKeysetAfter: null }),
+        ...(useMssqlKeyset &&
+        mssqlKeysetAfter != null &&
+        String(mssqlKeysetAfter).trim() !== ""
+          ? { mssqlKeysetAfter }
+          : { mssqlKeysetAfter: null }),
         sortKeyVersion: patientInfoSortKeyVersion,
         completed: false,
         updatedAt: new Date().toISOString(),
