@@ -43,24 +43,26 @@ npm run migrate:patient_info
 
 Log: `logs/migrate-*.json` — checkpoint: `checkpoints/<key>.json`
 
-### ลำดับ CreatedDate และ checkpoint (resume)
+### ลำดับ CreatedDate และ checkpoint (resume รายวัน)
 
 - เรียง MSSQL ด้วย **sort key**: `CreatedDate` เป็น NULL ก่อน (ข้อมูลเก่า) แล้วตามวันที่สร้างจากเก่า→ใหม่ ใช้ PID เป็น tiebreaker
-- คนไข้ใหม่หลังเพิ่มฟิลด์ `CreatedDate` จะมีวันที่สร้างติดมา — แถวใหม่จึงอยู่ท้ายลำดับเสมอ ไม่แทรกกลาง checkpoint
-- ใช้ **keyset** (`sort_key > checkpoint`) แทน OFFSET — ไม่พลาดแถวใหม่เมื่อรัน resume รายวัน
+- **INSERT** แถวใหม่ → `date_created = now()` (เวลาที่ migrate ลง Postgres ไม่ใช่ค่าจาก MSSQL)
+- คนไข้ใหม่ที่มี `CreatedDate` อยู่ท้ายลำดับ — resume ดึงต่อจาก `mssqlKeysetAfter` ใน checkpoint
+- ใช้ **keyset** (`sort_key > checkpoint`) แทน OFFSET — ไม่พลาดแถวใหม่ท้ายตารางเมื่อรัน resume รายวัน
 - **Postgres ว่าง** → migrate จากต้น (keyset เต็มแถว/chunk, ปิด id probe) รีเซ็ต checkpoint
-- **ต่อ checkpoint ไม่จบ** (`completed: false`, มี `offset`/`mssqlKeysetAfter`) → keyset ต่อท้าย ~แถวที่เหลือ, **ปิด id probe**, progress แสดง `210000/214944` ไม่ใช่เริ่ม `0/214944`
-- **มีข้อมูล + checkpoint แล้ว** → ค่าเริ่มต้น **keyset ต่อท้าย** (วิธีเดิม เร็ว)
-- **smart resume** (ค่าเริ่มต้นเปิด): **ข้าม** เมื่อ fingerprint ต้นทางไม่เปลี่ยน มิฉะนั้น **keyset ต่อท้าย** (แถวใหม่อยู่ท้ายลำดับเสมอเพราะเรียง CreatedDate)
+- **ต่อ checkpoint ไม่จบ** (`completed: false`) → keyset ต่อท้าย ~แถวที่เหลือ, **ปิด id probe**
+- **daily sync** (ค่าเริ่มต้นเปิด, `patientInfoDailySync`) หลัง `completed: true` + โหมด resume:
+  - **ไม่ข้าม job** แม้ fingerprint MSSQL เท่าเดิม — probe ท้ายตารางเสมอ (เร็วถ้าไม่มีแถวใหม่)
+  - **catch-up**: ถ้า MSSQL เพิ่มแถว หรือ Postgres ขาดกว่า COUNT (ไม่นับ placeholder) → สแกนตั้งแต่ต้นด้วย id probe เติม PID ที่ขาด (รวมแถวใหม่ `CreatedDate` NULL ที่ไม่อยู่ท้าย)
+  - **tail upsert**: ถ้า `maxSortKey` ใหม่กว่า checkpoint → ดึงแถวท้ายแล้ว **upsert** (อัปเดตชื่อ/ที่อยู่แถวที่ดึง)
 - checkpoint เก็บ `offset`, `mssqlKeysetAfter`, `sortKeyVersion` (v2 = CreatedDate), `sourceRowCount`, `sourceMaxSortKey`
-- อัปเกรดจาก checkpoint เก่า (เรียง PID) → รีเซ็ต keyset แล้วสแกนต่อด้วย id probe (insert-only ข้ามที่มีใน Postgres)
-- config: `patientInfoSmartResume` (default true)
+- config: `patientInfoDailySync` (default `true`), `patientInfoSmartResume` (legacy — `false` ปิด daily sync)
 
 ### โหมดรัน (`migrateRunMode` / `-MigrateRunMode`)
 
 | โหมด                       | พฤติกรรม `patient_info`                                                                                                                                                                                                           |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **resume** (`insert-only`) | เพิ่มเฉพาะ PID ที่ยังไม่มีใน Postgres — **ไม่แตะ**แถวจริงเดิม; แถว placeholder `ไม่ทราบชื่อ` จาก appointment/ตารางอื่น **ยังคงไว้** และยัง INSERT แถวจาก MSSQL ได้ (รวมแล้วได้ 1,010 + 200 = 1,210 ตามตัวอย่าง checkpoint รายวัน) |
+| **resume** (`insert-only`) | รายวัน: เติม PID ที่ขาด + upsert ท้ายตารางเมื่อ `CreatedDate` ใหม่; ไม่ทับแถวจริงเดิมนอกช่วงที่ดึง; placeholder `ไม่ทราบชื่อ` ยังคงไว้ |
 | **overwrite**              | PID ที่มีแล้ว → **UPDATE** ตาม `patient_info.id` (คง `id` เดิม) แล้วลบ/ใส่ `address` ใหม่; PID ใหม่ → INSERT                                                                                                                      |
 | **repair-from-log**        | เหมือน overwrite แต่ดึงเฉพาะ PID จาก log ล่าสุด — จบแล้วแสดงจำนวนจาก log / สำเร็จ / ไม่สำเร็จ                                                                                                                                     |
 
