@@ -1,6 +1,6 @@
 /**
  * คิวรี dbo.SCHEDULE_LOG — เฉพาะ Activity = ย้ายวันนัด
- * เรียง LogTime ใหม่ → เก่า (ตรงลำดับที่มักดูใน SSMS / Directus id ต่ำ = log ล่าสุด)
+ * เรียง LogTime เก่า → ใหม่ (ASC) เพื่อให้ log ใหม่อยู่ท้ายเสมอ → resume forward เก็บแถวใหม่ได้
  */
 export const MSSQL_APPOINTMENT_RESCHEDULE_ACTIVITY = "ย้ายวันนัด";
 
@@ -31,7 +31,7 @@ export const MSSQL_RESCHEDULE_MODIFIED_ORDER_EXPR =
 export const MSSQL_RESCHEDULE_OLD_SCHEDULE_DT_ORDER_EXPR =
   "COALESCE([Old_Schedule_Datetime], CAST('17530101' AS DATETIME2))";
 
-const RESCHEDULE_ORDER_BY = `${MSSQL_RESCHEDULE_LOGTIME_ORDER_EXPR} DESC, ${MSSQL_RESCHEDULE_SCHEDULE_ID_ORDER_EXPR} DESC, ${MSSQL_RESCHEDULE_SCHEDULE_DT_ORDER_EXPR} DESC, ${MSSQL_RESCHEDULE_MODIFIED_ORDER_EXPR} DESC, ${MSSQL_RESCHEDULE_OLD_SCHEDULE_DT_ORDER_EXPR} DESC`;
+const RESCHEDULE_ORDER_BY = `${MSSQL_RESCHEDULE_LOGTIME_ORDER_EXPR} ASC, ${MSSQL_RESCHEDULE_SCHEDULE_ID_ORDER_EXPR} ASC, ${MSSQL_RESCHEDULE_SCHEDULE_DT_ORDER_EXPR} ASC, ${MSSQL_RESCHEDULE_MODIFIED_ORDER_EXPR} ASC, ${MSSQL_RESCHEDULE_OLD_SCHEDULE_DT_ORDER_EXPR} ASC`;
 
 const RESCHEDULE_ACTIVITY_WHERE = `[Activity] = N'${MSSQL_APPOINTMENT_RESCHEDULE_ACTIVITY}'`;
 
@@ -62,8 +62,8 @@ OFFSET @offset ROWS FETCH NEXT @page ROWS ONLY;
 `.trim();
 
 /**
- * Keyset ตาม (LogTime, Schedule_ID, Schedule_Datetime, ModifiedDate, Old_Schedule_Datetime) DESC
- * — แยกแถว log ที่คีย์ซ้ำ; cursor เลื่อนด้วย <
+ * Keyset ตาม (LogTime, Schedule_ID, Schedule_Datetime, ModifiedDate, Old_Schedule_Datetime) ASC
+ * — แยกแถว log ที่คีย์ซ้ำ; cursor เลื่อนด้วย > (เก่า→ใหม่ แถวใหม่อยู่ท้าย)
  */
 export function buildMssqlAppointmentReschedulesKeysetSelect() {
   return `
@@ -75,28 +75,28 @@ WHERE ${RESCHEDULE_ACTIVITY_WHERE}
   AND (@migrateSrcKeyMin IS NULL OR ${MSSQL_RESCHEDULE_SCHEDULE_ID_ORDER_EXPR} >= @migrateSrcKeyMin)
   AND (@migrateSrcKeyMax IS NULL OR ${MSSQL_RESCHEDULE_SCHEDULE_ID_ORDER_EXPR} <= @migrateSrcKeyMax)
   AND (
-    ${MSSQL_RESCHEDULE_LOGTIME_ORDER_EXPR} < @afterLogTime
+    ${MSSQL_RESCHEDULE_LOGTIME_ORDER_EXPR} > @afterLogTime
     OR (
       ${MSSQL_RESCHEDULE_LOGTIME_ORDER_EXPR} = @afterLogTime
-      AND ${MSSQL_RESCHEDULE_SCHEDULE_ID_ORDER_EXPR} < @afterScheduleId
+      AND ${MSSQL_RESCHEDULE_SCHEDULE_ID_ORDER_EXPR} > @afterScheduleId
     )
     OR (
       ${MSSQL_RESCHEDULE_LOGTIME_ORDER_EXPR} = @afterLogTime
       AND ${MSSQL_RESCHEDULE_SCHEDULE_ID_ORDER_EXPR} = @afterScheduleId
-      AND ${MSSQL_RESCHEDULE_SCHEDULE_DT_ORDER_EXPR} < @afterScheduleDatetime
+      AND ${MSSQL_RESCHEDULE_SCHEDULE_DT_ORDER_EXPR} > @afterScheduleDatetime
     )
     OR (
       ${MSSQL_RESCHEDULE_LOGTIME_ORDER_EXPR} = @afterLogTime
       AND ${MSSQL_RESCHEDULE_SCHEDULE_ID_ORDER_EXPR} = @afterScheduleId
       AND ${MSSQL_RESCHEDULE_SCHEDULE_DT_ORDER_EXPR} = @afterScheduleDatetime
-      AND ${MSSQL_RESCHEDULE_MODIFIED_ORDER_EXPR} < @afterModifiedDate
+      AND ${MSSQL_RESCHEDULE_MODIFIED_ORDER_EXPR} > @afterModifiedDate
     )
     OR (
       ${MSSQL_RESCHEDULE_LOGTIME_ORDER_EXPR} = @afterLogTime
       AND ${MSSQL_RESCHEDULE_SCHEDULE_ID_ORDER_EXPR} = @afterScheduleId
       AND ${MSSQL_RESCHEDULE_SCHEDULE_DT_ORDER_EXPR} = @afterScheduleDatetime
       AND ${MSSQL_RESCHEDULE_MODIFIED_ORDER_EXPR} = @afterModifiedDate
-      AND ${MSSQL_RESCHEDULE_OLD_SCHEDULE_DT_ORDER_EXPR} < @afterOldScheduleDatetime
+      AND ${MSSQL_RESCHEDULE_OLD_SCHEDULE_DT_ORDER_EXPR} > @afterOldScheduleDatetime
     )
   )
 ORDER BY ${RESCHEDULE_ORDER_BY};
