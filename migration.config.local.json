@@ -21,11 +21,16 @@
       "postgresDatabase": "bisinfo"
     },
     "migration": {
-      "batchSize": 2000
+      "batchSize": 2000,
+      "patientInfoForwardOnlyResume": true
     }
   },
   "profiles": {
-    "patient_info": {},
+    "patient_info": {
+      "migration": {
+        "batchSize": 20000
+      }
+    },
     "examination": {},
     "billing": {},
     "examination_general": {},
