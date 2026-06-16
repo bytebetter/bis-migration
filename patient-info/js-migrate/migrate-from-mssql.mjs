@@ -420,11 +420,12 @@ async function queryPatientInfoSourceFingerprint(
  *   checkpoint: Record<string, unknown>,
  *   fingerprint: PatientInfoSourceFingerprint,
  *   nonPlaceholderCount: number,
+ *   forwardOnly?: boolean,
  * }} p
  * @returns {{ mode: 'catch-up'|'forward', reason: string, tailUpsert: boolean }}
  */
 function resolvePatientInfoDailyResumeMode(p) {
-  const { checkpoint, fingerprint, nonPlaceholderCount } = p;
+  const { checkpoint, fingerprint, nonPlaceholderCount, forwardOnly } = p;
   const ckCount = Number(checkpoint.sourceRowCount);
   const ckMax =
     checkpoint.sourceMaxSortKey == null
@@ -440,6 +441,20 @@ function resolvePatientInfoDailyResumeMode(p) {
   const pgBehind =
     nonPlaceholderCount > 0 &&
     nonPlaceholderCount < fingerprint.rowCount;
+
+  // forward-only: เรียง CreatedDate → data ใหม่อยู่ท้ายเสมอ → ต่อจาก checkpoint
+  // (probe เฉพาะท้ายตาราง) ไม่สแกนย้อนต้นแม้ count เพิ่มหรือ Postgres ดูเหมือนขาด
+  if (forwardOnly) {
+    return {
+      mode: "forward",
+      reason: maxSortKeyAdvanced
+        ? `forward-only: maxSortKey ใหม่ — upsert แถวท้ายตาราง (+${
+            Number.isFinite(ckCount) ? fingerprint.rowCount - ckCount : "?"
+          } แถว)`
+        : "forward-only: ต่อ checkpoint ที่ท้ายตาราง (ไม่สแกนย้อนต้น)",
+      tailUpsert: maxSortKeyAdvanced,
+    };
+  }
 
   if (countIncreased || pgBehind) {
     const parts = [];
@@ -517,7 +532,7 @@ async function runTableJob({
   const batchSize = Math.max(
     50,
     Math.min(
-      5000,
+      50000,
       Number(tableJob.batchSize ?? migrationConfig.batchSize ?? 500),
     ),
   );
@@ -686,6 +701,16 @@ async function runTableJob({
     );
   }
 
+  /**
+   * forward-only resume: เรียง CreatedDate (v2) → data ใหม่อยู่ท้ายตารางเสมอ
+   * จึงต่อจาก checkpoint แบบ probe ท้ายตารางได้ ไม่ต้องสแกนย้อนต้น
+   * มีผลเฉพาะ sort v2 เพื่อไม่กระทบ source ที่ไม่มี CreatedDate (เรียง PID = v1)
+   */
+  const forwardOnlyResume =
+    isPatientInfoBuiltin &&
+    patientInfoSortKeyVersion >= 2 &&
+    migrationConfig.patientInfoForwardOnlyResume === true;
+
   const incompleteCheckpointResumeInitial =
     checkpointEnabled &&
     !isRepairFromLogRun &&
@@ -737,6 +762,15 @@ async function runTableJob({
   /** Ctrl+C / migrate:all หยุดกลางทาง — ต่อท้ายอย่างเดียวพลาดแถวช่วงต้น → สแกน id probe ตั้งแต่ต้นเติมที่ขาด */
   let interruptedGapHeal = false;
   if (
+    forwardOnlyResume &&
+    incompleteCheckpointResumeInitial &&
+    useMssqlKeyset &&
+    checkpointHasKeysetCursor
+  ) {
+    console.error(
+      `>>> [${key}] forward-only: checkpoint ค้าง — ต่อจาก keysetAfter เดิม (ไม่สแกนย้อนต้น)`,
+    );
+  } else if (
     incompleteCheckpointResumeInitial &&
     useMssqlKeyset &&
     checkpointHasKeysetCursor &&
@@ -787,6 +821,7 @@ async function runTableJob({
       checkpoint,
       fingerprint,
       nonPlaceholderCount,
+      forwardOnly: forwardOnlyResume,
     });
     resumeCatchUpMode = decision.mode;
     resumeCatchUpReason = decision.reason;
