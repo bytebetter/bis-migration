@@ -61,7 +61,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KEY = "appointment_reschedules";
 
 const RESCHEDULE_KEYSET_SENTINEL_SCHEDULE_ID_MIN = -9223372036854775808n;
-const RESCHEDULE_KEYSET_SENTINEL_SCHEDULE_ID_MAX = 9223372036854775807n;
 
 function getRescheduleRowField(row, key) {
   return row[key] ?? row[key.toLowerCase()] ?? row[key.toUpperCase()];
@@ -71,9 +70,12 @@ function rescheduleKeysetMinDate() {
   return new Date(1753, 0, 1, 0, 0, 0, 0);
 }
 
-/** จุดเริ่ม keyset DESC: cursor exclusive ด้านบน — แถวแรกคือ LogTime ใหม่สุด */
-function rescheduleKeysetMaxDate() {
-  return new Date(9999, 11, 31, 23, 59, 59, 997);
+/**
+ * จุดเริ่ม keyset ASC: cursor exclusive ด้านล่าง (เก่ากว่าทุกแถว)
+ * ใช้ปี 1000 ให้ต่ำกว่า COALESCE floor 1753-01-01 ในคิวรี → `> floor` ครอบทุกแถว (รวมแถว LogTime NULL)
+ */
+function rescheduleKeysetFloorDate() {
+  return new Date(1000, 0, 1, 0, 0, 0, 0);
 }
 
 /**
@@ -129,13 +131,13 @@ function rescheduleRowDatetimeForKeyset(raw) {
 }
 
 function defaultRescheduleKeysetAfter() {
-  const coalescedMax = rescheduleKeysetMaxDate();
+  const floor = rescheduleKeysetFloorDate();
   return {
-    logTime: coalescedMax,
-    scheduleId: RESCHEDULE_KEYSET_SENTINEL_SCHEDULE_ID_MAX.toString(),
-    scheduleDatetime: coalescedMax,
-    modifiedDate: coalescedMax,
-    oldScheduleDatetime: coalescedMax,
+    logTime: floor,
+    scheduleId: RESCHEDULE_KEYSET_SENTINEL_SCHEDULE_ID_MIN.toString(),
+    scheduleDatetime: floor,
+    modifiedDate: floor,
+    oldScheduleDatetime: floor,
   };
 }
 
@@ -152,7 +154,7 @@ function normalizeScheduleIdForKeyset(raw) {
 
 function normalizeRescheduleKeysetAfter(raw) {
   if (!raw || typeof raw !== "object") return defaultRescheduleKeysetAfter();
-  const coalescedMax = rescheduleKeysetMaxDate();
+  const coalescedFloor = rescheduleKeysetFloorDate();
   return {
     logTime: rescheduleRowDatetimeForKeyset(raw.logTime),
     scheduleId: normalizeScheduleIdForKeyset(raw.scheduleId),
@@ -160,7 +162,7 @@ function normalizeRescheduleKeysetAfter(raw) {
     modifiedDate: rescheduleRowDatetimeForKeyset(raw.modifiedDate),
     oldScheduleDatetime:
       raw.oldScheduleDatetime == null
-        ? coalescedMax
+        ? coalescedFloor
         : rescheduleRowDatetimeForKeyset(raw.oldScheduleDatetime),
   };
 }
