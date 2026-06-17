@@ -1,27 +1,36 @@
 /**
- * โหมด --count-only สำหรับ snapshot จำนวนแถวต้นทางก่อนรัน migrate:all
+ * Snapshot จำนวนแถวต้นทางก่อน migrate:all
  *
- * แนวคิด: ตอนเริ่ม migrate:all จะเรียก migrate แต่ละตารางด้วย --count-only ก่อน
- * เพื่อ "freeze" จำนวนแถว ณ เวลานั้น แล้วส่งกลับเป็น --source-count-cap ต่อตาราง
- * (ไม่ใช้ --source-index-to เพราะจะเปลี่ยนชื่อไฟล์ checkpoint → resume ไม่ต่อ)
- * ทำให้ข้อมูลที่ไหลเข้ามาระหว่างรัน (key/วันที่ใหม่ → อยู่ท้าย ORDER BY) ไม่ถูกดึงเข้ามาแบบไม่สม่ำเสมอ
- *
- * ค่าที่นับใช้ logic เดิมของแต่ละตาราง (universe ตรงตาม WHERE/filter ของตารางนั้นเป๊ะ)
+ * Flow:
+ * 1. migrate:all เรียก --count-only → ได้จำนวนเต็ม ณ ตอนนั้น (##SOURCE_COUNT##)
+ * 2. ส่ง --source-count-cap ต่อตาราง (ไม่ใช้ sourceIndexTo — ไม่เปลี่ยนชื่อ checkpoint)
+ * 3. migrate จริง: plannedRows = min(live COUNT, cap) − offset จาก checkpoint เดิม
  */
 
-/** บรรทัด sentinel ที่ orchestrator (PowerShell) จะ parse เอาตัวเลขออกมา */
+import {
+  hasMigrateRowWindow,
+  narrowPlannedRowsForIndex,
+  readSourceCountCap,
+} from "./sourceIndexRange.mjs";
+
+export { hasMigrateRowWindow, readSourceCountCap };
+
+/** บรรทัด sentinel ที่ orchestrator parse เอาตัวเลข */
 export const SOURCE_COUNT_SENTINEL = "##SOURCE_COUNT##";
 
 /**
- * เป็นรอบ --count-only หรือไม่ (อ่านจาก argv ตรงๆ — ไม่พึ่ง config var ของแต่ละไฟล์)
  * @param {string[]} [argv]
  */
 export function isCountOnlyRun(argv = process.argv) {
   return argv.includes("--count-only");
 }
 
+/** รอบ --count-only ไม่ควรเขียน checkpoint / reset target */
+export function shouldSkipMigrateSideEffects(argv = process.argv) {
+  return isCountOnlyRun(argv);
+}
+
 /**
- * พิมพ์จำนวนแถวต้นทางออก stdout แล้วจบโปรเซสทันที (ไม่ทำ migrate)
  * @param {number | null | undefined} count
  */
 export function emitSourceCountAndExit(count) {
@@ -32,10 +41,59 @@ export function emitSourceCountAndExit(count) {
 }
 
 /**
- * ถ้าเป็นรอบ --count-only → พิมพ์ count แล้ว exit; ไม่ใช่ → ไม่ทำอะไร
- * เรียกหลังคำนวณ count เต็ม (ก่อนเริ่มลูป migrate จริง)
- * @param {number | null | undefined} count จำนวนแถว universe เต็ม (ก่อน narrow ตาม index)
+ * snapshot count-only → พิมพ์จำนวนเต็ม (ก่อน cap) แล้ว exit
+ * @param {number | null | undefined} sourceRowCountTotal
  */
-export function maybeEmitSourceCount(count) {
-  if (isCountOnlyRun()) emitSourceCountAndExit(count);
+export function maybeEmitSourceCount(sourceRowCountTotal) {
+  if (isCountOnlyRun()) emitSourceCountAndExit(sourceRowCountTotal);
+}
+
+/**
+ * จำกัดแถวที่จะ migrate ตาม snapshot cap / index range — ไม่กระทบชื่อ checkpoint
+ * @param {{
+ *   migrationConfig: Record<string, unknown> | null | undefined,
+ *   sourceRowCountTotal: number | null | undefined,
+ *   offset: number,
+ *   indexLimited?: boolean,
+ *   sourceIndexFrom?: number | null,
+ *   sourceIndexTo?: number | null,
+ * }} p
+ * @returns {number | null}
+ */
+export function plannedRowsWithSnapshotCap(p) {
+  const {
+    migrationConfig,
+    sourceRowCountTotal,
+    offset,
+    indexLimited = false,
+    sourceIndexFrom = null,
+    sourceIndexTo = null,
+  } = p;
+  if (sourceRowCountTotal == null) return null;
+  if (!hasMigrateRowWindow(migrationConfig, indexLimited)) {
+    return sourceRowCountTotal;
+  }
+  return narrowPlannedRowsForIndex({
+    plannedRows: sourceRowCountTotal,
+    offset,
+    sourceIndexFrom,
+    sourceIndexTo,
+    migrationConfig,
+  });
+}
+
+/**
+ * count-only + cap plan ในคำสั่งเดียว (เรียงถูก: emit จำนวนเต็มก่อน narrow)
+ * @param {Parameters<typeof plannedRowsWithSnapshotCap>[0]} p
+ * @returns {number | null} plannedRows หลัง cap (สำหรับ progress / loop)
+ */
+export function prepareMigrateRowPlan(p) {
+  maybeEmitSourceCount(p.sourceRowCountTotal);
+  const cap = readSourceCountCap(p.migrationConfig);
+  if (cap != null && !isCountOnlyRun()) {
+    console.error(
+      `>>> snapshot sourceCountCap=${cap} (จำนวน ณ ตอน migrate:all เริ่ม — ไม่เปลี่ยนชื่อ checkpoint)`,
+    );
+  }
+  return plannedRowsWithSnapshotCap(p);
 }

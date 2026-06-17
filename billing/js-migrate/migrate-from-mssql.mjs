@@ -49,7 +49,7 @@ import {
   narrowPlannedRowsForIndex,
   resolvePageSize,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
-import { isCountOnlyRun, maybeEmitSourceCount } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
+import { isCountOnlyRun, prepareMigrateRowPlan, shouldSkipMigrateSideEffects } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import { REPAIR_SPEC_BILLING } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
@@ -329,7 +329,7 @@ async function main() {
       if (!Number.isFinite(afterExamId) || afterExamId < 0) afterExamId = 0;
 
       const targetRowCount = await countBillingTargetRows(client);
-      if (targetRowCount === 0 && !repairRun.active && !isCountOnlyRun()) {
+      if (targetRowCount === 0 && !repairRun.active && !shouldSkipMigrateSideEffects()) {
         const hadCheckpointProgress =
           offset > 0 || afterExamId > 0 || checkpoint.completed === true;
         offset = 0;
@@ -379,29 +379,27 @@ async function main() {
         `migration-field-issues-billing-${nowStamp()}.json`,
       );
       let chunkIndex = 0;
-      let plannedRows = sourceLimit;
-      if (plannedRows == null && progressEnabled) {
+      let sourceRowCountTotal = sourceLimit;
+      if (sourceRowCountTotal == null && progressEnabled) {
         try {
           const countReq = pool.request();
           bindMigrateSrcNumericRange(countReq, migration, sql);
           const countRes = await countReq.query(
             `SELECT COUNT_BIG(1) AS total FROM ${sourceObjectNoLock} WHERE (${BILLING_EXAM_NUMERIC_KEY_RANGE_PRED});`,
           );
-          plannedRows = Number(countRes.recordset?.[0]?.total ?? 0);
+          sourceRowCountTotal = Number(countRes.recordset?.[0]?.total ?? 0);
         } catch {
-          plannedRows = null;
+          sourceRowCountTotal = null;
         }
       }
-      if (idx.indexLimited || migration.sourceCountCap != null) {
-    plannedRows = narrowPlannedRowsForIndex({
-      plannedRows,
-      offset,
-      sourceIndexFrom: idx.sourceIndexFrom,
-      sourceIndexTo: idx.sourceIndexTo,
-      migrationConfig: migration,
-    });
-      }
-      maybeEmitSourceCount(plannedRows);
+      const plannedRows = prepareMigrateRowPlan({
+        migrationConfig: migration,
+        sourceRowCountTotal,
+        offset,
+        indexLimited: idx.indexLimited,
+        sourceIndexFrom: idx.sourceIndexFrom,
+        sourceIndexTo: idx.sourceIndexTo,
+      });
       let progressTotal = plannedRows ?? null;
       let plannedChunks =
         plannedRows != null && plannedRows > 0

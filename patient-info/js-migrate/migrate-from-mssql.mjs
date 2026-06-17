@@ -47,7 +47,7 @@ import {
   narrowPlannedRowsForIndex,
   resolvePageSize,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
-import { maybeEmitSourceCount } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
+import { maybeEmitSourceCount, plannedRowsWithSnapshotCap } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import { REPAIR_SPEC_PATIENT_INFO } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
@@ -954,12 +954,13 @@ async function runTableJob({
       );
       const plannedTotal = Number(countRes.recordset?.[0]?.total ?? 0);
       progressTotalFull = plannedTotal;
-      plannedRows = narrowPlannedRowsForIndex({
-        plannedRows: plannedTotal,
+      plannedRows = plannedRowsWithSnapshotCap({
+        migrationConfig,
+        sourceRowCountTotal: plannedTotal,
         offset,
+        indexLimited,
         sourceIndexFrom,
         sourceIndexTo,
-        migrationConfig,
       });
     } catch {
       plannedRows = null;
