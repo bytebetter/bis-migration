@@ -254,10 +254,10 @@ foreach ($step in $steps) {
     $st = if ($SourceIndexTo) { $SourceIndexTo.Trim() } else { "" }
     if ($sf -ne "") { $invokeArgs.SourceIndexFrom = $sf }
     if ($st -ne "") { $invokeArgs.SourceIndexTo = $st }
-    # เพดานจาก snapshot count (เฉพาะเมื่อ user ไม่ได้กำหนดช่วงเอง)
+    # เพดานจาก snapshot count — ใช้ sourceCountCap (ไม่เปลี่ยนชื่อ checkpoint ไม่กระทบ resume)
     if ($sf -eq "" -and $st -eq "" -and $countSnapshot.ContainsKey($step.Table)) {
-      $invokeArgs.SourceIndexTo = "$($countSnapshot[$step.Table])"
-      Write-MigrateLog ('{0} - SourceIndexTo {1} (snapshot)' -f $label, $countSnapshot[$step.Table])
+      $invokeArgs.SourceCountCap = "$($countSnapshot[$step.Table])"
+      Write-MigrateLog ('{0} - cap {1} (snapshot)' -f $label, $countSnapshot[$step.Table])
     }
   }
 

@@ -121,6 +121,9 @@ export function parseMigrateCliArgs(argv = process.argv) {
     argvValue(argv, "--source-index-from"),
   );
   let sourceIndexTo = parseOptionalPositiveInt(argvValue(argv, "--source-index-to"));
+  const sourceCountCap = parseOptionalPositiveInt(
+    argvValue(argv, "--source-count-cap"),
+  );
   assertSourceIndexRangeArgvShape(argv);
   const indexRangeStr = argvValue(argv, "--source-index-range");
   if (indexRangeStr != null) {
@@ -158,6 +161,7 @@ export function parseMigrateCliArgs(argv = process.argv) {
     migrateRowMode,
     sourceIndexFrom,
     sourceIndexTo,
+    sourceCountCap,
     sourceKeyNumericMin,
     sourceKeyNumericMax,
     hasSourceKeyCli,
@@ -509,6 +513,7 @@ export function migrateCliOverridesFromArgv(argv = process.argv) {
     migrateRowMode,
     sourceIndexFrom,
     sourceIndexTo,
+    sourceCountCap,
     sourceKeyNumericMin,
     sourceKeyNumericMax,
     hasSourceKeyCli,
@@ -530,6 +535,7 @@ export function migrateCliOverridesFromArgv(argv = process.argv) {
   }
   if (sourceIndexFrom != null) o.sourceIndexFrom = sourceIndexFrom;
   if (sourceIndexTo != null) o.sourceIndexTo = sourceIndexTo;
+  if (sourceCountCap != null) o.sourceCountCap = sourceCountCap;
   if (hasSourceKeyCli) {
     o.sourceKeyNumericMin = sourceKeyNumericMin;
     o.sourceKeyNumericMax = sourceKeyNumericMax;

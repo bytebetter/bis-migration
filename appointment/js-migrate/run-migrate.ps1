@@ -11,6 +11,7 @@ param(
   [string] $SourceIndexRange = "",
   [string] $SourceIndexFrom = "",
   [string] $SourceIndexTo = "",
+  [string] $SourceCountCap = "",
   [switch] $SkipInstall
 )
 
@@ -33,7 +34,7 @@ if (-not $SkipInstall) {
 }
 
 Write-Host ">>> Running migration with config: $ConfigPath (profile: $Profile)"
-$nodeExtra = Get-MigrateNodeCliArgs -MigrateMode $MigrateMode -MigrateRunMode $MigrateRunMode -SourceIndexRange $SourceIndexRange -SourceIndexFrom $SourceIndexFrom -SourceIndexTo $SourceIndexTo
+$nodeExtra = Get-MigrateNodeCliArgs -MigrateMode $MigrateMode -MigrateRunMode $MigrateRunMode -SourceIndexRange $SourceIndexRange -SourceIndexFrom $SourceIndexFrom -SourceIndexTo $SourceIndexTo -SourceCountCap $SourceCountCap
 & node ./migrate-from-mssql.mjs --config $ConfigPath --profile $Profile @nodeExtra
 if ($LASTEXITCODE -ne 0) { throw "migration failed" }
 

@@ -669,12 +669,13 @@ async function runAppointmentReschedulesTableJob({
       plannedRows = null;
     }
   }
-  if (idx.indexLimited) {
+  if (idx.indexLimited || migrationConfig.sourceCountCap != null) {
     plannedRows = narrowPlannedRowsForIndex({
       plannedRows,
       offset,
       sourceIndexFrom: idx.sourceIndexFrom,
       sourceIndexTo: idx.sourceIndexTo,
+      migrationConfig,
     });
   }
   maybeEmitSourceCount(plannedRows);
@@ -903,6 +904,7 @@ async function runAppointmentReschedulesTableJob({
       const isLastPage =
         isIndexWindowComplete({
           indexLimited: idx.indexLimited,
+        migrationConfig,
           plannedRows,
           rowsReadInWindow: total,
         }) ||

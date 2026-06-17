@@ -284,13 +284,14 @@ FROM ${sourceObjectNoLock};`);
           plannedRows = null;
         }
       }
-      if (idx.indexLimited) {
-        plannedRows = narrowPlannedRowsForIndex({
-          plannedRows,
-          offset,
-          sourceIndexFrom: idx.sourceIndexFrom,
-          sourceIndexTo: idx.sourceIndexTo,
-        });
+      if (idx.indexLimited || migrationConfig.sourceCountCap != null) {
+    plannedRows = narrowPlannedRowsForIndex({
+      plannedRows,
+      offset,
+      sourceIndexFrom: idx.sourceIndexFrom,
+      sourceIndexTo: idx.sourceIndexTo,
+      migrationConfig,
+    });
       }
       maybeEmitSourceCount(plannedRows);
       let progressTotal = plannedRows ?? null;
@@ -485,6 +486,7 @@ FROM ${sourceObjectNoLock};`);
         } else if (
           isIndexWindowComplete({
             indexLimited: idx.indexLimited,
+        migrationConfig,
             plannedRows,
             rowsReadInWindow: Math.max(0, offset - idx.indexStartOffset),
           }) ||

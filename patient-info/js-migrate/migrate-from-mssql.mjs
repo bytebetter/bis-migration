@@ -959,6 +959,7 @@ async function runTableJob({
         offset,
         sourceIndexFrom,
         sourceIndexTo,
+        migrationConfig,
       });
     } catch {
       plannedRows = null;
