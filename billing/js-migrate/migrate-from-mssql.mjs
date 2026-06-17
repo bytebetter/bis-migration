@@ -49,7 +49,7 @@ import {
   narrowPlannedRowsForIndex,
   resolvePageSize,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
-import { maybeEmitSourceCount } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
+import { isCountOnlyRun, maybeEmitSourceCount } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import { REPAIR_SPEC_BILLING } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
@@ -329,7 +329,7 @@ async function main() {
       if (!Number.isFinite(afterExamId) || afterExamId < 0) afterExamId = 0;
 
       const targetRowCount = await countBillingTargetRows(client);
-      if (targetRowCount === 0 && !repairRun.active) {
+      if (targetRowCount === 0 && !repairRun.active && !isCountOnlyRun()) {
         const hadCheckpointProgress =
           offset > 0 || afterExamId > 0 || checkpoint.completed === true;
         offset = 0;
@@ -392,13 +392,13 @@ async function main() {
           plannedRows = null;
         }
       }
-      if (idx.indexLimited || migrationConfig.sourceCountCap != null) {
+      if (idx.indexLimited || migration.sourceCountCap != null) {
     plannedRows = narrowPlannedRowsForIndex({
       plannedRows,
       offset,
       sourceIndexFrom: idx.sourceIndexFrom,
       sourceIndexTo: idx.sourceIndexTo,
-      migrationConfig,
+      migrationConfig: migration,
     });
       }
       maybeEmitSourceCount(plannedRows);
@@ -719,7 +719,7 @@ async function main() {
         } else if (
           isIndexWindowComplete({
             indexLimited: idx.indexLimited,
-        migrationConfig,
+        migrationConfig: migration,
             plannedRows,
             rowsReadInWindow: total,
           }) ||
