@@ -47,6 +47,7 @@ import {
   narrowPlannedRowsForIndex,
   resolvePageSize,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
+import { maybeEmitSourceCount } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { REPAIR_SPEC_APPOINTMENT_RESCHEDULES } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
   finalizeRepairFromLog,
@@ -676,6 +677,7 @@ async function runAppointmentReschedulesTableJob({
       sourceIndexTo: idx.sourceIndexTo,
     });
   }
+  maybeEmitSourceCount(plannedRows);
   let progressTotal = plannedRows ?? null;
   let plannedChunks =
     plannedRows != null && plannedRows > 0

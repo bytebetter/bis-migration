@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
   รัน migrate ทุกตารางตามลำดับ FK / ความสัมพันธ์ข้อมูล
 
@@ -29,7 +29,8 @@ param(
   [string] $MigrateMode = "",
   [string] $SourceIndexRange = "",
   [string] $SourceIndexFrom = "",
-  [string] $SourceIndexTo = ""
+  [string] $SourceIndexTo = "",
+  [switch] $NoSnapshotCounts
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,22 +77,51 @@ function Set-MigrateStatus {
   Set-Content -LiteralPath $statusPath -Value $Text -Encoding UTF8
 }
 
+# นับจำนวนแถวต้นทาง ณ ปัจจุบันของตารางหนึ่ง ด้วยโหมด --count-only (reuse logic นับของ migrate ตารางนั้น)
+# คืนค่าจำนวนแถว (int) หรือ $null เมื่อหาไม่ได้
+function Get-SourceCount {
+  param(
+    [string] $NodeEntry,
+    [string] $WorkingDir,
+    [string] $Config,
+    [string] $Profile
+  )
+  $nodeArgs = @($NodeEntry, '--config', $Config, '--profile', $Profile, '--count-only')
+  $prevEap = $ErrorActionPreference
+  $count = $null
+  try {
+    $ErrorActionPreference = 'Continue'
+    Push-Location -LiteralPath $WorkingDir
+    # sentinel อยู่ stdout; stderr เป็น log migrate — ไม่ merge (Stop + 2>&1 จะ throw)
+    $lines = & node @nodeArgs 2>$null
+    foreach ($line in $lines) {
+      $m = [regex]::Match([string]$line, '##SOURCE_COUNT##\s+(\d+)')
+      if ($m.Success) { $count = [int64] $m.Groups[1].Value }
+    }
+  }
+  finally {
+    Pop-Location
+    $ErrorActionPreference = $prevEap
+  }
+  return $count
+}
+
 $steps = @(
-  @{ N = 1;  Table = "patient_info";        Script = "patient-info/js-migrate/run-migrate.ps1" },
-  @{ N = 2;  Table = "appointment";         Script = "appointment/js-migrate/run-migrate.ps1" },
-  @{ N = 3;  Table = "appointment_reschedules"; Script = "appointment-reschedules/js-migrate/run-migrate.ps1" },
-  @{ N = 4;  Table = "examination";         Script = "examination/js-migrate/run-migrate.ps1" },
-  @{ N = 5;  Table = "billing";             Script = "billing/js-migrate/run-migrate.ps1" },
-  @{ N = 6;  Table = "examination_general"; Script = "examination-general/js-migrate/run-migrate.ps1" },
-  @{ N = 7;  Table = "exam_recommend_birads45"; Script = "exam-recommend-birads45/js-migrate/run-migrate.ps1" },
-  @{ N = 8;  Table = "pacs_sync_info";      Script = "pacs-sync-info/js-migrate/run-migrate.ps1" },
-  @{ N = 9;  Table = "procedure";           Script = "procedure/js-migrate/run-migrate.ps1" },
-  @{ N = 10; Table = "ultrasound";          Script = "ultrasound/js-migrate/run-migrate.ps1" },
-  @{ N = 11; Table = "mammogram";           Script = "mam/js-migrate/run-migrate.ps1" },
-  @{ N = 12; Table = "mammogram_cal";       Script = "mam-cal/js-migrate/run-migrate.ps1" },
-  @{ N = 13; Table = "mammogram_mass";      Script = "mam-mass/js-migrate/run-migrate.ps1" },
-  @{ N = 14; Table = "ultrasound_cyst";     Script = "ultrasound-cyst/js-migrate/run-migrate.ps1" },
-  @{ N = 15; Table = "ultrasound_mass";     Script = "ultrasound-mass/js-migrate/run-migrate.ps1" }
+  @{ N = 1;  Table = "patient_info";        Profile = "patient_info";        Script = "patient-info/js-migrate/run-migrate.ps1" },
+  @{ N = 2;  Table = "appointment";         Profile = "appointment";         Script = "appointment/js-migrate/run-migrate.ps1" },
+  @{ N = 3;  Table = "appointment_reschedules"; Profile = "appointment_reschedules"; Script = "appointment-reschedules/js-migrate/run-migrate.ps1" },
+  @{ N = 4;  Table = "examination";         Profile = "examination";         Script = "examination/js-migrate/run-migrate.ps1" },
+  @{ N = 5;  Table = "billing";             Profile = "billing";             Script = "billing/js-migrate/run-migrate.ps1" },
+  @{ N = 6;  Table = "examination_general"; Profile = "examination_general"; Script = "examination-general/js-migrate/run-migrate.ps1" },
+  @{ N = 7;  Table = "exam_recommend_birads45"; Profile = "exam_recommend_birads45"; Script = "exam-recommend-birads45/js-migrate/run-migrate.ps1" },
+  @{ N = 8;  Table = "pacs_sync_info";      Profile = "pacs_sync_info";      Script = "pacs-sync-info/js-migrate/run-migrate.ps1" },
+  @{ N = 9;  Table = "procedure";           Profile = "procedure";           Script = "procedure/js-migrate/run-migrate.ps1" },
+  @{ N = 10; Table = "ultrasound";          Profile = "ultrasound";          Script = "ultrasound/js-migrate/run-migrate.ps1" },
+  @{ N = 11; Table = "mammogram";           Profile = "mam";                 Script = "mam/js-migrate/run-migrate.ps1" },
+  @{ N = 12; Table = "mammogram_cal";       Profile = "mam_cal";             Script = "mam-cal/js-migrate/run-migrate.ps1" },
+  @{ N = 13; Table = "mammogram_mass";      Profile = "mam_mass";            Script = "mam-mass/js-migrate/run-migrate.ps1" },
+  @{ N = 14; Table = "ultrasound_cyst";     Profile = "ultrasound_cyst";     Script = "ultrasound-cyst/js-migrate/run-migrate.ps1" },
+  @{ N = 15; Table = "ultrasound_mass";     Profile = "ultrasound_mass";     Script = "ultrasound-mass/js-migrate/run-migrate.ps1" }
 )
 
 $tableFilter = foreach ($t in $Tables) {
@@ -133,6 +163,60 @@ if (-not $SkipInstall) {
   Ensure-MigrateNodeModules -RepoRoot $repoRoot
 }
 
+# ── Snapshot count ──────────────────────────────────────────────────────────
+# ดึงจำนวนแถวต้นทางของทุกตาราง (ที่จะรัน) ณ ตอนเริ่ม แล้วใช้เป็นเพดาน -SourceIndexTo ต่อตาราง
+# กัน data ที่ไหลเข้ามาระหว่างรันไม่ให้ถูกดึงเข้ามาแบบไม่สม่ำเสมอ (แถวใหม่อยู่ท้าย ORDER BY → ตัดออก)
+$userIndexExplicit =
+  (($SourceIndexRange) -and ($SourceIndexRange.Trim() -ne "")) -or
+  (($SourceIndexFrom) -and ($SourceIndexFrom.Trim() -ne "")) -or
+  (($SourceIndexTo) -and ($SourceIndexTo.Trim() -ne ""))
+
+$countSnapshot = @{}
+$doSnapshot = (-not $NoSnapshotCounts) -and (-not $userIndexExplicit) -and ($effectiveRunMode -ne "repair-from-log")
+
+if ($userIndexExplicit) {
+  Write-MigrateLog 'Snapshot counts: skipped (ระบุ -SourceIndex* เอง — ใช้ช่วงที่กำหนด)'
+}
+elseif ($effectiveRunMode -eq "repair-from-log") {
+  Write-MigrateLog "Snapshot counts: skipped (repair-from-log)"
+}
+elseif ($NoSnapshotCounts) {
+  Write-MigrateLog "Snapshot counts: skipped (-NoSnapshotCounts)"
+}
+
+if ($doSnapshot) {
+  Set-MigrateStatus ('RUNNING ; snapshot counts ; 0/{0}' -f $total)
+  foreach ($step in $steps) {
+    if ($step.N -lt $StartFrom) { continue }
+    if (-not $runAllTables -and ($tableFilter -notcontains $step.Table.ToLowerInvariant())) { continue }
+    $scriptPath = Join-Path $repoRoot $step.Script
+    $scriptDir = Split-Path -Parent $scriptPath
+    $nodeEntry = Join-Path $scriptDir "migrate-from-mssql.mjs"
+    if (-not (Test-Path -LiteralPath $nodeEntry)) {
+      Write-MigrateLog ('snapshot count : {0} (n/a)' -f $step.Table) -Level SKIP
+      continue
+    }
+    $c = Get-SourceCount -NodeEntry $nodeEntry -WorkingDir $scriptDir -Config $ConfigPath -Profile $step.Profile
+    if ($null -ne $c) {
+      $countSnapshot[$step.Table] = $c
+      Write-MigrateLog ('snapshot count : {0} {1}' -f $step.Table, $c)
+    }
+    else {
+      Write-MigrateLog ('snapshot count : {0} (n/a)' -f $step.Table) -Level SKIP
+    }
+  }
+  $snapshotPath = Join-Path $logDir ("source-count-snapshot-{0}.json" -f (Get-Date -Format "yyyyMMdd-HHmmss"))
+  try {
+    ($countSnapshot.GetEnumerator() | Sort-Object Name |
+      ForEach-Object { [pscustomobject]@{ table = $_.Name; sourceCount = $_.Value } }) |
+      ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $snapshotPath -Encoding UTF8
+    Write-MigrateLog ('snapshot count : saved {0}' -f $snapshotPath) -Level OK
+  }
+  catch {
+    Write-MigrateLog ('snapshot count : could not save file ({0})' -f $_) -Level SKIP
+  }
+}
+
 Set-MigrateStatus ('RUNNING ; waiting to start ; 0/{0}' -f $total)
 
 foreach ($step in $steps) {
@@ -170,6 +254,11 @@ foreach ($step in $steps) {
     $st = if ($SourceIndexTo) { $SourceIndexTo.Trim() } else { "" }
     if ($sf -ne "") { $invokeArgs.SourceIndexFrom = $sf }
     if ($st -ne "") { $invokeArgs.SourceIndexTo = $st }
+    # เพดานจาก snapshot count (เฉพาะเมื่อ user ไม่ได้กำหนดช่วงเอง)
+    if ($sf -eq "" -and $st -eq "" -and $countSnapshot.ContainsKey($step.Table)) {
+      $invokeArgs.SourceIndexTo = "$($countSnapshot[$step.Table])"
+      Write-MigrateLog ('{0} - SourceIndexTo {1} (snapshot)' -f $label, $countSnapshot[$step.Table])
+    }
   }
 
   $stepStarted = Get-Date

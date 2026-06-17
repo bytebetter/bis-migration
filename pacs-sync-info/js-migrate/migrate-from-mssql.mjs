@@ -55,6 +55,7 @@ import {
   narrowPlannedRowsForIndex,
   resolvePageSize,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
+import { maybeEmitSourceCount } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { REPAIR_SPEC_PACS_SYNC_INFO } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
   batchIds,
@@ -1022,6 +1023,7 @@ async function main() {
         });
       }
       runLog.plannedRows = plannedRows;
+      maybeEmitSourceCount(plannedRows);
       let progressTotal = plannedRows ?? null;
       const plannedChunks =
         plannedRows != null && plannedRows > 0
