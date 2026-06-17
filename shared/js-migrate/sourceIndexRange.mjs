@@ -116,10 +116,27 @@ export function disableKeysetForSourceIndex(p) {
  *   sourceIndexTo: number | null,
  * }} p
  */
+export function readSourceCountCap(migrationConfig) {
+  return readPositiveIndex(migrationConfig?.sourceCountCap);
+}
+
+/** มีเพดานแถวจาก index range หรือ snapshot count cap (migrate:all) */
+export function hasMigrateRowWindow(migrationConfig, indexLimited) {
+  return indexLimited || readSourceCountCap(migrationConfig) != null;
+}
+
 export function narrowPlannedRowsForIndex(p) {
-  const { offset, sourceIndexFrom, sourceIndexTo } = p;
+  const {
+    offset,
+    sourceIndexFrom,
+    sourceIndexTo,
+    sourceCountCap: capArg,
+    migrationConfig,
+  } = p;
   let { plannedRows } = p;
   if (plannedRows == null) return null;
+  const sourceCountCap =
+    capArg ?? readSourceCountCap(migrationConfig ?? null);
   let effectiveFrom = offset + 1;
   if (sourceIndexFrom != null) {
     effectiveFrom = Math.max(effectiveFrom, sourceIndexFrom);
@@ -127,6 +144,9 @@ export function narrowPlannedRowsForIndex(p) {
   let effectiveTo = plannedRows;
   if (sourceIndexTo != null) {
     effectiveTo = Math.min(effectiveTo, sourceIndexTo);
+  }
+  if (sourceCountCap != null) {
+    effectiveTo = Math.min(effectiveTo, sourceCountCap);
   }
   return effectiveTo >= effectiveFrom ? effectiveTo - effectiveFrom + 1 : 0;
 }
@@ -161,8 +181,9 @@ export function resolvePageSize(p) {
  * }} p
  */
 export function isIndexWindowComplete(p) {
-  const { indexLimited, plannedRows, rowsReadInWindow } = p;
-  if (!indexLimited || plannedRows == null) return false;
+  const { indexLimited, plannedRows, rowsReadInWindow, migrationConfig } = p;
+  const windowLimited = hasMigrateRowWindow(migrationConfig, indexLimited);
+  if (!windowLimited || plannedRows == null) return false;
   return rowsReadInWindow >= plannedRows;
 }
 

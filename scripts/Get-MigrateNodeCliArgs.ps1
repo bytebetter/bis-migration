@@ -10,6 +10,7 @@ function Get-MigrateNodeCliArgs {
     [string] $SourceIndexRange = "",
     [string] $SourceIndexFrom = "",
     [string] $SourceIndexTo = "",
+    [string] $SourceCountCap = "",
     [string] $SourceKeyRange = "",
     [string] $SourceKeyFrom = "",
     [string] $SourceKeyTo = "",
@@ -64,6 +65,9 @@ function Get-MigrateNodeCliArgs {
     if ($sf -ne "") { $extra += "--source-index-from", $sf }
     if ($st -ne "") { $extra += "--source-index-to", $st }
   }
+
+  $cap = if ($SourceCountCap) { $SourceCountCap.Trim() } else { "" }
+  if ($cap -ne "") { $extra += "--source-count-cap", $cap }
 
   return $extra
 }

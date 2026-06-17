@@ -500,12 +500,13 @@ async function runAppointmentTableJob({
       plannedRows = null;
     }
   }
-  if (idx.indexLimited) {
+  if (idx.indexLimited || migrationConfig.sourceCountCap != null) {
     plannedRows = narrowPlannedRowsForIndex({
       plannedRows,
       offset,
       sourceIndexFrom: idx.sourceIndexFrom,
       sourceIndexTo: idx.sourceIndexTo,
+      migrationConfig,
     });
   }
   maybeEmitSourceCount(plannedRows);
@@ -848,6 +849,7 @@ END $$;
     const isLastPage =
       isIndexWindowComplete({
         indexLimited: idx.indexLimited,
+        migrationConfig,
         plannedRows,
         rowsReadInWindow: total,
       }) ||
