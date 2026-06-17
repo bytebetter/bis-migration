@@ -36,6 +36,7 @@ import {
   narrowPlannedRowsForIndex,
   resolvePageSize,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
+import { maybeEmitSourceCount } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import { REPAIR_SPEC_PROCEDURE } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
@@ -428,6 +429,7 @@ async function runProcedureTableJob({
       sourceIndexTo: idx.sourceIndexTo,
     });
   }
+  maybeEmitSourceCount(plannedRows);
   let progressTotal = plannedRows ?? null;
   let plannedChunks =
     plannedRows != null && plannedRows > 0

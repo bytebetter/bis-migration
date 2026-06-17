@@ -47,6 +47,7 @@ import {
   narrowPlannedRowsForIndex,
   resolvePageSize,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
+import { maybeEmitSourceCount } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import { REPAIR_SPEC_PATIENT_INFO } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
@@ -963,6 +964,7 @@ async function runTableJob({
       plannedRows = null;
     }
   }
+  maybeEmitSourceCount(progressTotalFull);
   if (incompleteCheckpointResume) {
     console.error(
       `>>> [${key}] ต่อ checkpoint ที่ขาด: offset=${offset}, keysetAfter=${JSON.stringify(mssqlKeysetAfter)}, เหลือ ~${plannedRows ?? "?"} / ${progressTotalFull ?? "?"} แถว (ไม่ใช่เริ่มใหม่ทั้งตาราง)`,
