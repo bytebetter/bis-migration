@@ -55,7 +55,7 @@ import {
   narrowPlannedRowsForIndex,
   resolvePageSize,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
-import { maybeEmitSourceCount } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
+import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { REPAIR_SPEC_PACS_SYNC_INFO } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
   batchIds,
@@ -1003,28 +1003,25 @@ async function main() {
       }
 
       let chunkIndex = 0;
-      let plannedRows = null;
+      let sourceRowCountTotal = null;
       if (progressEnabled) {
         try {
           const countRes = await pool
             .request()
             .query(`SELECT COUNT_BIG(1) AS total FROM ${sourceObjectNoLock};`);
-          plannedRows = Number(countRes.recordset?.[0]?.total ?? 0);
+          sourceRowCountTotal = Number(countRes.recordset?.[0]?.total ?? 0);
         } catch {
-          plannedRows = null;
+          sourceRowCountTotal = null;
         }
       }
-      if (idx.indexLimited || migration.sourceCountCap != null) {
-    plannedRows = narrowPlannedRowsForIndex({
-      plannedRows,
-      offset,
-      sourceIndexFrom: idx.sourceIndexFrom,
-      sourceIndexTo: idx.sourceIndexTo,
-      migrationConfig: migration,
-    });
-      }
-      runLog.plannedRows = plannedRows;
-      maybeEmitSourceCount(plannedRows);
+      const plannedRows = prepareMigrateRowPlan({
+        migrationConfig: migration,
+        sourceRowCountTotal,
+        offset,
+        indexLimited: idx.indexLimited,
+        sourceIndexFrom: idx.sourceIndexFrom,
+        sourceIndexTo: idx.sourceIndexTo,
+      });
       let progressTotal = plannedRows ?? null;
       const plannedChunks =
         plannedRows != null && plannedRows > 0

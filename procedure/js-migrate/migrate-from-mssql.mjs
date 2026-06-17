@@ -36,7 +36,7 @@ import {
   narrowPlannedRowsForIndex,
   resolvePageSize,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
-import { maybeEmitSourceCount } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
+import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import { REPAIR_SPEC_PROCEDURE } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
@@ -410,27 +410,25 @@ async function runProcedureTableJob({
   const progressStartedAt = Date.now();
   const debugLogs = migrationConfig.debugLogs === true || probeTiming;
   const uiState = createUiState();
-  let plannedRows = sourceLimit;
-  if (plannedRows == null && progressEnabled) {
+  let sourceRowCountTotal = sourceLimit;
+  if (sourceRowCountTotal == null && progressEnabled) {
     try {
       const countRes = await mssqlPool
         .request()
         .query(`SELECT COUNT_BIG(1) AS total FROM ${sourceObject};`);
-      plannedRows = Number(countRes.recordset?.[0]?.total ?? 0);
+      sourceRowCountTotal = Number(countRes.recordset?.[0]?.total ?? 0);
     } catch {
-      plannedRows = null;
+      sourceRowCountTotal = null;
     }
   }
-  if (idx.indexLimited || migrationConfig.sourceCountCap != null) {
-    plannedRows = narrowPlannedRowsForIndex({
-      plannedRows,
-      offset,
-      sourceIndexFrom: idx.sourceIndexFrom,
-      sourceIndexTo: idx.sourceIndexTo,
-      migrationConfig,
-    });
-  }
-  maybeEmitSourceCount(plannedRows);
+  const plannedRows = prepareMigrateRowPlan({
+        migrationConfig: migrationConfig,
+        sourceRowCountTotal,
+        offset,
+        indexLimited: idx.indexLimited,
+        sourceIndexFrom: idx.sourceIndexFrom,
+        sourceIndexTo: idx.sourceIndexTo,
+      });
   let progressTotal = plannedRows ?? null;
   let plannedChunks =
     plannedRows != null && plannedRows > 0
