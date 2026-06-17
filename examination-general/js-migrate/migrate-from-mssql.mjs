@@ -397,13 +397,13 @@ async function main() {
           plannedRows = null;
         }
       }
-      if (idx.indexLimited || migrationConfig.sourceCountCap != null) {
+      if (idx.indexLimited || migration.sourceCountCap != null) {
     plannedRows = narrowPlannedRowsForIndex({
       plannedRows,
       offset,
       sourceIndexFrom: idx.sourceIndexFrom,
       sourceIndexTo: idx.sourceIndexTo,
-      migrationConfig,
+      migrationConfig: migration,
     });
       }
       maybeEmitSourceCount(plannedRows);
@@ -654,7 +654,7 @@ async function main() {
         } else if (
           isIndexWindowComplete({
             indexLimited: idx.indexLimited,
-        migrationConfig,
+        migrationConfig: migration,
             plannedRows,
             rowsReadInWindow: Math.max(0, offset - idx.indexStartOffset),
           }) ||

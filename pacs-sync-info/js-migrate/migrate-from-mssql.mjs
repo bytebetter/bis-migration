@@ -1014,13 +1014,13 @@ async function main() {
           plannedRows = null;
         }
       }
-      if (idx.indexLimited || migrationConfig.sourceCountCap != null) {
+      if (idx.indexLimited || migration.sourceCountCap != null) {
     plannedRows = narrowPlannedRowsForIndex({
       plannedRows,
       offset,
       sourceIndexFrom: idx.sourceIndexFrom,
       sourceIndexTo: idx.sourceIndexTo,
-      migrationConfig,
+      migrationConfig: migration,
     });
       }
       runLog.plannedRows = plannedRows;
@@ -1384,7 +1384,7 @@ async function main() {
           if (
             isIndexWindowComplete({
               indexLimited: idx.indexLimited,
-        migrationConfig,
+        migrationConfig: migration,
               plannedRows,
               rowsReadInWindow: Math.max(0, offset - idx.indexStartOffset),
             }) ||
@@ -1399,7 +1399,7 @@ async function main() {
         idx.indexLimited &&
         isIndexWindowComplete({
           indexLimited: idx.indexLimited,
-        migrationConfig,
+        migrationConfig: migration,
           plannedRows,
           rowsReadInWindow: Math.max(0, offset - idx.indexStartOffset),
         });
@@ -1610,7 +1610,7 @@ async function main() {
           if (
             isIndexWindowComplete({
               indexLimited: idx.indexLimited,
-        migrationConfig,
+        migrationConfig: migration,
               plannedRows,
               rowsReadInWindow: Math.max(0, offset - idx.indexStartOffset),
             }) ||
