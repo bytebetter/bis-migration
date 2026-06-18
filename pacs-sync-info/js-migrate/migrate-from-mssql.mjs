@@ -1016,7 +1016,7 @@ async function main() {
           sourceRowCountTotal = null;
         }
       }
-      const plannedRows = prepareMigrateRowPlan({
+      let plannedRows = prepareMigrateRowPlan({
         migrationConfig: migration,
         sourceRowCountTotal,
         offset,
