@@ -41,6 +41,9 @@ import {
   isIndexWindowComplete,
   narrowPlannedRowsForIndex,
   resolvePageSize,
+  plannedRowsForPageSize,
+  trimRowsToMigrateCap,
+  capAdvanceToMigratePlan,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
@@ -609,7 +612,7 @@ END $$;
       batchSize,
       total,
       sourceLimit,
-      plannedRows: idx.indexLimited ? plannedRows : null,
+      plannedRows: plannedRowsForPageSize(plannedRows, migrationConfig, idx.indexLimited),
     });
     if (pageSize <= 0) break;
     const nextChunkIndex = chunkIndex + 1;
@@ -703,12 +706,21 @@ END $$;
         uiState,
       );
     }
+    rows = trimRowsToMigrateCap(rows, total, plannedRows, migrationConfig, idx.indexLimited);
     if (rows.length === 0) {
       break;
     }
 
     const n = rows.length;
-    const advance = resolveKeysetAdvance(twoStepKeysetAdvance, n);
+    let advance = resolveKeysetAdvance(twoStepKeysetAdvance, n);
+    advance = capAdvanceToMigratePlan(
+      advance,
+      total,
+      plannedRows,
+      migrationConfig,
+      idx.indexLimited,
+    );
+    if (advance <= 0) break;
     chunkIndex += 1;
     const chunkStartedAt = Date.now();
     const sourceOffsetStart = offset;

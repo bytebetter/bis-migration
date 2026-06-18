@@ -39,6 +39,9 @@ import {
   isIndexWindowComplete,
   narrowPlannedRowsForIndex,
   resolvePageSize,
+  plannedRowsForPageSize,
+  trimRowsToMigrateCap,
+  capAdvanceToMigratePlan,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
@@ -392,7 +395,7 @@ async function main() {
         const pageSize = resolvePageSize({
           batchSize,
           total: rowsInIndexWindow,
-          plannedRows: idx.indexLimited ? plannedRows : null,
+          plannedRows: plannedRowsForPageSize(plannedRows, migration, idx.indexLimited),
         });
         if (pageSize <= 0) break;
         let rows = [];
@@ -436,6 +439,24 @@ async function main() {
           }
           if (rows.length === 0) break;
         }
+
+        rows = trimRowsToMigrateCap(
+          rows,
+          rowsInIndexWindow,
+          plannedRows,
+          migration,
+          idx.indexLimited,
+        );
+        if (rows.length === 0) break;
+        const keysetAdvance = capAdvanceToMigratePlan(
+          rows.length,
+          rowsInIndexWindow,
+          plannedRows,
+          migration,
+          idx.indexLimited,
+        );
+        if (keysetAdvance <= 0) break;
+        if (keysetAdvance < rows.length) rows = rows.slice(0, keysetAdvance);
 
         chunkIndex += 1;
         const { firstKey, lastKey } = firstLastCompositeKey(

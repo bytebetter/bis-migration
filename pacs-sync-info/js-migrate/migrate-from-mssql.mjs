@@ -54,6 +54,8 @@ import {
   isIndexWindowComplete,
   narrowPlannedRowsForIndex,
   resolvePageSize,
+  plannedRowsForPageSize,
+  trimRowsToMigrateCap,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { REPAIR_SPEC_PACS_SYNC_INFO } from "../../shared/js-migrate/migrateTableSpecs.mjs";
@@ -1055,7 +1057,7 @@ async function main() {
           const pageSize = resolvePageSize({
             batchSize,
             total: rowsInIndexWindow,
-            plannedRows: idx.indexLimited ? plannedRows : null,
+            plannedRows: plannedRowsForPageSize(plannedRows, migration, idx.indexLimited),
           });
           if (pageSize <= 0) break;
           const useStartSqlAcc = useCompositeAcc
@@ -1226,6 +1228,15 @@ async function main() {
             }
           }
 
+          if (rows.length === 0) break;
+
+          rows = trimRowsToMigrateCap(
+            rows,
+            rowsInIndexWindow,
+            plannedRows,
+            migration,
+            idx.indexLimited,
+          );
           if (rows.length === 0) break;
 
           chunkIndex += 1;
@@ -1448,7 +1459,7 @@ async function main() {
           const nullPageSize = resolvePageSize({
             batchSize,
             total: rowsInNullWindow,
-            plannedRows: idx.indexLimited ? plannedRows : null,
+            plannedRows: plannedRowsForPageSize(plannedRows, migration, idx.indexLimited),
           });
           if (nullPageSize <= 0) break;
           const nextProbeLabel = chunkIndex + 1;
@@ -1474,6 +1485,15 @@ async function main() {
               uiState,
             );
           }
+          if (rows.length === 0) break;
+
+          rows = trimRowsToMigrateCap(
+            rows,
+            rowsInNullWindow,
+            plannedRows,
+            migration,
+            idx.indexLimited,
+          );
           if (rows.length === 0) break;
 
           chunkIndex += 1;

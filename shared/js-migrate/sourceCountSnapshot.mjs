@@ -91,9 +91,7 @@ export function prepareMigrateRowPlan(p) {
   maybeEmitSourceCount(p.sourceRowCountTotal);
   const cap = readSourceCountCap(p.migrationConfig);
   if (cap != null && !isCountOnlyRun()) {
-    console.error(
-      `>>> snapshot sourceCountCap=${cap} (จำนวน ณ ตอน migrate:all เริ่ม — ไม่เปลี่ยนชื่อ checkpoint)`,
-    );
+    console.error(`>>> snapshot sourceCountCap=${cap} (ล็อกจำนวน sync ตาม snapshot — checkpoint ชื่อเดิม)`);
   }
   return plannedRowsWithSnapshotCap(p);
 }

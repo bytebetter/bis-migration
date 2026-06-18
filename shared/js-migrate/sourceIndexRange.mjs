@@ -125,6 +125,54 @@ export function hasMigrateRowWindow(migrationConfig, indexLimited) {
   return indexLimited || readSourceCountCap(migrationConfig) != null;
 }
 
+/** plannedRows สำหรับ resolvePageSize — ใช้เมื่อมี snapshot cap หรือ index range */
+export function plannedRowsForPageSize(
+  plannedRows,
+  migrationConfig,
+  indexLimited,
+) {
+  if (plannedRows == null) return null;
+  return hasMigrateRowWindow(migrationConfig, indexLimited) ? plannedRows : null;
+}
+
+/**
+ * ตัดแถวหลัง fetch ให้ไม่เกิน snapshot cap (ล็อกจำนวน ณ ตอน migrate:all)
+ * @template T
+ * @param {T[]} rows
+ * @returns {T[]}
+ */
+export function trimRowsToMigrateCap(
+  rows,
+  totalBeforeChunk,
+  plannedRows,
+  migrationConfig,
+  indexLimited,
+) {
+  if (!hasMigrateRowWindow(migrationConfig, indexLimited) || plannedRows == null) {
+    return rows;
+  }
+  const remain = plannedRows - totalBeforeChunk;
+  if (remain <= 0) return [];
+  if (rows.length <= remain) return rows;
+  return rows.slice(0, remain);
+}
+
+/** จำกัด keyset advance ไม่ให้เกิน cap ที่เหลือ */
+export function capAdvanceToMigratePlan(
+  advance,
+  totalBeforeChunk,
+  plannedRows,
+  migrationConfig,
+  indexLimited,
+) {
+  if (!hasMigrateRowWindow(migrationConfig, indexLimited) || plannedRows == null) {
+    return advance;
+  }
+  const remain = plannedRows - totalBeforeChunk;
+  if (remain <= 0) return 0;
+  return Math.min(advance, remain);
+}
+
 export function narrowPlannedRowsForIndex(p) {
   const {
     offset,

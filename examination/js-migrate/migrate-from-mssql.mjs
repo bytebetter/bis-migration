@@ -47,6 +47,9 @@ import {
   isIndexWindowComplete,
   narrowPlannedRowsForIndex,
   resolvePageSize,
+  plannedRowsForPageSize,
+  trimRowsToMigrateCap,
+  capAdvanceToMigratePlan,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
@@ -786,7 +789,7 @@ async function runTableJob({
       batchSize,
       total,
       sourceLimit,
-      plannedRows: idx.indexLimited ? plannedRows : null,
+      plannedRows: plannedRowsForPageSize(plannedRows, migrationConfig, idx.indexLimited),
     });
     if (pageSize <= 0) break;
     const nextChunkIndex = chunkIndex + 1;
@@ -936,12 +939,27 @@ async function runTableJob({
         uiState,
       );
     }
+    rows = trimRowsToMigrateCap(
+      rows,
+      total,
+      plannedRows,
+      migrationConfig,
+      idx.indexLimited,
+    );
     if (rows.length === 0) break;
 
-    const keysetAdvance = resolveKeysetAdvance(
+    let keysetAdvance = resolveKeysetAdvance(
       isExaminationBuiltin && useMssqlKeyset ? idRows.length : null,
       rows.length,
     );
+    keysetAdvance = capAdvanceToMigratePlan(
+      keysetAdvance,
+      total,
+      plannedRows,
+      migrationConfig,
+      idx.indexLimited,
+    );
+    if (keysetAdvance <= 0) break;
     let stagingRows = rows;
     if (
       isExaminationBuiltin &&
