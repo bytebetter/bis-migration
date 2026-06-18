@@ -28,6 +28,9 @@ import {
   isIndexWindowComplete,
   narrowPlannedRowsForIndex,
   resolvePageSize,
+  plannedRowsForPageSize,
+  trimRowsToMigrateCap,
+  capAdvanceToMigratePlan,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
@@ -328,7 +331,7 @@ FROM ${sourceObjectNoLock};`);
         const pageSize = resolvePageSize({
           batchSize,
           total: rowsInIndexWindow,
-          plannedRows: idx.indexLimited ? plannedRows : null,
+          plannedRows: plannedRowsForPageSize(plannedRows, migration, idx.indexLimited),
         });
         if (pageSize <= 0) break;
 
@@ -381,6 +384,16 @@ FROM ${sourceObjectNoLock};`);
           rows = detailRes.recordset || [];
         }
         if (rows.length === 0) break;
+
+        rows = trimRowsToMigrateCap(
+          rows,
+          rowsInIndexWindow,
+          plannedRows,
+          migration,
+          idx.indexLimited,
+        );
+        if (rows.length === 0) break;
+        if (ids.length > rows.length) ids = ids.slice(0, rows.length);
 
         chunkIndex += 1;
         const normalized = rows.map(normalizeMssqlRow).filter(Boolean);
@@ -444,7 +457,14 @@ FROM ${sourceObjectNoLock};`);
           chunkTotalMs: Date.now() - chunkStartedAt,
         });
 
-        const keysetAdvance = ids.length;
+        let keysetAdvance = capAdvanceToMigratePlan(
+          ids.length,
+          rowsInIndexWindow,
+          plannedRows,
+          migration,
+          idx.indexLimited,
+        );
+        if (keysetAdvance <= 0) break;
         if (!repairRun.active) {
           offset += keysetAdvance;
           if (ids.length > 0) {

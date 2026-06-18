@@ -46,6 +46,8 @@ import {
   isIndexWindowComplete,
   narrowPlannedRowsForIndex,
   resolvePageSize,
+  plannedRowsForPageSize,
+  trimRowsToMigrateCap,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { REPAIR_SPEC_APPOINTMENT_RESCHEDULES } from "../../shared/js-migrate/migrateTableSpecs.mjs";
@@ -742,7 +744,7 @@ async function runAppointmentReschedulesTableJob({
         batchSize,
         total,
         sourceLimit,
-        plannedRows: idx.indexLimited ? plannedRows : null,
+        plannedRows: plannedRowsForPageSize(plannedRows, migrationConfig, idx.indexLimited),
       });
       if (pageSize <= 0) break;
       const nextChunkIndex = chunkIndex + 1;
@@ -807,6 +809,15 @@ async function runAppointmentReschedulesTableJob({
         }
         break;
       }
+
+      rows = trimRowsToMigrateCap(
+        rows,
+        total,
+        plannedRows,
+        migrationConfig,
+        idx.indexLimited,
+      );
+      if (rows.length === 0) break;
 
       const n = rows.length;
       chunkIndex += 1;

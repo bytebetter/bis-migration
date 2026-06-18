@@ -46,6 +46,8 @@ import {
   isIndexWindowComplete,
   narrowPlannedRowsForIndex,
   resolvePageSize,
+  plannedRowsForPageSize,
+  trimRowsToMigrateCap,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { maybeEmitSourceCount, plannedRowsWithSnapshotCap } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
@@ -1080,7 +1082,11 @@ async function runTableJob({
       fetchPageSize = resolvePageSize({
         batchSize,
         total,
-        plannedRows,
+        plannedRows: plannedRowsForPageSize(
+          plannedRows,
+          migrationConfig,
+          indexLimited,
+        ),
       });
       if (fetchPageSize <= 0) break;
 
@@ -1200,6 +1206,7 @@ async function runTableJob({
           rowsScanned < fetchPageSize ||
           isIndexWindowComplete({
             indexLimited,
+            migrationConfig,
             plannedRows,
             rowsReadInWindow: total,
           })
@@ -1211,6 +1218,15 @@ async function runTableJob({
 
       if (rows.length === 0) break;
     }
+
+    rows = trimRowsToMigrateCap(
+      rows,
+      total,
+      plannedRows,
+      migrationConfig,
+      indexLimited,
+    );
+    if (rows.length === 0) break;
 
     const n = rows.length;
     chunkIndex += 1;
@@ -1469,6 +1485,7 @@ LIMIT 200;
       rowsScanned < fetchPageSize ||
       isIndexWindowComplete({
         indexLimited,
+        migrationConfig,
         plannedRows,
         rowsReadInWindow: total,
       })
