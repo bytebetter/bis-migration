@@ -1,3 +1,5 @@
+import { buildExamChildKeysetSelectBundle } from "../../shared/js-migrate/mssqlExamTwoStepSelect.mjs";
+
 const MAM_MASS_STAGING_COLUMNS = `
   [Described_Mass_ID],
   [Exam_ID],
@@ -46,27 +48,25 @@ const MAM_MASS_COLUMNS = `
   CAST(s.[r_Position_Clock] AS NVARCHAR(MAX)) AS r_position_clock
 `.trim();
 
-export const MSSQL_MAM_MASS_KEYSET_SELECT = `
-SELECT
-  ${MAM_MASS_COLUMNS}
-FROM (
-  SELECT TOP (@page)
-    ${MAM_MASS_STAGING_COLUMNS}
-  FROM {{sourceObject}}
-  WHERE (
-    [Exam_ID] > @afterExamId
-    OR ([Exam_ID] = @afterExamId AND [Described_Mass_ID] > @afterChildId)
-  )
-    AND (@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
-    AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)
-  ORDER BY [Exam_ID] ASC, [Described_Mass_ID] ASC
-) s
-`.trim();
+const MAM_MASS_KEY_RANGE = `
+(@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
+  AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)`;
 
-export const MSSQL_MAM_MASS_BY_EXAM_IDS_SELECT = `
-SELECT
-  ${MAM_MASS_COLUMNS}
-FROM {{sourceObject}}
-WHERE [Exam_ID] IN ({{idPlaceholders}})
-ORDER BY [Exam_ID] ASC, [Described_Mass_ID] ASC
-`.trim();
+/** @param {string | null | undefined} createdDateColumn */
+export function createMssqlMamMassSelectBundle(createdDateColumn) {
+  return buildExamChildKeysetSelectBundle({
+    createdDateColumn,
+    selectColumns: MAM_MASS_COLUMNS,
+    stagingColumns: MAM_MASS_STAGING_COLUMNS,
+    childColumn: "Described_Mass_ID",
+    keyRangeWhere: MAM_MASS_KEY_RANGE,
+  });
+}
+
+export const defaultMssqlMamMassSelectBundle =
+  createMssqlMamMassSelectBundle("CreatedDate");
+
+export const MSSQL_MAM_MASS_KEYSET_SELECT =
+  defaultMssqlMamMassSelectBundle.keysetSql;
+export const MSSQL_MAM_MASS_BY_EXAM_IDS_SELECT =
+  defaultMssqlMamMassSelectBundle.detailByExamIdsSql;

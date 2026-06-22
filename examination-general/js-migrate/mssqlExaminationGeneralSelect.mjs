@@ -1,3 +1,5 @@
+import { buildExamTwoStepSelectBundle } from "../../shared/js-migrate/mssqlExamTwoStepSelect.mjs";
+
 const EXAMINATION_GENERAL_COLUMNS = `
   CAST(CAST([Exam_ID] AS BIGINT) AS NVARCHAR(MAX)) AS exam_id,
   CONVERT(VARCHAR(30), [Exam_Date], 126) AS exam_date,
@@ -59,20 +61,23 @@ const EXAMINATION_GENERAL_COLUMNS = `
   CAST([Cosign] AS NVARCHAR(MAX)) AS cosign
 `.trim();
 
-export const MSSQL_EXAMINATION_GENERAL_ID_SELECT = `
-SELECT TOP (@page)
-  CAST([Exam_ID] AS BIGINT) AS exam_id
-FROM {{sourceObject}}
-WHERE [Exam_ID] > @afterExamId
-  AND (@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
-  AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)
-ORDER BY [Exam_ID] ASC
-`.trim();
+const EXAMINATION_GENERAL_KEY_RANGE = `
+(@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
+  AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)`;
 
-export const MSSQL_EXAMINATION_GENERAL_DETAIL_BY_IDS_SELECT = `
-SELECT
-  ${EXAMINATION_GENERAL_COLUMNS}
-FROM {{sourceObject}}
-WHERE CAST([Exam_ID] AS BIGINT) IN ({{idPlaceholders}})
-ORDER BY [Exam_ID] ASC
-`.trim();
+/** @param {string | null | undefined} createdDateColumn */
+export function createMssqlExaminationGeneralSelectBundle(createdDateColumn) {
+  return buildExamTwoStepSelectBundle({
+    createdDateColumn,
+    detailColumns: EXAMINATION_GENERAL_COLUMNS,
+    keyRangeWhere: EXAMINATION_GENERAL_KEY_RANGE,
+  });
+}
+
+export const defaultMssqlExaminationGeneralSelectBundle =
+  createMssqlExaminationGeneralSelectBundle("CreatedDate");
+
+export const MSSQL_EXAMINATION_GENERAL_ID_SELECT =
+  defaultMssqlExaminationGeneralSelectBundle.idProbeSql;
+export const MSSQL_EXAMINATION_GENERAL_DETAIL_BY_IDS_SELECT =
+  defaultMssqlExaminationGeneralSelectBundle.detailByIdsSql;

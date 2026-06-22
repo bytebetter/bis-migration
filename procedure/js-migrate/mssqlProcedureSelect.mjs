@@ -1,5 +1,27 @@
+import {
+  buildCreatedDateSortExprs,
+  mssqlExamIdWithIntColumnOrderBy,
+  mssqlExamIdWithIntColumnSortKeyExpr,
+} from "../../shared/js-migrate/mssqlCreatedDateSort.mjs";
+
+const PROCEDURE_TIEBREAKER_ORDER_BY =
+  "CONVERT(BIGINT, [Exam_ID]) ASC, CONVERT(INT, [BiopsyID]) ASC";
+
+/** @param {string | null | undefined} createdDateColumn */
+export function createMssqlProcedureSelectBundle(createdDateColumn) {
+  return buildCreatedDateSortExprs({
+    createdDateColumn,
+    tiebreakerOrderBy: PROCEDURE_TIEBREAKER_ORDER_BY,
+    tiebreakerSortKeyExpr: mssqlExamIdWithIntColumnSortKeyExpr("BiopsyID"),
+    fastOrderBy: mssqlExamIdWithIntColumnOrderBy("BiopsyID"),
+  });
+}
+
+export const defaultMssqlProcedureSelectBundle =
+  createMssqlProcedureSelectBundle("CreatedDate");
+
 /**
- * คิวรีอ่าน dbo.biopsy จาก MSSQL แบบแบ่งหน้า
+ * คิวรีอ่าน dbo.biopsy จาก MSSQL แบbgแบ่งหน้า
  */
 export const MSSQL_PROCEDURE_SELECT = `
 SELECT

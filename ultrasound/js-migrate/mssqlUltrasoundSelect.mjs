@@ -1,3 +1,5 @@
+import { buildExamTwoStepSelectBundle } from "../../shared/js-migrate/mssqlExamTwoStepSelect.mjs";
+
 const ULTRASOUND_COLUMNS = `
   CAST(CAST([Exam_ID] AS BIGINT) AS NVARCHAR(MAX)) AS exam_id,
   CONVERT(VARCHAR(30), [Exam_Date], 126) AS exam_date,
@@ -24,20 +26,23 @@ const ULTRASOUND_COLUMNS = `
   CAST([Technique_Des] AS NVARCHAR(MAX)) AS technique_des
 `.trim();
 
-export const MSSQL_ULTRASOUND_ID_SELECT = `
-SELECT TOP (@page)
-  CAST([Exam_ID] AS BIGINT) AS exam_id
-FROM {{sourceObject}}
-WHERE [Exam_ID] > @afterExamId
-  AND (@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
-  AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)
-ORDER BY [Exam_ID] ASC
-`.trim();
+const ULTRASOUND_KEY_RANGE = `
+(@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
+  AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)`;
 
-export const MSSQL_ULTRASOUND_DETAIL_BY_IDS_SELECT = `
-SELECT
-  ${ULTRASOUND_COLUMNS}
-FROM {{sourceObject}}
-WHERE CAST([Exam_ID] AS BIGINT) IN ({{idPlaceholders}})
-ORDER BY [Exam_ID] ASC
-`.trim();
+/** @param {string | null | undefined} createdDateColumn */
+export function createMssqlUltrasoundSelectBundle(createdDateColumn) {
+  return buildExamTwoStepSelectBundle({
+    createdDateColumn,
+    detailColumns: ULTRASOUND_COLUMNS,
+    keyRangeWhere: ULTRASOUND_KEY_RANGE,
+  });
+}
+
+export const defaultMssqlUltrasoundSelectBundle =
+  createMssqlUltrasoundSelectBundle("CreatedDate");
+
+export const MSSQL_ULTRASOUND_ID_SELECT =
+  defaultMssqlUltrasoundSelectBundle.idProbeSql;
+export const MSSQL_ULTRASOUND_DETAIL_BY_IDS_SELECT =
+  defaultMssqlUltrasoundSelectBundle.detailByIdsSql;

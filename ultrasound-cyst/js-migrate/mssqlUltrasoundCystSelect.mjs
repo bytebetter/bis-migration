@@ -1,3 +1,5 @@
+import { buildExamChildKeysetSelectBundle } from "../../shared/js-migrate/mssqlExamTwoStepSelect.mjs";
+
 const ULTRASOUND_CYST_STAGING_COLUMNS = `
   [Described_Cyst_ID],
   [Exam_ID],
@@ -42,27 +44,25 @@ const ULTRASOUND_CYST_COLUMNS = `
   CAST(s.[r_Position_Clock] AS NVARCHAR(MAX)) AS r_position_clock
 `.trim();
 
-export const MSSQL_ULTRASOUND_CYST_KEYSET_SELECT = `
-SELECT
-  ${ULTRASOUND_CYST_COLUMNS}
-FROM (
-  SELECT TOP (@page)
-    ${ULTRASOUND_CYST_STAGING_COLUMNS}
-  FROM {{sourceObject}}
-  WHERE (
-    [Exam_ID] > @afterExamId
-    OR ([Exam_ID] = @afterExamId AND [Described_Cyst_ID] > @afterChildId)
-  )
-    AND (@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
-    AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)
-  ORDER BY [Exam_ID] ASC, [Described_Cyst_ID] ASC
-) s
-`.trim();
+const ULTRASOUND_CYST_KEY_RANGE = `
+(@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
+  AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)`;
 
-export const MSSQL_ULTRASOUND_CYST_BY_EXAM_IDS_SELECT = `
-SELECT
-  ${ULTRASOUND_CYST_COLUMNS}
-FROM {{sourceObject}}
-WHERE [Exam_ID] IN ({{idPlaceholders}})
-ORDER BY [Exam_ID] ASC, [Described_Cyst_ID] ASC
-`.trim();
+/** @param {string | null | undefined} createdDateColumn */
+export function createMssqlUltrasoundCystSelectBundle(createdDateColumn) {
+  return buildExamChildKeysetSelectBundle({
+    createdDateColumn,
+    selectColumns: ULTRASOUND_CYST_COLUMNS,
+    stagingColumns: ULTRASOUND_CYST_STAGING_COLUMNS,
+    childColumn: "Described_Cyst_ID",
+    keyRangeWhere: ULTRASOUND_CYST_KEY_RANGE,
+  });
+}
+
+export const defaultMssqlUltrasoundCystSelectBundle =
+  createMssqlUltrasoundCystSelectBundle("CreatedDate");
+
+export const MSSQL_ULTRASOUND_CYST_KEYSET_SELECT =
+  defaultMssqlUltrasoundCystSelectBundle.keysetSql;
+export const MSSQL_ULTRASOUND_CYST_BY_EXAM_IDS_SELECT =
+  defaultMssqlUltrasoundCystSelectBundle.detailByExamIdsSql;

@@ -3,6 +3,16 @@
  * A) probe + detail IN (เหมือน examination_general; แนะนำ IN ครั้งเดียวต่อ batch = detailInChunkSize=batchSize)
  * B) คิวรี่เดียวต่อ chunk — TOP + INNER JOIN (เร็วเมื่อเครือข่ายหน่วง; ไม่ส่ง @id หลายพันตัว)
  */
+import { buildCreatedDateSortExprs } from "../../shared/js-migrate/mssqlCreatedDateSort.mjs";
+
+const PACS_OFFSET_TIEBREAKER_ORDER_BY = `CASE WHEN [Accession_ID] IS NULL THEN 0 ELSE 1 END ASC,
+  [Accession_ID] ASC,
+  TRY_CAST([Exam_ID] AS BIGINT) ASC,
+  [Dl_DT] ASC,
+  NULLIF(LTRIM(RTRIM([PID])), '') ASC,
+  [StudyNo] ASC,
+  NULLIF(LTRIM(RTRIM([RISCode])), '') ASC,
+  NULLIF(LTRIM(RTRIM([SyncFileName])), '') ASC`;
 
 /** @param {string} [studyDescriptionColumnExpr] ตัวอย่าง `[StudyDescription]` หรือ `p.[StudyDescription]` */
 export function studyDescriptionSqlFragment(
@@ -277,21 +287,21 @@ ORDER BY [Accession_ID] ASC
  * ดึงทุกแถวตามลำดับคงที่ (รวม [Accession_ID] เป็น NULL) — ใช้ OFFSET/FETCH กับ checkpoint.offset
  * ช้ากว่า keyset เมื่อ offset สูง แต่ไม่ตัดแถวออกจากเงื่อนไข Accession_ID
  */
-export function buildMssqlPacsSyncInfoOffsetSql(studyDescriptionMaxChars) {
+export function buildMssqlPacsSyncInfoOffsetSql(
+  studyDescriptionMaxChars,
+  sortBundle = null,
+) {
   const cols = buildPacssyncSelectColumnList(studyDescriptionMaxChars);
+  const orderBy =
+    sortBundle?.createdDateColumn != null
+      ? sortBundle.orderBy
+      : PACS_OFFSET_TIEBREAKER_ORDER_BY;
   return `
 SELECT
 ${cols}
 FROM {{sourceObject}}
 ORDER BY
-  CASE WHEN [Accession_ID] IS NULL THEN 0 ELSE 1 END,
-  [Accession_ID] ASC,
-  TRY_CAST([Exam_ID] AS BIGINT) ASC,
-  [Dl_DT] ASC,
-  NULLIF(LTRIM(RTRIM([PID])), '') ASC,
-  [StudyNo] ASC,
-  NULLIF(LTRIM(RTRIM([RISCode])), '') ASC,
-  NULLIF(LTRIM(RTRIM([SyncFileName])), '') ASC
+  ${orderBy}
 OFFSET @offset ROWS FETCH NEXT @page ROWS ONLY
 `.trim();
 }
@@ -418,4 +428,61 @@ ORDER BY
   ISNULL(NULLIF(LTRIM(RTRIM([PID])), N''), N''),
   ${fp}
 `.trim();
+}
+
+/** sort key ต่อแถว — ต้องสอดคล้องกับ PACS_OFFSET_TIEBREAKER_ORDER_BY + fingerprint/checksum */
+export function buildPacsSyncRowTiebreakerSortKeyExpr() {
+  const fp = rowFingerprintHashExpr();
+  const chk = rowBinaryChecksumExpr();
+  return `CONCAT(
+  CASE WHEN [Accession_ID] IS NULL THEN N'0' ELSE N'1' END,
+  N'|',
+  ISNULL(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(256), [Accession_ID]))), N''), N''),
+  N'|E:',
+  RIGHT(
+    REPLICATE(N'0', 20) + CAST(
+      ISNULL(TRY_CAST([Exam_ID] AS BIGINT), CAST(-9223372036854775808 AS BIGINT)) AS NVARCHAR(30)
+    ),
+    20
+  ),
+  N'|D:',
+  ISNULL(CONVERT(NVARCHAR(33), [Dl_DT], 126), N'17530101'),
+  N'|P:',
+  ISNULL(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(100), [PID]))), N''), N''),
+  N'|FP:',
+  CONVERT(VARCHAR(64), ${fp}, 2),
+  N'|CK:',
+  CAST(${chk} AS NVARCHAR(30))
+)`;
+}
+
+/** @param {string | null | undefined} createdDateColumn */
+export function createMssqlPacsSyncInfoSortBundle(createdDateColumn) {
+  return buildCreatedDateSortExprs({
+    createdDateColumn,
+    tiebreakerOrderBy: PACS_OFFSET_TIEBREAKER_ORDER_BY,
+    tiebreakerSortKeyExpr: buildPacsSyncRowTiebreakerSortKeyExpr(),
+  });
+}
+
+/**
+ * CreatedDate keyset โหมดเดียว — ทั้งตาราง (รวม Accession NULL) ไม่แยก 2 เฟส
+ */
+export function buildMssqlPacsSyncInfoCreatedDateKeysetSql(
+  studyDescriptionMaxChars,
+  sortBundle,
+) {
+  if (!sortBundle?.createdDateColumn) {
+    throw new Error(
+      "buildMssqlPacsSyncInfoCreatedDateKeysetSql: ต้องมี CreatedDate ใน sortBundle",
+    );
+  }
+  const cols = buildPacssyncSelectColumnList(studyDescriptionMaxChars);
+  return `
+SELECT TOP (@page)
+${cols},
+  ${sortBundle.sortKeyExpr} AS __mssql_sort_key
+FROM {{sourceObject}}
+WHERE ${sortBundle.sortKeyExpr} > @afterSortKey
+ORDER BY ${sortBundle.orderBy}`.trim();
 }

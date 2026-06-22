@@ -14,8 +14,14 @@ import {
   buildMssqlPacsSyncInfoNullAccessionChunkSqlKeyset,
   buildMssqlPacsSyncInfoChunkSqlFirstComposite,
   buildMssqlPacsSyncInfoChunkSqlKeysetComposite,
+  buildMssqlPacsSyncInfoCreatedDateKeysetSql,
+  createMssqlPacsSyncInfoSortBundle,
   PACSSYNC_ROW_FINGERPRINT_VERSION,
 } from "./mssqlPacsSyncInfoSelect.mjs";
+import {
+  initCreatedDateKeysetState,
+  setupCreatedDateMigrationSort,
+} from "../../shared/js-migrate/setupCreatedDateMigrationSort.mjs";
 import { ensurePacsSyncInfoPipelineDdl } from "./pacsSyncInfoPgDdl.mjs";
 import {
   normalizePacsSyncMssqlRow,
@@ -549,12 +555,7 @@ async function main() {
         sourceObject,
       )
     : null;
-  const chunkSqlOffset = useOffsetPagination
-    ? buildMssqlPacsSyncInfoOffsetSql(studyDescriptionMaxChars).replaceAll(
-        "{{sourceObject}}",
-        sourceObjectNoLock,
-      )
-    : null;
+  let chunkSqlOffset = null;
   const nullAccSqlFirst =
     useKeysetPlusNull && mssqlOptimizeSingleQuery
       ? buildMssqlPacsSyncInfoNullAccessionChunkSqlFirst(
@@ -660,6 +661,30 @@ async function main() {
   }
   const mssqlConnectStartedAt = Date.now();
   const pool = await sql.connect(mssqlConfig);
+  const pacsSortBundle = await setupCreatedDateMigrationSort(pool, {
+    migrationConfig: migration,
+    sourceSchema,
+    sourceTable,
+    tableLabel: KEY,
+    createSelectBundle: createMssqlPacsSyncInfoSortBundle,
+  });
+  const useCreatedDateKeyset = pacsSortBundle?.createdDateColumn != null;
+  let chunkSqlCreatedDateKeyset = null;
+  if (useCreatedDateKeyset) {
+    chunkSqlCreatedDateKeyset = buildMssqlPacsSyncInfoCreatedDateKeysetSql(
+      studyDescriptionMaxChars,
+      pacsSortBundle,
+    ).replaceAll("{{sourceObject}}", sourceObjectNoLock);
+    console.error(
+      `>>> [${KEY}] CreatedDate keyset โหมดเดียว — NULL ก่อน → วันที่เก่า→ใหม่ (ไม่แยก 2 เฟส acc/null)`,
+    );
+  }
+  if (useOffsetPagination) {
+    chunkSqlOffset = buildMssqlPacsSyncInfoOffsetSql(
+      studyDescriptionMaxChars,
+      pacsSortBundle,
+    ).replaceAll("{{sourceObject}}", sourceObjectNoLock);
+  }
   if (debugLogs) {
     writeOutLine(
       `>>> [${KEY}] MSSQL connected in ${formatSec(Date.now() - mssqlConnectStartedAt)} (${mssqlServerHint})`,
@@ -730,7 +755,8 @@ async function main() {
 
       console.error(`>>> [${KEY}] source: ${sourceObject}`);
       let fetchModeLabel = ", probe+IN";
-      if (useOffsetPagination) fetchModeLabel = ", OFFSET";
+      if (useCreatedDateKeyset) fetchModeLabel = ", CreatedDate-keyset";
+      else if (useOffsetPagination) fetchModeLabel = ", OFFSET";
       else if (useKeysetPlusNull && mssqlOptimizeSingleQuery) {
         fetchModeLabel = ", TOP+JOIN(composite)+null-tail";
       } else if (mssqlOptimizeSingleQuery) {
@@ -917,6 +943,38 @@ async function main() {
       let accLegCursor = deserializeAccLegCursor(
         checkpointEnabled ? checkpoint.accLegCursor : null,
       );
+      let mssqlKeysetAfter = "";
+      if (useCreatedDateKeyset) {
+        const keysetState = initCreatedDateKeysetState(
+          checkpoint,
+          checkpointEnabled,
+          pacsSortBundle,
+        );
+        mssqlKeysetAfter = keysetState.mssqlKeysetAfter ?? "";
+        if (
+          keysetState.sortKeyVersionUpgraded ||
+          (checkpoint.sortKeyVersion == null &&
+            checkpointEnabled &&
+            (offset > 0 ||
+              checkpoint.completed === true ||
+              checkpoint.migrationLeg === "acc" ||
+              checkpoint.migrationLeg === "null_acc"))
+        ) {
+          offset = 0;
+          rowsProcessed = 0;
+          migrationLeg = "created_date";
+          afterAccessionId = null;
+          accLegCursor = null;
+          nullTailCursor = null;
+          mssqlKeysetAfter = "";
+          console.error(
+            `>>> [${KEY}] อัปเกรด checkpoint → CreatedDate keyset v2 — รีเซ็ตตำแหน่ง`,
+          );
+        }
+        if (dailyCatchUpReset) {
+          mssqlKeysetAfter = "";
+        }
+      }
 
       if (checkpointEnabled) {
         const ckMode = checkpoint.mssqlPagination;
@@ -990,6 +1048,7 @@ async function main() {
       }
 
       const onlyNullTail =
+        !useCreatedDateKeyset &&
         !dailyCatchUpReset &&
         useKeysetPlusNull &&
         mssqlOptimizeSingleQuery &&
@@ -1045,6 +1104,7 @@ async function main() {
       const startedAt = Date.now();
 
       const useCompositeAcc =
+        !useCreatedDateKeyset &&
         useKeysetPlusNull &&
         mssqlOptimizeSingleQuery &&
         chunkSqlAccCompositeFirst != null &&
@@ -1082,7 +1142,33 @@ async function main() {
           let accRawKeys = [];
           let fetchMs = 0;
 
-          if (useOffsetPagination && chunkSqlOffset) {
+          if (useCreatedDateKeyset && chunkSqlCreatedDateKeyset) {
+            const cdReq = pool
+              .request()
+              .input("page", sql.Int, pageSize)
+              .input(
+                "afterSortKey",
+                sql.NVarChar(sql.MAX),
+                mssqlKeysetAfter ?? "",
+              );
+            bindMigrateSrcNumericRange(cdReq, migration, sql);
+            const tCd = Date.now();
+            const cdRes = await cdReq.query(chunkSqlCreatedDateKeyset);
+            fetchMs = Date.now() - tCd;
+            rows = cdRes.recordset || [];
+            probeMs = 0;
+            detailMs = fetchMs;
+            if (rows.length > 0) {
+              mssqlKeysetAfter =
+                rows[rows.length - 1]?.__mssql_sort_key ?? mssqlKeysetAfter;
+            }
+            if (debugLogs && !singleLineUi) {
+              writeOutLine(
+                `>>> [${KEY}] fetch chunk ${nextProbeLabel} CreatedDate keyset: rows=${rows.length}, ms=${fetchMs}`,
+                uiState,
+              );
+            }
+          } else if (useOffsetPagination && chunkSqlOffset) {
             const offReq = pool
               .request()
               .input("page", sql.Int, pageSize)
@@ -1322,7 +1408,9 @@ async function main() {
           offset = rowsProcessed;
           /** @type {unknown} */
           let ckKey = null;
-          if (useOffsetPagination) {
+          if (useCreatedDateKeyset) {
+            afterAccessionId = null;
+          } else if (useOffsetPagination) {
             afterAccessionId = null;
           } else if (useCompositeAcc) {
             accLegCursor = readAccLegCompositeFromRow(rows[rows.length - 1]);
@@ -1347,18 +1435,30 @@ async function main() {
             writeJson(checkpointPath, {
               key: KEY,
               offset,
-              afterAccessionId,
+              afterAccessionId: useCreatedDateKeyset ? null : afterAccessionId,
               mssqlPagination,
-              migrationLeg: "acc",
-              nullTailCursor: null,
-              accLegCursor:
-                useCompositeAcc && accLegCursor
-                  ? serializeAccLegCursor(accLegCursor)
-                  : null,
-              accFingerprintVersion: useCompositeAcc
-                ? PACSSYNC_ROW_FINGERPRINT_VERSION
-                : null,
-              nullTailDone: false,
+              ...(useCreatedDateKeyset
+                ? {
+                    mssqlKeysetAfter: mssqlKeysetAfter ?? "",
+                    sortKeyVersion: pacsSortBundle.sortKeyVersion,
+                    migrationLeg: "created_date",
+                    nullTailCursor: null,
+                    accLegCursor: null,
+                    accFingerprintVersion: null,
+                    nullTailDone: true,
+                  }
+                : {
+                    migrationLeg: "acc",
+                    nullTailCursor: null,
+                    accLegCursor:
+                      useCompositeAcc && accLegCursor
+                        ? serializeAccLegCursor(accLegCursor)
+                        : null,
+                    accFingerprintVersion: useCompositeAcc
+                      ? PACSSYNC_ROW_FINGERPRINT_VERSION
+                      : null,
+                    nullTailDone: false,
+                  }),
               completed: false,
               updatedAt: new Date().toISOString(),
             });
@@ -1412,6 +1512,7 @@ async function main() {
           rowsReadInWindow: Math.max(0, offset - idx.indexStartOffset),
         });
       if (
+        !useCreatedDateKeyset &&
         useKeysetPlusNull &&
         mssqlOptimizeSingleQuery &&
         nullAccSqlFirst &&
@@ -1673,8 +1774,16 @@ async function main() {
           key: KEY,
           offset,
           afterAccessionId:
-            useOffsetPagination || useKeysetPlusNull ? null : afterAccessionId,
+            useCreatedDateKeyset || useOffsetPagination || useKeysetPlusNull
+              ? null
+              : afterAccessionId,
           mssqlPagination,
+          ...(useCreatedDateKeyset
+            ? {
+                mssqlKeysetAfter: mssqlKeysetAfter ?? "",
+                sortKeyVersion: pacsSortBundle.sortKeyVersion,
+              }
+            : {}),
           migrationLeg: "done",
           nullTailCursor: null,
           accLegCursor: null,

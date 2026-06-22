@@ -8,7 +8,16 @@ import {
   MSSQL_APPOINTMENT_ID_SELECT,
   MSSQL_APPOINTMENT_SCHEDULE_DATETIME_FILTER,
   MSSQL_APPOINTMENT_SELECT,
+  createMssqlAppointmentSelectBundle,
 } from "./mssqlAppointmentSelect.mjs";
+import {
+  bindCreatedDateOrNumericKeyset,
+  advanceCreatedDateKeysetFromProbe,
+} from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
+import {
+  initCreatedDateKeysetState,
+  setupCreatedDateMigrationSort,
+} from "../../shared/js-migrate/setupCreatedDateMigrationSort.mjs";
 import { ensureAppointmentStagingDdl } from "./appointmentPgDdl.mjs";
 import {
   buildFieldIssueLogPayload,
@@ -394,6 +403,13 @@ async function runAppointmentTableJob({
   const sourceTable = source?.table ?? "schedule";
   const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
   const sourceObjectNoLock = `${sourceObject} WITH (NOLOCK)`;
+  const appointmentSortBundle = await setupCreatedDateMigrationSort(mssqlPool, {
+    migrationConfig,
+    sourceSchema,
+    sourceTable,
+    tableLabel: key,
+    createSelectBundle: createMssqlAppointmentSelectBundle,
+  });
   const useMssqlKeysetBase =
     migrationConfig.useMssqlKeyset === undefined ||
     migrationConfig.useMssqlKeyset === true;
@@ -420,9 +436,13 @@ async function runAppointmentTableJob({
     migrationConfig.mssqlTwoStepFetch === undefined ||
     migrationConfig.mssqlTwoStepFetch === true;
   const useNativeKeyset = mssqlKeysetMode !== "compat";
-  const scheduleIdOrderExpr = useNativeKeyset
-    ? `${MSSQL_SCHEDULE_ID_NATIVE_EXPR} ASC`
-    : `${MSSQL_SCHEDULE_ID_NUMERIC_EXPR} ASC, [Schedule_ID] ASC`;
+  const useCreatedDateKeyset =
+    appointmentSortBundle?.createdDateColumn != null && useMssqlKeyset;
+  const scheduleIdOrderExpr = appointmentSortBundle?.createdDateColumn
+    ? appointmentSortBundle.orderBy
+    : useNativeKeyset
+      ? `${MSSQL_SCHEDULE_ID_NATIVE_EXPR} ASC`
+      : `${MSSQL_SCHEDULE_ID_NUMERIC_EXPR} ASC, [Schedule_ID] ASC`;
 
   const dtFilterOneLine = MSSQL_APPOINTMENT_SCHEDULE_DATETIME_FILTER.replace(
     /\s+/g,
@@ -432,18 +452,29 @@ async function runAppointmentTableJob({
     "WHERE {{appointmentScheduleDatetimeFilter}}",
     `WHERE (${dtFilterOneLine}) AND (${SCHED_RANGE_COMPAT})`,
   );
-  const idProbeSql = MSSQL_APPOINTMENT_ID_SELECT.replaceAll(
-    "{{sourceObject}}",
-    sourceObjectNoLock,
-  ).replace(
-    "[Schedule_ID] > @afterScheduleId",
-    `[Schedule_ID] > @afterScheduleId AND (${SCHED_RANGE_NATIVE})`,
-  );
+  const idProbeSql = (() => {
+    if (appointmentSortBundle?.createdDateColumn) {
+      return `
+SELECT TOP (@page)
+  CAST([Schedule_ID] AS BIGINT) AS schedule_id,
+  ${appointmentSortBundle.sortKeyExpr} AS __mssql_sort_key
+FROM {{sourceObject}}
+WHERE ${appointmentSortBundle.sortKeyExpr} > @afterSortKey
+  AND (${SCHED_RANGE_NATIVE})
+ORDER BY ${appointmentSortBundle.orderBy}`.trim();
+    }
+    return MSSQL_APPOINTMENT_ID_SELECT.replace(
+      "[Schedule_ID] > @afterScheduleId",
+      `[Schedule_ID] > @afterScheduleId AND (${SCHED_RANGE_NATIVE})`,
+    );
+  })().replaceAll("{{sourceObject}}", sourceObjectNoLock);
 
-  const detailSqlTemplate = MSSQL_APPOINTMENT_DETAIL_BY_IDS_SELECT.replaceAll(
-    "{{sourceObject}}",
-    sourceObjectNoLock,
-  );
+  const detailOrderBy =
+    appointmentSortBundle?.orderBy ?? "[Schedule_ID] ASC";
+  const detailSqlTemplate = MSSQL_APPOINTMENT_DETAIL_BY_IDS_SELECT.replace(
+    "ORDER BY [Schedule_ID] ASC",
+    `ORDER BY ${detailOrderBy}`,
+  ).replaceAll("{{sourceObject}}", sourceObjectNoLock);
   const selectSql = (
     useMssqlKeyset
       ? useNativeKeyset
@@ -455,9 +486,21 @@ async function runAppointmentTableJob({
     .replaceAll("{{orderBy}}", scheduleIdOrderExpr);
 
   let mssqlKeysetAfter = checkpoint.mssqlKeysetAfter;
-  if (useMssqlKeyset && mssqlKeysetAfter == null) mssqlKeysetAfter = -1;
-  if (!useMssqlKeyset) mssqlKeysetAfter = null;
-  if (useMssqlKeyset && kb.min != null) {
+  if (useCreatedDateKeyset) {
+    const keysetState = initCreatedDateKeysetState(
+      checkpoint,
+      checkpointEnabled,
+      appointmentSortBundle,
+      { legacyNumericDefault: -1 },
+    );
+    if (keysetState.sortKeyVersionUpgraded) offset = 0;
+    mssqlKeysetAfter = keysetState.mssqlKeysetAfter ?? "";
+  } else if (useMssqlKeyset && mssqlKeysetAfter == null) {
+    mssqlKeysetAfter = -1;
+  } else if (!useMssqlKeyset) {
+    mssqlKeysetAfter = null;
+  }
+  if (useMssqlKeyset && !useCreatedDateKeyset && kb.min != null) {
     const floorExclusive = kb.min - 1n;
     const curBi = toBigIntish(mssqlKeysetAfter);
     if (curBi < floorExclusive) {
@@ -660,12 +703,32 @@ END $$;
       const probeStartedAt = Date.now();
       const probeReq = mssqlPool.request();
       bindAppointmentMssqlCommon(probeReq, migrationConfig, sql);
+      bindCreatedDateOrNumericKeyset(
+        probeReq,
+        sql,
+        useCreatedDateKeyset ? appointmentSortBundle : null,
+        {
+          mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
+          numericAfter: toBigIntish(mssqlKeysetAfter),
+          numericParam: "afterScheduleId",
+        },
+      );
       const idRes = await probeReq
-        .input("afterScheduleId", sql.BigInt, toBigIntish(mssqlKeysetAfter))
         .input("page", sql.Int, pageSize)
         .query(idProbeSql);
       const probeMs = Date.now() - probeStartedAt;
-      const ids = (idRes.recordset || [])
+      const idRows = idRes.recordset || [];
+      if (useCreatedDateKeyset && idRows.length > 0) {
+        mssqlKeysetAfter = advanceCreatedDateKeysetFromProbe(
+          idRows,
+          appointmentSortBundle,
+          {
+            mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
+            numericAfter: toBigIntish(mssqlKeysetAfter),
+          },
+        ).mssqlKeysetAfter;
+      }
+      const ids = idRows
         .map((x) => Number.parseInt(x?.schedule_id ?? "", 10))
         .filter((v) => Number.isFinite(v));
       twoStepKeysetAdvance = ids.length;

@@ -3,10 +3,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sql from "mssql";
 import pg from "pg";
+import { createMssqlMamSelectBundle } from "./mssqlMamSelect.mjs";
 import {
-  MSSQL_MAM_DETAIL_BY_IDS_SELECT,
-  MSSQL_MAM_ID_SELECT,
-} from "./mssqlMamSelect.mjs";
+  setupCreatedDateMigrationSort,
+  initCreatedDateKeysetState,
+} from "../../shared/js-migrate/setupCreatedDateMigrationSort.mjs";
+import {
+  bindCreatedDateOrNumericKeyset,
+  advanceCreatedDateKeysetFromProbe,
+  buildCreatedDateCheckpointFields,
+} from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import { ensureMamPipelineDdl } from "./mamPgDdl.mjs";
 import {
   applyMamSummaryFromChildCounts,
@@ -215,14 +221,6 @@ async function main() {
   const calSourceTable = config.source?.calTable ?? "mammogram_cal";
   const massSourceObjectNoLock = `${bracketIdent(sourceSchema)}.${bracketIdent(massSourceTable)} WITH (NOLOCK)`;
   const calSourceObjectNoLock = `${bracketIdent(sourceSchema)}.${bracketIdent(calSourceTable)} WITH (NOLOCK)`;
-  const probeSql = MSSQL_MAM_ID_SELECT.replaceAll(
-    "{{sourceObject}}",
-    sourceObjectNoLock,
-  );
-  const detailSqlTemplate = MSSQL_MAM_DETAIL_BY_IDS_SELECT.replaceAll(
-    "{{sourceObject}}",
-    sourceObjectNoLock,
-  );
 
   const batchSize = Math.max(
     100,
@@ -281,6 +279,23 @@ async function main() {
       uiState,
     );
   }
+
+  const sortBundle = await setupCreatedDateMigrationSort(pool, {
+    migrationConfig: migration,
+    sourceSchema,
+    sourceTable,
+    tableLabel: KEY,
+    createSelectBundle: createMssqlMamSelectBundle,
+  });
+  const probeSql = sortBundle.idProbeSql.replaceAll(
+    "{{sourceObject}}",
+    sourceObjectNoLock,
+  );
+  const detailSqlTemplate = sortBundle.detailByIdsSql.replaceAll(
+    "{{sourceObject}}",
+    sourceObjectNoLock,
+  );
+
   try {
     const probeTableSql = `SELECT TOP 1 [Exam_ID] FROM ${sourceObjectNoLock} ORDER BY [Exam_ID] ASC;`;
     const probeStartedAt = Date.now();
@@ -314,8 +329,26 @@ async function main() {
         `>>> [${KEY}] target: ${config.target.postgresDatabase} public.mammogram (batchSize=${batchSize})`,
       );
 
-      let offset = Number(checkpointEnabled ? checkpoint.offset : 0);
-      if (!Number.isFinite(offset) || offset < 0) offset = 0;
+      const keysetState = initCreatedDateKeysetState(
+        checkpoint,
+        checkpointEnabled,
+        sortBundle,
+      );
+      let offset = keysetState.offset;
+      let afterExamId = keysetState.numericAfter;
+      let mssqlKeysetAfter = keysetState.mssqlKeysetAfter;
+      if (keysetState.sortKeyVersionUpgraded && checkpointEnabled) {
+        writeJson(
+          checkpointPath,
+          buildCreatedDateCheckpointFields(sortBundle, {
+            offset: 0,
+            mssqlKeysetAfter: "",
+            afterExamId: 0,
+            completed: false,
+            extra: { key: KEY },
+          }),
+        );
+      }
       const idx = applySourceIndexToMigrateJob({
         key: KEY,
         migrationConfig: migration,
@@ -324,8 +357,6 @@ async function main() {
         useMssqlKeyset: true,
       });
       offset = idx.offset;
-      let afterExamId = Number(checkpointEnabled ? checkpoint.afterExamId : 0);
-      if (!Number.isFinite(afterExamId) || afterExamId < 0) afterExamId = 0;
       const fieldIssueAcc = createFieldIssueAccumulator("exam_id");
       const fieldIssueLogPath = path.join(
         logsDir,
@@ -428,12 +459,22 @@ async function main() {
           const idProbeStartedAt = Date.now();
           const probeReq = pool.request();
           bindMigrateSrcNumericRange(probeReq, migration, sql);
+          bindCreatedDateOrNumericKeyset(probeReq, sql, sortBundle, {
+            mssqlKeysetAfter,
+            numericAfter: afterExamId,
+          });
           const idRes = await probeReq
-            .input("afterExamId", sql.BigInt, afterExamId)
             .input("page", sql.Int, pageSize)
             .query(probeSql);
           probeMs = Date.now() - idProbeStartedAt;
           const idRows = idRes.recordset || [];
+          const advanced = advanceCreatedDateKeysetFromProbe(
+            idRows,
+            sortBundle,
+            { numericAfter: afterExamId, mssqlKeysetAfter },
+          );
+          afterExamId = advanced.numericAfter;
+          mssqlKeysetAfter = advanced.mssqlKeysetAfter;
           ids = idRows
             .map((r) => Number.parseInt(r?.exam_id ?? "", 10))
             .filter((v) => Number.isFinite(v));
@@ -589,18 +630,18 @@ async function main() {
         if (keysetAdvance <= 0) break;
         if (!repairRun.active) {
           offset += keysetAdvance;
-          if (ids.length > 0) {
-            afterExamId = ids[ids.length - 1];
-          }
         }
         if (checkpointEnabled && !repairRun.active) {
-          writeJson(checkpointPath, {
-            key: KEY,
-            offset,
-            afterExamId,
-            completed: false,
-            updatedAt: new Date().toISOString(),
-          });
+          writeJson(
+            checkpointPath,
+            buildCreatedDateCheckpointFields(sortBundle, {
+              offset,
+              mssqlKeysetAfter,
+              afterExamId,
+              completed: false,
+              extra: { key: KEY },
+            }),
+          );
         }
         if (debugLogs && !singleLineUi) {
           writeOutLine(
@@ -641,13 +682,16 @@ async function main() {
       }
 
       if (checkpointEnabled) {
-        writeJson(checkpointPath, {
-          key: KEY,
-          offset,
-          afterExamId,
-          completed: true,
-          updatedAt: new Date().toISOString(),
-        });
+        writeJson(
+          checkpointPath,
+          buildCreatedDateCheckpointFields(sortBundle, {
+            offset,
+            mssqlKeysetAfter,
+            afterExamId,
+            completed: true,
+            extra: { key: KEY },
+          }),
+        );
       }
       if (progressEnabled) endProgress(uiState);
 

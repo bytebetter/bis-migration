@@ -8,7 +8,9 @@ import {
   MSSQL_APPOINTMENT_RESCHEDULES_OFFSET_ORDER_BY,
   MSSQL_APPOINTMENT_RESCHEDULES_SELECT,
   buildMssqlAppointmentReschedulesKeysetSelect,
+  createMssqlAppointmentReschedulesSortBundle,
 } from "./mssqlAppointmentReschedulesSelect.mjs";
+import { setupCreatedDateMigrationSort } from "../../shared/js-migrate/setupCreatedDateMigrationSort.mjs";
 import { isLastKeysetPage } from "../../shared/js-migrate/twoStepKeyset.mjs";
 import {
   ensureAppointmentReschedulesPipelineDdl,
@@ -648,12 +650,22 @@ async function runAppointmentReschedulesTableJob({
     }
   }
 
+  const rescheduleSortBundle = await setupCreatedDateMigrationSort(mssqlPool, {
+    migrationConfig,
+    sourceSchema,
+    sourceTable,
+    tableLabel: key,
+    createSelectBundle: createMssqlAppointmentReschedulesSortBundle,
+  });
+  const rescheduleOrderBy =
+    rescheduleSortBundle?.orderBy ?? MSSQL_APPOINTMENT_RESCHEDULES_OFFSET_ORDER_BY;
+
   const offsetSelectSql = MSSQL_APPOINTMENT_RESCHEDULES_SELECT.replaceAll(
     "{{sourceObject}}",
     sourceRef,
-  ).replaceAll("{{orderBy}}", MSSQL_APPOINTMENT_RESCHEDULES_OFFSET_ORDER_BY);
+  ).replaceAll("{{orderBy}}", rescheduleOrderBy);
   const keysetSelectSql =
-    buildMssqlAppointmentReschedulesKeysetSelect().replaceAll(
+    buildMssqlAppointmentReschedulesKeysetSelect(rescheduleOrderBy).replaceAll(
       "{{sourceObject}}",
       sourceRef,
     );
