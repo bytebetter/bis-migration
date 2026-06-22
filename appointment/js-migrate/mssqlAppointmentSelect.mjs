@@ -1,3 +1,17 @@
+import {
+  buildCreatedDateSortExprs,
+  mssqlBigIntColumnSortKeyExpr,
+} from "../../shared/js-migrate/mssqlCreatedDateSort.mjs";
+
+/** @param {string | null | undefined} createdDateColumn */
+export function createMssqlAppointmentSelectBundle(createdDateColumn) {
+  return buildCreatedDateSortExprs({
+    createdDateColumn,
+    tiebreakerOrderBy: "[Schedule_ID] ASC",
+    tiebreakerSortKeyExpr: mssqlBigIntColumnSortKeyExpr("[Schedule_ID]"),
+  });
+}
+
 /**
  * Predicate ช่วง [Schedule_Datetime] — ผูก @appointmentDtFrom / @appointmentDtToExcl เป็น NULL ได้
  * เมื่อทั้งคู่เป็น NULL จะไม่กรองวันที่

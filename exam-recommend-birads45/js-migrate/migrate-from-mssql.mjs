@@ -3,10 +3,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sql from "mssql";
 import pg from "pg";
+import { createMssqlExamRecommendBirads45SelectBundle } from "./mssqlExamRecommendBirads45Select.mjs";
 import {
-  MSSQL_EXAM_RECOMMEND_BIRADS45_DETAIL_BY_IDS_SELECT,
-  MSSQL_EXAM_RECOMMEND_BIRADS45_ID_SELECT,
-} from "./mssqlExamRecommendBirads45Select.mjs";
+  setupCreatedDateMigrationSort,
+  initCreatedDateKeysetState,
+} from "../../shared/js-migrate/setupCreatedDateMigrationSort.mjs";
+import {
+  bindCreatedDateOrNumericKeyset,
+  advanceCreatedDateKeysetFromProbe,
+  buildCreatedDateCheckpointFields,
+} from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import { ensureExamRecommendBirads45PipelineDdl } from "./examRecommendBirads45PgDdl.mjs";
 import {
   loadChunkToStaging,
@@ -185,15 +191,6 @@ async function main() {
   const sourceTable = config.source?.table ?? "EXAM_Recommend_BIRADS45";
   const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
   const sourceObjectNoLock = `${sourceObject} WITH (NOLOCK)`;
-  const probeSql = MSSQL_EXAM_RECOMMEND_BIRADS45_ID_SELECT.replaceAll(
-    "{{sourceObject}}",
-    sourceObjectNoLock,
-  );
-  const detailSqlTemplate =
-    MSSQL_EXAM_RECOMMEND_BIRADS45_DETAIL_BY_IDS_SELECT.replaceAll(
-      "{{sourceObject}}",
-      sourceObjectNoLock,
-    );
 
   const batchSize = Math.max(
     100,
@@ -248,6 +245,22 @@ async function main() {
   const mssqlConfig = buildMssqlConfig(config.source);
   const pool = await sql.connect(mssqlConfig);
   try {
+    const sortBundle = await setupCreatedDateMigrationSort(pool, {
+      migrationConfig: migration,
+      sourceSchema,
+      sourceTable,
+      tableLabel: KEY,
+      createSelectBundle: createMssqlExamRecommendBirads45SelectBundle,
+    });
+    const probeSql = sortBundle.idProbeSql.replaceAll(
+      "{{sourceObject}}",
+      sourceObjectNoLock,
+    );
+    const detailSqlTemplate = sortBundle.detailByIdsSql.replaceAll(
+      "{{sourceObject}}",
+      sourceObjectNoLock,
+    );
+
     const client = await pgPool.connect();
     try {
       await ensureExamRecommendBirads45PipelineDdl(client);
@@ -256,8 +269,26 @@ async function main() {
         `>>> [${KEY}] target: ${config.target.postgresDatabase} public.examination_general.recommendation_des (update-only, batchSize=${batchSize})`,
       );
 
-      let offset = Number(checkpointEnabled ? checkpoint.offset : 0);
-      if (!Number.isFinite(offset) || offset < 0) offset = 0;
+      const keysetState = initCreatedDateKeysetState(
+        checkpoint,
+        checkpointEnabled,
+        sortBundle,
+      );
+      let offset = keysetState.offset;
+      let afterExamId = keysetState.numericAfter;
+      let mssqlKeysetAfter = keysetState.mssqlKeysetAfter;
+      if (keysetState.sortKeyVersionUpgraded && checkpointEnabled) {
+        writeJson(
+          checkpointPath,
+          buildCreatedDateCheckpointFields(sortBundle, {
+            offset: 0,
+            mssqlKeysetAfter: "",
+            afterExamId: 0,
+            completed: false,
+            extra: { key: KEY },
+          }),
+        );
+      }
       const idx = applySourceIndexToMigrateJob({
         key: KEY,
         migrationConfig: migration,
@@ -266,8 +297,6 @@ async function main() {
         useMssqlKeyset: true,
       });
       offset = idx.offset;
-      let afterExamId = Number(checkpointEnabled ? checkpoint.afterExamId : 0);
-      if (!Number.isFinite(afterExamId) || afterExamId < 0) afterExamId = 0;
 
       const fieldIssueAcc = createFieldIssueAccumulator("exam_id");
       const fieldIssueLogPath = path.join(
@@ -359,12 +388,22 @@ FROM ${sourceObjectNoLock};`);
           const probeStartedAt = Date.now();
           const probeReq = pool.request();
           bindMigrateSrcNumericRange(probeReq, migration, sql);
+          bindCreatedDateOrNumericKeyset(probeReq, sql, sortBundle, {
+            mssqlKeysetAfter,
+            numericAfter: afterExamId,
+          });
           const idRes = await probeReq
-            .input("afterExamId", sql.BigInt, afterExamId)
             .input("page", sql.Int, pageSize)
             .query(probeSql);
           const probeMs = Date.now() - probeStartedAt;
           const idRows = idRes.recordset || [];
+          const advanced = advanceCreatedDateKeysetFromProbe(
+            idRows,
+            sortBundle,
+            { numericAfter: afterExamId, mssqlKeysetAfter },
+          );
+          afterExamId = advanced.numericAfter;
+          mssqlKeysetAfter = advanced.mssqlKeysetAfter;
           ids = idRows
             .map((r) => Number.parseInt(r?.exam_id ?? "", 10))
             .filter((v) => Number.isFinite(v))
@@ -467,18 +506,18 @@ FROM ${sourceObjectNoLock};`);
         if (keysetAdvance <= 0) break;
         if (!repairRun.active) {
           offset += keysetAdvance;
-          if (ids.length > 0) {
-            afterExamId = Number.parseInt(ids[ids.length - 1], 10) || afterExamId;
-          }
         }
         if (checkpointEnabled && !repairRun.active) {
-          writeJson(checkpointPath, {
-            key: KEY,
-            offset,
-            afterExamId,
-            completed: false,
-            updatedAt: new Date().toISOString(),
-          });
+          writeJson(
+            checkpointPath,
+            buildCreatedDateCheckpointFields(sortBundle, {
+              offset,
+              mssqlKeysetAfter,
+              afterExamId,
+              completed: false,
+              extra: { key: KEY },
+            }),
+          );
         }
         if (debugLogs && !singleLineUi) {
           writeOutLine(
@@ -515,13 +554,16 @@ FROM ${sourceObjectNoLock};`);
       }
 
       if (checkpointEnabled) {
-        writeJson(checkpointPath, {
-          key: KEY,
-          offset,
-          afterExamId,
-          completed: true,
-          updatedAt: new Date().toISOString(),
-        });
+        writeJson(
+          checkpointPath,
+          buildCreatedDateCheckpointFields(sortBundle, {
+            offset,
+            mssqlKeysetAfter,
+            afterExamId,
+            completed: true,
+            extra: { key: KEY },
+          }),
+        );
       }
       if (progressEnabled) endProgress(uiState);
 

@@ -1,3 +1,5 @@
+import { buildExamTwoStepSelectBundle } from "../../shared/js-migrate/mssqlExamTwoStepSelect.mjs";
+
 const MAM_COLUMNS = `
   CAST(CAST([Exam_ID] AS BIGINT) AS NVARCHAR(MAX)) AS exam_id,
   CONVERT(VARCHAR(30), [Exam_Date], 126) AS exam_date,
@@ -45,23 +47,21 @@ const MAM_COLUMNS = `
   CAST([l_Implant_Finding_Des] AS NVARCHAR(MAX)) AS l_implant_finding_des
 `.trim();
 
-export const MSSQL_MAM_ID_SELECT = `
-SELECT CAST(s.[Exam_ID] AS BIGINT) AS exam_id
-FROM (
-  SELECT TOP (@page)
-    [Exam_ID]
-  FROM {{sourceObject}}
-  WHERE [Exam_ID] > @afterExamId
-    AND (@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
-    AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)
-  ORDER BY [Exam_ID] ASC
-) s
-`.trim();
+const MAM_KEY_RANGE = `
+(@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
+  AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)`;
 
-export const MSSQL_MAM_DETAIL_BY_IDS_SELECT = `
-SELECT
-  ${MAM_COLUMNS}
-FROM {{sourceObject}}
-WHERE CAST([Exam_ID] AS BIGINT) IN ({{idPlaceholders}})
-ORDER BY [Exam_ID] ASC
-`.trim();
+/** @param {string | null | undefined} createdDateColumn */
+export function createMssqlMamSelectBundle(createdDateColumn) {
+  return buildExamTwoStepSelectBundle({
+    createdDateColumn,
+    detailColumns: MAM_COLUMNS,
+    keyRangeWhere: MAM_KEY_RANGE,
+  });
+}
+
+export const defaultMssqlMamSelectBundle = createMssqlMamSelectBundle("CreatedDate");
+
+export const MSSQL_MAM_ID_SELECT = defaultMssqlMamSelectBundle.idProbeSql;
+export const MSSQL_MAM_DETAIL_BY_IDS_SELECT =
+  defaultMssqlMamSelectBundle.detailByIdsSql;

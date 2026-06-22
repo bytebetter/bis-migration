@@ -1,3 +1,5 @@
+import { buildExamTwoStepSelectBundle } from "../../shared/js-migrate/mssqlExamTwoStepSelect.mjs";
+
 /**
  * คอลัมน์ dbo.billing — CAST แบบเบาเหมือน examination/patient_info
  * (ไม่ LTRIM/RTRIM/CONVERT ซ้ำบน MSSQL; ตัดช่องว่างใน Node ตอนโหลด staging)
@@ -87,37 +89,23 @@ export function buildBillingSelectColumns(tablePrefix = "") {
 }
 
 const BILLING_KEY_RANGE = `
-  AND (@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
+(@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
   AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)`;
 
-/** keyset: ดึงเฉพาะ Exam_ID (ขั้นที่ 1 — แบบ examination) */
-export const MSSQL_BILLING_ID_SELECT = `
-SELECT TOP (@page)
-  CAST([Exam_ID] AS BIGINT) AS exam_id
-FROM {{sourceObject}}
-WHERE [Exam_ID] > @afterExamId
-  ${BILLING_KEY_RANGE}
-ORDER BY [Exam_ID] ASC
-`.trim();
+/** @param {string | null | undefined} createdDateColumn */
+export function createMssqlBillingSelectBundle(createdDateColumn) {
+  return buildExamTwoStepSelectBundle({
+    createdDateColumn,
+    detailColumns: buildBillingSelectColumns(),
+    keyRangeWhere: BILLING_KEY_RANGE,
+  });
+}
 
-/** ดึงรายละเอียดตามรายการ Exam_ID (ขั้นที่ 2) */
-export const MSSQL_BILLING_DETAIL_BY_IDS_SELECT = `
-SELECT
-  ${buildBillingSelectColumns()}
-FROM {{sourceObject}}
-WHERE CAST([Exam_ID] AS BIGINT) IN ({{idPlaceholders}})
-ORDER BY [Exam_ID] ASC
-`.trim();
+export const defaultMssqlBillingSelectBundle =
+  createMssqlBillingSelectBundle("CreatedDate");
 
-/**
- * คิวรีเดียว (opt-in เท่านั้น — migration.mssqlOptimizeSingleQuery: true)
- * ปกติใช้ probe + IN แทน เพราะเร็วกว่าบน MSSQL ไกล
- */
-export const MSSQL_BILLING_KEYSET_SELECT = `
-SELECT TOP (@page)
-${buildBillingSelectColumns()}
-FROM {{sourceObject}}
-WHERE [Exam_ID] > @afterExamId
-  ${BILLING_KEY_RANGE}
-ORDER BY [Exam_ID] ASC
-`.trim();
+export const MSSQL_BILLING_ID_SELECT = defaultMssqlBillingSelectBundle.idProbeSql;
+export const MSSQL_BILLING_DETAIL_BY_IDS_SELECT =
+  defaultMssqlBillingSelectBundle.detailByIdsSql;
+export const MSSQL_BILLING_KEYSET_SELECT =
+  defaultMssqlBillingSelectBundle.keysetSingleSql;

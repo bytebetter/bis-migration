@@ -1,3 +1,5 @@
+import { buildExamRecommendSelectBundle } from "../../shared/js-migrate/mssqlExamTwoStepSelect.mjs";
+
 const EXAM_RECOMMEND_BIRADS45_COLUMNS = `
   CAST(CAST([Exam_ID] AS BIGINT) AS NVARCHAR(MAX)) AS exam_id,
   CONVERT(VARCHAR(30), [Exam_Date], 126) AS exam_date,
@@ -8,21 +10,23 @@ const EXAM_RECOMMEND_BIRADS45_COLUMNS = `
   CAST([Location] AS NVARCHAR(MAX)) AS location
 `.trim();
 
-export const MSSQL_EXAM_RECOMMEND_BIRADS45_ID_SELECT = `
-SELECT TOP (@page)
-  CAST([Exam_ID] AS BIGINT) AS exam_id
-FROM {{sourceObject}}
-WHERE [Exam_ID] > @afterExamId
-  AND (@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
-  AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)
-GROUP BY [Exam_ID]
-ORDER BY [Exam_ID] ASC
-`.trim();
+const EXAM_RECOMMEND_KEY_RANGE = `
+(@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
+  AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)`;
 
-export const MSSQL_EXAM_RECOMMEND_BIRADS45_DETAIL_BY_IDS_SELECT = `
-SELECT
-  ${EXAM_RECOMMEND_BIRADS45_COLUMNS}
-FROM {{sourceObject}}
-WHERE CAST([Exam_ID] AS BIGINT) IN ({{idPlaceholders}})
-ORDER BY [Exam_ID] ASC, [Recommend_ID] ASC
-`.trim();
+/** @param {string | null | undefined} createdDateColumn */
+export function createMssqlExamRecommendBirads45SelectBundle(createdDateColumn) {
+  return buildExamRecommendSelectBundle({
+    createdDateColumn,
+    detailColumns: EXAM_RECOMMEND_BIRADS45_COLUMNS,
+    keyRangeWhere: EXAM_RECOMMEND_KEY_RANGE,
+  });
+}
+
+export const defaultMssqlExamRecommendBirads45SelectBundle =
+  createMssqlExamRecommendBirads45SelectBundle("CreatedDate");
+
+export const MSSQL_EXAM_RECOMMEND_BIRADS45_ID_SELECT =
+  defaultMssqlExamRecommendBirads45SelectBundle.idProbeSql;
+export const MSSQL_EXAM_RECOMMEND_BIRADS45_DETAIL_BY_IDS_SELECT =
+  defaultMssqlExamRecommendBirads45SelectBundle.detailByIdsSql;

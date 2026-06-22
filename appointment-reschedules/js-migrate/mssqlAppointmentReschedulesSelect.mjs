@@ -2,6 +2,8 @@
  * คิวรี dbo.SCHEDULE_LOG — เฉพาะ Activity = ย้ายวันนัด
  * เรียง LogTime เก่า → ใหม่ (ASC) เพื่อให้ log ใหม่อยู่ท้ายเสมอ → resume forward เก็บแถวใหม่ได้
  */
+import { buildCreatedDateSortExprs } from "../../shared/js-migrate/mssqlCreatedDateSort.mjs";
+
 export const MSSQL_APPOINTMENT_RESCHEDULE_ACTIVITY = "ย้ายวันนัด";
 
 /** VARCHAR ยาวพอให้ค่า DATETIME2(7) style 126 ไม่ถูกตัด — ที่สั้นจะทำให้ keyset พลาดความคม */
@@ -32,6 +34,27 @@ export const MSSQL_RESCHEDULE_OLD_SCHEDULE_DT_ORDER_EXPR =
   "COALESCE([Old_Schedule_Datetime], CAST('17530101' AS DATETIME2))";
 
 const RESCHEDULE_ORDER_BY = `${MSSQL_RESCHEDULE_LOGTIME_ORDER_EXPR} ASC, ${MSSQL_RESCHEDULE_SCHEDULE_ID_ORDER_EXPR} ASC, ${MSSQL_RESCHEDULE_SCHEDULE_DT_ORDER_EXPR} ASC, ${MSSQL_RESCHEDULE_MODIFIED_ORDER_EXPR} ASC, ${MSSQL_RESCHEDULE_OLD_SCHEDULE_DT_ORDER_EXPR} ASC`;
+
+const RESCHEDULE_TIEBREAKER_SORT_KEY = `CONCAT(
+  CONVERT(VARCHAR(23), ${MSSQL_RESCHEDULE_LOGTIME_ORDER_EXPR}, 126),
+  N'_',
+  RIGHT(
+    REPLICATE(N'0', 20) + CAST(${MSSQL_RESCHEDULE_SCHEDULE_ID_ORDER_EXPR} AS NVARCHAR(30)),
+    20
+  )
+)`;
+
+/** @param {string | null | undefined} createdDateColumn */
+export function createMssqlAppointmentReschedulesSortBundle(createdDateColumn) {
+  return buildCreatedDateSortExprs({
+    createdDateColumn,
+    tiebreakerOrderBy: RESCHEDULE_ORDER_BY,
+    tiebreakerSortKeyExpr: RESCHEDULE_TIEBREAKER_SORT_KEY,
+  });
+}
+
+export const defaultMssqlAppointmentReschedulesSortBundle =
+  createMssqlAppointmentReschedulesSortBundle("CreatedDate");
 
 const RESCHEDULE_ACTIVITY_WHERE = `[Activity] = N'${MSSQL_APPOINTMENT_RESCHEDULE_ACTIVITY}'`;
 
@@ -65,7 +88,9 @@ OFFSET @offset ROWS FETCH NEXT @page ROWS ONLY;
  * Keyset ตาม (LogTime, Schedule_ID, Schedule_Datetime, ModifiedDate, Old_Schedule_Datetime) ASC
  * — แยกแถว log ที่คีย์ซ้ำ; cursor เลื่อนด้วย > (เก่า→ใหม่ แถวใหม่อยู่ท้าย)
  */
-export function buildMssqlAppointmentReschedulesKeysetSelect() {
+export function buildMssqlAppointmentReschedulesKeysetSelect(
+  orderBy = RESCHEDULE_ORDER_BY,
+) {
   return `
 SELECT TOP (@page)
   ${SELECT_COLUMNS}
@@ -99,7 +124,7 @@ WHERE ${RESCHEDULE_ACTIVITY_WHERE}
       AND ${MSSQL_RESCHEDULE_OLD_SCHEDULE_DT_ORDER_EXPR} > @afterOldScheduleDatetime
     )
   )
-ORDER BY ${RESCHEDULE_ORDER_BY};
+ORDER BY ${orderBy};
 `.trim();
 }
 

@@ -1,3 +1,5 @@
+import { buildExamTwoStepSelectBundle } from "../../shared/js-migrate/mssqlExamTwoStepSelect.mjs";
+
 /**
  * คิวรีอ่าน dbo.examination จาก MSSQL แบบแบ่งหน้า
  */
@@ -212,6 +214,22 @@ const EXAMINATION_SELECT_COLUMNS = `
   CAST(CAST([Schedule_ID] AS NVARCHAR(50)) AS NVARCHAR(MAX)) AS schedule_id
 `.trim();
 
+const EXAMINATION_KEY_RANGE = `
+(@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
+  AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)`;
+
+/** @param {string | null | undefined} createdDateColumn */
+export function createMssqlExaminationSelectBundle(createdDateColumn) {
+  return buildExamTwoStepSelectBundle({
+    createdDateColumn,
+    detailColumns: EXAMINATION_SELECT_COLUMNS,
+    keyRangeWhere: EXAMINATION_KEY_RANGE,
+  });
+}
+
+export const defaultMssqlExaminationSelectBundle =
+  createMssqlExaminationSelectBundle("CreatedDate");
+
 export const MSSQL_EXAMINATION_ID_SELECT = `
 SELECT TOP (@page)
   CAST([Exam_ID] AS BIGINT) AS exam_id
@@ -225,5 +243,5 @@ SELECT
   ${EXAMINATION_SELECT_COLUMNS}
 FROM {{sourceObject}}
 WHERE [Exam_ID] IN ({{idPlaceholders}})
-ORDER BY [Exam_ID] ASC
+ORDER BY ${defaultMssqlExaminationSelectBundle.orderBy}
 `.trim();

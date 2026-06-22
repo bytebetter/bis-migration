@@ -7,7 +7,17 @@ import {
   MSSQL_EXAMINATION_DETAIL_BY_IDS_SELECT,
   MSSQL_EXAMINATION_ID_SELECT,
   MSSQL_EXAMINATION_SELECT,
+  createMssqlExaminationSelectBundle,
 } from "./mssqlExaminationSelect.mjs";
+import {
+  bindCreatedDateOrNumericKeyset,
+  advanceCreatedDateKeysetFromProbe,
+  buildCreatedDateCheckpointFields,
+} from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
+import {
+  initCreatedDateKeysetState,
+  setupCreatedDateMigrationSort,
+} from "../../shared/js-migrate/setupCreatedDateMigrationSort.mjs";
 import {
   ensureExaminationOldExamIdIndex,
   ensureExaminationStagingDdl,
@@ -77,7 +87,10 @@ const MSSQL_EXAM_ID_NUMERIC_EXPR = "[Exam_ID]";
  * อ่าน dbo.examination แบบ keyset: `WHERE [Exam_ID] > @after` แทน `OFFSET` — OFFSET นับแถว O(n) พอ data เยอะ
  * ยิ่ง offset สูงยิ่งช้า; keyset ใช้ index seek รายหน้าได้นานเสมอ
  */
-function buildMssqlExaminationKeysetSelect() {
+function buildMssqlExaminationKeysetSelect(sortBundle) {
+  if (sortBundle?.createdDateColumn) {
+    return sortBundle.keysetSingleSql;
+  }
   const marker = "FROM {{sourceObject}}";
   const s = MSSQL_EXAMINATION_SELECT;
   const idx = s.indexOf(marker);
@@ -85,7 +98,6 @@ function buildMssqlExaminationKeysetSelect() {
     throw new Error("MSSQL_EXAMINATION_SELECT: missing FROM {{sourceObject}}");
   }
   const head = s.slice(0, idx).trimEnd();
-  // Use TOP(@page) for keyset pagination to avoid OFFSET/FETCH overhead on large tables.
   const headWithTop = head.replace(/^SELECT\s*/i, "SELECT TOP (@page) ");
   return `${headWithTop},
   ${MSSQL_EXAM_ID_NUMERIC_EXPR} AS __mssql_exam_id
@@ -94,15 +106,16 @@ WHERE ${MSSQL_EXAM_ID_NUMERIC_EXPR} > @afterExamId AND (${EXAM_NUMERIC_KEY_RANGE
 ORDER BY ${MSSQL_EXAM_ID_NUMERIC_EXPR} ASC;`;
 }
 
-function buildMssqlExaminationProbeSelect() {
+function buildMssqlExaminationProbeSelect(sortBundle) {
+  if (sortBundle?.createdDateColumn) {
+    return sortBundle.idProbeSql.replace("AS exam_id", "AS probe_exam_id");
+  }
   return MSSQL_EXAMINATION_ID_SELECT.replace("AS exam_id", "AS probe_exam_id");
 }
 
-function buildMssqlExaminationDetailByIdsSelect(idPlaceholders) {
-  return MSSQL_EXAMINATION_DETAIL_BY_IDS_SELECT.replace(
-    "{{idPlaceholders}}",
-    idPlaceholders,
-  );
+function buildMssqlExaminationDetailByIdsSelect(idPlaceholders, sortBundle) {
+  const tpl = sortBundle?.detailByIdsSql ?? MSSQL_EXAMINATION_DETAIL_BY_IDS_SELECT;
+  return tpl.replace("{{idPlaceholders}}", idPlaceholders);
 }
 
 async function filterExamFetchRowsInsertOnly(pgClient, rows) {
@@ -462,7 +475,6 @@ async function runTableJob({
   const columns = tableJob.columns ?? [];
   const stagingTable = tableJob.stagingTable;
   const selectSqlFile = tableJob.selectSqlFile ?? null;
-  const orderBy = tableJob.orderBy ?? "[Exam_ID]";
   const batchSize = Math.max(
     50,
     Math.min(
@@ -520,8 +532,6 @@ async function runTableJob({
     return t;
   })();
 
-  const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
-  const sourceObjectNoLock = `${sourceObject} WITH (NOLOCK)`;
   const useMssqlKeysetBase =
     isExaminationBuiltin &&
     !selectSqlFile &&
@@ -555,11 +565,27 @@ async function runTableJob({
   offset = idx.offset;
   useMssqlKeyset = idx.useMssqlKeyset;
 
+  const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
+  const sourceObjectNoLock = `${sourceObject} WITH (NOLOCK)`;
+
+  let examinationSortBundle = null;
+  if (isExaminationBuiltin) {
+    examinationSortBundle = await setupCreatedDateMigrationSort(mssqlPool, {
+      migrationConfig,
+      sourceSchema,
+      sourceTable,
+      tableLabel: key,
+      createSelectBundle: createMssqlExaminationSelectBundle,
+    });
+  }
+  let orderBy =
+    tableJob.orderBy ?? examinationSortBundle?.orderBy ?? "[Exam_ID] ASC";
+
   const selectSql = (() => {
     const tpl = selectSqlFile
       ? readSql(sqlBaseDir, selectSqlFile)
       : useMssqlKeyset
-        ? buildMssqlExaminationKeysetSelect()
+        ? buildMssqlExaminationKeysetSelect(examinationSortBundle)
         : MSSQL_EXAMINATION_SELECT;
     let out = tpl
       .replaceAll("{{sourceObject}}", sourceObjectNoLock)
@@ -573,7 +599,7 @@ async function runTableJob({
     return out;
   })();
   const probeSql = (() => {
-    let p = buildMssqlExaminationProbeSelect().replaceAll(
+    let p = buildMssqlExaminationProbeSelect(examinationSortBundle).replaceAll(
       "{{sourceObject}}",
       sourceObjectNoLock,
     );
@@ -583,10 +609,23 @@ async function runTableJob({
     return p;
   })();
 
+  const useCreatedDateKeyset =
+    examinationSortBundle?.createdDateColumn != null && useMssqlKeyset;
   let mssqlKeysetAfter = checkpoint.mssqlKeysetAfter;
-  if (useMssqlKeyset && mssqlKeysetAfter == null) mssqlKeysetAfter = -1;
-  if (!useMssqlKeyset) mssqlKeysetAfter = null;
-  if (useMssqlKeyset && kb.min != null) {
+  if (useCreatedDateKeyset) {
+    const keysetState = initCreatedDateKeysetState(
+      checkpoint,
+      checkpointEnabled,
+      examinationSortBundle,
+    );
+    if (keysetState.sortKeyVersionUpgraded) offset = 0;
+    mssqlKeysetAfter = keysetState.mssqlKeysetAfter ?? "";
+  } else if (useMssqlKeyset && mssqlKeysetAfter == null) {
+    mssqlKeysetAfter = -1;
+  } else if (!useMssqlKeyset) {
+    mssqlKeysetAfter = null;
+  }
+  if (useMssqlKeyset && !useCreatedDateKeyset && kb.min != null) {
     const floorExclusive = kb.min - 1n;
     const curBi = toBigIntish(mssqlKeysetAfter);
     if (curBi < floorExclusive) {
@@ -811,8 +850,16 @@ async function runTableJob({
       if (probeSql.includes("@migrateSrcKeyMin")) {
         bindMigrateSrcNumericRange(pReq, migrationConfig, sql);
       }
+      bindCreatedDateOrNumericKeyset(
+        pReq,
+        sql,
+        useCreatedDateKeyset ? examinationSortBundle : null,
+        {
+          mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
+          numericAfter: toBigIntish(mssqlKeysetAfter),
+        },
+      );
       const probe = await pReq
-        .input("afterExamId", sql.BigInt, toBigIntish(mssqlKeysetAfter))
         .input("page", sql.Int, Math.min(pageSize, 50))
         .query(probeSql);
       const probeElapsedMs = Date.now() - probeStartedAt;
@@ -846,6 +893,7 @@ async function runTableJob({
         ids: idBatch,
         detailSqlTemplate: buildMssqlExaminationDetailByIdsSelect(
           "{{idPlaceholders}}",
+          examinationSortBundle,
         ).replaceAll("{{sourceObject}}", sourceObjectNoLock),
       });
       detailFetchElapsedMs = Date.now() - detailFetchStartedAt;
@@ -868,14 +916,32 @@ async function runTableJob({
       if (probeSql.includes("@migrateSrcKeyMin")) {
         bindMigrateSrcNumericRange(idReq, migrationConfig, sql);
       }
+      bindCreatedDateOrNumericKeyset(
+        idReq,
+        sql,
+        useCreatedDateKeyset ? examinationSortBundle : null,
+        {
+          mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
+          numericAfter: toBigIntish(mssqlKeysetAfter),
+        },
+      );
       const idResp = await idReq
-        .input("afterExamId", sql.BigInt, toBigIntish(mssqlKeysetAfter))
         .input("page", sql.Int, pageSize)
         .query(probeSql);
       idFetchElapsedMs = Date.now() - idFetchStartedAt;
       idRows = idResp.recordset || [];
       if (idRows.length > 0) {
         lastExamIdFromProbe = idRows[idRows.length - 1].probe_exam_id;
+        if (useCreatedDateKeyset) {
+          mssqlKeysetAfter = advanceCreatedDateKeysetFromProbe(
+            idRows,
+            examinationSortBundle,
+            {
+              mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
+              numericAfter: toBigIntish(mssqlKeysetAfter),
+            },
+          ).mssqlKeysetAfter;
+        }
       }
       if (probeTiming && !singleLineUi) {
         const idFirst =
@@ -897,6 +963,7 @@ async function runTableJob({
         const idPlaceholders = idRows.map((_, i) => `@id${i}`).join(", ");
         const detailSql = buildMssqlExaminationDetailByIdsSelect(
           idPlaceholders,
+          examinationSortBundle,
         ).replaceAll("{{sourceObject}}", sourceObjectNoLock);
         const detailReq = mssqlPool.request();
         idRows.forEach((r, i) => {

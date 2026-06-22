@@ -6,7 +6,9 @@ import pg from "pg";
 import {
   MSSQL_PROCEDURE_BY_OLD_DB_IDS_SELECT,
   MSSQL_PROCEDURE_SELECT,
+  createMssqlProcedureSelectBundle,
 } from "./mssqlProcedureSelect.mjs";
+import { setupCreatedDateMigrationSort } from "../../shared/js-migrate/setupCreatedDateMigrationSort.mjs";
 import { ensureProcedurePipelineDdl } from "./procedurePgDdl.mjs";
 import { runProcedureChunkPostLoad } from "./procedureMapping.mjs";
 import {
@@ -346,9 +348,14 @@ async function runProcedureTableJob({
   const sourceSchema = source?.schema ?? "dbo";
   const sourceTable = source?.table ?? "biopsy";
   const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
-  /** เน€เธฃเธตเธขเธเธเธเธ—เธตเนเธ•เธฒเธกเธเธตเธขเนเธซเธฅเธฑเธ โ€” เธเนเธฒ Exam_ID/BiopsyID เนเธเธเธฒเธเธ•เนเธเธ—เธฒเธเน€เธเนเธเธ•เธฑเธงเน€เธฅเธ */
-  const biopsyOrderExpr =
-    "CONVERT(BIGINT, [Exam_ID]) ASC, CONVERT(INT, [BiopsyID]) ASC";
+  const sortBundle = await setupCreatedDateMigrationSort(mssqlPool, {
+    migrationConfig,
+    sourceSchema,
+    sourceTable,
+    tableLabel: key,
+    createSelectBundle: createMssqlProcedureSelectBundle,
+  });
+  const biopsyOrderExpr = sortBundle.orderBy;
 
   const selectSql = MSSQL_PROCEDURE_SELECT.replaceAll(
     "{{sourceObject}}",

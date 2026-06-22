@@ -3,10 +3,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sql from "mssql";
 import pg from "pg";
+import { createMssqlUltrasoundSelectBundle } from "./mssqlUltrasoundSelect.mjs";
 import {
-  MSSQL_ULTRASOUND_DETAIL_BY_IDS_SELECT,
-  MSSQL_ULTRASOUND_ID_SELECT,
-} from "./mssqlUltrasoundSelect.mjs";
+  setupCreatedDateMigrationSort,
+  initCreatedDateKeysetState,
+} from "../../shared/js-migrate/setupCreatedDateMigrationSort.mjs";
+import {
+  bindCreatedDateOrNumericKeyset,
+  advanceCreatedDateKeysetFromProbe,
+  buildCreatedDateCheckpointFields,
+} from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import { ensureUltrasoundPipelineDdl } from "./ultrasoundPgDdl.mjs";
 import {
   normalizeMssqlRow,
@@ -229,14 +235,6 @@ async function main() {
   const sourceTable = config.source?.table ?? "ultrasound";
   const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
   const sourceObjectNoLock = `${sourceObject} WITH (NOLOCK)`;
-  const probeSql = MSSQL_ULTRASOUND_ID_SELECT.replaceAll(
-    "{{sourceObject}}",
-    sourceObjectNoLock,
-  );
-  const detailSqlTemplate = MSSQL_ULTRASOUND_DETAIL_BY_IDS_SELECT.replaceAll(
-    "{{sourceObject}}",
-    sourceObjectNoLock,
-  );
 
   const migration = mergeMigrationWithCli(config?.migration, "ultrasound");
   const batchSize = Math.max(
@@ -296,6 +294,23 @@ async function main() {
       uiState,
     );
   }
+
+  const sortBundle = await setupCreatedDateMigrationSort(pool, {
+    migrationConfig: migration,
+    sourceSchema,
+    sourceTable,
+    tableLabel: KEY,
+    createSelectBundle: createMssqlUltrasoundSelectBundle,
+  });
+  const probeSql = sortBundle.idProbeSql.replaceAll(
+    "{{sourceObject}}",
+    sourceObjectNoLock,
+  );
+  const detailSqlTemplate = sortBundle.detailByIdsSql.replaceAll(
+    "{{sourceObject}}",
+    sourceObjectNoLock,
+  );
+
   try {
     const probeTableSql = `SELECT TOP 1 [Exam_ID] FROM ${sourceObjectNoLock} ORDER BY [Exam_ID] ASC;`;
     const probeStartedAt = Date.now();
@@ -329,8 +344,26 @@ async function main() {
         `>>> [${KEY}] target: ${config.target.postgresDatabase} public.ultrasound (batchSize=${batchSize})`,
       );
 
-      let offset = Number(checkpointEnabled ? checkpoint.offset : 0);
-      if (!Number.isFinite(offset) || offset < 0) offset = 0;
+      const keysetState = initCreatedDateKeysetState(
+        checkpoint,
+        checkpointEnabled,
+        sortBundle,
+      );
+      let offset = keysetState.offset;
+      let afterExamId = keysetState.numericAfter;
+      let mssqlKeysetAfter = keysetState.mssqlKeysetAfter;
+      if (keysetState.sortKeyVersionUpgraded && checkpointEnabled) {
+        writeJson(
+          checkpointPath,
+          buildCreatedDateCheckpointFields(sortBundle, {
+            offset: 0,
+            mssqlKeysetAfter: "",
+            afterExamId: 0,
+            completed: false,
+            extra: { key: KEY },
+          }),
+        );
+      }
       const idx = applySourceIndexToMigrateJob({
         key: KEY,
         migrationConfig: migration,
@@ -339,8 +372,6 @@ async function main() {
         useMssqlKeyset: true,
       });
       offset = idx.offset;
-      let afterExamId = Number(checkpointEnabled ? checkpoint.afterExamId : 0);
-      if (!Number.isFinite(afterExamId) || afterExamId < 0) afterExamId = 0;
       const fieldIssueAcc = createFieldIssueAccumulator("exam_id");
       const fieldIssueLogPath = path.join(
         logsDir,
@@ -453,12 +484,22 @@ async function main() {
           const idProbeStartedAt = Date.now();
           const probeReq = pool.request();
           bindMigrateSrcNumericRange(probeReq, migration, sql);
+          bindCreatedDateOrNumericKeyset(probeReq, sql, sortBundle, {
+            mssqlKeysetAfter,
+            numericAfter: afterExamId,
+          });
           const idRes = await probeReq
-            .input("afterExamId", sql.BigInt, afterExamId)
             .input("page", sql.Int, pageSize)
             .query(probeSql);
           probeMs = Date.now() - idProbeStartedAt;
           const idRows = idRes.recordset || [];
+          const advanced = advanceCreatedDateKeysetFromProbe(
+            idRows,
+            sortBundle,
+            { numericAfter: afterExamId, mssqlKeysetAfter },
+          );
+          afterExamId = advanced.numericAfter;
+          mssqlKeysetAfter = advanced.mssqlKeysetAfter;
           ids = idRows
             .map((r) => Number.parseInt(r?.exam_id ?? "", 10))
             .filter((v) => Number.isFinite(v));
@@ -590,18 +631,18 @@ async function main() {
         if (keysetAdvance <= 0) break;
         if (!repairBatches) {
           offset += keysetAdvance;
-          if (ids.length > 0) {
-            afterExamId = Number.parseInt(String(ids[ids.length - 1]), 10);
-          }
-          if (checkpointEnabled) {
-            writeJson(checkpointPath, {
-              key: KEY,
+        }
+        if (checkpointEnabled && !repairBatches) {
+          writeJson(
+            checkpointPath,
+            buildCreatedDateCheckpointFields(sortBundle, {
               offset,
+              mssqlKeysetAfter,
               afterExamId,
               completed: false,
-              updatedAt: new Date().toISOString(),
-            });
-          }
+              extra: { key: KEY },
+            }),
+          );
         }
         if (debugLogs && !singleLineUi) {
           writeOutLine(
@@ -642,13 +683,16 @@ async function main() {
       }
 
       if (checkpointEnabled) {
-        writeJson(checkpointPath, {
-          key: KEY,
-          offset,
-          afterExamId,
-          completed: true,
-          updatedAt: new Date().toISOString(),
-        });
+        writeJson(
+          checkpointPath,
+          buildCreatedDateCheckpointFields(sortBundle, {
+            offset,
+            mssqlKeysetAfter,
+            afterExamId,
+            completed: true,
+            extra: { key: KEY },
+          }),
+        );
       }
       if (progressEnabled) endProgress(uiState);
 

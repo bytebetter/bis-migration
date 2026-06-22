@@ -3,11 +3,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sql from "mssql";
 import pg from "pg";
+import { createMssqlBillingSelectBundle } from "./mssqlBillingSelect.mjs";
 import {
-  MSSQL_BILLING_DETAIL_BY_IDS_SELECT,
-  MSSQL_BILLING_ID_SELECT,
-  MSSQL_BILLING_KEYSET_SELECT,
-} from "./mssqlBillingSelect.mjs";
+  setupCreatedDateMigrationSort,
+  initCreatedDateKeysetState,
+} from "../../shared/js-migrate/setupCreatedDateMigrationSort.mjs";
+import {
+  bindCreatedDateOrNumericKeyset,
+  advanceCreatedDateKeysetFromProbe,
+  advanceCreatedDateKeysetState,
+  buildCreatedDateCheckpointFields,
+} from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import { ensureBillingPipelineDdl } from "./billingPgDdl.mjs";
 import {
   BILLING_STAGING_COLUMNS,
@@ -229,19 +235,6 @@ async function main() {
   /** ค่าเริ่มต้น: probe+IN แบบ examination (เร็วกว่าคิวรีเดียวที่มี ~70 คอลัมน์บน MSSQL ไกล) */
   const mssqlOptimizeSingleQuery = migration.mssqlOptimizeSingleQuery === true;
 
-  const probeSql = MSSQL_BILLING_ID_SELECT.replaceAll(
-    "{{sourceObject}}",
-    sourceObjectNoLock,
-  );
-  const detailSqlTemplate = MSSQL_BILLING_DETAIL_BY_IDS_SELECT.replaceAll(
-    "{{sourceObject}}",
-    sourceObjectNoLock,
-  );
-  const keysetSql = MSSQL_BILLING_KEYSET_SELECT.replaceAll(
-    "{{sourceObject}}",
-    sourceObjectNoLock,
-  );
-
   const batchSize = Math.max(
     100,
     Math.min(5000, Number(migration.batchSize ?? 2000)),
@@ -302,6 +295,26 @@ async function main() {
   const mssqlConfig = buildMssqlConfig(config.source);
   const pool = await sql.connect(mssqlConfig);
   try {
+    const sortBundle = await setupCreatedDateMigrationSort(pool, {
+      migrationConfig: migration,
+      sourceSchema,
+      sourceTable,
+      tableLabel: KEY,
+      createSelectBundle: createMssqlBillingSelectBundle,
+    });
+    const probeSql = sortBundle.idProbeSql.replaceAll(
+      "{{sourceObject}}",
+      sourceObjectNoLock,
+    );
+    const detailSqlTemplate = sortBundle.detailByIdsSql.replaceAll(
+      "{{sourceObject}}",
+      sourceObjectNoLock,
+    );
+    const keysetSql = sortBundle.keysetSingleSql.replaceAll(
+      "{{sourceObject}}",
+      sourceObjectNoLock,
+    );
+
     const client = await pgPool.connect();
     try {
       resetBillingTargetColumnCache();
@@ -326,26 +339,44 @@ async function main() {
         batchSize,
       );
 
-      let offset = Number(checkpointEnabled ? checkpoint.offset : 0);
-      if (!Number.isFinite(offset) || offset < 0) offset = 0;
-      let afterExamId = Number(checkpointEnabled ? checkpoint.afterExamId : 0);
-      if (!Number.isFinite(afterExamId) || afterExamId < 0) afterExamId = 0;
+      const keysetState = initCreatedDateKeysetState(
+        checkpoint,
+        checkpointEnabled,
+        sortBundle,
+      );
+      let offset = keysetState.offset;
+      let afterExamId = keysetState.numericAfter;
+      let mssqlKeysetAfter = keysetState.mssqlKeysetAfter;
+      if (keysetState.sortKeyVersionUpgraded && checkpointEnabled) {
+        writeJson(
+          checkpointPath,
+          buildCreatedDateCheckpointFields(sortBundle, {
+            offset: 0,
+            mssqlKeysetAfter: "",
+            afterExamId: 0,
+            completed: false,
+            extra: { key: KEY },
+          }),
+        );
+      }
 
       const targetRowCount = await countBillingTargetRows(client);
       if (targetRowCount === 0 && !repairRun.active && !shouldSkipMigrateSideEffects()) {
-        const hadCheckpointProgress =
-          offset > 0 || afterExamId > 0 || checkpoint.completed === true;
         offset = 0;
         afterExamId = 0;
+        mssqlKeysetAfter = sortBundle.createdDateColumn ? "" : null;
         await resetBillingIdSequenceIfEmpty(client);
         if (checkpointEnabled) {
-          writeJson(checkpointPath, {
-            key: KEY,
-            offset: 0,
-            afterExamId: 0,
-            completed: false,
-            updatedAt: new Date().toISOString(),
-          });
+          writeJson(
+            checkpointPath,
+            buildCreatedDateCheckpointFields(sortBundle, {
+              offset: 0,
+              mssqlKeysetAfter: sortBundle.createdDateColumn ? "" : null,
+              afterExamId: 0,
+              completed: false,
+              extra: { key: KEY },
+            }),
+          );
         }
       }
 
@@ -359,7 +390,9 @@ async function main() {
       offset = idx.offset;
       if (kb.min != null) {
         const floorExclusive = Number(kb.min) - 1;
-        if (afterExamId < floorExclusive) afterExamId = floorExclusive;
+        if (!sortBundle.createdDateColumn && afterExamId < floorExclusive) {
+          afterExamId = floorExclusive;
+        }
       }
 
       if (kb.min != null || kb.max != null) {
@@ -478,13 +511,23 @@ async function main() {
         } else if (mssqlOptimizeSingleQuery) {
           const fetchReq = pool.request();
           bindMigrateSrcNumericRange(fetchReq, migration, sql);
+          bindCreatedDateOrNumericKeyset(fetchReq, sql, sortBundle, {
+            mssqlKeysetAfter,
+            numericAfter: afterExamId,
+          });
           const fetchStartedAt = Date.now();
           const fetchRes = await fetchReq
-            .input("afterExamId", sql.BigInt, afterExamId)
             .input("page", sql.Int, pageSize)
             .query(keysetSql);
           fetchMs = Date.now() - fetchStartedAt;
           rows = fetchRes.recordset || [];
+          const advanced = advanceCreatedDateKeysetState(
+            rows,
+            sortBundle,
+            { numericAfter: afterExamId, mssqlKeysetAfter },
+          );
+          afterExamId = advanced.numericAfter;
+          mssqlKeysetAfter = advanced.mssqlKeysetAfter;
           ids = rows
             .map((r) => Number.parseInt(String(r?.exam_id ?? "").trim(), 10))
             .filter((v) => Number.isFinite(v))
@@ -499,13 +542,24 @@ async function main() {
         } else {
           const idReq = pool.request();
           bindMigrateSrcNumericRange(idReq, migration, sql);
+          bindCreatedDateOrNumericKeyset(idReq, sql, sortBundle, {
+            mssqlKeysetAfter,
+            numericAfter: afterExamId,
+          });
           const idFetchStartedAt = Date.now();
           const idRes = await idReq
-            .input("afterExamId", sql.BigInt, afterExamId)
             .input("page", sql.Int, pageSize)
             .query(probeSql);
           idFetchMs = Date.now() - idFetchStartedAt;
-          ids = (idRes.recordset || [])
+          const idRows = idRes.recordset || [];
+          const advanced = advanceCreatedDateKeysetFromProbe(
+            idRows,
+            sortBundle,
+            { numericAfter: afterExamId, mssqlKeysetAfter },
+          );
+          afterExamId = advanced.numericAfter;
+          mssqlKeysetAfter = advanced.mssqlKeysetAfter;
+          ids = idRows
             .map((r) => Number.parseInt(String(r?.exam_id ?? "").trim(), 10))
             .filter((v) => Number.isFinite(v))
             .map(String);
@@ -552,18 +606,17 @@ async function main() {
           total += keysetAdvance;
           if (!repairRun.active) {
             offset += keysetAdvance;
-            if (ids.length > 0) {
-              afterExamId =
-                Number.parseInt(ids[ids.length - 1], 10) || afterExamId;
-            }
             if (checkpointEnabled) {
-              writeJson(checkpointPath, {
-                key: KEY,
-                offset,
-                afterExamId,
-                completed: false,
-                updatedAt: new Date().toISOString(),
-              });
+              writeJson(
+                checkpointPath,
+                buildCreatedDateCheckpointFields(sortBundle, {
+                  offset,
+                  mssqlKeysetAfter,
+                  afterExamId,
+                  completed: false,
+                  extra: { key: KEY },
+                }),
+              );
             }
           }
           if (debugLogs && !singleLineUi) {
@@ -682,18 +735,17 @@ async function main() {
         total += keysetAdvance;
         if (!repairRun.active) {
           offset += keysetAdvance;
-          if (ids.length > 0) {
-            afterExamId =
-              Number.parseInt(ids[ids.length - 1], 10) || afterExamId;
-          }
           if (checkpointEnabled) {
-            writeJson(checkpointPath, {
-              key: KEY,
-              offset,
-              afterExamId,
-              completed: false,
-              updatedAt: new Date().toISOString(),
-            });
+            writeJson(
+              checkpointPath,
+              buildCreatedDateCheckpointFields(sortBundle, {
+                offset,
+                mssqlKeysetAfter,
+                afterExamId,
+                completed: false,
+                extra: { key: KEY },
+              }),
+            );
           }
         }
 
@@ -740,13 +792,16 @@ async function main() {
       }
 
       if (checkpointEnabled) {
-        writeJson(checkpointPath, {
-          key: KEY,
-          offset,
-          afterExamId,
-          completed: true,
-          updatedAt: new Date().toISOString(),
-        });
+        writeJson(
+          checkpointPath,
+          buildCreatedDateCheckpointFields(sortBundle, {
+            offset,
+            mssqlKeysetAfter,
+            afterExamId,
+            completed: true,
+            extra: { key: KEY },
+          }),
+        );
       }
       if (progressEnabled) endProgress(uiState);
 

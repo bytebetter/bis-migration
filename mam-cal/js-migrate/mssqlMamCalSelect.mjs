@@ -1,3 +1,5 @@
+import { buildExamChildKeysetSelectBundle } from "../../shared/js-migrate/mssqlExamTwoStepSelect.mjs";
+
 const MAM_CAL_STAGING_COLUMNS = `
   [Described_Cal_ID],
   [Exam_ID],
@@ -32,27 +34,25 @@ const MAM_CAL_COLUMNS = `
   CAST(s.[r_Position_Clock] AS NVARCHAR(MAX)) AS r_position_clock
 `.trim();
 
-export const MSSQL_MAM_CAL_KEYSET_SELECT = `
-SELECT
-  ${MAM_CAL_COLUMNS}
-FROM (
-  SELECT TOP (@page)
-    ${MAM_CAL_STAGING_COLUMNS}
-  FROM {{sourceObject}}
-  WHERE (
-    [Exam_ID] > @afterExamId
-    OR ([Exam_ID] = @afterExamId AND [Described_Cal_ID] > @afterChildId)
-  )
-    AND (@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
-    AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)
-  ORDER BY [Exam_ID] ASC, [Described_Cal_ID] ASC
-) s
-`.trim();
+const MAM_CAL_KEY_RANGE = `
+(@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
+  AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)`;
 
-export const MSSQL_MAM_CAL_BY_EXAM_IDS_SELECT = `
-SELECT
-  ${MAM_CAL_COLUMNS}
-FROM {{sourceObject}}
-WHERE [Exam_ID] IN ({{idPlaceholders}})
-ORDER BY [Exam_ID] ASC, [Described_Cal_ID] ASC
-`.trim();
+/** @param {string | null | undefined} createdDateColumn */
+export function createMssqlMamCalSelectBundle(createdDateColumn) {
+  return buildExamChildKeysetSelectBundle({
+    createdDateColumn,
+    selectColumns: MAM_CAL_COLUMNS,
+    stagingColumns: MAM_CAL_STAGING_COLUMNS,
+    childColumn: "Described_Cal_ID",
+    keyRangeWhere: MAM_CAL_KEY_RANGE,
+  });
+}
+
+export const defaultMssqlMamCalSelectBundle =
+  createMssqlMamCalSelectBundle("CreatedDate");
+
+export const MSSQL_MAM_CAL_KEYSET_SELECT =
+  defaultMssqlMamCalSelectBundle.keysetSql;
+export const MSSQL_MAM_CAL_BY_EXAM_IDS_SELECT =
+  defaultMssqlMamCalSelectBundle.detailByExamIdsSql;
