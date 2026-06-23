@@ -223,7 +223,7 @@ async function main() {
 
   const batchSize = Math.max(
     100,
-    Math.min(5000, Number(migration.batchSize ?? 2000)),
+    Math.min(20000, Number(migration.batchSize ?? 2000)),
   );
   const progressEnabled = migration.progressUi !== false;
   const singleLineUi = migration.singleLineUi !== false;

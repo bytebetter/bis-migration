@@ -372,7 +372,7 @@ async function runAppointmentTableJob({
   const key = KEY;
   const batchSize = Math.max(
     50,
-    Math.min(5000, Number(migrationConfig.batchSize ?? 2000)),
+    Math.min(20000, Number(migrationConfig.batchSize ?? 2000)),
   );
   const checkpointEnabled = migrationConfig.enableCheckpoint !== false;
   const checkpointDir = path.resolve(
