@@ -13,6 +13,8 @@ import {
 import {
   bindCreatedDateOrNumericKeyset,
   advanceCreatedDateKeysetFromProbe,
+  advanceCreatedDateKeysetState,
+  buildCreatedDateCheckpointFields,
 } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import {
   initCreatedDateKeysetState,
@@ -884,7 +886,20 @@ END $$;
     if (!repairBatches) {
       offset += advance;
       if (useMssqlKeyset) {
-        if (twoStepLastScheduleIdNum != null) {
+        if (useCreatedDateKeyset) {
+          // two-step: คง __mssql_sort_key จาก advanceCreatedDateKeysetFromProbe หลัง probe
+          if (!(useNativeKeyset && useTwoStepFetch)) {
+            mssqlKeysetAfter = advanceCreatedDateKeysetState(
+              rows,
+              appointmentSortBundle,
+              {
+                mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
+                numericAfter: toBigIntish(mssqlKeysetAfter),
+              },
+              { numericField: "schedule_id" },
+            ).mssqlKeysetAfter;
+          }
+        } else if (twoStepLastScheduleIdNum != null) {
           mssqlKeysetAfter = twoStepLastScheduleIdNum;
         } else if (useNativeKeyset) {
           mssqlKeysetAfter = rows[n - 1].schedule_id;
@@ -908,15 +923,27 @@ END $$;
       );
     }
     if (checkpointEnabled && !repairBatches) {
-      writeJson(checkpointPath, {
-        key,
-        offset,
-        ...(useMssqlKeyset
-          ? { mssqlKeysetAfter: keysetIdForCheckpoint(mssqlKeysetAfter) }
-          : { mssqlKeysetAfter: null }),
-        completed: false,
-        updatedAt: new Date().toISOString(),
-      });
+      writeJson(
+        checkpointPath,
+        useCreatedDateKeyset
+          ? {
+              key,
+              ...buildCreatedDateCheckpointFields(appointmentSortBundle, {
+                offset,
+                mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
+                completed: false,
+              }),
+            }
+          : {
+              key,
+              offset,
+              ...(useMssqlKeyset
+                ? { mssqlKeysetAfter: keysetIdForCheckpoint(mssqlKeysetAfter) }
+                : { mssqlKeysetAfter: null }),
+              completed: false,
+              updatedAt: new Date().toISOString(),
+            },
+      );
     }
     const isLastPage = repairBatches
       ? repairBatchIndex >= repairBatches.length
@@ -956,15 +983,27 @@ END $$;
   await syncAppointmentIdSequence(pgClient);
 
   if (checkpointEnabled) {
-    writeJson(checkpointPath, {
-      key,
-      offset,
-      ...(useMssqlKeyset
-        ? { mssqlKeysetAfter: keysetIdForCheckpoint(mssqlKeysetAfter) }
-        : { mssqlKeysetAfter: null }),
-      completed: true,
-      updatedAt: new Date().toISOString(),
-    });
+    writeJson(
+      checkpointPath,
+      useCreatedDateKeyset
+        ? {
+            key,
+            ...buildCreatedDateCheckpointFields(appointmentSortBundle, {
+              offset,
+              mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
+              completed: true,
+            }),
+          }
+        : {
+            key,
+            offset,
+            ...(useMssqlKeyset
+              ? { mssqlKeysetAfter: keysetIdForCheckpoint(mssqlKeysetAfter) }
+              : { mssqlKeysetAfter: null }),
+            completed: true,
+            updatedAt: new Date().toISOString(),
+          },
+    );
   }
 
   let fieldIssueLogWritten = null;
