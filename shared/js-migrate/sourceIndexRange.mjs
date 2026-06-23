@@ -262,6 +262,10 @@ export function shouldStopMigratePagination({
   if (hasMigrateRowWindow(migrationConfig, indexLimited)) {
     return (advance ?? 0) <= 0;
   }
+  // มี plannedRows จาก COUNT — อย่าหยุดแค่เพราะ advance < pageSize ถ้ายังไม่ครบแผน
+  if (plannedRows != null && rowsReadInWindow < plannedRows) {
+    return (advance ?? 0) <= 0;
+  }
   return (advance ?? 0) < pageSize;
 }
 

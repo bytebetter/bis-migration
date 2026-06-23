@@ -814,29 +814,47 @@ async function runTableJob({
   if (isExaminationBuiltin && repairSourceIds == null) {
     const targetRowCount = await countExaminationTargetRows(pgClient);
     if (targetRowCount === 0) {
-      const keysetAfterNum =
-        mssqlKeysetAfter == null ? -1 : Number(mssqlKeysetAfter);
-      const hadCheckpointProgress =
-        offset > 0 ||
-        (useMssqlKeyset &&
-          Number.isFinite(keysetAfterNum) &&
-          keysetAfterNum > -1) ||
-        checkpoint.completed === true;
       offset = 0;
-      if (useMssqlKeyset) mssqlKeysetAfter = -1;
+      if (useMssqlKeyset) {
+        mssqlKeysetAfter = useCreatedDateKeyset ? "" : -1;
+        if (useCreatedDateKeyset) numericKeysetAfter = toBigIntish(0);
+        else numericKeysetAfter = -1n;
+      }
       await resetExaminationIdSequenceIfEmpty(pgClient);
       if (checkpointEnabled) {
-        writeJson(checkpointPath, {
-          key,
-          offset: 0,
-          ...(useMssqlKeyset
-            ? { mssqlKeysetAfter: keysetIdForCheckpoint(-1) }
-            : { mssqlKeysetAfter: null }),
-          completed: false,
-          updatedAt: new Date().toISOString(),
-        });
+        writeJson(
+          checkpointPath,
+          useCreatedDateKeyset
+            ? {
+                key,
+                ...buildCreatedDateCheckpointFields(examinationSortBundle, {
+                  offset: 0,
+                  mssqlKeysetAfter: "",
+                  completed: false,
+                }),
+              }
+            : {
+                key,
+                offset: 0,
+                ...(useMssqlKeyset
+                  ? { mssqlKeysetAfter: keysetIdForCheckpoint(-1) }
+                  : { mssqlKeysetAfter: null }),
+                completed: false,
+                updatedAt: new Date().toISOString(),
+              },
+        );
       }
     }
+  }
+
+  if (
+    useCreatedDateKeyset &&
+    checkpointEnabled &&
+    String(mssqlKeysetAfter ?? "").trim() !== ""
+  ) {
+    console.error(
+      `>>> [${key}] resume CreatedDate keyset: offset=${offset} afterSortKey=${String(mssqlKeysetAfter).slice(0, 72)}${String(mssqlKeysetAfter).length > 72 ? "…" : ""}`,
+    );
   }
 
   while (true) {
@@ -1421,6 +1439,14 @@ LIMIT 200;
 
   if (progressEnabled) endProgress(uiState);
 
+  const migrationReachedPlan =
+    plannedRows == null || total >= plannedRows;
+  if (!migrationReachedPlan) {
+    console.error(
+      `>>> [${key}] คำเตือน: อ่านต้นทางได้ ${total}/${plannedRows} แถว — ยังไม่ครบแผน (checkpoint completed=false, รันซ้ำเพื่อต่อ)`,
+    );
+  }
+
   if (isExaminationBuiltin) {
     await syncExaminationIdSequenceOnce(pgClient);
   }
@@ -1434,7 +1460,7 @@ LIMIT 200;
             ...buildCreatedDateCheckpointFields(examinationSortBundle, {
               offset,
               mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
-              completed: true,
+              completed: migrationReachedPlan,
             }),
           }
         : {
@@ -1443,7 +1469,7 @@ LIMIT 200;
             ...(useMssqlKeyset
               ? { mssqlKeysetAfter: keysetIdForCheckpoint(mssqlKeysetAfter) }
               : { mssqlKeysetAfter: null }),
-            completed: true,
+            completed: migrationReachedPlan,
             updatedAt: new Date().toISOString(),
           },
     );
