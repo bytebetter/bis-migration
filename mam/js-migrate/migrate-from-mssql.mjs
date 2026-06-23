@@ -47,6 +47,7 @@ import {
   plannedRowsForPageSize,
   trimRowsToMigrateCap,
   capAdvanceToMigratePlan,
+  shouldStopMigratePagination,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
@@ -61,10 +62,7 @@ import {
   takeNextRepairBatch,
 } from "../../shared/js-migrate/repairRun.mjs";
 
-import {
-  formatAdvanceLog,
-  isLastKeysetPage,
-} from "../../shared/js-migrate/twoStepKeyset.mjs";
+import { formatAdvanceLog } from "../../shared/js-migrate/twoStepKeyset.mjs";
 import { createChunkResultsLogger } from "../../shared/js-migrate/chunkResultsLog.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -669,13 +667,14 @@ async function main() {
         if (repairRun.active) {
           if (repairRunIsDone(repairRun)) break;
         } else if (
-          isIndexWindowComplete({
-            indexLimited: idx.indexLimited,
-        migrationConfig: migration,
-            plannedRows,
+          shouldStopMigratePagination({
+            advance: keysetAdvance,
+            pageSize,
             rowsReadInWindow: Math.max(0, offset - idx.indexStartOffset),
-          }) ||
-          isLastKeysetPage(keysetAdvance, pageSize)
+            plannedRows,
+            migrationConfig: migration,
+            indexLimited: idx.indexLimited,
+          })
         ) {
           break;
         }

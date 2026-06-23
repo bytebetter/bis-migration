@@ -236,6 +236,36 @@ export function isIndexWindowComplete(p) {
 }
 
 /**
+ * หยุด loop migrate หรือยัง — เมื่อมี snapshot cap / index range อย่าหยุดแค่เพราะ advance < pageSize
+ * (ยังมีแถวในแผนเหลือ) ให้หยุดเมื่อ advance <= 0 (MSSQL ไม่ส่งแถวแล้ว) หรือครบ plannedRows
+ */
+export function shouldStopMigratePagination({
+  advance,
+  pageSize,
+  rowsReadInWindow,
+  plannedRows,
+  migrationConfig,
+  indexLimited,
+  repairDone = false,
+}) {
+  if (repairDone) return true;
+  if (
+    isIndexWindowComplete({
+      indexLimited,
+      migrationConfig,
+      plannedRows,
+      rowsReadInWindow,
+    })
+  ) {
+    return true;
+  }
+  if (hasMigrateRowWindow(migrationConfig, indexLimited)) {
+    return (advance ?? 0) <= 0;
+  }
+  return (advance ?? 0) < pageSize;
+}
+
+/**
  * รวม offset + keyset + log หลังอ่าน checkpoint
  *
  * @param {{

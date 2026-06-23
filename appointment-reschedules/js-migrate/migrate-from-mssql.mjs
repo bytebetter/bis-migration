@@ -11,7 +11,6 @@ import {
   createMssqlAppointmentReschedulesSortBundle,
 } from "./mssqlAppointmentReschedulesSelect.mjs";
 import { setupCreatedDateMigrationSort } from "../../shared/js-migrate/setupCreatedDateMigrationSort.mjs";
-import { isLastKeysetPage } from "../../shared/js-migrate/twoStepKeyset.mjs";
 import {
   ensureAppointmentReschedulesPipelineDdl,
   ensureAppointmentReschedulesTargetIndexes,
@@ -50,6 +49,7 @@ import {
   resolvePageSize,
   plannedRowsForPageSize,
   trimRowsToMigrateCap,
+  shouldStopMigratePagination,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { REPAIR_SPEC_APPOINTMENT_RESCHEDULES } from "../../shared/js-migrate/migrateTableSpecs.mjs";
@@ -922,14 +922,14 @@ async function runAppointmentReschedulesTableJob({
           updatedAt: new Date().toISOString(),
         });
       }
-      const isLastPage =
-        isIndexWindowComplete({
-          indexLimited: idx.indexLimited,
+      const isLastPage = shouldStopMigratePagination({
+        advance: n,
+        pageSize,
+        rowsReadInWindow: total,
+        plannedRows,
         migrationConfig,
-          plannedRows,
-          rowsReadInWindow: total,
-        }) ||
-        (useMssqlKeyset ? isLastKeysetPage(n, pageSize) : n < pageSize);
+        indexLimited: idx.indexLimited,
+      });
       if (debugLogs) {
         writeOutLine(
           `>>> [${key}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(

@@ -33,10 +33,7 @@ import {
   renderProgress,
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
-import {
-  formatAdvanceLog,
-  isLastKeysetPage,
-} from "../../shared/js-migrate/twoStepKeyset.mjs";
+import { formatAdvanceLog } from "../../shared/js-migrate/twoStepKeyset.mjs";
 import { createChunkResultsLogger } from "../../shared/js-migrate/chunkResultsLog.mjs";
 import {
   logByIdMigrationRun,
@@ -53,6 +50,7 @@ import {
   plannedRowsForPageSize,
   trimRowsToMigrateCap,
   capAdvanceToMigratePlan,
+  shouldStopMigratePagination,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
@@ -670,13 +668,14 @@ async function main() {
         if (repairBatches) {
           if (repairBatchIndex >= repairBatches.length) break;
         } else if (
-          isIndexWindowComplete({
-            indexLimited: idx.indexLimited,
-        migrationConfig: migration,
-            plannedRows,
+          shouldStopMigratePagination({
+            advance: keysetAdvance,
+            pageSize,
             rowsReadInWindow: Math.max(0, offset - idx.indexStartOffset),
-          }) ||
-          isLastKeysetPage(keysetAdvance, pageSize)
+            plannedRows,
+            migrationConfig: migration,
+            indexLimited: idx.indexLimited,
+          })
         ) {
           break;
         }
