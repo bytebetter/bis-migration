@@ -31,7 +31,13 @@
         "batchSize": 20000
       }
     },
-    "examination": {},
+    "examination": {
+      "migration": {
+        "batchSize": 5000,
+        "mssqlTwoStepFetch": false,
+        "chunkLogMode": "compact"
+      }
+    },
     "billing": {},
     "examination_general": {},
     "exam_recommend_birads45": {},

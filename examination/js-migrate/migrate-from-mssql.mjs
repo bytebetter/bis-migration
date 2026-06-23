@@ -622,6 +622,10 @@ async function runTableJob({
 
   const useCreatedDateKeyset =
     examinationSortBundle?.createdDateColumn != null && useMssqlKeyset;
+  const useTwoStepFetch =
+    isExaminationBuiltin &&
+    useMssqlKeyset &&
+    migrationConfig.mssqlTwoStepFetch === true;
   let mssqlKeysetAfter = checkpoint.mssqlKeysetAfter;
   let numericKeysetAfter = -1n;
   if (useCreatedDateKeyset) {
@@ -665,7 +669,11 @@ async function runTableJob({
   }
 
   console.error(
-    `>>> [${key}] start offset: ${offset}${useMssqlKeyset ? " (MSSQL keyset ตาม [Exam_ID])" : ""}`,
+    `>>> [${key}] start offset: ${offset}${
+      useMssqlKeyset
+        ? ` (MSSQL keyset${useCreatedDateKeyset ? " CreatedDate" : " [Exam_ID]"}, ${useTwoStepFetch ? "two-step probe+detail" : "single-query"})`
+        : ""
+    }`,
   );
 
   if (isExaminationBuiltin && toArray(tableJob.preLoadSqlFiles).length === 0) {
@@ -944,7 +952,7 @@ async function runTableJob({
         );
       }
       if (rows.length === 0) continue;
-    } else if (isExaminationBuiltin && useMssqlKeyset) {
+    } else if (isExaminationBuiltin && useMssqlKeyset && useTwoStepFetch) {
       // Step 1: fetch lightweight Exam_ID list (keyset).
       const idFetchStartedAt = Date.now();
       const idReq = mssqlPool.request();
@@ -996,20 +1004,15 @@ async function runTableJob({
         rows = [];
         fetchElapsedMs = idFetchElapsedMs;
       } else {
-        // Step 2: fetch full detail for that ID chunk.
-        const idPlaceholders = idRows.map((_, i) => `@id${i}`).join(", ");
-        const detailSql = buildMssqlExaminationDetailByIdsSelect(
-          idPlaceholders,
-          examinationSortBundle,
-        ).replaceAll("{{sourceObject}}", sourceObjectNoLock);
-        const detailReq = mssqlPool.request();
-        idRows.forEach((r, i) => {
-          detailReq.input(`id${i}`, sql.BigInt, toBigIntish(r.probe_exam_id));
-        });
         const detailFetchStartedAt = Date.now();
-        const detailResp = await detailReq.query(detailSql);
+        rows = await fetchMssqlRowsByIds(mssqlPool, sql, {
+          ids: idRows.map((r) => r.probe_exam_id),
+          detailSqlTemplate: buildMssqlExaminationDetailByIdsSelect(
+            "{{idPlaceholders}}",
+            examinationSortBundle,
+          ).replaceAll("{{sourceObject}}", sourceObjectNoLock),
+        });
         detailFetchElapsedMs = Date.now() - detailFetchStartedAt;
-        rows = detailResp.recordset || [];
         fetchElapsedMs = idFetchElapsedMs + detailFetchElapsedMs;
         if (probeTiming && !singleLineUi) {
           writeOutLine(
@@ -1024,17 +1027,29 @@ async function runTableJob({
       if (selectSql.includes("@migrateSrcKeyMin")) {
         bindMigrateSrcNumericRange(fq, migrationConfig, sql);
       }
-      const r = useMssqlKeyset
-        ? await fq
-            .input("afterExamId", sql.BigInt, numericKeysetAfter)
-            .input("page", sql.Int, pageSize)
-            .query(selectSql)
-        : await fq
-            .input("offset", sql.Int, offset)
-            .input("page", sql.Int, pageSize)
-            .query(selectSql);
+      if (useMssqlKeyset) {
+        bindCreatedDateOrNumericKeyset(
+          fq,
+          sql,
+          useCreatedDateKeyset ? examinationSortBundle : null,
+          keysetBindState(
+            useCreatedDateKeyset,
+            mssqlKeysetAfter,
+            numericKeysetAfter,
+          ),
+        );
+        const resp = await fq
+          .input("page", sql.Int, pageSize)
+          .query(selectSql);
+        rows = resp.recordset || [];
+      } else {
+        const resp = await fq
+          .input("offset", sql.Int, offset)
+          .input("page", sql.Int, pageSize)
+          .query(selectSql);
+        rows = resp.recordset || [];
+      }
       fetchElapsedMs = Date.now() - fetchStartedAt;
-      rows = r.recordset || [];
     }
 
     if (debugLogs && !singleLineUi) {
@@ -1053,7 +1068,9 @@ async function runTableJob({
     if (rows.length === 0) break;
 
     let keysetAdvance = resolveKeysetAdvance(
-      isExaminationBuiltin && useMssqlKeyset ? idRows.length : null,
+      isExaminationBuiltin && useMssqlKeyset && useTwoStepFetch
+        ? idRows.length
+        : null,
       rows.length,
     );
     keysetAdvance = capAdvanceToMigratePlan(
@@ -1075,25 +1092,26 @@ async function runTableJob({
     const n = stagingRows.length;
     chunkIndex += 1;
 
+    const advanceCreatedDateFromChunkRows =
+      useCreatedDateKeyset && (!isExaminationBuiltin || !useTwoStepFetch);
+
     /** chunk จาก MSSQL หมดชุดแล้วทุก exam มีอยู่แล้ว (insert-only) — ข้าม TX แต่ต้อง advance keyset/checkpoint */
     if (n === 0) {
       total += keysetAdvance;
       if (!repairBatches) {
         offset += keysetAdvance;
         if (useMssqlKeyset) {
-          if (useCreatedDateKeyset) {
-            if (!isExaminationBuiltin) {
-              mssqlKeysetAfter = advanceCreatedDateKeysetState(
-                rows,
-                examinationSortBundle,
-                keysetBindState(
-                  useCreatedDateKeyset,
-                  mssqlKeysetAfter,
-                  numericKeysetAfter,
-                ),
-              ).mssqlKeysetAfter;
-            }
-          } else {
+          if (advanceCreatedDateFromChunkRows) {
+            mssqlKeysetAfter = advanceCreatedDateKeysetState(
+              rows,
+              examinationSortBundle,
+              keysetBindState(
+                useCreatedDateKeyset,
+                mssqlKeysetAfter,
+                numericKeysetAfter,
+              ),
+            ).mssqlKeysetAfter;
+          } else if (!useCreatedDateKeyset) {
             const nextKeyset =
               lastExamIdFromProbe ??
               toBigIntish(normExamId(rows[rows.length - 1]?.exam_id));
@@ -1359,19 +1377,17 @@ LIMIT 200;
     if (!repairBatches) {
       offset += keysetAdvance;
       if (useMssqlKeyset) {
-        if (useCreatedDateKeyset) {
-          if (!isExaminationBuiltin) {
-            mssqlKeysetAfter = advanceCreatedDateKeysetState(
-              rows,
-              examinationSortBundle,
-              keysetBindState(
-                useCreatedDateKeyset,
-                mssqlKeysetAfter,
-                numericKeysetAfter,
-              ),
-            ).mssqlKeysetAfter;
-          }
-        } else {
+        if (advanceCreatedDateFromChunkRows) {
+          mssqlKeysetAfter = advanceCreatedDateKeysetState(
+            rows,
+            examinationSortBundle,
+            keysetBindState(
+              useCreatedDateKeyset,
+              mssqlKeysetAfter,
+              numericKeysetAfter,
+            ),
+          ).mssqlKeysetAfter;
+        } else if (!useCreatedDateKeyset) {
           const nextKeyset =
             lastExamIdFromProbe ??
             toBigIntish(normExamId(rows[rows.length - 1]?.exam_id));
