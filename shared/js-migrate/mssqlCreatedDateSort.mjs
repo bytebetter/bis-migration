@@ -7,7 +7,7 @@ function mssqlStringLiteral(value) {
 }
 
 export const DEFAULT_CREATED_DATE_COLUMN = "CreatedDate";
-export const CREATED_DATE_SORT_KEY_VERSION = 2;
+export const CREATED_DATE_SORT_KEY_VERSION = 3;
 export const LEGACY_SORT_KEY_VERSION = 1;
 
 /** BIGINT column → lexicographic sort key (zero-padded 20 digits) */

@@ -7,6 +7,13 @@ import {
   mssqlIntColumnSortKeyExpr,
   bracketMssqlIdent,
 } from "./mssqlCreatedDateSort.mjs";
+import {
+  createdDateSelectExpr,
+  examChildCreatedDateOrderBy,
+  examChildCreatedDateWhereClause,
+  examIdOnlyCreatedDateOrderBy,
+  examIdOnlyCreatedDateWhereClause,
+} from "./mssqlCreatedDateCompositeKeyset.mjs";
 
 /**
  * two-step fetch (probe Exam_ID → detail IN) พร้อม CreatedDate sort
@@ -40,10 +47,10 @@ FROM (
   const idProbeCreatedDate = `
 SELECT TOP (@page)
   CAST([Exam_ID] AS BIGINT) AS exam_id,
-  ${sort.sortKeyExpr} AS __mssql_sort_key
+  ${createdDateSelectExpr(sort.createdDateColumn)}
 FROM {{sourceObject}}
-WHERE ${sort.sortKeyExpr} > @afterSortKey${keyRangeClause}
-ORDER BY ${sort.orderBy}`.trim();
+WHERE ${examIdOnlyCreatedDateWhereClause(sort.createdDateColumn)}${keyRangeClause}
+ORDER BY ${examIdOnlyCreatedDateOrderBy(sort.createdDateColumn)}`.trim();
 
   const keysetSingleLegacy = `
 SELECT TOP (@page)
@@ -55,10 +62,10 @@ ORDER BY ${MSSQL_EXAM_ID_ORDER_BY}`.trim();
   const keysetSingleCreatedDate = `
 SELECT TOP (@page)
 ${detailColumns},
-  ${sort.sortKeyExpr} AS __mssql_sort_key
+  ${createdDateSelectExpr(sort.createdDateColumn)}
 FROM {{sourceObject}}
-WHERE ${sort.sortKeyExpr} > @afterSortKey${keyRangeClause}
-ORDER BY ${sort.orderBy}`.trim();
+WHERE ${examIdOnlyCreatedDateWhereClause(sort.createdDateColumn)}${keyRangeClause}
+ORDER BY ${examIdOnlyCreatedDateOrderBy(sort.createdDateColumn)}`.trim();
 
   const detailByIds = `
 SELECT
@@ -121,10 +128,10 @@ FROM (
   const keysetCreatedDate = `
 SELECT TOP (@page)
   ${selectColumns},
-  ${sort.sortKeyExpr} AS __mssql_sort_key
-FROM {{sourceObject}}
-WHERE ${sort.sortKeyExpr} > @afterSortKey${keyRangeClause}
-ORDER BY ${sort.orderBy}`.trim();
+  ${createdDateSelectExpr(String(createdDateColumn).trim(), "s")}
+FROM {{sourceObject}} AS s
+WHERE ${examChildCreatedDateWhereClause(String(createdDateColumn).trim(), childColumn)}${keyRangeClause}
+ORDER BY ${examChildCreatedDateOrderBy(String(createdDateColumn).trim(), childColumn)}`.trim();
 
   const detailByExamIds = `
 SELECT
@@ -172,10 +179,10 @@ FROM (
   const idProbeCreatedDate = `
 SELECT TOP (@page)
   CAST([Exam_ID] AS BIGINT) AS exam_id,
-  ${sort.sortKeyExpr} AS __mssql_sort_key
+  ${createdDateSelectExpr(sort.createdDateColumn)}
 FROM {{sourceObject}}
-WHERE ${sort.sortKeyExpr} > @afterSortKey${keyRangeClause}
-ORDER BY ${sort.orderBy}`.trim();
+WHERE ${examIdOnlyCreatedDateWhereClause(sort.createdDateColumn)}${keyRangeClause}
+ORDER BY ${examIdOnlyCreatedDateOrderBy(sort.createdDateColumn)}`.trim();
 
   const detailByIds = `
 SELECT
