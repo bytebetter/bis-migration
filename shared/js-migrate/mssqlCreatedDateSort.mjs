@@ -1,12 +1,14 @@
-import sql from "mssql";
+export function bracketMssqlIdent(name) {
+  return `[${String(name).replace(/]/g, "]]")}]`;
+}
+
+function mssqlStringLiteral(value) {
+  return `N'${String(value).replace(/'/g, "''")}'`;
+}
 
 export const DEFAULT_CREATED_DATE_COLUMN = "CreatedDate";
 export const CREATED_DATE_SORT_KEY_VERSION = 2;
 export const LEGACY_SORT_KEY_VERSION = 1;
-
-export function bracketMssqlIdent(name) {
-  return `[${String(name).replace(/]/g, "]]")}]`;
-}
 
 /** BIGINT column → lexicographic sort key (zero-padded 20 digits) */
 export function mssqlBigIntColumnSortKeyExpr(bracketedColumn) {
@@ -110,16 +112,12 @@ export async function resolveMssqlCreatedDateColumn(
     typeof cfg === "string" && cfg.trim() !== "" ? cfg.trim() : null;
   const column = explicitColumn ?? DEFAULT_CREATED_DATE_COLUMN;
 
-  const req = mssqlPool.request();
-  req.input("schema", sql.NVarChar(128), sourceSchema);
-  req.input("table", sql.NVarChar(128), sourceTable);
-  req.input("column", sql.NVarChar(128), column);
-  const res = await req.query(`
+  const res = await mssqlPool.request().query(`
     SELECT 1 AS ok
     FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = @schema
-      AND TABLE_NAME = @table
-      AND COLUMN_NAME = @column
+    WHERE TABLE_SCHEMA = ${mssqlStringLiteral(sourceSchema)}
+      AND TABLE_NAME = ${mssqlStringLiteral(sourceTable)}
+      AND COLUMN_NAME = ${mssqlStringLiteral(column)}
   `);
   if ((res.recordset?.length ?? 0) === 0) {
     if (explicitColumn == null) return null;

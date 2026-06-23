@@ -77,30 +77,30 @@ function Set-MigrateStatus {
   Set-Content -LiteralPath $statusPath -Value $Text -Encoding UTF8
 }
 
-# นับจำนวนแถวต้นทาง ณ ปัจจุบันของตารางหนึ่ง ด้วยโหมด --count-only (reuse logic นับของ migrate ตารางนั้น)
+# นับจำนวนแถวต้นทาง ณ ปัจจุบันของตารางหนึ่ง (MSSQL เท่านั้น — scripts/run-migrate-source-count.mjs)
 # คืนค่าจำนวนแถว (int) หรือ $null เมื่อหาไม่ได้
 function Get-SourceCount {
   param(
-    [string] $NodeEntry,
-    [string] $WorkingDir,
     [string] $Config,
-    [string] $Profile
+    [string] $Profile,
+    [string] $RepoRoot
   )
-  $nodeArgs = @($NodeEntry, '--config', $Config, '--profile', $Profile, '--count-only')
+  $countScript = Join-Path $RepoRoot "scripts/run-migrate-source-count.mjs"
+  if (-not (Test-Path -LiteralPath $countScript)) {
+    return $null
+  }
+  $nodeArgs = @($countScript, '--config', $Config, '--profile', $Profile, '--count-only')
   $prevEap = $ErrorActionPreference
   $count = $null
   try {
     $ErrorActionPreference = 'Continue'
-    Push-Location -LiteralPath $WorkingDir
-    # sentinel อยู่ stdout; stderr เป็น log migrate — ไม่ merge (Stop + 2>&1 จะ throw)
-    $lines = & node @nodeArgs 2>$null
+    $lines = & node @nodeArgs 2>&1
     foreach ($line in $lines) {
       $m = [regex]::Match([string]$line, '##SOURCE_COUNT##\s+(\d+)')
       if ($m.Success) { $count = [int64] $m.Groups[1].Value }
     }
   }
   finally {
-    Pop-Location
     $ErrorActionPreference = $prevEap
   }
   return $count
@@ -189,14 +189,7 @@ if ($doSnapshot) {
   foreach ($step in $steps) {
     if ($step.N -lt $StartFrom) { continue }
     if (-not $runAllTables -and ($tableFilter -notcontains $step.Table.ToLowerInvariant())) { continue }
-    $scriptPath = Join-Path $repoRoot $step.Script
-    $scriptDir = Split-Path -Parent $scriptPath
-    $nodeEntry = Join-Path $scriptDir "migrate-from-mssql.mjs"
-    if (-not (Test-Path -LiteralPath $nodeEntry)) {
-      Write-MigrateLog ('snapshot count : {0} (n/a)' -f $step.Table) -Level SKIP
-      continue
-    }
-    $c = Get-SourceCount -NodeEntry $nodeEntry -WorkingDir $scriptDir -Config $ConfigPath -Profile $step.Profile
+    $c = Get-SourceCount -Config $ConfigPath -Profile $step.Profile -RepoRoot $repoRoot
     if ($null -ne $c) {
       $countSnapshot[$step.Table] = $c
       Write-MigrateLog ('snapshot count : {0} {1}' -f $step.Table, $c)
