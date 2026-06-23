@@ -310,6 +310,16 @@ function keysetIdForCheckpoint(v) {
   return v;
 }
 
+/** bind/advance keyset — โหมด CreatedDate ใช้ numericKeysetAfter คงที่ อย่า toBigIntish(mssqlKeysetAfter) */
+function keysetBindState(useCreatedDateKeyset, mssqlKeysetAfter, numericKeysetAfter) {
+  return {
+    mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
+    numericAfter: useCreatedDateKeyset
+      ? numericKeysetAfter
+      : toBigIntish(mssqlKeysetAfter),
+  };
+}
+
 const SCHED_RANGE_COMPAT = appointmentScheduleNumericRangePredicate(
   MSSQL_SCHEDULE_ID_NUMERIC_EXPR,
 );
@@ -487,6 +497,7 @@ ORDER BY ${appointmentSortBundle.orderBy}`.trim();
     .replaceAll("{{orderBy}}", scheduleIdOrderExpr);
 
   let mssqlKeysetAfter = checkpoint.mssqlKeysetAfter;
+  let numericKeysetAfter = -1n;
   if (useCreatedDateKeyset) {
     const keysetState = initCreatedDateKeysetState(
       checkpoint,
@@ -496,19 +507,23 @@ ORDER BY ${appointmentSortBundle.orderBy}`.trim();
     );
     if (keysetState.sortKeyVersionUpgraded) offset = 0;
     mssqlKeysetAfter = keysetState.mssqlKeysetAfter ?? "";
+    numericKeysetAfter = toBigIntish(keysetState.numericAfter);
   } else if (useMssqlKeyset && mssqlKeysetAfter == null) {
     mssqlKeysetAfter = -1;
+    numericKeysetAfter = -1n;
+  } else if (useMssqlKeyset) {
+    numericKeysetAfter = toBigIntish(mssqlKeysetAfter);
   } else if (!useMssqlKeyset) {
     mssqlKeysetAfter = null;
   }
   if (useMssqlKeyset && !useCreatedDateKeyset && kb.min != null) {
     const floorExclusive = kb.min - 1n;
-    const curBi = toBigIntish(mssqlKeysetAfter);
-    if (curBi < floorExclusive) {
+    if (numericKeysetAfter < floorExclusive) {
       console.error(
         `>>> [${key}] ปรับ keyset ให้ครอบ sourceKeyNumericMin (${kb.min}): after ${JSON.stringify(mssqlKeysetAfter)} → ${floorExclusive.toString()} (exclusive)`,
       );
       mssqlKeysetAfter = bigIntToJsKeysetValue(floorExclusive);
+      numericKeysetAfter = floorExclusive;
     }
   }
 
@@ -709,8 +724,11 @@ END $$;
         sql,
         useCreatedDateKeyset ? appointmentSortBundle : null,
         {
-          mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
-          numericAfter: toBigIntish(mssqlKeysetAfter),
+          ...keysetBindState(
+            useCreatedDateKeyset,
+            mssqlKeysetAfter,
+            numericKeysetAfter,
+          ),
           numericParam: "afterScheduleId",
         },
       );
@@ -723,10 +741,11 @@ END $$;
         mssqlKeysetAfter = advanceCreatedDateKeysetFromProbe(
           idRows,
           appointmentSortBundle,
-          {
-            mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
-            numericAfter: toBigIntish(mssqlKeysetAfter),
-          },
+          keysetBindState(
+            useCreatedDateKeyset,
+            mssqlKeysetAfter,
+            numericKeysetAfter,
+          ),
         ).mssqlKeysetAfter;
       }
       const ids = idRows
@@ -754,7 +773,7 @@ END $$;
       bindAppointmentMssqlCommon(rq, migrationConfig, sql);
       const r = useMssqlKeyset
         ? await rq
-            .input("afterScheduleId", sql.BigInt, toBigIntish(mssqlKeysetAfter))
+            .input("afterScheduleId", sql.BigInt, numericKeysetAfter)
             .input("page", sql.Int, pageSize)
             .query(selectSql)
         : await rq
@@ -892,19 +911,23 @@ END $$;
             mssqlKeysetAfter = advanceCreatedDateKeysetState(
               rows,
               appointmentSortBundle,
-              {
-                mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
-                numericAfter: toBigIntish(mssqlKeysetAfter),
-              },
+              keysetBindState(
+                useCreatedDateKeyset,
+                mssqlKeysetAfter,
+                numericKeysetAfter,
+              ),
               { numericField: "schedule_id" },
             ).mssqlKeysetAfter;
           }
         } else if (twoStepLastScheduleIdNum != null) {
           mssqlKeysetAfter = twoStepLastScheduleIdNum;
+          numericKeysetAfter = toBigIntish(twoStepLastScheduleIdNum);
         } else if (useNativeKeyset) {
           mssqlKeysetAfter = rows[n - 1].schedule_id;
+          numericKeysetAfter = toBigIntish(rows[n - 1].schedule_id);
         } else {
           mssqlKeysetAfter = rows[n - 1].__mssql_schedule_id;
+          numericKeysetAfter = toBigIntish(rows[n - 1].__mssql_schedule_id);
         }
       }
     }
