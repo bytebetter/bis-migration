@@ -161,6 +161,16 @@ function keysetIdForCheckpoint(v) {
   return v;
 }
 
+/** bind/advance keyset — โหมด CreatedDate ใช้ numericKeysetAfter คงที่ อย่า toBigIntish(mssqlKeysetAfter) */
+function keysetBindState(useCreatedDateKeyset, mssqlKeysetAfter, numericKeysetAfter) {
+  return {
+    mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
+    numericAfter: useCreatedDateKeyset
+      ? numericKeysetAfter
+      : toBigIntish(mssqlKeysetAfter),
+  };
+}
+
 const EXAMINATION_COLUMNS = [
   "exam_id",
   "exam_date",
@@ -613,6 +623,7 @@ async function runTableJob({
   const useCreatedDateKeyset =
     examinationSortBundle?.createdDateColumn != null && useMssqlKeyset;
   let mssqlKeysetAfter = checkpoint.mssqlKeysetAfter;
+  let numericKeysetAfter = -1n;
   if (useCreatedDateKeyset) {
     const keysetState = initCreatedDateKeysetState(
       checkpoint,
@@ -621,19 +632,23 @@ async function runTableJob({
     );
     if (keysetState.sortKeyVersionUpgraded) offset = 0;
     mssqlKeysetAfter = keysetState.mssqlKeysetAfter ?? "";
+    numericKeysetAfter = toBigIntish(keysetState.numericAfter);
   } else if (useMssqlKeyset && mssqlKeysetAfter == null) {
     mssqlKeysetAfter = -1;
+    numericKeysetAfter = -1n;
+  } else if (useMssqlKeyset) {
+    numericKeysetAfter = toBigIntish(mssqlKeysetAfter);
   } else if (!useMssqlKeyset) {
     mssqlKeysetAfter = null;
   }
   if (useMssqlKeyset && !useCreatedDateKeyset && kb.min != null) {
     const floorExclusive = kb.min - 1n;
-    const curBi = toBigIntish(mssqlKeysetAfter);
-    if (curBi < floorExclusive) {
+    if (numericKeysetAfter < floorExclusive) {
       console.error(
         `>>> [${key}] ปรับ keyset ให้ครอบ sourceKeyNumericMin (${kb.min})`,
       );
       mssqlKeysetAfter = bigIntToJsKeysetValue(floorExclusive);
+      numericKeysetAfter = floorExclusive;
     }
   }
   if (
@@ -855,10 +870,11 @@ async function runTableJob({
         pReq,
         sql,
         useCreatedDateKeyset ? examinationSortBundle : null,
-        {
-          mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
-          numericAfter: toBigIntish(mssqlKeysetAfter),
-        },
+        keysetBindState(
+          useCreatedDateKeyset,
+          mssqlKeysetAfter,
+          numericKeysetAfter,
+        ),
       );
       const probe = await pReq
         .input("page", sql.Int, Math.min(pageSize, 50))
@@ -921,10 +937,11 @@ async function runTableJob({
         idReq,
         sql,
         useCreatedDateKeyset ? examinationSortBundle : null,
-        {
-          mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
-          numericAfter: toBigIntish(mssqlKeysetAfter),
-        },
+        keysetBindState(
+          useCreatedDateKeyset,
+          mssqlKeysetAfter,
+          numericKeysetAfter,
+        ),
       );
       const idResp = await idReq
         .input("page", sql.Int, pageSize)
@@ -937,10 +954,11 @@ async function runTableJob({
           mssqlKeysetAfter = advanceCreatedDateKeysetFromProbe(
             idRows,
             examinationSortBundle,
-            {
-              mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
-              numericAfter: toBigIntish(mssqlKeysetAfter),
-            },
+            keysetBindState(
+              useCreatedDateKeyset,
+              mssqlKeysetAfter,
+              numericKeysetAfter,
+            ),
           ).mssqlKeysetAfter;
         }
       }
@@ -990,7 +1008,7 @@ async function runTableJob({
       }
       const r = useMssqlKeyset
         ? await fq
-            .input("afterExamId", sql.BigInt, toBigIntish(mssqlKeysetAfter))
+            .input("afterExamId", sql.BigInt, numericKeysetAfter)
             .input("page", sql.Int, pageSize)
             .query(selectSql)
         : await fq
@@ -1050,16 +1068,19 @@ async function runTableJob({
               mssqlKeysetAfter = advanceCreatedDateKeysetState(
                 rows,
                 examinationSortBundle,
-                {
-                  mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
-                  numericAfter: toBigIntish(mssqlKeysetAfter),
-                },
+                keysetBindState(
+                  useCreatedDateKeyset,
+                  mssqlKeysetAfter,
+                  numericKeysetAfter,
+                ),
               ).mssqlKeysetAfter;
             }
           } else {
-            mssqlKeysetAfter =
+            const nextKeyset =
               lastExamIdFromProbe ??
               toBigIntish(normExamId(rows[rows.length - 1]?.exam_id));
+            mssqlKeysetAfter = nextKeyset;
+            numericKeysetAfter = toBigIntish(nextKeyset);
           }
         }
         if (checkpointEnabled) {
@@ -1325,16 +1346,19 @@ LIMIT 200;
             mssqlKeysetAfter = advanceCreatedDateKeysetState(
               rows,
               examinationSortBundle,
-              {
-                mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
-                numericAfter: toBigIntish(mssqlKeysetAfter),
-              },
+              keysetBindState(
+                useCreatedDateKeyset,
+                mssqlKeysetAfter,
+                numericKeysetAfter,
+              ),
             ).mssqlKeysetAfter;
           }
         } else {
-          mssqlKeysetAfter =
+          const nextKeyset =
             lastExamIdFromProbe ??
             toBigIntish(normExamId(rows[rows.length - 1]?.exam_id));
+          mssqlKeysetAfter = nextKeyset;
+          numericKeysetAfter = toBigIntish(nextKeyset);
         }
       }
       if (checkpointEnabled) {
