@@ -25,11 +25,6 @@ export async function setupCreatedDateMigrationSort(mssqlPool, opts) {
   });
   const sortBundle = createSelectBundle(createdDateColumn);
   console.error(createdDateSortLogLine(tableLabel, sortBundle));
-  if (createdDateColumn) {
-    console.error(
-      `>>> [${tableLabel}] แนะนำ index MSSQL: CREATE NONCLUSTERED INDEX IX_${sourceTable}_CreatedDate ON ${sourceSchema}.${sourceTable} (CreatedDate, Exam_ID); — ช่วย keyset pagination เร็วขึ้นมาก`,
-    );
-  }
   return sortBundle;
 }
 
