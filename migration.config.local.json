@@ -48,6 +48,7 @@
     "procedure": {},
     "pacs_sync_info": {
       "migration": {
+        "batchSize": 10000,
         "mssqlPagination": "keyset_plus_null"
       }
     },
