@@ -11,9 +11,8 @@ import {
   createMssqlAppointmentSelectBundle,
 } from "./mssqlAppointmentSelect.mjs";
 import {
-  bindCreatedDateOrNumericKeyset,
-  advanceCreatedDateKeysetFromProbe,
-  advanceCreatedDateKeysetState,
+  bindSortKeyExprKeyset,
+  advanceSortKeyExprFromRows,
   buildCreatedDateCheckpointFields,
 } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import {
@@ -310,18 +309,11 @@ function keysetIdForCheckpoint(v) {
   return v;
 }
 
-/** bind/advance keyset — โหมด CreatedDate ใช้ numericKeysetAfter คงที่ อย่า toBigIntish(mssqlKeysetAfter) */
-function keysetBindState(useCreatedDateKeyset, mssqlKeysetAfter, numericKeysetAfter) {
-  return {
-    mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
-    numericAfter: useCreatedDateKeyset
-      ? numericKeysetAfter
-      : toBigIntish(mssqlKeysetAfter),
-  };
-}
-
 const SCHED_RANGE_COMPAT = appointmentScheduleNumericRangePredicate(
   MSSQL_SCHEDULE_ID_NUMERIC_EXPR,
+);
+const SCHED_RANGE_NATIVE = appointmentScheduleNumericRangePredicate(
+  "CAST([Schedule_ID] AS BIGINT)",
 );
 /** keyset เดิม (compat) WHERE … numeric expr */
 function buildMssqlAppointmentKeysetSelect() {
@@ -341,9 +333,23 @@ WHERE ${MSSQL_SCHEDULE_ID_NUMERIC_EXPR} > @afterScheduleId
 ORDER BY ${MSSQL_SCHEDULE_ID_NUMERIC_EXPR} ASC, [Schedule_ID] ASC;`;
 }
 
-const SCHED_RANGE_NATIVE = appointmentScheduleNumericRangePredicate(
-  "CAST([Schedule_ID] AS BIGINT)",
-);
+function buildMssqlAppointmentCreatedDateKeysetSelect(sortBundle) {
+  const marker = "FROM {{sourceObject}}";
+  const s = MSSQL_APPOINTMENT_SELECT;
+  const idx = s.indexOf(marker);
+  if (idx < 0) {
+    throw new Error("MSSQL_APPOINTMENT_SELECT: missing FROM {{sourceObject}}");
+  }
+  const head = s.slice(0, idx).trimEnd();
+  const headWithTop = head.replace(/^SELECT\s*/i, "SELECT TOP (@page) ");
+  return `${headWithTop},
+  ${sortBundle.sortKeyExpr} AS __mssql_sort_key
+FROM {{sourceObject}}
+WHERE ${sortBundle.sortKeyExpr} > @afterSortKey
+ AND (${SCHED_RANGE_NATIVE})
+ORDER BY ${sortBundle.orderBy};`;
+}
+
 function buildMssqlAppointmentNativeKeysetSelect() {
   const marker = "FROM {{sourceObject}}";
   const s = MSSQL_APPOINTMENT_SELECT;
@@ -488,9 +494,11 @@ ORDER BY ${appointmentSortBundle.orderBy}`.trim();
   ).replaceAll("{{sourceObject}}", sourceObjectNoLock);
   const selectSql = (
     useMssqlKeyset
-      ? useNativeKeyset
-        ? buildMssqlAppointmentNativeKeysetSelect()
-        : buildMssqlAppointmentKeysetSelect()
+      ? useCreatedDateKeyset
+        ? buildMssqlAppointmentCreatedDateKeysetSelect(appointmentSortBundle)
+        : useNativeKeyset
+          ? buildMssqlAppointmentNativeKeysetSelect()
+          : buildMssqlAppointmentKeysetSelect()
       : offsetSelectTpl
   )
     .replaceAll("{{sourceObject}}", sourceObjectNoLock)
@@ -719,34 +727,18 @@ END $$;
       const probeStartedAt = Date.now();
       const probeReq = mssqlPool.request();
       bindAppointmentMssqlCommon(probeReq, migrationConfig, sql);
-      bindCreatedDateOrNumericKeyset(
-        probeReq,
-        sql,
-        useCreatedDateKeyset ? appointmentSortBundle : null,
-        {
-          ...keysetBindState(
-            useCreatedDateKeyset,
-            mssqlKeysetAfter,
-            numericKeysetAfter,
-          ),
-          numericParam: "afterScheduleId",
-        },
-      );
+      if (useCreatedDateKeyset) {
+        bindSortKeyExprKeyset(probeReq, sql, mssqlKeysetAfter);
+      } else {
+        probeReq.input("afterScheduleId", sql.BigInt, numericKeysetAfter);
+      }
       const idRes = await probeReq
         .input("page", sql.Int, pageSize)
         .query(idProbeSql);
       const probeMs = Date.now() - probeStartedAt;
       const idRows = idRes.recordset || [];
       if (useCreatedDateKeyset && idRows.length > 0) {
-        mssqlKeysetAfter = advanceCreatedDateKeysetFromProbe(
-          idRows,
-          appointmentSortBundle,
-          keysetBindState(
-            useCreatedDateKeyset,
-            mssqlKeysetAfter,
-            numericKeysetAfter,
-          ),
-        ).mssqlKeysetAfter;
+        mssqlKeysetAfter = advanceSortKeyExprFromRows(idRows, mssqlKeysetAfter);
       }
       const ids = idRows
         .map((x) => Number.parseInt(x?.schedule_id ?? "", 10))
@@ -771,17 +763,25 @@ END $$;
       const fetchStartedAt = Date.now();
       const rq = mssqlPool.request();
       bindAppointmentMssqlCommon(rq, migrationConfig, sql);
-      const r = useMssqlKeyset
-        ? await rq
-            .input("afterScheduleId", sql.BigInt, numericKeysetAfter)
-            .input("page", sql.Int, pageSize)
-            .query(selectSql)
-        : await rq
-            .input("offset", sql.Int, offset)
-            .input("page", sql.Int, pageSize)
-            .query(selectSql);
+      let r;
+      if (useMssqlKeyset) {
+        if (useCreatedDateKeyset) {
+          bindSortKeyExprKeyset(rq, sql, mssqlKeysetAfter);
+        } else {
+          rq.input("afterScheduleId", sql.BigInt, numericKeysetAfter);
+        }
+        r = await rq.input("page", sql.Int, pageSize).query(selectSql);
+      } else {
+        r = await rq
+          .input("offset", sql.Int, offset)
+          .input("page", sql.Int, pageSize)
+          .query(selectSql);
+      }
       fetchElapsedMs = Date.now() - fetchStartedAt;
       rows = r.recordset || [];
+      if (useCreatedDateKeyset && rows.length > 0) {
+        mssqlKeysetAfter = advanceSortKeyExprFromRows(rows, mssqlKeysetAfter);
+      }
     }
     if (debugLogs && !singleLineUi) {
       writeOutLine(
@@ -906,18 +906,9 @@ END $$;
       offset += advance;
       if (useMssqlKeyset) {
         if (useCreatedDateKeyset) {
-          // two-step: คง __mssql_sort_key จาก advanceCreatedDateKeysetFromProbe หลัง probe
-          if (!(useNativeKeyset && useTwoStepFetch)) {
-            mssqlKeysetAfter = advanceCreatedDateKeysetState(
-              rows,
-              appointmentSortBundle,
-              keysetBindState(
-                useCreatedDateKeyset,
-                mssqlKeysetAfter,
-                numericKeysetAfter,
-              ),
-              { numericField: "schedule_id" },
-            ).mssqlKeysetAfter;
+          // two-step: อัปเดต __mssql_sort_key หลัง probe แล้ว
+          if (!(useNativeKeyset && useTwoStepFetch) && rows.length > 0) {
+            mssqlKeysetAfter = advanceSortKeyExprFromRows(rows, mssqlKeysetAfter);
           }
         } else if (twoStepLastScheduleIdNum != null) {
           mssqlKeysetAfter = twoStepLastScheduleIdNum;

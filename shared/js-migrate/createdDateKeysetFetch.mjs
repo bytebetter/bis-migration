@@ -105,6 +105,22 @@ export function compositeKeysetCheckpointExtra(state) {
   };
 }
 
+/** bind keyset แบบ sortKeyExpr (patient_info, appointment/schedule) */
+export function bindSortKeyExprKeyset(req, sqlLib, mssqlKeysetAfter) {
+  req.input(
+    "afterSortKey",
+    sqlLib.NVarChar(sqlLib.MAX),
+    String(mssqlKeysetAfter ?? ""),
+  );
+}
+
+/** @param {object[]} rows */
+export function advanceSortKeyExprFromRows(rows, current = "") {
+  if (!rows?.length) return current;
+  const last = rows[rows.length - 1];
+  return last?.__mssql_sort_key ?? current;
+}
+
 /** @param {import("mssql").Request} req */
 export function bindCreatedDateOrNumericKeyset(
   req,
