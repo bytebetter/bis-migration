@@ -12,6 +12,7 @@ import {
 import {
   bindCreatedDateOrNumericKeyset,
   advanceCreatedDateKeysetFromProbe,
+  advanceCreatedDateKeysetState,
   buildCreatedDateCheckpointFields,
 } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import {
@@ -1044,20 +1045,47 @@ async function runTableJob({
       if (!repairBatches) {
         offset += keysetAdvance;
         if (useMssqlKeyset) {
-          mssqlKeysetAfter =
-            lastExamIdFromProbe ??
-            toBigIntish(normExamId(rows[rows.length - 1]?.exam_id));
+          if (useCreatedDateKeyset) {
+            if (!isExaminationBuiltin) {
+              mssqlKeysetAfter = advanceCreatedDateKeysetState(
+                rows,
+                examinationSortBundle,
+                {
+                  mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
+                  numericAfter: toBigIntish(mssqlKeysetAfter),
+                },
+              ).mssqlKeysetAfter;
+            }
+          } else {
+            mssqlKeysetAfter =
+              lastExamIdFromProbe ??
+              toBigIntish(normExamId(rows[rows.length - 1]?.exam_id));
+          }
         }
         if (checkpointEnabled) {
-          writeJson(checkpointPath, {
-            key,
-            offset,
-            ...(useMssqlKeyset
-              ? { mssqlKeysetAfter: keysetIdForCheckpoint(mssqlKeysetAfter) }
-              : { mssqlKeysetAfter: null }),
-            completed: false,
-            updatedAt: new Date().toISOString(),
-          });
+          writeJson(
+            checkpointPath,
+            useCreatedDateKeyset
+              ? {
+                  key,
+                  ...buildCreatedDateCheckpointFields(examinationSortBundle, {
+                    offset,
+                    mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
+                    completed: false,
+                  }),
+                }
+              : {
+                  key,
+                  offset,
+                  ...(useMssqlKeyset
+                    ? {
+                        mssqlKeysetAfter: keysetIdForCheckpoint(mssqlKeysetAfter),
+                      }
+                    : { mssqlKeysetAfter: null }),
+                  completed: false,
+                  updatedAt: new Date().toISOString(),
+                },
+          );
         }
       }
       if (progressEnabled) {
@@ -1292,20 +1320,45 @@ LIMIT 200;
     if (!repairBatches) {
       offset += keysetAdvance;
       if (useMssqlKeyset) {
-        mssqlKeysetAfter =
-          lastExamIdFromProbe ??
-          toBigIntish(normExamId(rows[rows.length - 1]?.exam_id));
+        if (useCreatedDateKeyset) {
+          if (!isExaminationBuiltin) {
+            mssqlKeysetAfter = advanceCreatedDateKeysetState(
+              rows,
+              examinationSortBundle,
+              {
+                mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
+                numericAfter: toBigIntish(mssqlKeysetAfter),
+              },
+            ).mssqlKeysetAfter;
+          }
+        } else {
+          mssqlKeysetAfter =
+            lastExamIdFromProbe ??
+            toBigIntish(normExamId(rows[rows.length - 1]?.exam_id));
+        }
       }
       if (checkpointEnabled) {
-        writeJson(checkpointPath, {
-          key,
-          offset,
-          ...(useMssqlKeyset
-            ? { mssqlKeysetAfter: keysetIdForCheckpoint(mssqlKeysetAfter) }
-            : { mssqlKeysetAfter: null }),
-          completed: false,
-          updatedAt: new Date().toISOString(),
-        });
+        writeJson(
+          checkpointPath,
+          useCreatedDateKeyset
+            ? {
+                key,
+                ...buildCreatedDateCheckpointFields(examinationSortBundle, {
+                  offset,
+                  mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
+                  completed: false,
+                }),
+              }
+            : {
+                key,
+                offset,
+                ...(useMssqlKeyset
+                  ? { mssqlKeysetAfter: keysetIdForCheckpoint(mssqlKeysetAfter) }
+                  : { mssqlKeysetAfter: null }),
+                completed: false,
+                updatedAt: new Date().toISOString(),
+              },
+        );
       }
     }
     const isLastPage = repairBatches
@@ -1349,15 +1402,27 @@ LIMIT 200;
   }
 
   if (checkpointEnabled) {
-    writeJson(checkpointPath, {
-      key,
-      offset,
-      ...(useMssqlKeyset
-        ? { mssqlKeysetAfter: keysetIdForCheckpoint(mssqlKeysetAfter) }
-        : { mssqlKeysetAfter: null }),
-      completed: true,
-      updatedAt: new Date().toISOString(),
-    });
+    writeJson(
+      checkpointPath,
+      useCreatedDateKeyset
+        ? {
+            key,
+            ...buildCreatedDateCheckpointFields(examinationSortBundle, {
+              offset,
+              mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
+              completed: true,
+            }),
+          }
+        : {
+            key,
+            offset,
+            ...(useMssqlKeyset
+              ? { mssqlKeysetAfter: keysetIdForCheckpoint(mssqlKeysetAfter) }
+              : { mssqlKeysetAfter: null }),
+            completed: true,
+            updatedAt: new Date().toISOString(),
+          },
+    );
   }
 
   const missingByReason = await pgClient.query(`
