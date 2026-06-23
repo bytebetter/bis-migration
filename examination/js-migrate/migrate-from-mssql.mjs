@@ -81,6 +81,7 @@ import {
   optionalDetailRowCount,
   resolveKeysetAdvance,
 } from "../../shared/js-migrate/twoStepKeyset.mjs";
+import { resolveBatchSize } from "../../shared/js-migrate/resolveBatchSize.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const EXAM_NUMERIC_KEY_RANGE_PRED = examinationExamNumericRangePredicate();
@@ -494,13 +495,10 @@ async function runTableJob({
   const columns = tableJob.columns ?? [];
   const stagingTable = tableJob.stagingTable;
   const selectSqlFile = tableJob.selectSqlFile ?? null;
-  const batchSize = Math.max(
-    50,
-    Math.min(
-      5000,
-      Number(tableJob.batchSize ?? migrationConfig.batchSize ?? 500),
-    ),
-  );
+  const batchSize = resolveBatchSize(migrationConfig, tableJob, {
+    cap: 20000,
+    fallback: 500,
+  });
   const checkpointEnabled = migrationConfig.enableCheckpoint !== false;
   const checkpointDir = path.resolve(
     sqlBaseDir,
@@ -633,7 +631,7 @@ async function runTableJob({
   const useTwoStepFetch =
     isExaminationBuiltin &&
     useMssqlKeyset &&
-    migrationConfig.mssqlTwoStepFetch === true;
+    migrationConfig.mssqlTwoStepFetch !== false;
   let mssqlKeysetAfter = checkpoint.mssqlKeysetAfter;
   let numericKeysetAfter = -1n;
   let compositeKs = null;
@@ -731,6 +729,9 @@ async function runTableJob({
     1,
     Number(migrationConfig.chunkSampleEvery ?? 50),
   );
+  const trackPerChunkStats =
+    migrationConfig.chunkStats === true ||
+    (migrationConfig.chunkStats !== false && chunkLogMode === "full");
   const sourceLimitRaw = migrationConfig.sourceLimit;
   const sourceLimit =
     sourceLimitRaw == null ? null : Math.max(1, Number(sourceLimitRaw));
@@ -1236,6 +1237,7 @@ async function runTableJob({
           stagingFromClause,
           {
             verbose: debugLogs && !singleLineUi,
+            verifyInsert: debugLogs && !singleLineUi,
             migrationKey: key,
             chunkIndex,
             migrateRowMode: migrationConfig.migrateRowMode ?? "overwrite",
@@ -1249,7 +1251,10 @@ async function runTableJob({
 
       step = "compute chunk stats";
       const statsStartedAt = Date.now();
-      const stats = await pgClient.query(`
+      /** @type {{ source_cases?: number, examination_success_cases?: number, examination_fail_cases?: number }} */
+      let chunkStats = {};
+      if (trackPerChunkStats) {
+        const stats = await pgClient.query(`
 WITH src AS (
   SELECT DISTINCT migrate_stg.norm_exam_id(exam_id) AS nexam
   FROM ${stagingFromClause}
@@ -1266,7 +1271,7 @@ SELECT
   ((SELECT COUNT(*)::int FROM src) - (SELECT COUNT(*)::int FROM matched)) AS examination_fail_cases;
 `);
 
-      const failedRows = await pgClient.query(`
+        const failedRows = await pgClient.query(`
 WITH src AS (
   SELECT DISTINCT migrate_stg.norm_exam_id(exam_id) AS nexam
   FROM ${stagingFromClause}
@@ -1284,18 +1289,23 @@ WHERE m.nexam IS NULL
 ORDER BY s.nexam
 LIMIT 200;
 `);
+        chunkStats = stats.rows[0] ?? {};
+        for (const row of failedRows.rows) {
+          if (failedExamIdSet.size >= 200) break;
+          failedExamIdSet.add(row.exam_id);
+        }
+      } else {
+        chunkStats = { source_cases: n };
+      }
       statsMs = Date.now() - statsStartedAt;
 
-      const chunkStats = stats.rows[0] ?? {};
       sourceCases += Number(chunkStats.source_cases ?? 0);
       examinationSuccessCases += Number(
         chunkStats.examination_success_cases ?? 0,
       );
-      examinationFailCases += Number(chunkStats.examination_fail_cases ?? 0);
-      for (const row of failedRows.rows) {
-        if (failedExamIdSet.size >= 200) break;
-        failedExamIdSet.add(row.exam_id);
-      }
+      examinationFailCases += Number(
+        chunkStats.examination_fail_cases ?? 0,
+      );
 
       const commitStartedAt = Date.now();
       await pgClient.query("COMMIT");

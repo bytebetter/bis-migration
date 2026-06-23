@@ -1110,8 +1110,8 @@ export async function runExaminationChunkPostLoad(
     await syncExaminationIdSequenceOnce(pgClient);
   }
 
-  // หลัง migrate: ตรวจว่าแถวที่ควร insert มีจริงใน PG
-  if (insertedExamIds.length > 0) {
+  // หลัง migrate: ตรวจว่าแถวที่ควร insert มีจริงใน PG (เปิดเมื่อ debug/verbose เท่านั้น — ช้า)
+  if (options.verifyInsert === true && insertedExamIds.length > 0) {
     const { rows: pgRows } = await pgClient.query(
       `SELECT old_exam_id::text AS exam_id FROM public.examination WHERE old_exam_id = ANY($1::text[])`,
       [insertedExamIds],

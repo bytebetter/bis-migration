@@ -21,7 +21,7 @@
       "postgresDatabase": "bisinfo_dev_clone"
     },
     "migration": {
-      "batchSize": 2000,
+      "batchSize": 5000,
       "patientInfoForwardOnlyResume": true
     }
   },
@@ -33,8 +33,7 @@
     },
     "examination": {
       "migration": {
-        "batchSize": 5000,
-        "mssqlTwoStepFetch": false,
+        "batchSize": 10000,
         "chunkLogMode": "compact"
       }
     },
