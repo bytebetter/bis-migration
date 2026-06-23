@@ -47,12 +47,12 @@ import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationCon
 import {
   applySourceIndexToMigrateJob,
   buildIndexCheckpointSuffix,
-  isIndexWindowComplete,
   narrowPlannedRowsForIndex,
   resolvePageSize,
   plannedRowsForPageSize,
   trimRowsToMigrateCap,
   capAdvanceToMigratePlan,
+  shouldStopMigratePagination,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
@@ -70,7 +70,6 @@ import {
   bindAppointmentMssqlCommon,
 } from "../../shared/js-migrate/migrateMssqlBindings.mjs";
 import {
-  isLastKeysetPage,
   optionalDetailRowCount,
   resolveKeysetAdvance,
 } from "../../shared/js-migrate/twoStepKeyset.mjs";
@@ -919,16 +918,16 @@ END $$;
         updatedAt: new Date().toISOString(),
       });
     }
-    const isLastPage =
-      isIndexWindowComplete({
-        indexLimited: idx.indexLimited,
-        migrationConfig,
-        plannedRows,
-        rowsReadInWindow: total,
-      }) ||
-      (repairBatches
-        ? repairBatchIndex >= repairBatches.length
-        : isLastKeysetPage(advance, pageSize));
+    const isLastPage = repairBatches
+      ? repairBatchIndex >= repairBatches.length
+      : shouldStopMigratePagination({
+          advance,
+          pageSize,
+          rowsReadInWindow: total,
+          plannedRows,
+          migrationConfig,
+          indexLimited: idx.indexLimited,
+        });
     if (progressEnabled) {
       renderProgress(
         total,

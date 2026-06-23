@@ -433,7 +433,7 @@ ORDER BY
 /** sort key ต่อแถว — ต้องสอดคล้องกับ PACS_OFFSET_TIEBREAKER_ORDER_BY + fingerprint/checksum */
 export function buildPacsSyncRowTiebreakerSortKeyExpr() {
   const fp = rowFingerprintHashExpr();
-  const chk = rowBinaryChecksumExpr();
+  const chk = rowBinaryChecksumExpr("");
   return `CONCAT(
   CASE WHEN [Accession_ID] IS NULL THEN N'0' ELSE N'1' END,
   N'|',

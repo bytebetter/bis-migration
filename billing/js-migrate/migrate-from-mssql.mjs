@@ -57,6 +57,7 @@ import {
   plannedRowsForPageSize,
   trimRowsToMigrateCap,
   capAdvanceToMigratePlan,
+  shouldStopMigratePagination,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { isCountOnlyRun, prepareMigrateRowPlan, shouldSkipMigrateSideEffects } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
@@ -70,10 +71,7 @@ import {
   takeNextRepairBatch,
   noteRepairBatchFetch,
 } from "../../shared/js-migrate/repairRun.mjs";
-import {
-  isLastKeysetPage,
-  resolveKeysetAdvance,
-} from "../../shared/js-migrate/twoStepKeyset.mjs";
+import { resolveKeysetAdvance } from "../../shared/js-migrate/twoStepKeyset.mjs";
 import { createChunkResultsLogger } from "../../shared/js-migrate/chunkResultsLog.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -647,7 +645,14 @@ async function main() {
           });
           const emptyLast = repairRun.active
             ? repairRunIsDone(repairRun)
-            : isLastKeysetPage(keysetAdvance, pageSize);
+            : shouldStopMigratePagination({
+                advance: keysetAdvance,
+                pageSize,
+                rowsReadInWindow: total,
+                plannedRows,
+                migrationConfig: migration,
+                indexLimited: idx.indexLimited,
+              });
           if (emptyLast) break;
           continue;
         }
@@ -779,13 +784,14 @@ async function main() {
         if (repairRun.active) {
           if (repairRunIsDone(repairRun)) break;
         } else if (
-          isIndexWindowComplete({
-            indexLimited: idx.indexLimited,
-        migrationConfig: migration,
-            plannedRows,
+          shouldStopMigratePagination({
+            advance: keysetAdvance,
+            pageSize,
             rowsReadInWindow: total,
-          }) ||
-          isLastKeysetPage(keysetAdvance, pageSize)
+            plannedRows,
+            migrationConfig: migration,
+            indexLimited: idx.indexLimited,
+          })
         ) {
           break;
         }

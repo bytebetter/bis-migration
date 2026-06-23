@@ -9,10 +9,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sql from "mssql";
-import {
-  bracketMssqlIdent,
-  buildMssqlConfig,
-} from "../shared/js-migrate/mssqlConnectConfig.mjs";
+import { buildMssqlConfig } from "../shared/js-migrate/mssqlConnectConfig.mjs";
+import { buildMigrateSourceCountSql } from "../shared/js-migrate/migrateSourceCountSql.mjs";
 import {
   readProfileFromArgv,
   resolveMssqlSourceObject,
@@ -50,13 +48,11 @@ async function main() {
   }
 
   const { schema, table } = resolveMssqlSourceObject(profile, config.source);
-  const sourceObject = `${bracketMssqlIdent(schema)}.${bracketMssqlIdent(table)} WITH (NOLOCK)`;
+  const countSql = buildMigrateSourceCountSql(profile, schema, table);
 
   const pool = await sql.connect(buildMssqlConfig(config.source));
   try {
-    const countRes = await pool
-      .request()
-      .query(`SELECT COUNT_BIG(1) AS total FROM ${sourceObject};`);
+    const countRes = await pool.request().query(countSql);
     const total = Number(countRes.recordset?.[0]?.total ?? 0);
     emitSourceCountAndExit(total);
   } catch (err) {

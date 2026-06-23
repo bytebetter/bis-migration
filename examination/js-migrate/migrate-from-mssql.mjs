@@ -60,6 +60,7 @@ import {
   plannedRowsForPageSize,
   trimRowsToMigrateCap,
   capAdvanceToMigratePlan,
+  shouldStopMigratePagination,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
@@ -74,7 +75,6 @@ import {
 import { REPAIR_SPEC_EXAMINATION } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import { examinationExamNumericRangePredicate } from "../../shared/js-migrate/migrateMssqlBindings.mjs";
 import {
-  isLastKeysetPage,
   optionalDetailRowCount,
   resolveKeysetAdvance,
 } from "../../shared/js-migrate/twoStepKeyset.mjs";
@@ -1073,7 +1073,14 @@ async function runTableJob({
       rows.length = 0;
       const emptyLast = repairBatches
         ? repairBatchIndex >= repairBatches.length
-        : isLastKeysetPage(keysetAdvance, pageSize);
+        : shouldStopMigratePagination({
+            advance: keysetAdvance,
+            pageSize,
+            rowsReadInWindow: total,
+            plannedRows,
+            migrationConfig,
+            indexLimited: idx.indexLimited,
+          });
       if (emptyLast) break;
       continue;
     }
@@ -1301,16 +1308,16 @@ LIMIT 200;
         });
       }
     }
-    const isLastPage =
-      isIndexWindowComplete({
-        indexLimited: idx.indexLimited,
-        migrationConfig,
-        plannedRows,
-        rowsReadInWindow: total,
-      }) ||
-      (repairBatches
-        ? repairBatchIndex >= repairBatches.length
-        : isLastKeysetPage(keysetAdvance, pageSize));
+    const isLastPage = repairBatches
+      ? repairBatchIndex >= repairBatches.length
+      : shouldStopMigratePagination({
+          advance: keysetAdvance,
+          pageSize,
+          rowsReadInWindow: total,
+          plannedRows,
+          migrationConfig,
+          indexLimited: idx.indexLimited,
+        });
     if (debugLogs && !singleLineUi) {
       writeOutLine(
         `>>> [${key}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(
