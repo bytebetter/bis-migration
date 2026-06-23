@@ -33,7 +33,6 @@
     },
     "examination": {
       "migration": {
-        "batchSize": 10000,
         "chunkLogMode": "compact"
       }
     },
