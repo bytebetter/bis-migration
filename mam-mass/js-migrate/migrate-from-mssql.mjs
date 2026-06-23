@@ -10,6 +10,9 @@ import {
 } from "../../shared/js-migrate/setupCreatedDateMigrationSort.mjs";
 import {
   buildCreatedDateCheckpointFields,
+  bindExamChildCompositeKeyset,
+  initExamChildCompositeKeysetFromCheckpoint,
+  advanceExamChildCompositeKeyset,
 } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import { ensureMamMassPipelineDdl } from "./mamMassPgDdl.mjs";
 import {
@@ -338,8 +341,14 @@ async function main() {
       let mssqlKeysetAfter = keysetState.mssqlKeysetAfter;
       let afterChildId = Number(checkpointEnabled ? checkpoint.afterChildId : 0);
       if (!Number.isFinite(afterChildId) || afterChildId < 0) afterChildId = 0;
+      let compositeKs = initExamChildCompositeKeysetFromCheckpoint(
+        checkpoint,
+        checkpointEnabled,
+        keysetState.sortKeyVersionUpgraded,
+      );
       if (keysetState.sortKeyVersionUpgraded && checkpointEnabled) {
         afterChildId = 0;
+        compositeKs = initExamChildCompositeKeysetFromCheckpoint({}, false, true);
         writeJson(
           checkpointPath,
           buildCreatedDateCheckpointFields(sortBundle, {
@@ -347,6 +356,7 @@ async function main() {
             mssqlKeysetAfter: "",
             afterExamId: 0,
             completed: false,
+            composite: compositeKs,
             extra: { key: KEY, afterChildId: 0 },
           }),
         );
@@ -454,11 +464,7 @@ async function main() {
           const keysetReq = pool.request();
           bindMigrateSrcNumericRange(keysetReq, migration, sql);
           if (sortBundle.createdDateColumn) {
-            keysetReq.input(
-              "afterSortKey",
-              sql.NVarChar(sql.MAX),
-              mssqlKeysetAfter ?? "",
-            );
+            bindExamChildCompositeKeyset(keysetReq, sql, compositeKs);
           } else {
             keysetReq
               .input("afterExamId", sql.BigInt, afterExamId)
@@ -573,8 +579,7 @@ async function main() {
         offset += rows.length;
         const last = rows[rows.length - 1];
         if (sortBundle.createdDateColumn) {
-          mssqlKeysetAfter =
-            last?.__mssql_sort_key ?? mssqlKeysetAfter ?? "";
+          compositeKs = advanceExamChildCompositeKeyset(last, "described_mass_id");
         } else {
           afterExamId = Number.parseInt(last?.exam_id ?? "", 10);
           afterChildId = Number.parseInt(last?.described_mass_id ?? "", 10);
@@ -587,9 +592,10 @@ async function main() {
               checkpointPath,
               buildCreatedDateCheckpointFields(sortBundle, {
                 offset,
-                mssqlKeysetAfter,
-                afterExamId,
+                mssqlKeysetAfter: "",
+                afterExamId: compositeKs.afterExamId,
                 completed: false,
+                composite: compositeKs,
                 extra: { key: KEY },
               }),
             );
@@ -648,9 +654,10 @@ async function main() {
             checkpointPath,
             buildCreatedDateCheckpointFields(sortBundle, {
               offset,
-              mssqlKeysetAfter,
-              afterExamId,
+              mssqlKeysetAfter: "",
+              afterExamId: compositeKs.afterExamId,
               completed: true,
+              composite: compositeKs,
               extra: { key: KEY },
             }),
           );

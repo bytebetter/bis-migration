@@ -14,6 +14,8 @@ import {
   advanceCreatedDateKeysetFromProbe,
   advanceCreatedDateKeysetState,
   buildCreatedDateCheckpointFields,
+  initExamChildCompositeKeysetFromCheckpoint,
+  advanceExamIdCompositeKeyset,
 } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import {
   initCreatedDateKeysetState,
@@ -161,13 +163,19 @@ function keysetIdForCheckpoint(v) {
   return v;
 }
 
-/** bind/advance keyset — โหมด CreatedDate ใช้ numericKeysetAfter คงที่ อย่า toBigIntish(mssqlKeysetAfter) */
-function keysetBindState(useCreatedDateKeyset, mssqlKeysetAfter, numericKeysetAfter) {
+/** bind/advance keyset — โหมด CreatedDate ใช้ composite column keyset */
+function keysetBindState(
+  useCreatedDateKeyset,
+  mssqlKeysetAfter,
+  numericKeysetAfter,
+  compositeKs = null,
+) {
   return {
     mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
     numericAfter: useCreatedDateKeyset
       ? numericKeysetAfter
       : toBigIntish(mssqlKeysetAfter),
+    compositeState: useCreatedDateKeyset ? compositeKs : null,
   };
 }
 
@@ -628,6 +636,7 @@ async function runTableJob({
     migrationConfig.mssqlTwoStepFetch === true;
   let mssqlKeysetAfter = checkpoint.mssqlKeysetAfter;
   let numericKeysetAfter = -1n;
+  let compositeKs = null;
   if (useCreatedDateKeyset) {
     const keysetState = initCreatedDateKeysetState(
       checkpoint,
@@ -637,6 +646,14 @@ async function runTableJob({
     if (keysetState.sortKeyVersionUpgraded) offset = 0;
     mssqlKeysetAfter = keysetState.mssqlKeysetAfter ?? "";
     numericKeysetAfter = toBigIntish(keysetState.numericAfter);
+    compositeKs = initExamChildCompositeKeysetFromCheckpoint(
+      checkpoint,
+      checkpointEnabled,
+      keysetState.sortKeyVersionUpgraded,
+    );
+    if (keysetState.sortKeyVersionUpgraded) {
+      compositeKs = initExamChildCompositeKeysetFromCheckpoint({}, false, true);
+    }
   } else if (useMssqlKeyset && mssqlKeysetAfter == null) {
     mssqlKeysetAfter = -1;
     numericKeysetAfter = -1n;
@@ -839,6 +856,7 @@ async function runTableJob({
                   offset: 0,
                   mssqlKeysetAfter: "",
                   completed: false,
+                  composite: compositeKs,
                 }),
               }
             : {
@@ -900,6 +918,7 @@ async function runTableJob({
           useCreatedDateKeyset,
           mssqlKeysetAfter,
           numericKeysetAfter,
+          compositeKs,
         ),
       );
       const probe = await pReq
@@ -967,6 +986,7 @@ async function runTableJob({
           useCreatedDateKeyset,
           mssqlKeysetAfter,
           numericKeysetAfter,
+          compositeKs,
         ),
       );
       const idResp = await idReq
@@ -977,15 +997,7 @@ async function runTableJob({
       if (idRows.length > 0) {
         lastExamIdFromProbe = idRows[idRows.length - 1].probe_exam_id;
         if (useCreatedDateKeyset) {
-          mssqlKeysetAfter = advanceCreatedDateKeysetFromProbe(
-            idRows,
-            examinationSortBundle,
-            keysetBindState(
-              useCreatedDateKeyset,
-              mssqlKeysetAfter,
-              numericKeysetAfter,
-            ),
-          ).mssqlKeysetAfter;
+          compositeKs = advanceExamIdCompositeKeyset(idRows[idRows.length - 1]);
         }
       }
       if (probeTiming && !singleLineUi) {
@@ -1036,6 +1048,7 @@ async function runTableJob({
             useCreatedDateKeyset,
             mssqlKeysetAfter,
             numericKeysetAfter,
+            compositeKs,
           ),
         );
         const resp = await fq
@@ -1102,15 +1115,7 @@ async function runTableJob({
         offset += keysetAdvance;
         if (useMssqlKeyset) {
           if (advanceCreatedDateFromChunkRows) {
-            mssqlKeysetAfter = advanceCreatedDateKeysetState(
-              rows,
-              examinationSortBundle,
-              keysetBindState(
-                useCreatedDateKeyset,
-                mssqlKeysetAfter,
-                numericKeysetAfter,
-              ),
-            ).mssqlKeysetAfter;
+            compositeKs = advanceExamIdCompositeKeyset(rows[rows.length - 1]);
           } else if (!useCreatedDateKeyset) {
             const nextKeyset =
               lastExamIdFromProbe ??
@@ -1127,8 +1132,9 @@ async function runTableJob({
                   key,
                   ...buildCreatedDateCheckpointFields(examinationSortBundle, {
                     offset,
-                    mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
+                    mssqlKeysetAfter: "",
                     completed: false,
+                    composite: compositeKs,
                   }),
                 }
               : {
@@ -1378,15 +1384,7 @@ LIMIT 200;
       offset += keysetAdvance;
       if (useMssqlKeyset) {
         if (advanceCreatedDateFromChunkRows) {
-          mssqlKeysetAfter = advanceCreatedDateKeysetState(
-            rows,
-            examinationSortBundle,
-            keysetBindState(
-              useCreatedDateKeyset,
-              mssqlKeysetAfter,
-              numericKeysetAfter,
-            ),
-          ).mssqlKeysetAfter;
+          compositeKs = advanceExamIdCompositeKeyset(rows[rows.length - 1]);
         } else if (!useCreatedDateKeyset) {
           const nextKeyset =
             lastExamIdFromProbe ??
@@ -1403,8 +1401,9 @@ LIMIT 200;
                 key,
                 ...buildCreatedDateCheckpointFields(examinationSortBundle, {
                   offset,
-                  mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
+                  mssqlKeysetAfter: "",
                   completed: false,
+                  composite: compositeKs,
                 }),
               }
             : {
@@ -1475,8 +1474,9 @@ LIMIT 200;
             key,
             ...buildCreatedDateCheckpointFields(examinationSortBundle, {
               offset,
-              mssqlKeysetAfter: String(mssqlKeysetAfter ?? ""),
+              mssqlKeysetAfter: "",
               completed: migrationReachedPlan,
+              composite: compositeKs,
             }),
           }
         : {

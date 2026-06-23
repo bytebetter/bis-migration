@@ -12,6 +12,7 @@ import {
   bindCreatedDateOrNumericKeyset,
   advanceCreatedDateKeysetFromProbe,
   buildCreatedDateCheckpointFields,
+  initExamChildCompositeKeysetFromCheckpoint,
 } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import { ensureMamPipelineDdl } from "./mamPgDdl.mjs";
 import {
@@ -335,7 +336,13 @@ async function main() {
       let offset = keysetState.offset;
       let afterExamId = keysetState.numericAfter;
       let mssqlKeysetAfter = keysetState.mssqlKeysetAfter;
+      let compositeKs = initExamChildCompositeKeysetFromCheckpoint(
+        checkpoint,
+        checkpointEnabled,
+        keysetState.sortKeyVersionUpgraded,
+      );
       if (keysetState.sortKeyVersionUpgraded && checkpointEnabled) {
+        compositeKs = initExamChildCompositeKeysetFromCheckpoint({}, false, true);
         writeJson(
           checkpointPath,
           buildCreatedDateCheckpointFields(sortBundle, {
@@ -343,6 +350,7 @@ async function main() {
             mssqlKeysetAfter: "",
             afterExamId: 0,
             completed: false,
+            composite: compositeKs,
             extra: { key: KEY },
           }),
         );
@@ -460,6 +468,7 @@ async function main() {
           bindCreatedDateOrNumericKeyset(probeReq, sql, sortBundle, {
             mssqlKeysetAfter,
             numericAfter: afterExamId,
+            composite: compositeKs,
           });
           const idRes = await probeReq
             .input("page", sql.Int, pageSize)
@@ -469,10 +478,11 @@ async function main() {
           const advanced = advanceCreatedDateKeysetFromProbe(
             idRows,
             sortBundle,
-            { numericAfter: afterExamId, mssqlKeysetAfter },
+            { numericAfter: afterExamId, mssqlKeysetAfter, composite: compositeKs },
           );
           afterExamId = advanced.numericAfter;
           mssqlKeysetAfter = advanced.mssqlKeysetAfter;
+          if (advanced.composite) compositeKs = advanced.composite;
           ids = idRows
             .map((r) => Number.parseInt(r?.exam_id ?? "", 10))
             .filter((v) => Number.isFinite(v));
@@ -634,9 +644,10 @@ async function main() {
             checkpointPath,
             buildCreatedDateCheckpointFields(sortBundle, {
               offset,
-              mssqlKeysetAfter,
-              afterExamId,
+              mssqlKeysetAfter: "",
+              afterExamId: compositeKs?.afterExamId ?? afterExamId,
               completed: false,
+              composite: compositeKs,
               extra: { key: KEY },
             }),
           );
@@ -685,9 +696,10 @@ async function main() {
           checkpointPath,
           buildCreatedDateCheckpointFields(sortBundle, {
             offset,
-            mssqlKeysetAfter,
-            afterExamId,
+            mssqlKeysetAfter: "",
+            afterExamId: compositeKs?.afterExamId ?? afterExamId,
             completed: true,
+            composite: compositeKs,
             extra: { key: KEY },
           }),
         );
