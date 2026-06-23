@@ -341,7 +341,7 @@ export const PACSSYNC_ROW_FINGERPRINT_VERSION = 3;
  * ใช้ BINARY_CHECKSUM ครอบคลุมคอลัมน์ข้อมูลหลักทั้งแถว (ไม่ต้องตรงทุกไบต์กับ fingerprint)
  */
 export function rowBinaryChecksumExpr(tableAlias = "v") {
-  const t = `${tableAlias}.`;
+  const t = tableAlias === "" ? "" : `${tableAlias}.`;
   return `BINARY_CHECKSUM(
     ${t}[Accession_ID],
     NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(256), ${t}[Accession_ID]))), N''),
