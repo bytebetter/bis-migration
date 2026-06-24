@@ -49,6 +49,8 @@ import {
   trimRowsToMigrateCap,
   capAdvanceToMigratePlan,
   shouldStopMigratePagination,
+  rowsDoneInMigrateRun,
+  shouldMarkMigrateCheckpointComplete,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
@@ -422,12 +424,13 @@ async function main() {
         );
       }
       const startedAt = Date.now();
+      const runStartOffset = offset;
       while (true) {
         const chunkStartedAt = Date.now();
-        const rowsInIndexWindow = Math.max(0, offset - idx.indexStartOffset);
+        const rowsDoneThisRun = rowsDoneInMigrateRun(offset, runStartOffset);
         const pageSize = resolvePageSize({
           batchSize,
-          total: rowsInIndexWindow,
+          total: rowsDoneThisRun,
           plannedRows: plannedRowsForPageSize(plannedRows, migration, idx.indexLimited),
         });
         if (pageSize <= 0) break;
@@ -517,7 +520,7 @@ async function main() {
 
         rows = trimRowsToMigrateCap(
           rows,
-          rowsInIndexWindow,
+          rowsDoneThisRun,
           plannedRows,
           migration,
           idx.indexLimited,
@@ -630,7 +633,7 @@ async function main() {
 
         let keysetAdvance = capAdvanceToMigratePlan(
           ids.length,
-          rowsInIndexWindow,
+          rowsDoneThisRun,
           plannedRows,
           migration,
           idx.indexLimited,
@@ -666,7 +669,7 @@ async function main() {
         }
         if (progressEnabled) {
           renderProgress(
-            offset,
+            rowsDoneInMigrateRun(offset, runStartOffset),
             progressTotal,
             startedAt,
             chunkIndex,
@@ -681,7 +684,7 @@ async function main() {
           shouldStopMigratePagination({
             advance: keysetAdvance,
             pageSize,
-            rowsReadInWindow: Math.max(0, offset - idx.indexStartOffset),
+            rowsReadInWindow: rowsDoneInMigrateRun(offset, runStartOffset),
             plannedRows,
             migrationConfig: migration,
             indexLimited: idx.indexLimited,
@@ -698,7 +701,13 @@ async function main() {
             offset,
             mssqlKeysetAfter: "",
             afterExamId: compositeKs?.afterExamId ?? afterExamId,
-            completed: true,
+            completed: shouldMarkMigrateCheckpointComplete({
+              migrationConfig: migration,
+              indexLimited: idx.indexLimited,
+              runStartOffset,
+              currentOffset: offset,
+              plannedRows,
+            }),
             composite: compositeKs,
             extra: { key: KEY },
           }),

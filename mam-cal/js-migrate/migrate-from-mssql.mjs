@@ -50,6 +50,8 @@ import {
   plannedRowsForPageSize,
   trimRowsToMigrateCap,
   capAdvanceToMigratePlan,
+  rowsDoneInMigrateRun,
+  shouldMarkMigrateCheckpointComplete,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
@@ -430,12 +432,13 @@ async function main() {
         );
       }
       const startedAt = Date.now();
+      const runStartOffset = offset;
       while (true) {
         const chunkStartedAt = Date.now();
-        const rowsInIndexWindow = Math.max(0, offset - idx.indexStartOffset);
+        const rowsDoneThisRun = rowsDoneInMigrateRun(offset, runStartOffset);
         const pageSize = resolvePageSize({
           batchSize,
-          total: rowsInIndexWindow,
+          total: rowsDoneThisRun,
           plannedRows: plannedRowsForPageSize(plannedRows, migration, idx.indexLimited),
         });
         if (pageSize <= 0) break;
@@ -488,7 +491,7 @@ async function main() {
 
         rows = trimRowsToMigrateCap(
           rows,
-          rowsInIndexWindow,
+          rowsDoneThisRun,
           plannedRows,
           migration,
           idx.indexLimited,
@@ -496,7 +499,7 @@ async function main() {
         if (rows.length === 0) break;
         const keysetAdvance = capAdvanceToMigratePlan(
           rows.length,
-          rowsInIndexWindow,
+          rowsDoneThisRun,
           plannedRows,
           migration,
           idx.indexLimited,
@@ -626,7 +629,7 @@ async function main() {
         }
         if (progressEnabled) {
           renderProgress(
-            offset,
+            rowsDoneInMigrateRun(offset, runStartOffset),
             progressTotal,
             startedAt,
             chunkIndex,
@@ -642,7 +645,7 @@ async function main() {
             indexLimited: idx.indexLimited,
         migrationConfig: migration,
             plannedRows,
-            rowsReadInWindow: Math.max(0, offset - idx.indexStartOffset),
+            rowsReadInWindow: rowsDoneInMigrateRun(offset, runStartOffset),
           }) ||
           rows.length < pageSize
         ) {
@@ -651,6 +654,13 @@ async function main() {
       }
 
       if (checkpointEnabled) {
+        const migrationCheckpointComplete = shouldMarkMigrateCheckpointComplete({
+          migrationConfig: migration,
+          indexLimited: idx.indexLimited,
+          runStartOffset,
+          currentOffset: offset,
+          plannedRows,
+        });
         if (sortBundle.createdDateColumn) {
           writeJson(
             checkpointPath,
@@ -658,7 +668,7 @@ async function main() {
               offset,
               mssqlKeysetAfter: "",
               afterExamId: compositeKs.afterExamId,
-              completed: true,
+              completed: migrationCheckpointComplete,
               composite: compositeKs,
               extra: { key: KEY },
             }),
@@ -669,7 +679,7 @@ async function main() {
             offset,
             afterExamId,
             afterChildId,
-            completed: true,
+            completed: migrationCheckpointComplete,
             updatedAt: new Date().toISOString(),
           });
         }

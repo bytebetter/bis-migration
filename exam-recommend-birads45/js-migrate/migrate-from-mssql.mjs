@@ -38,6 +38,8 @@ import {
   trimRowsToMigrateCap,
   capAdvanceToMigratePlan,
   shouldStopMigratePagination,
+  rowsDoneInMigrateRun,
+  shouldMarkMigrateCheckpointComplete,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
@@ -352,12 +354,13 @@ FROM ${sourceObjectNoLock};`);
       }
 
       const startedAt = Date.now();
+      const runStartOffset = offset;
       while (true) {
         const chunkStartedAt = Date.now();
-        const rowsInIndexWindow = Math.max(0, offset - idx.indexStartOffset);
+        const rowsDoneThisRun = rowsDoneInMigrateRun(offset, runStartOffset);
         const pageSize = resolvePageSize({
           batchSize,
-          total: rowsInIndexWindow,
+          total: rowsDoneThisRun,
           plannedRows: plannedRowsForPageSize(plannedRows, migration, idx.indexLimited),
         });
         if (pageSize <= 0) break;
@@ -424,7 +427,7 @@ FROM ${sourceObjectNoLock};`);
 
         rows = trimRowsToMigrateCap(
           rows,
-          rowsInIndexWindow,
+          rowsDoneThisRun,
           plannedRows,
           migration,
           idx.indexLimited,
@@ -496,7 +499,7 @@ FROM ${sourceObjectNoLock};`);
 
         let keysetAdvance = capAdvanceToMigratePlan(
           ids.length,
-          rowsInIndexWindow,
+          rowsDoneThisRun,
           plannedRows,
           migration,
           idx.indexLimited,
@@ -527,7 +530,7 @@ FROM ${sourceObjectNoLock};`);
         }
         if (progressEnabled) {
           renderProgress(
-            offset,
+            rowsDoneInMigrateRun(offset, runStartOffset),
             progressTotal,
             startedAt,
             chunkIndex,
@@ -542,7 +545,7 @@ FROM ${sourceObjectNoLock};`);
           shouldStopMigratePagination({
             advance: keysetAdvance,
             pageSize,
-            rowsReadInWindow: Math.max(0, offset - idx.indexStartOffset),
+            rowsReadInWindow: rowsDoneInMigrateRun(offset, runStartOffset),
             plannedRows,
             migrationConfig: migration,
             indexLimited: idx.indexLimited,
@@ -559,7 +562,13 @@ FROM ${sourceObjectNoLock};`);
             offset,
             mssqlKeysetAfter,
             afterExamId,
-            completed: true,
+            completed: shouldMarkMigrateCheckpointComplete({
+              migrationConfig: migration,
+              indexLimited: idx.indexLimited,
+              runStartOffset,
+              currentOffset: offset,
+              plannedRows,
+            }),
             extra: { key: KEY },
           }),
         );
