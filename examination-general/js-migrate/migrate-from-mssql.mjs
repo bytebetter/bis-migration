@@ -605,7 +605,11 @@ async function main() {
           runLog.skipped += skipped;
           step = "post-load mapping (upsert)";
           const postLoadStartedAt = Date.now();
-          await runExaminationGeneralChunkPostLoad(client);
+          await runExaminationGeneralChunkPostLoad(
+            client,
+            "migrate_stg.examination_general_mssql",
+            migration.migrateRowMode ?? "insert-only",
+          );
           postLoadMs = Date.now() - postLoadStartedAt;
           const issueResult = await runExamKeyedStagingFieldIssuePipeline(
             client,

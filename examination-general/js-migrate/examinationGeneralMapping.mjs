@@ -92,7 +92,11 @@ function toSqlValueExpr(baseExpr, colMeta) {
 export async function runExaminationGeneralChunkPostLoad(
   pgClient,
   stagingFromClause = "migrate_stg.examination_general_mssql",
+  migrateRowMode = "overwrite",
 ) {
+  const mode = migrateRowMode === "insert-only" ? "insert-only" : "overwrite";
+  const keepExistingId = mode !== "insert-only";
+
   await ensurePlaceholderPatientInfoFromStaging(pgClient, stagingFromClause);
 
   const cols = await existingColumns(pgClient, "examination_general");
@@ -109,8 +113,24 @@ export async function runExaminationGeneralChunkPostLoad(
   const stgExamExpr = oldExamIsInt
     ? "NULLIF(btrim(s.exam_id), '')::int"
     : "NULLIF(btrim(s.exam_id), '')";
+  const stgExamText = "NULLIF(btrim(s.exam_id), '')";
+  const targetOldExamJoin = oldExamIsInt
+    ? `t.old_exam_id = ${stgExamExpr}`
+    : `t.old_exam_id::text = ${stgExamText}`;
 
-  if (cols.has("id")) {
+  await pgClient.query(`
+    CREATE TEMP TABLE examination_general_exam_map ON COMMIT DROP AS
+    SELECT DISTINCT ON (${stgExamText})
+      ${stgExamText} AS old_exam_id_text,
+      e.id AS exam_pg_id
+    FROM ${stagingFromClause} s
+    INNER JOIN public.examination e
+      ON e.old_exam_id::text = ${stgExamText}
+    WHERE ${stgExamText} ~ '^[0-9]+$'
+    ORDER BY ${stgExamText}, e.id;
+  `);
+
+  if (keepExistingId && cols.has("id")) {
     await pgClient.query(`
       CREATE TEMP TABLE IF NOT EXISTS examination_general_keep_id (
         old_exam_id TEXT PRIMARY KEY,
@@ -118,27 +138,26 @@ export async function runExaminationGeneralChunkPostLoad(
       ) ON COMMIT PRESERVE ROWS;
       TRUNCATE examination_general_keep_id;
       INSERT INTO examination_general_keep_id (old_exam_id, id)
-      SELECT DISTINCT ON (NULLIF(btrim(s.exam_id), '')::text)
-        NULLIF(btrim(s.exam_id), '')::text,
+      SELECT DISTINCT ON (${stgExamText}::text)
+        ${stgExamText}::text,
         t.id::bigint
       FROM ${stagingFromClause} s
       INNER JOIN public.examination_general t
-        ON t.old_exam_id = ${stgExamExpr}
-      WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$'
-      ORDER BY NULLIF(btrim(s.exam_id), '')::text, t.id;
+        ON ${targetOldExamJoin}
+      WHERE ${stgExamText} ~ '^[0-9]+$'
+      ORDER BY ${stgExamText}::text, t.id;
     `);
   }
 
-  await pgClient.query(
-    `DELETE FROM public.examination_general
-     WHERE old_exam_id IN (
-       SELECT ${stgExamExpr}
-       FROM ${stagingFromClause} s
-       WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$'
-     );`,
-  );
+  if (keepExistingId) {
+    await pgClient.query(
+      `DELETE FROM public.examination_general AS t
+       USING ${stagingFromClause} AS s
+       WHERE ${targetOldExamJoin}
+         AND ${stgExamText} ~ '^[0-9]+$';`,
+    );
+  }
 
-  // Align auto-increment sequence like other migration modules.
   if (cols.has("id")) {
     await pgClient.query(`
       SELECT setval(
@@ -216,12 +235,14 @@ export async function runExaminationGeneralChunkPostLoad(
   const selectExprs = [];
   for (const [name, meta] of cols.entries()) {
     let expr = null;
-    if (name === "id")
-      expr = `COALESCE(
+    if (name === "id") {
+      expr = keepExistingId
+        ? `COALESCE(
         id_keep.id,
         nextval(pg_get_serial_sequence('public.examination_general', 'id'))
-      )`;
-    else if (name === "exam") expr = "e.id";
+      )`
+        : "nextval(pg_get_serial_sequence('public.examination_general', 'id'))";
+    } else if (name === "exam") expr = "em.exam_pg_id";
     else if (name === "exam_id") {
       const rawExamId = "NULLIF(btrim(s.exam_id), '')";
       expr = toSqlValueExpr(rawExamId, meta) ?? `${rawExamId}::bigint`;
@@ -242,24 +263,27 @@ export async function runExaminationGeneralChunkPostLoad(
       "no compatible columns found on public.examination_general",
     );
   }
-  const idKeepJoin = cols.has("id")
-    ? `LEFT JOIN examination_general_keep_id id_keep
-  ON id_keep.old_exam_id = NULLIF(btrim(s.exam_id), '')`
-    : "";
+  const idKeepJoin =
+    keepExistingId && cols.has("id")
+      ? `LEFT JOIN examination_general_keep_id id_keep
+  ON id_keep.old_exam_id = ${stgExamText}`
+      : "";
+  const insertOnlyGuard =
+    mode === "insert-only"
+      ? `
+  AND NOT EXISTS (
+    SELECT 1 FROM public.examination_general t_existing
+    WHERE ${oldExamIsInt ? `t_existing.old_exam_id = ${stgExamExpr}` : `t_existing.old_exam_id::text = ${stgExamText}`}
+  )`
+      : "";
 
   const sql = `
 INSERT INTO public.examination_general (${insertColumns.join(", ")})
-SELECT
+SELECT DISTINCT ON (${stgExamText})
   ${selectExprs.join(",\n  ")}
 FROM ${stagingFromClause} s
-LEFT JOIN LATERAL (
-  SELECT e2.id
-  FROM public.examination e2
-  WHERE NULLIF(btrim(s.exam_id), '') IS NOT NULL
-    AND e2.old_exam_id::text = NULLIF(btrim(s.exam_id), '')
-  ORDER BY e2.id
-  LIMIT 1
-) e ON TRUE
+LEFT JOIN examination_general_exam_map em
+  ON em.old_exam_id_text = ${stgExamText}
 LEFT JOIN LATERAL (
   SELECT p2.id
   FROM public.patient_info p2
@@ -269,7 +293,8 @@ LEFT JOIN LATERAL (
   LIMIT 1
 ) p ON TRUE
 ${idKeepJoin}
-WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$';
+WHERE ${stgExamText} ~ '^[0-9]+$'${insertOnlyGuard}
+ORDER BY ${stgExamText};
 `.trim();
   await pgClient.query(sql);
 }
