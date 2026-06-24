@@ -44,16 +44,18 @@ import { bindMigrateSrcNumericRange } from "../../shared/js-migrate/migrateCliAr
 import {
   applySourceIndexToMigrateJob,
   buildIndexCheckpointSuffix,
-  isIndexWindowComplete,
-  narrowPlannedRowsForIndex,
   resolvePageSize,
   plannedRowsForPageSize,
   trimRowsToMigrateCap,
   capAdvanceToMigratePlan,
   rowsDoneInMigrateRun,
   shouldMarkMigrateCheckpointComplete,
+  shouldStopMigratePagination,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
-import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
+import {
+  prepareMigrateRowPlan,
+  readSourceCountCap,
+} from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import { REPAIR_SPEC_ULTRASOUND_CYST } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
@@ -398,7 +400,8 @@ async function main() {
         sourceIndexFrom: idx.sourceIndexFrom,
         sourceIndexTo: idx.sourceIndexTo,
       });
-      let progressTotal = plannedRows ?? null;
+      let progressTotal =
+        readSourceCountCap(migration) ?? sourceRowCountTotal ?? plannedRows ?? null;
       let plannedChunks =
         plannedRows != null && plannedRows > 0
           ? Math.ceil(plannedRows / batchSize)
@@ -629,7 +632,7 @@ async function main() {
         }
         if (progressEnabled) {
           renderProgress(
-            rowsDoneInMigrateRun(offset, runStartOffset),
+            offset,
             progressTotal,
             startedAt,
             chunkIndex,
@@ -641,13 +644,14 @@ async function main() {
         if (repairRun.active) {
           if (repairRunIsDone(repairRun)) break;
         } else if (
-          isIndexWindowComplete({
-            indexLimited: idx.indexLimited,
-        migrationConfig: migration,
-            plannedRows,
+          shouldStopMigratePagination({
+            advance: keysetAdvance,
+            pageSize,
             rowsReadInWindow: rowsDoneInMigrateRun(offset, runStartOffset),
-          }) ||
-          rows.length < pageSize
+            plannedRows,
+            migrationConfig: migration,
+            indexLimited: idx.indexLimited,
+          })
         ) {
           break;
         }
