@@ -118,11 +118,14 @@ export async function runExaminationGeneralChunkPostLoad(
       ) ON COMMIT PRESERVE ROWS;
       TRUNCATE examination_general_keep_id;
       INSERT INTO examination_general_keep_id (old_exam_id, id)
-      SELECT NULLIF(btrim(s.exam_id), '')::text, t.id::bigint
+      SELECT DISTINCT ON (NULLIF(btrim(s.exam_id), '')::text)
+        NULLIF(btrim(s.exam_id), '')::text,
+        t.id::bigint
       FROM ${stagingFromClause} s
       INNER JOIN public.examination_general t
         ON t.old_exam_id = ${stgExamExpr}
-      WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$';
+      WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$'
+      ORDER BY NULLIF(btrim(s.exam_id), '')::text, t.id;
     `);
   }
 
@@ -249,10 +252,22 @@ INSERT INTO public.examination_general (${insertColumns.join(", ")})
 SELECT
   ${selectExprs.join(",\n  ")}
 FROM ${stagingFromClause} s
-LEFT JOIN public.examination e
-  ON e.old_exam_id::text = NULLIF(btrim(s.exam_id), '')
-LEFT JOIN public.patient_info p
-  ON p.pid::text = NULLIF(btrim(s.pid), '')
+LEFT JOIN LATERAL (
+  SELECT e2.id
+  FROM public.examination e2
+  WHERE NULLIF(btrim(s.exam_id), '') IS NOT NULL
+    AND e2.old_exam_id::text = NULLIF(btrim(s.exam_id), '')
+  ORDER BY e2.id
+  LIMIT 1
+) e ON TRUE
+LEFT JOIN LATERAL (
+  SELECT p2.id
+  FROM public.patient_info p2
+  WHERE NULLIF(btrim(s.pid), '') IS NOT NULL
+    AND p2.pid::text = NULLIF(btrim(s.pid), '')
+  ORDER BY p2.id
+  LIMIT 1
+) p ON TRUE
 ${idKeepJoin}
 WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$';
 `.trim();
