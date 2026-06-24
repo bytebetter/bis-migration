@@ -136,6 +136,30 @@ export function plannedRowsForPageSize(
 }
 
 /**
+ * แถวที่ migrate ในรอบ job นี้ (ไม่ใช่ offset สะสมจาก checkpoint)
+ * plannedRows จาก narrowPlannedRowsForIndex = จำนวนที่เหลือในรอบนี้
+ */
+export function rowsDoneInMigrateRun(currentOffset, runStartOffset) {
+  return Math.max(0, currentOffset - runStartOffset);
+}
+
+/**
+ * mark checkpoint completed เมื่อครบแผนในรอบนี้ — กัน resume+sourceCountCap ที่ไม่ได้ process แถว
+ */
+export function shouldMarkMigrateCheckpointComplete(p) {
+  const {
+    migrationConfig,
+    indexLimited,
+    runStartOffset,
+    currentOffset,
+    plannedRows,
+  } = p;
+  if (!hasMigrateRowWindow(migrationConfig, indexLimited)) return true;
+  if (plannedRows == null || plannedRows <= 0) return true;
+  return rowsDoneInMigrateRun(currentOffset, runStartOffset) >= plannedRows;
+}
+
+/**
  * ตัดแถวหลัง fetch ให้ไม่เกิน snapshot cap (ล็อกจำนวน ณ ตอน migrate:all)
  * @template T
  * @param {T[]} rows
