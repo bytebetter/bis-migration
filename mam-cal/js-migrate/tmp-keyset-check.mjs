@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import sql from "mssql";
 import { MSSQL_MAM_CAL_KEYSET_SELECT } from "./mssqlMamCalSelect.mjs";
+import { bindMssqlSourceObjectPlaceholders } from "../../shared/js-migrate/mssqlExamTwoStepSelect.mjs";
 
 const cfg = JSON.parse(
   fs.readFileSync("../../migration.config.local.json", "utf8"),
@@ -27,9 +28,9 @@ const count = Number(
       .query("SELECT COUNT_BIG(1) AS c FROM dbo.mammogram_cal WITH (NOLOCK)")
   ).recordset[0].c,
 );
-const sqlText = MSSQL_MAM_CAL_KEYSET_SELECT.replaceAll(
-  "{{sourceObject}}",
-  "dbo.mammogram_cal WITH (NOLOCK)",
+const sqlText = bindMssqlSourceObjectPlaceholders(
+  MSSQL_MAM_CAL_KEYSET_SELECT,
+  "dbo.mammogram_cal",
 );
 
 let afterExamId = 0;

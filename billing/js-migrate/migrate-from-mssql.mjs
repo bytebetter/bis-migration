@@ -13,6 +13,7 @@ import {
   advanceCreatedDateKeysetFromProbe,
   advanceCreatedDateKeysetState,
   buildCreatedDateCheckpointFields,
+  initExamChildCompositeKeysetFromCheckpoint,
 } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import { ensureBillingPipelineDdl } from "./billingPgDdl.mjs";
 import {
@@ -345,7 +346,13 @@ async function main() {
       let offset = keysetState.offset;
       let afterExamId = keysetState.numericAfter;
       let mssqlKeysetAfter = keysetState.mssqlKeysetAfter;
+      let compositeKs = initExamChildCompositeKeysetFromCheckpoint(
+        checkpoint,
+        checkpointEnabled,
+        keysetState.sortKeyVersionUpgraded,
+      );
       if (keysetState.sortKeyVersionUpgraded && checkpointEnabled) {
+        compositeKs = initExamChildCompositeKeysetFromCheckpoint({}, false, true);
         writeJson(
           checkpointPath,
           buildCreatedDateCheckpointFields(sortBundle, {
@@ -353,6 +360,7 @@ async function main() {
             mssqlKeysetAfter: "",
             afterExamId: 0,
             completed: false,
+            composite: compositeKs,
             extra: { key: KEY },
           }),
         );
@@ -363,6 +371,7 @@ async function main() {
         offset = 0;
         afterExamId = 0;
         mssqlKeysetAfter = sortBundle.createdDateColumn ? "" : null;
+        compositeKs = initExamChildCompositeKeysetFromCheckpoint({}, false, true);
         await resetBillingIdSequenceIfEmpty(client);
         if (checkpointEnabled) {
           writeJson(
@@ -372,6 +381,7 @@ async function main() {
               mssqlKeysetAfter: sortBundle.createdDateColumn ? "" : null,
               afterExamId: 0,
               completed: false,
+              composite: compositeKs,
               extra: { key: KEY },
             }),
           );
@@ -512,6 +522,7 @@ async function main() {
           bindCreatedDateOrNumericKeyset(fetchReq, sql, sortBundle, {
             mssqlKeysetAfter,
             numericAfter: afterExamId,
+            composite: compositeKs,
           });
           const fetchStartedAt = Date.now();
           const fetchRes = await fetchReq
@@ -522,10 +533,11 @@ async function main() {
           const advanced = advanceCreatedDateKeysetState(
             rows,
             sortBundle,
-            { numericAfter: afterExamId, mssqlKeysetAfter },
+            { numericAfter: afterExamId, mssqlKeysetAfter, composite: compositeKs },
           );
           afterExamId = advanced.numericAfter;
           mssqlKeysetAfter = advanced.mssqlKeysetAfter;
+          if (advanced.composite) compositeKs = advanced.composite;
           ids = rows
             .map((r) => Number.parseInt(String(r?.exam_id ?? "").trim(), 10))
             .filter((v) => Number.isFinite(v))
@@ -543,6 +555,7 @@ async function main() {
           bindCreatedDateOrNumericKeyset(idReq, sql, sortBundle, {
             mssqlKeysetAfter,
             numericAfter: afterExamId,
+            composite: compositeKs,
           });
           const idFetchStartedAt = Date.now();
           const idRes = await idReq
@@ -553,10 +566,11 @@ async function main() {
           const advanced = advanceCreatedDateKeysetFromProbe(
             idRows,
             sortBundle,
-            { numericAfter: afterExamId, mssqlKeysetAfter },
+            { numericAfter: afterExamId, mssqlKeysetAfter, composite: compositeKs },
           );
           afterExamId = advanced.numericAfter;
           mssqlKeysetAfter = advanced.mssqlKeysetAfter;
+          if (advanced.composite) compositeKs = advanced.composite;
           ids = idRows
             .map((r) => Number.parseInt(String(r?.exam_id ?? "").trim(), 10))
             .filter((v) => Number.isFinite(v))
@@ -612,6 +626,7 @@ async function main() {
                   mssqlKeysetAfter,
                   afterExamId,
                   completed: false,
+                  composite: compositeKs,
                   extra: { key: KEY },
                 }),
               );
@@ -748,6 +763,7 @@ async function main() {
                 mssqlKeysetAfter,
                 afterExamId,
                 completed: false,
+                composite: compositeKs,
                 extra: { key: KEY },
               }),
             );
@@ -805,6 +821,7 @@ async function main() {
             mssqlKeysetAfter,
             afterExamId,
             completed: true,
+            composite: compositeKs,
             extra: { key: KEY },
           }),
         );

@@ -7,6 +7,14 @@ import {
   mssqlIntColumnSortKeyExpr,
   bracketMssqlIdent,
 } from "./mssqlCreatedDateSort.mjs";
+
+/** @param {string} sqlTemplate @param {string} sourceObject e.g. [dbo].[table] */
+export function bindMssqlSourceObjectPlaceholders(sqlTemplate, sourceObject) {
+  const sourceObjectNoLock = `${sourceObject} WITH (NOLOCK)`;
+  return sqlTemplate
+    .replaceAll("{{sourceObject}}", sourceObjectNoLock)
+    .replaceAll("{{sourceObjectBase}}", sourceObject);
+}
 import {
   createdDateSelectExpr,
   examChildCreatedDateOrderBy,
@@ -129,7 +137,7 @@ FROM (
 SELECT TOP (@page)
   ${selectColumns},
   ${createdDateSelectExpr(String(createdDateColumn).trim(), "s")}
-FROM {{sourceObject}} AS s
+FROM {{sourceObjectBase}} AS s WITH (NOLOCK)
 WHERE ${examChildCreatedDateWhereClause(String(createdDateColumn).trim(), childColumn)}${keyRangeClause}
 ORDER BY ${examChildCreatedDateOrderBy(String(createdDateColumn).trim(), childColumn)}`.trim();
 
