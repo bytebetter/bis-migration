@@ -12,6 +12,7 @@ import {
   bindCreatedDateOrNumericKeyset,
   advanceCreatedDateKeysetFromProbe,
   buildCreatedDateCheckpointFields,
+  initExamChildCompositeKeysetFromCheckpoint,
 } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import { ensureExaminationGeneralPipelineDdl } from "./examinationGeneralPgDdl.mjs";
 import {
@@ -391,7 +392,13 @@ async function main() {
       let offset = keysetState.offset;
       let afterExamId = keysetState.numericAfter;
       let mssqlKeysetAfter = keysetState.mssqlKeysetAfter;
+      let compositeKs = initExamChildCompositeKeysetFromCheckpoint(
+        checkpoint,
+        checkpointEnabled,
+        keysetState.sortKeyVersionUpgraded,
+      );
       if (keysetState.sortKeyVersionUpgraded && checkpointEnabled) {
+        compositeKs = initExamChildCompositeKeysetFromCheckpoint({}, false, true);
         writeJson(
           checkpointPath,
           buildCreatedDateCheckpointFields(sortBundle, {
@@ -399,6 +406,7 @@ async function main() {
             mssqlKeysetAfter: "",
             afterExamId: 0,
             completed: false,
+            composite: compositeKs,
             extra: { key: KEY },
           }),
         );
@@ -428,7 +436,7 @@ async function main() {
           sourceRowCountTotal = null;
         }
       }
-      const plannedRows = prepareMigrateRowPlan({
+      let plannedRows = prepareMigrateRowPlan({
         migrationConfig: migration,
         sourceRowCountTotal,
         offset,
@@ -514,6 +522,7 @@ async function main() {
           bindCreatedDateOrNumericKeyset(probeReq, sql, sortBundle, {
             mssqlKeysetAfter,
             numericAfter: afterExamId,
+            composite: compositeKs,
           });
           const idRes = await probeReq
             .input("page", sql.Int, pageSize)
@@ -523,10 +532,11 @@ async function main() {
           const advanced = advanceCreatedDateKeysetFromProbe(
             idRows,
             sortBundle,
-            { numericAfter: afterExamId, mssqlKeysetAfter },
+            { numericAfter: afterExamId, mssqlKeysetAfter, composite: compositeKs },
           );
           afterExamId = advanced.numericAfter;
           mssqlKeysetAfter = advanced.mssqlKeysetAfter;
+          if (advanced.composite) compositeKs = advanced.composite;
           ids = idRows
             .map((r) => Number.parseInt(r?.exam_id ?? "", 10))
             .filter((v) => Number.isFinite(v))
@@ -678,6 +688,7 @@ async function main() {
               mssqlKeysetAfter,
               afterExamId,
               completed: false,
+              composite: compositeKs,
               extra: { key: KEY },
             }),
           );
@@ -729,6 +740,7 @@ async function main() {
             mssqlKeysetAfter,
             afterExamId,
             completed: true,
+            composite: compositeKs,
             extra: { key: KEY },
           }),
         );

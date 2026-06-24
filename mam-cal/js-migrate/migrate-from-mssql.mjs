@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import sql from "mssql";
 import pg from "pg";
 import { createMssqlMamCalSelectBundle } from "./mssqlMamCalSelect.mjs";
+import { bindMssqlSourceObjectPlaceholders } from "../../shared/js-migrate/mssqlExamTwoStepSelect.mjs";
 import {
   setupCreatedDateMigrationSort,
   initCreatedDateKeysetState,
@@ -290,13 +291,13 @@ async function main() {
     tableLabel: KEY,
     createSelectBundle: createMssqlMamCalSelectBundle,
   });
-  const keysetSql = sortBundle.keysetSql.replaceAll(
-    "{{sourceObject}}",
-    sourceObjectNoLock,
+  const keysetSql = bindMssqlSourceObjectPlaceholders(
+    sortBundle.keysetSql,
+    sourceObject,
   );
-  const detailSqlTemplate = sortBundle.detailByExamIdsSql.replaceAll(
-    "{{sourceObject}}",
-    sourceObjectNoLock,
+  const detailSqlTemplate = bindMssqlSourceObjectPlaceholders(
+    sortBundle.detailByExamIdsSql,
+    sourceObject,
   );
 
   try {
