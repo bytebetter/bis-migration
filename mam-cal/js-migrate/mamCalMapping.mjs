@@ -127,7 +127,10 @@ export async function runMamCalChunkPostLoad(
         ) ON COMMIT PRESERVE ROWS;
         TRUNCATE mammogram_cal_keep_id;
         INSERT INTO mammogram_cal_keep_id (old_exam_id, described_cal_id, id)
-        SELECT
+        SELECT DISTINCT ON (
+          NULLIF(btrim(s.exam_id), '')::text,
+          NULLIF(btrim(s.described_cal_id), '')::int
+        )
           NULLIF(btrim(s.exam_id), '')::text,
           NULLIF(btrim(s.described_cal_id), '')::int,
           t.id::bigint
@@ -136,7 +139,11 @@ export async function runMamCalChunkPostLoad(
           ON t.old_exam_id = ${stgExamExpr}
          AND t.described_cal_id = ${stgChildExpr}
         WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$'
-          AND NULLIF(btrim(s.described_cal_id), '') ~ '^[0-9]+$';
+          AND NULLIF(btrim(s.described_cal_id), '') ~ '^[0-9]+$'
+        ORDER BY
+          NULLIF(btrim(s.exam_id), '')::text,
+          NULLIF(btrim(s.described_cal_id), '')::int,
+          t.id;
       `);
     }
 
@@ -159,7 +166,10 @@ export async function runMamCalChunkPostLoad(
         ) ON COMMIT PRESERVE ROWS;
         TRUNCATE mammogram_cal_keep_id;
         INSERT INTO mammogram_cal_keep_id (old_exam_id, described_cal_id, id)
-        SELECT
+        SELECT DISTINCT ON (
+          NULLIF(btrim(s.exam_id), '')::text,
+          NULLIF(btrim(s.described_cal_id), '')::int
+        )
           NULLIF(btrim(s.exam_id), '')::text,
           NULLIF(btrim(s.described_cal_id), '')::int,
           t.id::bigint
@@ -170,7 +180,11 @@ export async function runMamCalChunkPostLoad(
           ON t.exam = e.id
          AND t.described_cal_id = NULLIF(btrim(s.described_cal_id), '')::int
         WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$'
-          AND NULLIF(btrim(s.described_cal_id), '') ~ '^[0-9]+$';
+          AND NULLIF(btrim(s.described_cal_id), '') ~ '^[0-9]+$'
+        ORDER BY
+          NULLIF(btrim(s.exam_id), '')::text,
+          NULLIF(btrim(s.described_cal_id), '')::int,
+          t.id;
       `);
     }
     await pgClient.query(
@@ -259,17 +273,21 @@ export async function runMamCalChunkPostLoad(
  AND id_keep.described_cal_id = NULLIF(btrim(s.described_cal_id), '')::int`
     : "";
 
+  const stgExamKey = "NULLIF(btrim(s.exam_id), '')";
+  const stgChildKey = "NULLIF(btrim(s.described_cal_id), '')::int";
+
   const sql = `
 INSERT INTO public.mammogram_cal (${insertColumns.join(", ")})
-SELECT
+SELECT DISTINCT ON (${stgExamKey}, ${stgChildKey})
   ${selectExprs.join(",\n  ")}
 FROM ${stagingFromClause} s
 LEFT JOIN public.examination e
-  ON e.old_exam_id::text = NULLIF(btrim(s.exam_id), '')
+  ON e.old_exam_id::text = ${stgExamKey}
 ${patientJoin}
 ${idKeepJoin}
-WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$'
-  AND NULLIF(btrim(s.described_cal_id), '') ~ '^[0-9]+$';
+WHERE ${stgExamKey} ~ '^[0-9]+$'
+  AND NULLIF(btrim(s.described_cal_id), '') ~ '^[0-9]+$'
+ORDER BY ${stgExamKey}, ${stgChildKey};
 `.trim();
   await pgClient.query(sql);
 }
