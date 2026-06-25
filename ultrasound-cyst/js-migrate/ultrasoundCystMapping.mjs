@@ -135,7 +135,10 @@ export async function runUltrasoundCystChunkPostLoad(
         ) ON COMMIT PRESERVE ROWS;
         TRUNCATE ultrasound_cyst_keep_id;
         INSERT INTO ultrasound_cyst_keep_id (old_exam_id, described_cyst_id, id)
-        SELECT
+        SELECT DISTINCT ON (
+          NULLIF(btrim(s.exam_id), '')::text,
+          NULLIF(btrim(s.described_cyst_id), '')::int
+        )
           NULLIF(btrim(s.exam_id), '')::text,
           NULLIF(btrim(s.described_cyst_id), '')::int,
           t.id::bigint
@@ -144,7 +147,11 @@ export async function runUltrasoundCystChunkPostLoad(
           ON t.old_exam_id = ${stgExamExpr}
          AND t.described_cyst_id = ${stgChildExpr}
         WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$'
-          AND NULLIF(btrim(s.described_cyst_id), '') ~ '^[0-9]+$';
+          AND NULLIF(btrim(s.described_cyst_id), '') ~ '^[0-9]+$'
+        ORDER BY
+          NULLIF(btrim(s.exam_id), '')::text,
+          NULLIF(btrim(s.described_cyst_id), '')::int,
+          t.id;
       `);
     }
 
@@ -167,7 +174,10 @@ export async function runUltrasoundCystChunkPostLoad(
         ) ON COMMIT PRESERVE ROWS;
         TRUNCATE ultrasound_cyst_keep_id;
         INSERT INTO ultrasound_cyst_keep_id (old_exam_id, described_cyst_id, id)
-        SELECT
+        SELECT DISTINCT ON (
+          NULLIF(btrim(s.exam_id), '')::text,
+          NULLIF(btrim(s.described_cyst_id), '')::int
+        )
           NULLIF(btrim(s.exam_id), '')::text,
           NULLIF(btrim(s.described_cyst_id), '')::int,
           t.id::bigint
@@ -178,7 +188,11 @@ export async function runUltrasoundCystChunkPostLoad(
           ON t.exam = e.id
          AND t.described_cyst_id = NULLIF(btrim(s.described_cyst_id), '')::int
         WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$'
-          AND NULLIF(btrim(s.described_cyst_id), '') ~ '^[0-9]+$';
+          AND NULLIF(btrim(s.described_cyst_id), '') ~ '^[0-9]+$'
+        ORDER BY
+          NULLIF(btrim(s.exam_id), '')::text,
+          NULLIF(btrim(s.described_cyst_id), '')::int,
+          t.id;
       `);
     }
     await pgClient.query(
@@ -272,17 +286,21 @@ export async function runUltrasoundCystChunkPostLoad(
  AND id_keep.described_cyst_id = NULLIF(btrim(s.described_cyst_id), '')::int`
     : "";
 
+  const stgExamKey = "NULLIF(btrim(s.exam_id), '')";
+  const stgChildKey = "NULLIF(btrim(s.described_cyst_id), '')::int";
+
   const sql = `
 INSERT INTO public.ultrasound_cyst (${insertColumns.join(", ")})
-SELECT
+SELECT DISTINCT ON (${stgExamKey}, ${stgChildKey})
   ${selectExprs.join(",\n  ")}
 FROM ${stagingFromClause} s
 LEFT JOIN public.examination e
-  ON e.old_exam_id::text = NULLIF(btrim(s.exam_id), '')
+  ON e.old_exam_id::text = ${stgExamKey}
 ${patientJoin}
 ${idKeepJoin}
-WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$'
-  AND NULLIF(btrim(s.described_cyst_id), '') ~ '^[0-9]+$';
+WHERE ${stgExamKey} ~ '^[0-9]+$'
+  AND NULLIF(btrim(s.described_cyst_id), '') ~ '^[0-9]+$'
+ORDER BY ${stgExamKey}, ${stgChildKey};
 `.trim();
   await pgClient.query(sql);
 }
