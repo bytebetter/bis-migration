@@ -58,26 +58,10 @@
       }
     },
     "ultrasound": {},
-    "ultrasound_mass": {
-      "migration": {
-        "createdDateColumn": false
-      }
-    },
-    "ultrasound_cyst": {
-      "migration": {
-        "createdDateColumn": false
-      }
-    },
+    "ultrasound_mass": {},
+    "ultrasound_cyst": {},
     "mam": {},
-    "mam_mass": {
-      "migration": {
-        "createdDateColumn": false
-      }
-    },
-    "mam_cal": {
-      "migration": {
-        "createdDateColumn": false
-      }
-    }
+    "mam_mass": {},
+    "mam_cal": {}
   }
 }
