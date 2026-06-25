@@ -421,7 +421,7 @@ async function runAppointmentTableJob({
   const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
   const sourceObjectNoLock = `${sourceObject} WITH (NOLOCK)`;
   const appointmentSortBundle = await setupCreatedDateMigrationSort(mssqlPool, {
-    migrationConfig,
+    migrationConfig: { ...migrationConfig, createdDateColumn: false },
     sourceSchema,
     sourceTable,
     tableLabel: key,

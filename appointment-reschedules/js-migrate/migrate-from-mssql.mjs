@@ -651,7 +651,7 @@ async function runAppointmentReschedulesTableJob({
   }
 
   const rescheduleSortBundle = await setupCreatedDateMigrationSort(mssqlPool, {
-    migrationConfig,
+    migrationConfig: { ...migrationConfig, createdDateColumn: false },
     sourceSchema,
     sourceTable,
     tableLabel: key,

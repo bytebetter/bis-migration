@@ -39,10 +39,15 @@
     "billing": {},
     "examination_general": {},
     "exam_recommend_birads45": {},
-    "appointment": {},
+    "appointment": {
+      "migration": {
+        "createdDateColumn": false
+      }
+    },
     "appointment_reschedules": {
       "migration": {
-        "batchSize": 10000
+        "batchSize": 10000,
+        "createdDateColumn": false
       }
     },
     "procedure": {},

@@ -54,7 +54,7 @@ export function createMssqlAppointmentReschedulesSortBundle(createdDateColumn) {
 }
 
 export const defaultMssqlAppointmentReschedulesSortBundle =
-  createMssqlAppointmentReschedulesSortBundle("CreatedDate");
+  createMssqlAppointmentReschedulesSortBundle(null);
 
 const RESCHEDULE_ACTIVITY_WHERE = `[Activity] = N'${MSSQL_APPOINTMENT_RESCHEDULE_ACTIVITY}'`;
 
