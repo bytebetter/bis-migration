@@ -12,23 +12,25 @@ export function examChildCreatedDateWhereClause(createdDateColumn, childColumn) 
   const cd = bracketMssqlIdent(createdDateColumn);
   const child = bracketMssqlIdent(childColumn);
   const bucket = `CASE WHEN ${cd} IS NULL THEN 0 ELSE 1 END`;
+  // แยก bucket ชัดเจน — ห้ามใช้ bucket > @afterNullBucket ตอน afterNullBucket=0
+  // (เคยดึงแถว bucket=1 ปนก่อนจบ bucket=0 แล้วข้ามแถวที่เหลือ)
   return `(
   @afterNullBucket < 0
-  OR ${bucket} > @afterNullBucket
   OR (
-    ${bucket} = @afterNullBucket
+    @afterNullBucket = 0
+    AND ${bucket} = 0
     AND (
-      (@afterNullBucket = 0 AND (
-        [Exam_ID] > @afterExamId
-        OR ([Exam_ID] = @afterExamId AND ${child} > @afterChildId)
-      ))
-      OR (
-        @afterNullBucket = 1 AND (
-          ${cd} > @afterCreatedDate
-          OR (${cd} = @afterCreatedDate AND [Exam_ID] > @afterExamId)
-          OR (${cd} = @afterCreatedDate AND [Exam_ID] = @afterExamId AND ${child} > @afterChildId)
-        )
-      )
+      [Exam_ID] > @afterExamId
+      OR ([Exam_ID] = @afterExamId AND ${child} > @afterChildId)
+    )
+  )
+  OR (
+    @afterNullBucket = 1
+    AND ${bucket} = 1
+    AND (
+      ${cd} > @afterCreatedDate
+      OR (${cd} = @afterCreatedDate AND [Exam_ID] > @afterExamId)
+      OR (${cd} = @afterCreatedDate AND [Exam_ID] = @afterExamId AND ${child} > @afterChildId)
     )
   )
 )`.trim();

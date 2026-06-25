@@ -214,13 +214,53 @@ export function narrowPlannedRowsForIndex(p) {
     effectiveFrom = Math.max(effectiveFrom, sourceIndexFrom);
   }
   let effectiveTo = plannedRows;
-  if (sourceIndexTo != null) {
+  // snapshot cap จาก migrate:all = เพดานแถวที่ต้อง sync ไม่ใช่ min กับ COUNT สด
+  if (sourceCountCap != null) {
+    effectiveTo = sourceCountCap;
+  } else if (sourceIndexTo != null) {
     effectiveTo = Math.min(effectiveTo, sourceIndexTo);
   }
-  if (sourceCountCap != null) {
-    effectiveTo = Math.min(effectiveTo, sourceCountCap);
-  }
   return effectiveTo >= effectiveFrom ? effectiveTo - effectiveFrom + 1 : 0;
+}
+
+/**
+ * จำนวนแถวต้นทางที่ต้องอ่านให้ครบ (ใช้ตรวจหลัง migrate)
+ */
+export function readMigrationTargetRowCount(
+  migrationConfig,
+  indexLimited,
+  progressTotal,
+  plannedRows,
+) {
+  const cap = readSourceCountCap(migrationConfig);
+  if (cap != null) return cap;
+  if (!hasMigrateRowWindow(migrationConfig, indexLimited)) return null;
+  return progressTotal ?? plannedRows ?? null;
+}
+
+/** โยน error เมื่อมี cap/index window แต่อ่านไม่ครบ — กัน migrate:all ขึ้น OK ทั้งที่ข้อมูลขาด */
+export function assertMigrationReachedPlan(p) {
+  const {
+    tableKey,
+    currentOffset,
+    migrationConfig,
+    indexLimited,
+    progressTotal,
+    plannedRows,
+  } = p;
+  const target = readMigrationTargetRowCount(
+    migrationConfig,
+    indexLimited,
+    progressTotal,
+    plannedRows,
+  );
+  if (target == null || target <= 0) return;
+  if (currentOffset >= target) return;
+  throw new Error(
+    `[${tableKey}] migrate ไม่ครบต้นทาง: อ่านได้ ${currentOffset}/${target} แถว — ` +
+      `ลบ checkpoint ใน js-migrate/checkpoints/ แล้วรันใหม่ ` +
+      `(หรือ -MigrateRunMode overwrite)`,
+  );
 }
 
 /**

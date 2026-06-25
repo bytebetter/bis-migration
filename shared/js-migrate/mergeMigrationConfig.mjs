@@ -13,6 +13,14 @@ import {
   logExplicitSourceIds,
 } from "./sourceIdsSupport.mjs";
 
+/** ตารางลูก (Exam_ID + child) — keyset แบบ legacy อ่านครบกว่า CreatedDate composite */
+const EXAM_CHILD_LEGACY_KEYSET_PROFILES = new Set([
+  "mam_cal",
+  "mam_mass",
+  "ultrasound_cyst",
+  "ultrasound_mass",
+]);
+
 /**
  * รวม config.migration กับ CLI และตรวจว่า repair-from-log ใช้ได้กับ profile นี้หรือไม่
  *
@@ -28,6 +36,12 @@ export function mergeMigrationWithCli(base, profileKey) {
     repairSpec,
   });
   const merged = { ...(base ?? {}), ...cli };
+  if (
+    EXAM_CHILD_LEGACY_KEYSET_PROFILES.has(profileKey) &&
+    merged.createdDateColumn === undefined
+  ) {
+    merged.createdDateColumn = false;
+  }
   assertSourceIdsNoConflicts(merged, parsed);
   assertSourceKeyRangeSupported(profileKey, merged, parsed.hasSourceKeyCli);
   assertSourceIdsSupported(profileKey, merged, parsed.hasSourceIdsCli);

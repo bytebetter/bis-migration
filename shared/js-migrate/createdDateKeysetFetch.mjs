@@ -2,6 +2,7 @@ import {
   CREATED_DATE_SORT_KEY_VERSION,
   LEGACY_SORT_KEY_VERSION,
 } from "./mssqlCreatedDateSort.mjs";
+import { bindMigrateSrcNumericRange } from "./migrateCliArgs.mjs";
 
 const COMPOSITE_START = Object.freeze({
   afterNullBucket: -1,
@@ -62,6 +63,74 @@ export function bindExamIdCompositeKeyset(req, sqlLib, state) {
       parseCreatedDateForBind(state.afterCreatedDate),
     )
     .input("afterExamId", sqlLib.BigInt, state.afterExamId ?? 0);
+}
+
+/**
+ * ดึง keyset หนึ่งหน้าสำหรับตารางลูก (Exam_ID + child)
+ * สลับ bucket CreatedDate NULL→มีวันที่ เมื่อ bucket 0 หมดแล้ว
+ */
+export async function queryExamChildKeysetPage(
+  pool,
+  sqlLib,
+  migrationConfig,
+  sortBundle,
+  { keysetSql, compositeKs, afterExamId, afterChildId, pageSize },
+) {
+  let state = { ...compositeKs };
+  const run = async () => {
+    const keysetReq = pool.request();
+    bindMigrateSrcNumericRange(keysetReq, migrationConfig, sqlLib);
+    if (sortBundle.createdDateColumn) {
+      bindExamChildCompositeKeyset(keysetReq, sqlLib, state);
+    } else {
+      keysetReq
+        .input("afterExamId", sqlLib.BigInt, afterExamId)
+        .input("afterChildId", sqlLib.Int, afterChildId);
+    }
+    const res = await keysetReq
+      .input("page", sqlLib.Int, pageSize)
+      .query(keysetSql);
+    return res.recordset || [];
+  };
+
+  let rows = await run();
+  if (
+    rows.length === 0 &&
+    sortBundle.createdDateColumn &&
+    state.afterNullBucket === 0
+  ) {
+    state = {
+      afterNullBucket: 1,
+      afterCreatedDate: null,
+      afterExamId: 0,
+      afterChildId: 0,
+    };
+    rows = await run();
+  }
+  return { rows, compositeKs: state };
+}
+
+/** รีเซ็ต checkpoint เมื่อสลับจาก CreatedDate composite → legacy Exam_ID+child */
+export function reconcileLegacyExamChildCheckpoint({
+  sortBundle,
+  checkpoint,
+  checkpointEnabled,
+}) {
+  let offset = Number(checkpointEnabled ? checkpoint.offset : 0);
+  let afterExamId = Number(checkpoint.afterExamId ?? 0);
+  let afterChildId = Number(checkpoint.afterChildId ?? 0);
+  if (!Number.isFinite(offset) || offset < 0) offset = 0;
+  if (!Number.isFinite(afterExamId) || afterExamId < 0) afterExamId = 0;
+  if (!Number.isFinite(afterChildId) || afterChildId < 0) afterChildId = 0;
+
+  if (!checkpointEnabled || sortBundle?.createdDateColumn) {
+    return { offset, afterExamId, afterChildId, reset: false };
+  }
+  const v = Number(checkpoint.sortKeyVersion ?? LEGACY_SORT_KEY_VERSION);
+  if (v >= CREATED_DATE_SORT_KEY_VERSION) {
+    return { offset: 0, afterExamId: 0, afterChildId: 0, reset: true };
+  }
+  return { offset, afterExamId, afterChildId, reset: false };
 }
 
 /** @param {object | undefined} lastRow @param {string} childIdField */

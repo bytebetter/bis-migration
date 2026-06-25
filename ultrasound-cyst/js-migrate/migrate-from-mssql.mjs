@@ -11,9 +11,10 @@ import {
 } from "../../shared/js-migrate/setupCreatedDateMigrationSort.mjs";
 import {
   buildCreatedDateCheckpointFields,
-  bindExamChildCompositeKeyset,
   initExamChildCompositeKeysetFromCheckpoint,
   advanceExamChildCompositeKeyset,
+  queryExamChildKeysetPage,
+  reconcileLegacyExamChildCheckpoint,
 } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import { ensureUltrasoundCystPipelineDdl } from "./ultrasoundCystPgDdl.mjs";
 import {
@@ -40,7 +41,6 @@ import {
   writeOutLine,
 } from "../../shared/js-migrate/progressUi.mjs";
 import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationConfig.mjs";
-import { bindMigrateSrcNumericRange } from "../../shared/js-migrate/migrateCliArgs.mjs";
 import {
   applySourceIndexToMigrateJob,
   buildIndexCheckpointSuffix,
@@ -51,6 +51,7 @@ import {
   rowsDoneInMigrateRun,
   shouldMarkMigrateCheckpointComplete,
   shouldStopMigratePagination,
+  assertMigrationReachedPlan,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import {
   prepareMigrateRowPlan,
@@ -367,6 +368,29 @@ async function main() {
           }),
         );
       }
+      const legacyCk = reconcileLegacyExamChildCheckpoint({
+        sortBundle,
+        checkpoint,
+        checkpointEnabled,
+      });
+      if (legacyCk.reset && checkpointEnabled) {
+        console.error(
+          `>>> [${KEY}] legacy keyset (Exam_ID+child) — รีเซ็ต checkpoint จาก CreatedDate sort`,
+        );
+        offset = legacyCk.offset;
+        afterExamId = legacyCk.afterExamId;
+        afterChildId = legacyCk.afterChildId;
+        compositeKs = initExamChildCompositeKeysetFromCheckpoint({}, false, true);
+        writeJson(checkpointPath, {
+          key: KEY,
+          offset: 0,
+          afterExamId: 0,
+          afterChildId: 0,
+          completed: false,
+          sortKeyVersion: 1,
+          updatedAt: new Date().toISOString(),
+        });
+      }
       const idx = applySourceIndexToMigrateJob({
         key: KEY,
         migrationConfig: migration,
@@ -469,20 +493,24 @@ async function main() {
             );
           }
           const fetchStartedAt = Date.now();
-          const keysetReq = pool.request();
-          bindMigrateSrcNumericRange(keysetReq, migration, sql);
-          if (sortBundle.createdDateColumn) {
-            bindExamChildCompositeKeyset(keysetReq, sql, compositeKs);
-          } else {
-            keysetReq
-              .input("afterExamId", sql.BigInt, afterExamId)
-              .input("afterChildId", sql.Int, afterChildId);
-          }
-          const res = await keysetReq
-            .input("page", sql.Int, pageSize)
-            .query(keysetSql);
+          const keysetResult = await queryExamChildKeysetPage(
+            pool,
+            sql,
+            migration,
+            sortBundle,
+            {
+              keysetSql,
+              compositeKs,
+              afterExamId,
+              afterChildId,
+              pageSize,
+            },
+          );
           fetchMs = Date.now() - fetchStartedAt;
-          rows = res.recordset || [];
+          rows = keysetResult.rows;
+          if (sortBundle.createdDateColumn) {
+            compositeKs = keysetResult.compositeKs;
+          }
           if (debugLogs && !singleLineUi) {
             writeOutLine(
               `>>> [${KEY}] fetch chunk ${chunkIndex + 1} done: rows=${rows.length}, ms=${fetchMs}`,
@@ -689,6 +717,15 @@ async function main() {
         }
       }
       if (progressEnabled) endProgress(uiState);
+
+      assertMigrationReachedPlan({
+        tableKey: KEY,
+        currentOffset: offset,
+        migrationConfig: migration,
+        indexLimited: idx.indexLimited,
+        progressTotal,
+        plannedRows,
+      });
 
       let fieldIssueLogWritten = null;
       if (fieldIssueAcc.totalFieldIssueCount > 0) {
