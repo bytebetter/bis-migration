@@ -696,29 +696,22 @@ async function main() {
 
   const isResumeRun =
     String(migration.migrateRunMode ?? "resume").toLowerCase() === "resume";
-  let dailyCatchUpReset = false;
 
   try {
     if (
       checkpointEnabled &&
       checkpoint.completed === true &&
-      checkpoint.nullTailDone === true
+      checkpoint.nullTailDone === true &&
+      !isResumeRun
     ) {
-      if (isResumeRun) {
-        dailyCatchUpReset = true;
-        console.error(
-          `>>> [${KEY}] resume catch-up: สแกน MSSQL ใหม่ทั้งตาราง (upsert ตาม accession_id — progress นับแถวต้นทางให้ตรง COUNT)`,
-        );
-      } else {
-        runLog.status = "skipped";
-        runLog.migrationLeg = checkpoint.migrationLeg ?? "done";
-        runLog.nullTailDone = true;
-        console.error(
-          `>>> [${KEY}] checkpoint: ข้ามครบแล้ว (รวมแถว Accession_ID NULL) — ไม่รันซ้ำ (migrateRunMode ไม่ใช่ resume)`,
-        );
-        chunkLog.attachTo(runLog);
-        return;
-      }
+      runLog.status = "skipped";
+      runLog.migrationLeg = checkpoint.migrationLeg ?? "done";
+      runLog.nullTailDone = true;
+      console.error(
+        `>>> [${KEY}] checkpoint: ข้ามครบแล้ว (รวมแถว Accession_ID NULL) — ไม่รันซ้ำ (migrateRunMode ไม่ใช่ resume)`,
+      );
+      chunkLog.attachTo(runLog);
+      return;
     }
 
     const probeStartedAt = Date.now();
@@ -785,10 +778,16 @@ async function main() {
       if (!Number.isFinite(rowsProcessed) || rowsProcessed < 0) {
         rowsProcessed = 0;
       }
-      if (dailyCatchUpReset) {
-        rowsProcessed = 0;
-      }
       let offset = rowsProcessed;
+      if (
+        checkpointEnabled &&
+        checkpoint.completed === true &&
+        isResumeRun
+      ) {
+        console.error(
+          `>>> [${KEY}] resume: ต่อจาก checkpoint (completed=true, offset=${offset})`,
+        );
+      }
       const idx = applySourceIndexToMigrateJob({
         key: KEY,
         migrationConfig: migration,
@@ -952,16 +951,7 @@ async function main() {
           checkpointEnabled,
           pacsSortBundle,
         );
-        mssqlKeysetAfter = keysetState.mssqlKeysetAfter ?? "";
-        if (
-          keysetState.sortKeyVersionUpgraded ||
-          (checkpoint.sortKeyVersion == null &&
-            checkpointEnabled &&
-            (offset > 0 ||
-              checkpoint.completed === true ||
-              checkpoint.migrationLeg === "acc" ||
-              checkpoint.migrationLeg === "null_acc"))
-        ) {
+        if (keysetState.sortKeyVersionUpgraded) {
           offset = 0;
           rowsProcessed = 0;
           migrationLeg = "created_date";
@@ -970,11 +960,10 @@ async function main() {
           nullTailCursor = null;
           mssqlKeysetAfter = "";
           console.error(
-            `>>> [${KEY}] อัปเกรด checkpoint → CreatedDate keyset v2 — รีเซ็ตตำแหน่ง`,
+            `>>> [${KEY}] sort key เปลี่ยน — รีเซ็ต keyset; upsert ตาม accession_id`,
           );
-        }
-        if (dailyCatchUpReset) {
-          mssqlKeysetAfter = "";
+        } else {
+          mssqlKeysetAfter = keysetState.mssqlKeysetAfter ?? "";
         }
       }
 
@@ -1019,15 +1008,6 @@ async function main() {
         nullTailCursor = null;
       }
 
-      if (dailyCatchUpReset) {
-        offset = 0;
-        rowsProcessed = 0;
-        afterAccessionId = null;
-        migrationLeg = "acc";
-        nullTailCursor = null;
-        accLegCursor = null;
-      }
-
       if (
         checkpointEnabled &&
         useKeysetPlusNull &&
@@ -1051,7 +1031,6 @@ async function main() {
 
       const onlyNullTail =
         !useCreatedDateKeyset &&
-        !dailyCatchUpReset &&
         useKeysetPlusNull &&
         mssqlOptimizeSingleQuery &&
         nullAccSqlFirst != null &&
@@ -1789,7 +1768,10 @@ async function main() {
             : {}),
           migrationLeg: "done",
           nullTailCursor: null,
-          accLegCursor: null,
+          accLegCursor:
+            useCompositeAcc && accLegCursor
+              ? serializeAccLegCursor(accLegCursor)
+              : null,
           accFingerprintVersion: PACSSYNC_ROW_FINGERPRINT_VERSION,
           nullTailDone: true,
           completed: shouldMarkMigrateCheckpointComplete({
