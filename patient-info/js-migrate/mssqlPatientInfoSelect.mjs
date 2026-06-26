@@ -138,6 +138,12 @@ WHERE ${sort.sortKeyExpr} > @afterSortKey
 ORDER BY ${sort.orderBy};
 `.trim();
 
+  const fingerprintCountSql = `
+SELECT COUNT_BIG(1) AS total_n
+FROM {{sourceObject}}
+WHERE ${MSSQL_PATIENT_INFO_SRC_WHERE};
+`.trim();
+
   const fingerprintSql = `
 SELECT
   COUNT_BIG(1) AS total_n,
@@ -159,6 +165,7 @@ ORDER BY ${sort.orderBy}
     offsetSelect,
     keysetSelect,
     idProbeSelect,
+    fingerprintCountSql,
     fingerprintSql,
     byPidsSelect,
   };
