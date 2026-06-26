@@ -501,21 +501,34 @@ function resolvePatientInfoDailyResumeMode(p) {
 }
 
 /** @param {import("pg").PoolClient} pgClient */
-async function countPatientInfoTargetRows(pgClient) {
-  const res = await pgClient.query(
-    "SELECT COUNT(1)::bigint AS n FROM public.patient_info",
-  );
-  return Number(res.rows[0]?.n ?? 0);
+async function withPgStatementTimeout(pgClient, timeoutMs, fn) {
+  const ms = Math.max(1000, Number(timeoutMs) || 120_000);
+  await pgClient.query(`SET statement_timeout = '${ms}ms'`);
+  try {
+    return await fn();
+  } finally {
+    await pgClient.query("RESET statement_timeout");
+  }
 }
 
 /** นับแถวจริง (ไม่รวม placeholder ไม่ทราบชื่อ) — ใช้เทียบกับ COUNT MSSQL */
-async function countNonPlaceholderPatientInfoRows(pgClient) {
-  const res = await pgClient.query(
-    `SELECT COUNT(1)::bigint AS n FROM public.patient_info
-     WHERE first_name_th IS DISTINCT FROM $1`,
-    [PLACEHOLDER_FIRST_NAME_TH],
+async function countPatientInfoPostgresRows(pgClient, placeholderFirstName, timeoutMs = 120_000) {
+  const res = await withPgStatementTimeout(pgClient, timeoutMs, () =>
+    pgClient.query(
+      `SELECT
+         COUNT(1)::bigint AS total_n,
+         COUNT(1) FILTER (
+           WHERE first_name_th IS DISTINCT FROM $1
+         )::bigint AS non_placeholder_n
+       FROM public.patient_info`,
+      [placeholderFirstName],
+    ),
   );
-  return Number(res.rows[0]?.n ?? 0);
+  const row = res.rows[0] ?? {};
+  return {
+    targetRowCount: Number(row.total_n ?? 0),
+    nonPlaceholderCount: Number(row.non_placeholder_n ?? 0),
+  };
 }
 
 async function runTableJob({
@@ -735,12 +748,49 @@ async function runTableJob({
   let targetRowCount = 0;
   let nonPlaceholderCount = 0;
   if (isPatientInfoBuiltin) {
-    console.error(`>>> [${key}] นับแถว Postgres…`);
-    targetRowCount = await countPatientInfoTargetRows(pgClient);
-    nonPlaceholderCount = await countNonPlaceholderPatientInfoRows(pgClient);
-    console.error(
-      `>>> [${key}] Postgres: ${targetRowCount} แถว (${nonPlaceholderCount} ไม่นับ placeholder)`,
-    );
+    const pgCountTimeoutMs = Number(migrationConfig.postgresCountTimeoutMs ?? 120_000);
+    const canSkipPostgresCount =
+      forwardOnlyResume &&
+      checkpointEnabled &&
+      isResumeRun &&
+      checkpoint.completed === true &&
+      !isRepairFromLogRun &&
+      (Number(checkpoint.offset) > 0 || checkpointHasKeysetCursor);
+
+    if (canSkipPostgresCount) {
+      const ckRows = Number(checkpoint.sourceRowCount ?? checkpoint.offset ?? 0);
+      targetRowCount = Math.max(ckRows, 1);
+      nonPlaceholderCount = Math.max(ckRows, 1);
+      console.error(
+        `>>> [${key}] Postgres: ข้าม COUNT (forward-only + checkpoint completed) — ใช้ค่าจาก checkpoint ~${targetRowCount} แถว`,
+      );
+    } else {
+      console.error(`>>> [${key}] นับแถว Postgres…`);
+      try {
+        const counts = await countPatientInfoPostgresRows(
+          pgClient,
+          PLACEHOLDER_FIRST_NAME_TH,
+          pgCountTimeoutMs,
+        );
+        targetRowCount = counts.targetRowCount;
+        nonPlaceholderCount = counts.nonPlaceholderCount;
+        console.error(
+          `>>> [${key}] Postgres: ${targetRowCount} แถว (${nonPlaceholderCount} ไม่นับ placeholder)`,
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/statement timeout|canceling statement/i.test(msg)) {
+          throw new Error(
+            `[${key}] Postgres COUNT ค้างเกิน ${pgCountTimeoutMs / 1000}s — น่าจะมี lock บน public.patient_info\n` +
+              `ตรวจ: SELECT pid, wait_event_type, wait_event, query FROM pg_stat_activity WHERE datname = current_database();\n` +
+              `และ: SELECT * FROM pg_locks WHERE relation = 'public.patient_info'::regclass;\n` +
+              `หรือ kill connection ที่ค้างจากรอบ migrate ก่อนหน้า`,
+            { cause: err },
+          );
+        }
+        throw err;
+      }
+    }
     if (
       targetRowCount === 0 &&
       checkpointEnabled &&
