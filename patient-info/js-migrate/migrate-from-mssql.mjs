@@ -448,14 +448,15 @@ function resolvePatientInfoDailyResumeMode(p) {
   // forward-only: เรียง CreatedDate → data ใหม่อยู่ท้ายเสมอ → ต่อจาก checkpoint
   // (probe เฉพาะท้ายตาราง) ไม่สแกนย้อนต้นแม้ count เพิ่มหรือ Postgres ดูเหมือนขาด
   if (forwardOnly) {
+    const hasNewTailRows = countIncreased || maxSortKeyAdvanced;
     return {
       mode: "forward",
-      reason: maxSortKeyAdvanced
-        ? `forward-only: maxSortKey ใหม่ — upsert แถวท้ายตาราง (+${
+      reason: hasNewTailRows
+        ? `forward-only: แถวใหม่ท้ายตาราง (+${
             Number.isFinite(ckCount) ? fingerprint.rowCount - ckCount : "?"
           } แถว)`
         : "forward-only: ต่อ checkpoint ที่ท้ายตาราง (ไม่สแกนย้อนต้น)",
-      tailUpsert: maxSortKeyAdvanced,
+      tailUpsert: hasNewTailRows,
     };
   }
 
@@ -610,6 +611,9 @@ async function runTableJob({
   const fingerprintSql = (
     patientInfoSelectBundle?.fingerprintSql ?? ""
   ).replaceAll("{{sourceObject}}", sourceObject);
+  const fingerprintCountSql = (
+    patientInfoSelectBundle?.fingerprintCountSql ?? ""
+  ).replaceAll("{{sourceObject}}", sourceObject);
   const pidDetailTemplate = (
     patientInfoSelectBundle?.byPidsSelect ?? ""
   ).replaceAll("{{sourceObject}}", sourceObject);
@@ -731,8 +735,12 @@ async function runTableJob({
   let targetRowCount = 0;
   let nonPlaceholderCount = 0;
   if (isPatientInfoBuiltin) {
+    console.error(`>>> [${key}] นับแถว Postgres…`);
     targetRowCount = await countPatientInfoTargetRows(pgClient);
     nonPlaceholderCount = await countNonPlaceholderPatientInfoRows(pgClient);
+    console.error(
+      `>>> [${key}] Postgres: ${targetRowCount} แถว (${nonPlaceholderCount} ไม่นับ placeholder)`,
+    );
     if (
       targetRowCount === 0 &&
       checkpointEnabled &&
@@ -814,11 +822,24 @@ async function runTableJob({
     dailySyncEnabled;
 
   if (dailyResumeEligible) {
+    const useLightFingerprint =
+      forwardOnlyResume && fingerprintCountSql.trim() !== "";
+    const fpSql = useLightFingerprint ? fingerprintCountSql : fingerprintSql;
+    const fpStarted = Date.now();
+    console.error(
+      useLightFingerprint
+        ? `>>> [${key}] daily sync: นับแถว MSSQL (COUNT เท่านั้น, forward-only)…`
+        : `>>> [${key}] daily sync: fingerprint MSSQL (COUNT + maxSortKey) — อาจใช้เวลาสักครู่…`,
+    );
     const fingerprint = await queryPatientInfoSourceFingerprint(
       mssqlPool,
       migrationConfig,
       sourceObject,
-      fingerprintSql,
+      fpSql,
+    );
+    console.error(
+      `>>> [${key}] MSSQL fingerprint เสร็จใน ${((Date.now() - fpStarted) / 1000).toFixed(1)}s — ${fingerprint.rowCount} แถว` +
+        (fingerprint.maxSortKey ? `, maxSortKey=${fingerprint.maxSortKey}` : ""),
     );
     const decision = resolvePatientInfoDailyResumeMode({
       checkpoint,
@@ -944,6 +965,8 @@ async function runTableJob({
       console.error(
         `>>> [${key}] นับแถวต้นทาง (COUNT) เพื่อคำนวณ progress…`,
       );
+    } else if (isPatientInfoBuiltin) {
+      console.error(`>>> [${key}] นับแถว MSSQL สำหรับ progress…`);
     }
     try {
       const countReq = mssqlPool.request();
