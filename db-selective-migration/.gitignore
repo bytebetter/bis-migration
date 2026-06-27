@@ -4,3 +4,4 @@
 # production Docker secrets (copy from docker/postgres.env.example)
 .env.postgres
 .env.directus
+.env.backoffice
