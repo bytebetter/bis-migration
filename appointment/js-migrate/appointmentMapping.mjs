@@ -85,7 +85,7 @@ function toDirectusDateTime(value) {
   }
 
   const year = yearRaw >= 2200 ? yearRaw - 543 : yearRaw;
-  const timeRaw = t.slice(10).trim().replace("T", " ");
+  const timeRaw = t.slice(10).trim().replace(/^T/i, "").replace(/Z$/i, "");
   if (timeRaw === "") return `${year}-${month}-${day}T00:00:00`;
 
   const hh = timeRaw.slice(0, 2);
@@ -95,6 +95,22 @@ function toDirectusDateTime(value) {
     return `${year}-${month}-${day}T00:00:00`;
   }
   return `${year}-${month}-${day}T${hh}:${mm}:${ss}`;
+}
+
+function normalizeSlotLabel(slot) {
+  const t = nullIfTrimEmpty(slot);
+  if (t == null) return null;
+  const parts = t.split(":");
+  if (parts.length < 2) return t;
+  return `${parts[0].padStart(2, "0")}:${parts[1].padStart(2, "0")}`;
+}
+
+function clockFromDirectusDateTime(dt) {
+  if (dt == null) return null;
+  const idx = dt.indexOf("T");
+  if (idx === -1) return null;
+  const m = /^(\d{2}):(\d{2})/.exec(dt.slice(idx + 1));
+  return m ? `${m[1]}:${m[2]}` : null;
 }
 
 /**
@@ -142,6 +158,7 @@ export function mapScheduleRowToAppointment(row) {
     have_cd: toInt(getField(row, "have_cd")),
     right_id: toInt(getField(row, "Right_ID")),
     location: toInt(getField(row, "Location_ID")),
+    time_slot: null,
     patient: null,
     /** Directus มักเก็บ old_db_id เป็น string (varchar) */
     old_db_id: normScheduleId(getField(row, "Schedule_ID")),
@@ -157,6 +174,7 @@ export function normScheduleId(v) {
 let cachedAppointmentFkMeta = null;
 let cachedOldDbIdIsTextLike = null;
 let cachedAppointmentPatientColumn = undefined;
+let cachedSlotIdByClock = null;
 const cachedAllowedFkSetByKey = new Map();
 
 function valueInFkSet(set, v) {
@@ -215,6 +233,28 @@ async function getAppointmentForeignKeyMeta(pgClient) {
   if (cachedAppointmentFkMeta) return cachedAppointmentFkMeta;
   cachedAppointmentFkMeta = await loadAppointmentForeignKeyMeta(pgClient);
   return cachedAppointmentFkMeta;
+}
+
+async function loadSlotIdByClock(pgClient) {
+  const { rows } = await pgClient.query(`
+    SELECT id, slot
+    FROM public.time_slot
+    WHERE COALESCE(is_bx_time, false) = false
+    ORDER BY id ASC
+  `);
+  const map = new Map();
+  for (const row of rows) {
+    const key = normalizeSlotLabel(row.slot);
+    if (key == null || map.has(key)) continue;
+    map.set(key, Number(row.id));
+  }
+  return map;
+}
+
+async function getSlotIdByClock(pgClient) {
+  if (cachedSlotIdByClock) return cachedSlotIdByClock;
+  cachedSlotIdByClock = await loadSlotIdByClock(pgClient);
+  return cachedSlotIdByClock;
 }
 
 /**
@@ -382,6 +422,7 @@ function buildAppointmentColumnArrays(payloads, patientColumn) {
     have_cd: [],
     right_id: [],
     location: [],
+    time_slot: [],
     old_db_id: [],
   };
   if (patientColumn) arrays[patientColumn] = [];
@@ -408,6 +449,7 @@ function buildAppointmentColumnArrays(payloads, patientColumn) {
     arrays.have_cd.push(item.have_cd);
     arrays.right_id.push(item.right_id);
     arrays.location.push(item.location);
+    arrays.time_slot.push(item.time_slot ?? null);
     if (patientColumn) arrays[patientColumn].push(item[patientColumn] ?? null);
     arrays.old_db_id.push(item.old_db_id);
   }
@@ -437,6 +479,7 @@ function buildAppointmentInsertDefs(arrays, patientColumn) {
     ["have_cd", "int4[]", arrays.have_cd],
     ["right_id", "int4[]", arrays.right_id],
     ["location", "int4[]", arrays.location],
+    ["time_slot", "int4[]", arrays.time_slot],
     ...(patientColumn
       ? [[patientColumn, "int4[]", arrays[patientColumn]]]
       : []),
@@ -634,6 +677,7 @@ export async function runAppointmentChunkPostLoad(
 
   const fkMeta = await getAppointmentForeignKeyMeta(pgClient);
   const patientColumn = await resolveAppointmentPatientColumn(pgClient);
+  const slotByClock = await getSlotIdByClock(pgClient);
   const payloads = rows.map((r) => mapScheduleRowToAppointment(r));
   const chunkPids = rows
     .map((r) => normPid(getField(r, "pid") ?? getField(r, "PID")))
@@ -665,10 +709,16 @@ export async function runAppointmentChunkPostLoad(
     const patientCategory =
       mapSchedulePatientTypeToPatientCategory(srcPatientType);
 
+    const clock = clockFromDirectusDateTime(payloads[i].appointment_datetime);
+    if (clock != null) {
+      payloads[i].time_slot = slotByClock.get(clock) ?? null;
+    }
+
     recordScheduleIssues(scheduleId, rowMeta, [
       ...collectAppointmentFieldIssues(row, payloads[i], {
         patientColumn,
         patientId,
+        clock,
       }),
       ...collectPatientCategoryFieldIssues(row),
     ]);
@@ -897,6 +947,16 @@ function collectAppointmentFieldIssues(row, mapped, ctx) {
       reason: "patient_not_resolved",
       message: "มี pid ในแหล่งข้อมูล แต่ไม่พบใน public.patient_info",
       source_raw: pidRaw,
+      mapped: null,
+    });
+  }
+
+  if (ctx.clock != null && mapped.time_slot == null) {
+    issues.push({
+      field: "time_slot",
+      reason: "time_slot_not_found",
+      message: `ไม่พบ time_slot.slot ที่ตรงกับเวลา ${ctx.clock}`,
+      source_raw: ctx.clock,
       mapped: null,
     });
   }
