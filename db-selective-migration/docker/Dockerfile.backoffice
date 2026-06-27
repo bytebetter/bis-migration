@@ -1,0 +1,44 @@
+# BIS Backoffice (Next.js) — build context = bis-backoffice repo root
+# See docker/backoffice.env.example for NEXT_PUBLIC_* build args (baked at build time).
+
+FROM node:20-alpine AS base
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+FROM base AS deps
+COPY package.json package-lock.json ./
+RUN npm ci
+
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+ARG NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8055
+ARG NEXT_PUBLIC_JWT_SECRET
+ARG NEXT_PUBLIC_ROLE_DOCTOR_ID=4db560f6-dc67-46fe-9265-53093192b13c
+ARG NEXT_PUBLIC_WEBSOCKET_URL=ws://127.0.0.1:8055/websocket
+ARG NEXT_PUBLIC_RESULT_REQUEST_FORM_FOLDER=
+
+ENV NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL}
+ENV NEXT_PUBLIC_JWT_SECRET=${NEXT_PUBLIC_JWT_SECRET}
+ENV NEXT_PUBLIC_ROLE_DOCTOR_ID=${NEXT_PUBLIC_ROLE_DOCTOR_ID}
+ENV NEXT_PUBLIC_WEBSOCKET_URL=${NEXT_PUBLIC_WEBSOCKET_URL}
+ENV NEXT_PUBLIC_RESULT_REQUEST_FORM_FOLDER=${NEXT_PUBLIC_RESULT_REQUEST_FORM_FOLDER}
+
+RUN npm run build
+
+FROM base AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
+
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
+EXPOSE 3000
+ENV PORT=3000
+CMD ["node", "server.js"]

@@ -9,10 +9,11 @@
 - `scripts/db-dump-selective-backup.sh` — สร้างไฟล์ `.sql` สำหรับ restore บนเครื่องอื่น
 - `docs/db-migration-selective-runbook.md` — คู่มือรันจริงและ restore
 - `docs/production-docker-restore.md` — ติดตั้ง Postgres 16 ด้วย Docker + restore dump บน production server
-- `docker/docker-compose.yml` — **Postgres 16 + Directus 11** (แนะนำ)
+- `docker/docker-compose.yml` — **Postgres 16 + Directus 11 + BIS Backoffice (Next.js)** (แนะนำ)
 - `docker/docker-compose.postgres.yml` — Postgres อย่างเดียว
 - `docker/docker-compose.directus.yml` — Directus อย่างเดียว (DB ภายนอก)
-- `docs/directus-docker.md` — ติดตั้งและรัน Directus ด้วย Docker Compose
+- `docs/local-stack-docker.md` — รันทั้งสแต็ก (Postgres + Directus + Backoffice)
+- `docs/directus-docker.md` — Directus + Postgres (ไม่รวม Next.js)
 - `directus-extensions-bb-dev/` — snapshot extensions จาก Directus บน `bb-dev-cluster` (คัดลอกไป volume `/directus/extensions`)
 - `bis-image-assets/` — ไฟล์รูป/SVG สำหรับ Directus หรือ backoffice (เช่น `Content.svg`)
 - `baseline/bisinfo_selective_initial.sql` — **ไฟล์ dump ตั้งต้นของระบบ** (track ใน Git) ดู [baseline/README.md](baseline/README.md)

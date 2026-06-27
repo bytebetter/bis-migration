@@ -1,12 +1,13 @@
-# PostgreSQL 16 + Directus 11 (local / restore selective dump)
+# PostgreSQL 16 + Directus 11 + BIS Backoffice (Next.js)
 #
 # From db-selective-migration/:
 #   cp docker/postgres.env.example .env.postgres
-#   cp docker/directus.env.example .env.directus   # KEY, SECRET, ADMIN_PASSWORD
-#   docker compose --env-file .env.postgres --env-file .env.directus \
+#   cp docker/directus.env.example .env.directus
+#   cp docker/backoffice.env.example .env.backoffice
+#   docker compose --env-file .env.postgres --env-file .env.directus --env-file .env.backoffice \
 #     -f docker/docker-compose.yml up -d
 #
-# UI: http://127.0.0.1:8055  (SSH tunnel ถ้าเข้าจากเครื่องอื่น)
+# URLs (localhost): Backoffice http://127.0.0.1:3000  |  Directus http://127.0.0.1:8055
 
 services:
   postgres:
@@ -36,7 +37,7 @@ services:
       - "127.0.0.1:${DIRECTUS_PORT:-8055}:8055"
     volumes:
       - directus_uploads:/directus/uploads
-      - directus_extensions:/directus/extensions
+      - ../directus-extensions-bb-dev:/directus/extensions:ro
     environment:
       KEY: ${KEY:?set KEY in .env.directus}
       SECRET: ${SECRET:?set SECRET in .env.directus}
@@ -48,10 +49,21 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-${POSTGRES_PASSWORD:?set DB_PASSWORD or POSTGRES_PASSWORD}}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env.directus}
-      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8055}
+      PUBLIC_URL: ${PUBLIC_URL:-http://127.0.0.1:8055}
       WEBSOCKETS_ENABLED: ${WEBSOCKETS_ENABLED:-true}
+      CORS_ENABLED: ${CORS_ENABLED:-true}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://127.0.0.1:3000,http://localhost:3000}
+      CORS_METHODS: ${CORS_METHODS:-*}
+      CORS_ALLOWED_HEADERS: ${CORS_ALLOWED_HEADERS:-*}
+
+  backoffice:
+    image: ${BACKOFFICE_IMAGE:-bytebetter/bis-backoffice:v1.0.2}
+    restart: unless-stopped
+    depends_on:
+      - directus
+    ports:
+      - "127.0.0.1:${BACKOFFICE_PORT:-3000}:3000"
 
 volumes:
   bis_pgdata:
   directus_uploads:
-  directus_extensions:

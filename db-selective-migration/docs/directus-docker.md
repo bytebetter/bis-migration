@@ -1,5 +1,7 @@
 # Directus ด้วย Docker Compose
 
+> รันพร้อม **BIS Backoffice (Next.js)** ดู [local-stack-docker.md](local-stack-docker.md)
+
 ใช้คู่กับ Postgres 16 จาก `docker/docker-compose.postgres.yml` และฐาน `bisinfo` ที่ restore จาก selective dump (มีตาราง `directus_*` อยู่แล้ว)
 
 ## 1) เตรียม env
