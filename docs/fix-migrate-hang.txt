@@ -1,0 +1,191 @@
+================================================================================
+  วิธีแก้เมื่อ migrate ค้าง (BIS-DB-Migration)
+================================================================================
+
+อาการที่พบบ่อย
+--------------
+- รัน npm run migrate:all แล้วหยุดนิ่งนานมาก ไม่มี log ใหม่
+- ค้างที่บรรทัด เช่น:
+    >>> [patient_info] sort: CreatedDate NULL ก่อน ...
+    >>> [patient_info] นับแถว Postgres...
+- migrate:all ดูเหมือนทุกตารางใช้ไม่ได้ (จริงๆ ค้างที่ตารางแรก patient_info)
+- CPU ของ process node ใกล้ 0% แต่ไม่จบ
+
+สาเหตุหลัก (จากเคสจริง)
+------------------------
+1. Postgres มี LOCK บนตาราง public.patient_info
+2. มักมาจาก TablePlus (หรือ client อื่น) เปิด transaction ค้าง
+   สถานะ: idle in transaction + AccessExclusiveLock
+3. migrate รอบก่อน / COUNT ที่ค้าง สะสมเป็น connection รอ lock ต่อคิว
+4. MSSQL มักยังใช้ได้ปกติ (snapshot count ผ่าน)
+
+หมายเหตุ: ไม่ใช่ MSSQL server พัง — ตรวจแยกด้วยสคริปต์ diagnose ด้านล่าง
+
+
+================================================================================
+  ขั้นที่ 1 — วินิจฉัย (รันก่อนเสมอ)
+================================================================================
+
+cd ~/bis-migration
+
+node scripts/diagnose-migrate-env.mjs
+
+อ่านผล:
+  - MSSQL connect + COUNT ... OK     → ต้นทางปกติ
+  - Postgres COUNT ... FAIL (timeout) → มี lock บน patient_info
+  - พบ lock / idle in transaction    → ต้องปลด lock ก่อนรัน migrate ใหม่
+
+
+================================================================================
+  ขั้นที่ 2 — หยุด migrate ที่ค้าง (ยังไม่แตะ Postgres)
+================================================================================
+
+ดู process:
+  ps aux | grep -E 'run-migrate|migrate-from-mssql' | grep -v grep
+
+หยุดแบบนุ่มก่อน:
+  pkill -TERM -f 'run-migrate-all'
+  pkill -TERM -f 'migrate-from-mssql'
+
+รอ 15 วินาที แล้วตรวจอีกครั้ง
+
+ถ้ายังมีอยู่:
+  pkill -9 -f 'run-migrate-all'
+  pkill -9 -f 'migrate-from-mssql'
+
+
+================================================================================
+  ขั้นที่ 3 — ปิด TablePlus / client ที่เปิด transaction ค้าง
+================================================================================
+
+ถ้าเปิด TablePlus ต่อ database bisinfo อยู่:
+  - ปิดแท็บ query ที่เปิด transaction
+  - Disconnect จาก bisinfo
+  - หรือปิด TablePlus ทั้งโปรแกรม
+
+สำคัญ: อย่าเปิด transaction ค้างบน patient_info ขณะ migrate
+
+
+================================================================================
+  ขั้นที่ 4 — ปลด lock บน Postgres (ไม่ต้องติดตั้ง psql)
+================================================================================
+
+ดูก่อน (dry-run ไม่แก้จริง):
+  node scripts/fix-pg-patient-info-locks.mjs
+
+ปลด lock จริง:
+  node scripts/fix-pg-patient-info-locks.mjs --apply
+
+ถ้ารู้ PID ตัวการ (เช่น จาก diagnose):
+  node scripts/fix-pg-patient-info-locks.mjs --apply --pid <PID>
+
+
+================================================================================
+  ขั้นที่ 5 — ตรวจว่าหายแล้ว
+================================================================================
+
+node scripts/diagnose-migrate-env.mjs
+
+ต้องเห็น:
+  COUNT public.patient_info... OK
+  patient_info rows (Postgres): <จำนวนแถว>
+  ไม่พบ lock จาก process อื่นบน patient_info
+
+
+================================================================================
+  ขั้นที่ 6 — รัน migrate ใหม่
+================================================================================
+
+npm run migrate:all
+
+ระหว่างรัน:
+  - อย่าเปิด TablePlus ค้าง transaction บน bisinfo
+  - อย่ารัน migrate ซ้ำหลาย process พร้อมกัน
+
+
+================================================================================
+  ทางเลือก: ใช้ psql (ถ้าติดตั้งแล้ว)
+================================================================================
+
+ติดตั้ง client:
+  sudo apt install postgresql-client
+
+ดู connection ค้าง:
+  psql -U bis -d bisinfo -h 127.0.0.1 -c "
+    SELECT pid, state, wait_event, left(query,80)
+    FROM pg_stat_activity
+    WHERE datname='bisinfo' AND pid <> pg_backend_pid();
+  "
+
+kill connection (แทน <PID>):
+  psql -U bis -d bisinfo -h 127.0.0.1 -c "SELECT pg_terminate_backend(<PID>);"
+
+หมายเหตุ: user/database ดูจาก migration.config.local.json → shared.target
+
+
+================================================================================
+  ทางเลือก: ข้าม patient_info ชั่วคราว (ทดสอบตารางอื่น)
+================================================================================
+
+ถ้าอยากทดสอบว่าตารางอื่นยัง migrate ได้:
+  npm run migrate:all -- -StartFrom 2 -Tables appointment
+
+ถ้าตารางนี้รันผ่าน = โค้ดตารางอื่นไม่พัง ปัญหาอยู่ที่ patient_info + Postgres lock
+
+
+================================================================================
+  ทางสุดท้าย (ใช้เมื่อ terminate ไม่ได้เท่านั้น)
+================================================================================
+
+  sudo systemctl restart postgresql
+
+ผลข้างเคียง: connection ทุกตัวหลุดชั่วคราว (Directus / app อื่น)
+
+
+================================================================================
+  ป้องกันไม่ให้เกิดซ้ำ
+================================================================================
+
+ก่อนรัน migrate:all ทุกครั้ง (เช็คเร็ว):
+  node scripts/diagnose-migrate-env.mjs
+
+หรือถ้ามี psql:
+  psql -U bis -d bisinfo -h 127.0.0.1 -c "
+    SELECT count(*) FROM pg_stat_activity
+    WHERE datname='bisinfo' AND state='idle in transaction';
+  "
+  ถ้า > 0 ให้แก้ lock ก่อน
+
+ข้อควรทำ:
+  - ปิด TablePlus / disconnect ก่อน migrate
+  - ใช้ TablePlus แค่อ่าน (SELECT) ไม่เปิด transaction ค้าง
+  - หยุด migrate ด้วย Ctrl+C ครั้งเดียว แล้วรอ (อย่า kill -9 ซ้ำๆ ถ้าไม่จำเป็น)
+  - รัน migrate ทีละรอบ
+
+ข้อไม่ควรทำ:
+  - เปิด TablePlus + migrate พร้อมกันบน patient_info
+  - รัน migrate:all หลายครั้งพร้อมกัน
+  - restart postgres โดยไม่จำเป็น
+
+
+================================================================================
+  สรุปลำดับสั้น (จำง่าย)
+================================================================================
+
+  1. node scripts/diagnose-migrate-env.mjs
+  2. pkill migrate process
+  3. ปิด TablePlus
+  4. node scripts/fix-pg-patient-info-locks.mjs --apply
+  5. node scripts/diagnose-migrate-env.mjs   (ต้อง OK)
+  6. npm run migrate:all
+
+================================================================================
+  ไฟล์ที่เกี่ยวข้อง
+================================================================================
+
+  scripts/diagnose-migrate-env.mjs      — ตรวจ MSSQL + Postgres + lock
+  scripts/fix-pg-patient-info-locks.mjs — ปลด lock patient_info
+  migration.config.local.json           — config Postgres/MSSQL
+  logs/run-migrate-all-*.log            — log รัน migrate:all
+
+================================================================================
