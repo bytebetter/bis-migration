@@ -38,6 +38,7 @@ services:
     volumes:
       - directus_uploads:/directus/uploads
       - ../directus-extensions-bb-dev:/directus/extensions:ro
+      - ${SMB_SHARE_MOUNT:-/mnt/bis-shared}:/data/shared
     environment:
       KEY: ${KEY:?set KEY in .env.directus}
       SECRET: ${SECRET:?set SECRET in .env.directus}
@@ -64,6 +65,26 @@ services:
     ports:
       - "127.0.0.1:${BACKOFFICE_PORT:-3000}:3000"
 
+  shared-probe:
+    image: python:3.12-alpine
+    restart: unless-stopped
+    volumes:
+      - ${SMB_SHARE_MOUNT:-/mnt/bis-shared}:/data/shared
+      - ./shared-probe.py:/app/shared-probe.py:ro
+    working_dir: /app
+    command: ["python", "shared-probe.py"]
+    expose:
+      - "8081"
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${UPTIME_KUMA_PORT:-3001}:3001"
+    volumes:
+      - uptime_kuma_data:/app/data
+
 volumes:
   bis_pgdata:
   directus_uploads:
+  uptime_kuma_data:
