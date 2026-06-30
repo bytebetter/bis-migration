@@ -460,6 +460,7 @@ async function main() {
       }
       const startedAt = Date.now();
       const runStartOffset = offset;
+      let sourceExhausted = false;
       while (true) {
         const chunkStartedAt = Date.now();
         const rowsDoneThisRun = rowsDoneInMigrateRun(offset, runStartOffset);
@@ -517,7 +518,10 @@ async function main() {
               uiState,
             );
           }
-          if (rows.length === 0) break;
+          if (rows.length === 0) {
+            sourceExhausted = true;
+            break;
+          }
         }
 
         rows = trimRowsToMigrateCap(
@@ -725,6 +729,7 @@ async function main() {
         indexLimited: idx.indexLimited,
         progressTotal,
         plannedRows,
+        sourceExhausted,
       });
 
       let fieldIssueLogWritten = null;
