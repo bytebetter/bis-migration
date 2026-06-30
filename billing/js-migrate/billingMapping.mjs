@@ -422,10 +422,20 @@ INSERT INTO public.billing (${insertColumns.join(", ")})
 SELECT
   ${selectExprs.join(",\n  ")}
 FROM ${STAGING} s
-LEFT JOIN migrate_stg.billing_exam_map em
-  ON em.old_exam_id = NULLIF(btrim(s.exam_id), '')
-LEFT JOIN public.patient_info p
-  ON p.pid::text = NULLIF(btrim(s.pid), '')
+LEFT JOIN LATERAL (
+  SELECT em.exam_id, em.appointment
+  FROM migrate_stg.billing_exam_map em
+  WHERE em.old_exam_id = NULLIF(btrim(s.exam_id), '')
+  ORDER BY em.exam_id
+  LIMIT 1
+) em ON TRUE
+LEFT JOIN LATERAL (
+  SELECT p.id
+  FROM public.patient_info p
+  WHERE p.pid::text = NULLIF(btrim(s.pid), '')
+  ORDER BY p.id
+  LIMIT 1
+) p ON TRUE
 ${keepExistingId ? "LEFT JOIN billing_keep_id id_keep\n  ON id_keep.old_exam_id = NULLIF(btrim(s.exam_id), '')" : ""}
 WHERE NULLIF(btrim(s.exam_id), '') ~ '${INT_RE_STAGING}'${insertOnlyGuard};
 `.trim();
