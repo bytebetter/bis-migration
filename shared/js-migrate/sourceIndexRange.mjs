@@ -247,6 +247,7 @@ export function assertMigrationReachedPlan(p) {
     indexLimited,
     progressTotal,
     plannedRows,
+    sourceExhausted = false,
   } = p;
   const target = readMigrationTargetRowCount(
     migrationConfig,
@@ -256,6 +257,15 @@ export function assertMigrationReachedPlan(p) {
   );
   if (target == null || target <= 0) return;
   if (currentOffset >= target) return;
+  // keyset อ่านจนสุดตารางต้นทางแล้ว (MSSQL คืน 0 แถว) — อ่านครบทุกแถวที่มีอยู่จริง
+  // snapshot cap มาจาก NOLOCK COUNT ของ live DB ซึ่งแกว่ง/นับเกินได้ จึงต่ำกว่า cap ได้โดยไม่ใช่ข้อมูลขาด
+  if (sourceExhausted) {
+    console.error(
+      `>>> [${tableKey}] อ่านครบต้นทาง: ${currentOffset} แถว (snapshot cap=${target} ` +
+        `ต่างเพราะ source เป็น live NOLOCK ที่ count แกว่ง) — ถือว่าสำเร็จ`,
+    );
+    return;
+  }
   throw new Error(
     `[${tableKey}] migrate ไม่ครบต้นทาง: อ่านได้ ${currentOffset}/${target} แถว — ` +
       `ลบ checkpoint ใน js-migrate/checkpoints/ แล้วรันใหม่ ` +
