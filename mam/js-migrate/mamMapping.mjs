@@ -168,7 +168,10 @@ export async function runMamChunkPostLoad(
     await pgClient.query(`
       SELECT setval(
         pg_get_serial_sequence('public.mammogram', 'id'),
-        COALESCE((SELECT MAX(id) + 1 FROM public.mammogram), 1),
+        GREATEST(
+          COALESCE((SELECT MAX(id) FROM public.mammogram), 0),
+          COALESCE((SELECT MAX(id) FROM mammogram_keep_id), 0)
+        ) + 1,
         false
       )
       WHERE pg_get_serial_sequence('public.mammogram', 'id') IS NOT NULL;
