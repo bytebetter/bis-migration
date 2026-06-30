@@ -211,7 +211,10 @@ export async function runUltrasoundMassChunkPostLoad(
     await pgClient.query(`
       SELECT setval(
         pg_get_serial_sequence('public.ultrasound_mass', 'id'),
-        COALESCE((SELECT MAX(id) + 1 FROM public.ultrasound_mass), 1),
+        GREATEST(
+          COALESCE((SELECT MAX(id) FROM public.ultrasound_mass), 0),
+          COALESCE((SELECT MAX(id) FROM ultrasound_mass_keep_id), 0)
+        ) + 1,
         false
       )
       WHERE pg_get_serial_sequence('public.ultrasound_mass', 'id') IS NOT NULL;

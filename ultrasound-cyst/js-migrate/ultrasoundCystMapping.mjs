@@ -211,7 +211,10 @@ export async function runUltrasoundCystChunkPostLoad(
     await pgClient.query(`
       SELECT setval(
         pg_get_serial_sequence('public.ultrasound_cyst', 'id'),
-        COALESCE((SELECT MAX(id) + 1 FROM public.ultrasound_cyst), 1),
+        GREATEST(
+          COALESCE((SELECT MAX(id) FROM public.ultrasound_cyst), 0),
+          COALESCE((SELECT MAX(id) FROM ultrasound_cyst_keep_id), 0)
+        ) + 1,
         false
       )
       WHERE pg_get_serial_sequence('public.ultrasound_cyst', 'id') IS NOT NULL;
