@@ -285,9 +285,14 @@ LEFT JOIN LATERAL (
   END
   LIMIT 1
 ) pat ON TRUE
-LEFT JOIN public.examination e
-  ON NULLIF(btrim(s.exam_id::text), '') ~ '^[0-9]+$'
- AND e.old_exam_id::text = NULLIF(btrim(s.exam_id::text), '')
+LEFT JOIN LATERAL (
+  SELECT e.id
+  FROM public.examination e
+  WHERE NULLIF(btrim(s.exam_id::text), '') ~ '^[0-9]+$'
+    AND e.old_exam_id::text = NULLIF(btrim(s.exam_id::text), '')
+  ORDER BY e.id
+  LIMIT 1
+) e ON TRUE
 ${idKeepJoin}
 `.trim();
 

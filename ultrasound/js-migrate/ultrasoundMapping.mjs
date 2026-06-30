@@ -219,10 +219,20 @@ INSERT INTO public.ultrasound (${insertColumns.join(", ")})
 SELECT
   ${selectExprs.join(",\n  ")}
 FROM ${stagingFromClause} s
-LEFT JOIN public.examination e
-  ON e.old_exam_id::text = NULLIF(btrim(s.exam_id), '')
-LEFT JOIN public.patient_info p
-  ON p.pid::text = NULLIF(btrim(s.pid), '')
+LEFT JOIN LATERAL (
+  SELECT e.id
+  FROM public.examination e
+  WHERE e.old_exam_id::text = NULLIF(btrim(s.exam_id), '')
+  ORDER BY e.id
+  LIMIT 1
+) e ON TRUE
+LEFT JOIN LATERAL (
+  SELECT p.id
+  FROM public.patient_info p
+  WHERE p.pid::text = NULLIF(btrim(s.pid), '')
+  ORDER BY p.id
+  LIMIT 1
+) p ON TRUE
 ${idKeepJoin}
 WHERE NULLIF(btrim(s.exam_id), '') ~ '^[0-9]+$';
 `.trim();

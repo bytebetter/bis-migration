@@ -208,6 +208,20 @@ function collectFieldIssues(row, mapped, ctx) {
 /** @type {Set<string>|null} */
 let existingNaturalKeys = null;
 
+function splitReschedulePayloads(payloads, migrateRowMode) {
+  const insertPayloads = [];
+  const updatePayloads = [];
+  for (const p of payloads) {
+    const sk = storageKey(p);
+    if (sk != null && existingNaturalKeys?.has(sk)) {
+      if (migrateRowMode !== "insert-only") updatePayloads.push(p);
+    } else {
+      insertPayloads.push(p);
+    }
+  }
+  return { insertPayloads, updatePayloads };
+}
+
 /** คีย์ upsert: มี appointment ใช้ id|datetime ไม่มีใช้ null|datetime */
 function storageKey(payload) {
   if (payload.appointment_datetime == null) return null;
@@ -330,6 +344,8 @@ export async function runAppointmentReschedulesChunkPostLoad(
     return { failedLogKeys: [], fieldIssues: null, rowsWritten: 0 };
   }
 
+  const migrateRowMode = options.migrateRowMode ?? "overwrite";
+  await ensureExistingNaturalKeysLoaded(pgClient);
   const slotByClock = await getSlotIdByClock(pgClient);
   const appointmentByOldDbId = await getAppointmentIdByOldDbId(pgClient);
 
@@ -386,9 +402,13 @@ export async function runAppointmentReschedulesChunkPostLoad(
     });
   }
 
+  const { insertPayloads, updatePayloads } = splitReschedulePayloads(payloads, migrateRowMode);
+  noteNaturalKeysInserted(insertPayloads);
+
   let rowsWritten = 0;
-  if (payloads.length > 0) {
-    rowsWritten += await bulkInsertReschedules(pgClient, payloads);
+  rowsWritten += await bulkInsertReschedules(pgClient, insertPayloads);
+  if (updatePayloads.length > 0) {
+    rowsWritten += await bulkUpdateReschedules(pgClient, updatePayloads);
   }
 
   return {
