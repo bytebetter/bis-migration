@@ -205,69 +205,6 @@ function collectFieldIssues(row, mapped, ctx) {
   return issues;
 }
 
-/** @type {Set<string>|null} */
-let existingNaturalKeys = null;
-
-function splitReschedulePayloads(payloads, migrateRowMode) {
-  const insertPayloads = [];
-  const updatePayloads = [];
-  for (const p of payloads) {
-    const sk = storageKey(p);
-    if (sk != null && existingNaturalKeys?.has(sk)) {
-      if (migrateRowMode !== "insert-only") updatePayloads.push(p);
-    } else {
-      insertPayloads.push(p);
-    }
-  }
-  return { insertPayloads, updatePayloads };
-}
-
-/** คีย์ upsert: มี appointment ใช้ id|datetime ไม่มีใช้ null|datetime */
-function storageKey(payload) {
-  if (payload.appointment_datetime == null) return null;
-  const apptPart =
-    payload.appointment == null ? "null" : String(payload.appointment);
-  return `${apptPart}|${payload.appointment_datetime}`;
-}
-
-/** โหลดคีย์ที่มีใน Postgres ครั้งเดียวต่อ run (แทน query ทุก chunk) */
-export async function ensureExistingNaturalKeysLoaded(pgClient) {
-  if (existingNaturalKeys) return existingNaturalKeys;
-
-  const exists = await pgClient.query(`
-    SELECT EXISTS (
-      SELECT 1 FROM public.appointment_reschedules LIMIT 1
-    ) AS e
-  `);
-  if (!exists.rows[0]?.e) {
-    existingNaturalKeys = new Set();
-    return existingNaturalKeys;
-  }
-
-  const { rows } = await pgClient.query(`
-    SELECT
-      appointment::text AS a,
-      appointment_datetime::text AS dt
-    FROM public.appointment_reschedules
-    WHERE appointment_datetime IS NOT NULL
-  `);
-  existingNaturalKeys = new Set();
-  for (const row of rows) {
-    if (row.dt == null) continue;
-    const apptPart = row.a == null ? "null" : row.a;
-    existingNaturalKeys.add(`${apptPart}|${row.dt}`);
-  }
-  return existingNaturalKeys;
-}
-
-export function noteNaturalKeysInserted(payloads) {
-  if (!existingNaturalKeys) return;
-  for (const p of payloads) {
-    const sk = storageKey(p);
-    if (sk != null) existingNaturalKeys.add(sk);
-  }
-}
-
 async function bulkInsertReschedules(pgClient, payloads) {
   if (payloads.length === 0) return 0;
   const appointmentDatetime = [];
@@ -297,55 +234,17 @@ async function bulkInsertReschedules(pgClient, payloads) {
   return ins.rowCount ?? payloads.length;
 }
 
-async function bulkUpdateReschedules(pgClient, payloads) {
-  if (payloads.length === 0) return 0;
-  const appointmentDatetime = [];
-  const timeSlot = [];
-  const appointment = [];
-  const appointedBy = [];
-  for (const p of payloads) {
-    appointmentDatetime.push(p.appointment_datetime);
-    timeSlot.push(p.time_slot);
-    appointment.push(p.appointment);
-    appointedBy.push(p.appointed_by);
-  }
-  const upd = await pgClient.query(
-    `
-    UPDATE public.appointment_reschedules AS r
-    SET
-      appointment = v.appointment,
-      time_slot = v.time_slot,
-      appointed_by = v.appointed_by
-    FROM (
-      SELECT * FROM unnest(
-        $1::timestamp[],
-        $2::int4[],
-        $3::int8[],
-        $4::uuid[]
-      ) AS v(appointment_datetime, time_slot, appointment, appointed_by)
-    ) v
-    WHERE r.appointment IS NOT DISTINCT FROM v.appointment
-      AND r.appointment_datetime = v.appointment_datetime
-    `,
-    [appointmentDatetime, timeSlot, appointment, appointedBy],
-  );
-  return upd.rowCount ?? payloads.length;
-}
-
 /**
  * @returns {{ failedLogKeys: string[], fieldIssues: object|null, rowsWritten: number }}
  */
 export async function runAppointmentReschedulesChunkPostLoad(
   pgClient,
   mssqlRows,
-  options = {},
 ) {
   if (mssqlRows.length === 0) {
     return { failedLogKeys: [], fieldIssues: null, rowsWritten: 0 };
   }
 
-  const migrateRowMode = options.migrateRowMode ?? "overwrite";
-  await ensureExistingNaturalKeysLoaded(pgClient);
   const slotByClock = await getSlotIdByClock(pgClient);
   const appointmentByOldDbId = await getAppointmentIdByOldDbId(pgClient);
 
@@ -402,14 +301,10 @@ export async function runAppointmentReschedulesChunkPostLoad(
     });
   }
 
-  const { insertPayloads, updatePayloads } = splitReschedulePayloads(payloads, migrateRowMode);
-  noteNaturalKeysInserted(insertPayloads);
-
-  let rowsWritten = 0;
-  rowsWritten += await bulkInsertReschedules(pgClient, insertPayloads);
-  if (updatePayloads.length > 0) {
-    rowsWritten += await bulkUpdateReschedules(pgClient, updatePayloads);
-  }
+  // เก็บทุกแถว log จาก MSSQL: insert ตรงๆ ทุกแถว ไม่ dedupe ตาม natural key
+  // (appointment, appointment_datetime) — ตารางปลายทางไม่มี unique constraint
+  // บนคู่นั้น (มีแค่ PK id) จึงมีแถวซ้ำได้ตามจำนวน log จริง
+  const rowsWritten = await bulkInsertReschedules(pgClient, payloads);
 
   return {
     failedLogKeys: [...failingLogKeySet].sort(),
@@ -462,5 +357,4 @@ export async function warmupAppointmentReschedulesLookups(pgClient) {
 export function invalidateAppointmentReschedulesLookupCache() {
   cachedSlotIdByClock = null;
   cachedAppointmentIdByOldDbId = null;
-  existingNaturalKeys = null;
 }

@@ -33,7 +33,15 @@ export const MSSQL_RESCHEDULE_MODIFIED_ORDER_EXPR =
 export const MSSQL_RESCHEDULE_OLD_SCHEDULE_DT_ORDER_EXPR =
   "COALESCE([Old_Schedule_Datetime], CAST('17530101' AS DATETIME2))";
 
-const RESCHEDULE_ORDER_BY = `${MSSQL_RESCHEDULE_LOGTIME_ORDER_EXPR} ASC, ${MSSQL_RESCHEDULE_SCHEDULE_ID_ORDER_EXPR} ASC, ${MSSQL_RESCHEDULE_SCHEDULE_DT_ORDER_EXPR} ASC, ${MSSQL_RESCHEDULE_MODIFIED_ORDER_EXPR} ASC, ${MSSQL_RESCHEDULE_OLD_SCHEDULE_DT_ORDER_EXPR} ASC`;
+/**
+ * tie-breaker ระดับ 6 (สุดท้าย) — %%physloc%% = ตำแหน่ง physical ของแถว (binary(8), file:page:slot)
+ * SCHEDULE_LOG ไม่มี PK/identity/unique ใดๆ; แถว log ที่ค่าทั้ง 5 คีย์บนซ้ำเป๊ะ (รวม 12 แถวที่เหมือนกันทุกคอลัมน์)
+ * จะถูก keyset ข้ามที่ขอบ page ถ้าไม่มีคีย์ unique ปิดท้าย. physloc ทำให้คีย์ unique 100%
+ * (verify: distinct(5-tuple + physloc) == COUNT). ใช้ได้ภายใต้ SNAPSHOT isolation ที่ physloc คงที่ตลอด run.
+ */
+export const MSSQL_RESCHEDULE_PHYSLOC_ORDER_EXPR = "%%physloc%%";
+
+const RESCHEDULE_ORDER_BY = `${MSSQL_RESCHEDULE_LOGTIME_ORDER_EXPR} ASC, ${MSSQL_RESCHEDULE_SCHEDULE_ID_ORDER_EXPR} ASC, ${MSSQL_RESCHEDULE_SCHEDULE_DT_ORDER_EXPR} ASC, ${MSSQL_RESCHEDULE_MODIFIED_ORDER_EXPR} ASC, ${MSSQL_RESCHEDULE_OLD_SCHEDULE_DT_ORDER_EXPR} ASC, ${MSSQL_RESCHEDULE_PHYSLOC_ORDER_EXPR} ASC`;
 
 const RESCHEDULE_TIEBREAKER_SORT_KEY = `CONCAT(
   CONVERT(VARCHAR(23), ${MSSQL_RESCHEDULE_LOGTIME_ORDER_EXPR}, 126),
@@ -70,6 +78,7 @@ const KEYSET_CURSOR_ANCHOR_COLUMNS = `
   , ${MSSQL_RESCHEDULE_SCHEDULE_DT_ORDER_EXPR} AS ktv_schedule_dt_ord
   , ${MSSQL_RESCHEDULE_MODIFIED_ORDER_EXPR} AS ktv_modified_ord
   , ${MSSQL_RESCHEDULE_OLD_SCHEDULE_DT_ORDER_EXPR} AS ktv_old_schedule_dt_ord
+  , ${MSSQL_RESCHEDULE_PHYSLOC_ORDER_EXPR} AS ktv_physloc
 `.trim();
 
 /** fallback เมื่อ resume checkpoint เก่า (OFFSET) */
@@ -122,6 +131,14 @@ WHERE ${RESCHEDULE_ACTIVITY_WHERE}
       AND ${MSSQL_RESCHEDULE_SCHEDULE_DT_ORDER_EXPR} = @afterScheduleDatetime
       AND ${MSSQL_RESCHEDULE_MODIFIED_ORDER_EXPR} = @afterModifiedDate
       AND ${MSSQL_RESCHEDULE_OLD_SCHEDULE_DT_ORDER_EXPR} > @afterOldScheduleDatetime
+    )
+    OR (
+      ${MSSQL_RESCHEDULE_LOGTIME_ORDER_EXPR} = @afterLogTime
+      AND ${MSSQL_RESCHEDULE_SCHEDULE_ID_ORDER_EXPR} = @afterScheduleId
+      AND ${MSSQL_RESCHEDULE_SCHEDULE_DT_ORDER_EXPR} = @afterScheduleDatetime
+      AND ${MSSQL_RESCHEDULE_MODIFIED_ORDER_EXPR} = @afterModifiedDate
+      AND ${MSSQL_RESCHEDULE_OLD_SCHEDULE_DT_ORDER_EXPR} = @afterOldScheduleDatetime
+      AND ${MSSQL_RESCHEDULE_PHYSLOC_ORDER_EXPR} > @afterPhysloc
     )
   )
 ORDER BY ${orderBy};
