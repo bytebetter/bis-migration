@@ -143,7 +143,31 @@ function defaultRescheduleKeysetAfter() {
     scheduleDatetime: floor,
     modifiedDate: floor,
     oldScheduleDatetime: floor,
+    physloc: reschedulePhyslocFloor(),
   };
+}
+
+/** %%physloc%% floor = 8 ไบต์ศูนย์ (physloc จริง file:page:slot ไม่มีทางเป็นศูนย์ทั้งหมด → `> floor` ครอบทุกแถว) */
+function reschedulePhyslocFloor() {
+  return Buffer.alloc(8);
+}
+
+/** คืน Buffer(8) จาก physloc ที่อาจเป็น Buffer (จาก driver) หรือ hex string (จาก checkpoint) หรือ null */
+function normalizeReschedulePhysloc(raw) {
+  if (raw == null) return reschedulePhyslocFloor();
+  if (Buffer.isBuffer(raw)) {
+    if (raw.length === 8) return raw;
+    const b = Buffer.alloc(8);
+    raw.copy(b, 0, 0, Math.min(8, raw.length));
+    return b;
+  }
+  const s = String(raw)
+    .trim()
+    .replace(/^0x/i, "");
+  if (/^[0-9a-fA-F]{1,16}$/.test(s)) {
+    return Buffer.from(s.padStart(16, "0").slice(-16), "hex");
+  }
+  return reschedulePhyslocFloor();
 }
 
 function normalizeScheduleIdForKeyset(raw) {
@@ -169,6 +193,7 @@ function normalizeRescheduleKeysetAfter(raw) {
       raw.oldScheduleDatetime == null
         ? coalescedFloor
         : rescheduleRowDatetimeForKeyset(raw.oldScheduleDatetime),
+    physloc: normalizeReschedulePhysloc(raw.physloc),
   };
 }
 
@@ -178,6 +203,7 @@ function keysetAfterFromRescheduleRow(row) {
   const sdtOrd = getRescheduleRowField(row, "ktv_schedule_dt_ord");
   const modOrd = getRescheduleRowField(row, "ktv_modified_ord");
   const oldDtOrd = getRescheduleRowField(row, "ktv_old_schedule_dt_ord");
+  const physlocRaw = getRescheduleRowField(row, "ktv_physloc");
   if (
     lt !== undefined ||
     sidOrd !== undefined ||
@@ -191,6 +217,7 @@ function keysetAfterFromRescheduleRow(row) {
       scheduleDatetime: rescheduleRowDatetimeForKeyset(sdtOrd),
       modifiedDate: rescheduleRowDatetimeForKeyset(modOrd),
       oldScheduleDatetime: rescheduleRowDatetimeForKeyset(oldDtOrd),
+      physloc: normalizeReschedulePhysloc(physlocRaw),
     };
   }
   const sidRaw = getRescheduleRowField(row, "schedule_id");
@@ -208,6 +235,7 @@ function keysetAfterFromRescheduleRow(row) {
     oldScheduleDatetime: rescheduleRowDatetimeForKeyset(
       getRescheduleRowField(row, "old_schedule_datetime"),
     ),
+    physloc: normalizeReschedulePhysloc(physlocRaw),
   };
 }
 
@@ -229,6 +257,7 @@ function keysetAfterForPersist(k) {
     modifiedDate: formatKeysetDateForCheckpoint(n.modifiedDate),
     oldScheduleDatetime: formatKeysetDateForCheckpoint(n.oldScheduleDatetime),
     scheduleId: String(n.scheduleId),
+    physloc: normalizeReschedulePhysloc(n.physloc).toString("hex"),
   };
 }
 
@@ -240,6 +269,7 @@ function bindRescheduleKeysetInputs(req, keysetAfter) {
   req.input("afterScheduleDatetime", sql.DateTime2, k.scheduleDatetime);
   req.input("afterModifiedDate", sql.DateTime2, k.modifiedDate);
   req.input("afterOldScheduleDatetime", sql.DateTime2, k.oldScheduleDatetime);
+  req.input("afterPhysloc", sql.Binary(8), normalizeReschedulePhysloc(k.physloc));
 }
 
 function getConfigPath() {
@@ -568,10 +598,11 @@ async function runAppointmentReschedulesTableJob({
   if (
     useMssqlKeyset &&
     checkpoint.mssqlKeysetAfter != null &&
-    checkpoint.mssqlKeysetAfter.oldScheduleDatetime == null
+    (checkpoint.mssqlKeysetAfter.oldScheduleDatetime == null ||
+      checkpoint.mssqlKeysetAfter.physloc == null)
   ) {
     writeOutLine(
-      `>>> [${key}] คำเตือน: checkpoint เก่า (keyset 4 มิติ) ไม่เข้ากับสคริปต์ปัจจุบัน — ลบ checkpoints/ แล้ว TRUNCATE ปลายทาง รัน overwrite`,
+      `>>> [${key}] คำเตือน: checkpoint เก่า (keyset ไม่มี physloc/6 มิติ) ไม่เข้ากับสคริปต์ปัจจุบัน — ลบ checkpoints/ แล้ว TRUNCATE ปลายทาง รัน overwrite`,
       uiState,
     );
   }
@@ -846,7 +877,6 @@ async function runAppointmentReschedulesTableJob({
         const postLoadResult = await runAppointmentReschedulesChunkPostLoad(
           pgClient,
           rows,
-          { migrateRowMode: migrationConfig.migrateRowMode },
         );
         mergeFieldIssueChunk(fieldIssueAcc, postLoadResult);
         totalRowsWritten += postLoadResult.rowsWritten ?? 0;
