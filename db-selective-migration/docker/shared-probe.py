@@ -5,9 +5,47 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
 SHARE_PATH = os.getenv("SHARE_PATH", "/data/shared")
+EXPECTED_FSTYPE = os.getenv("EXPECTED_FSTYPE", "cifs").strip().lower()
+EXPECTED_MOUNT_SOURCE = os.getenv("EXPECTED_MOUNT_SOURCE", "").strip()
+
+
+def _unescape_mount_token(value):
+    # /proc/mounts escapes spaces as \040 and backslashes as \134
+    return value.replace("\\040", " ").replace("\\134", "\\")
+
+
+def check_mount_state():
+    try:
+        with open("/proc/mounts", "r", encoding="utf-8") as fp:
+            for raw_line in fp:
+                parts = raw_line.split()
+                if len(parts) < 3:
+                    continue
+                source = _unescape_mount_token(parts[0])
+                mount_point = _unescape_mount_token(parts[1])
+                fs_type = parts[2].strip().lower()
+
+                if mount_point != SHARE_PATH:
+                    continue
+
+                if fs_type != EXPECTED_FSTYPE:
+                    return False, f"wrong_fstype:{fs_type}"
+
+                if EXPECTED_MOUNT_SOURCE and source != EXPECTED_MOUNT_SOURCE:
+                    return False, f"wrong_source:{source}"
+
+                return True, f"mounted:{source}:{fs_type}"
+    except Exception as exc:  # pragma: no cover
+        return False, f"mount_check_failed:{type(exc).__name__}:{exc}"
+
+    return False, f"not_mounted:{SHARE_PATH}"
 
 
 def check_share_rw():
+    mount_ok, mount_message = check_mount_state()
+    if not mount_ok:
+        return False, mount_message
+
     ts = str(int(time.time() * 1000))
     probe_file = os.path.join(SHARE_PATH, f".probe-{ts}.tmp")
     payload = f"probe-{ts}"
