@@ -32,7 +32,7 @@
   },
   "devDependencies": {
     "@directus/extensions-sdk": "13.1.0",
-    "@types/node": "^22.15.18",
+    "@types/node": "^22.20.0",
     "@types/pdfkit": "^0.13.9",
     "dotenv-cli": "^11.0.0",
     "typescript": "^5.8.3"
