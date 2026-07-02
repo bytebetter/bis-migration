@@ -1,1 +1,0 @@
-import{defineOperationApp as t}from"@directus/extensions-sdk";var e=t({id:"custom",name:"Custom",icon:"box",description:"This is my custom operation!/ by March 2025",overview:({text:t})=>[{label:"Text",text:t}],options:[{field:"text",name:"Text",type:"string",meta:{width:"full",interface:"input"}}]});export{e as default};
