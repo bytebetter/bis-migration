@@ -80,3 +80,14 @@ join_pg_tables() {
   done
   echo "$out"
 }
+
+# SQL_DATA_FORMAT=copy (default, fast restore via psql) | inserts (TablePlus / GUI clients)
+pg_dump_data_format_args() {
+  if [[ "${SQL_DATA_FORMAT:-copy}" == "inserts" ]]; then
+    echo "--inserts"
+  fi
+}
+
+strip_psql_meta_commands() {
+  sed -E '/^\\restrict /d; /^\\unrestrict /d'
+}
