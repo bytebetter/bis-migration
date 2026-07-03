@@ -98,6 +98,27 @@ function normalizeSlotLabel(slot) {
 
 let cachedSlotIdByClock = null;
 let cachedAppointmentIdByOldDbId = null;
+let cachedHasOldAppointmentDatetimeColumn = null;
+
+/**
+ * คอลัมน์ old_appointment_datetime เพิ่งเพิ่มใน Directus — ฐาน clone เก่าอาจยังไม่มี
+ * เช็คครั้งเดียวต่อ process แล้วใส่คอลัมน์ใน INSERT เฉพาะเมื่อปลายทางมีจริง
+ */
+async function hasOldAppointmentDatetimeColumn(pgClient) {
+  if (cachedHasOldAppointmentDatetimeColumn != null) {
+    return cachedHasOldAppointmentDatetimeColumn;
+  }
+  const r = await pgClient.query(`
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'appointment_reschedules'
+      AND column_name = 'old_appointment_datetime'
+    LIMIT 1
+  `);
+  cachedHasOldAppointmentDatetimeColumn = (r.rowCount ?? 0) > 0;
+  return cachedHasOldAppointmentDatetimeColumn;
+}
 
 async function loadSlotIdByClock(pgClient) {
   const { rows } = await pgClient.query(`
@@ -158,7 +179,7 @@ export function mapScheduleLogRowToReschedule(row) {
     clock,
     schedule_id: normScheduleId(getField(row, "schedule_id")),
     log_time: toPgTimestamp(getField(row, "log_time")),
-    old_schedule_datetime: toPgTimestamp(
+    old_appointment_datetime: toPgTimestamp(
       getField(row, "old_schedule_datetime"),
     ),
     appointed_by: null,
@@ -178,6 +199,20 @@ function collectFieldIssues(row, mapped, ctx) {
       reason: "datetime_parse_failed",
       message: "Schedule_Datetime แปลงไม่ได้",
       source_raw: srcSched,
+      mapped: null,
+    });
+  }
+
+  const srcOldSched = getField(row, "old_schedule_datetime");
+  if (
+    sourceRawNonempty(srcOldSched) &&
+    mapped.old_appointment_datetime == null
+  ) {
+    issues.push({
+      field: "old_appointment_datetime",
+      reason: "datetime_parse_failed",
+      message: "Old_Schedule_Datetime แปลงไม่ได้",
+      source_raw: srcOldSched,
       mapped: null,
     });
   }
@@ -205,31 +240,45 @@ function collectFieldIssues(row, mapped, ctx) {
   return issues;
 }
 
-async function bulkInsertReschedules(pgClient, payloads) {
+async function bulkInsertReschedules(
+  pgClient,
+  payloads,
+  includeOldAppointmentDatetime,
+) {
   if (payloads.length === 0) return 0;
   const appointmentDatetime = [];
   const timeSlot = [];
   const appointment = [];
   const appointedBy = [];
+  const oldAppointmentDatetime = [];
   for (const p of payloads) {
     appointmentDatetime.push(p.appointment_datetime);
     timeSlot.push(p.time_slot);
     appointment.push(p.appointment);
     appointedBy.push(p.appointed_by);
+    oldAppointmentDatetime.push(p.old_appointment_datetime ?? null);
   }
+
+  /** @type {[string, string, unknown[]][]} */
+  const defs = [
+    ["appointment_datetime", "timestamp[]", appointmentDatetime],
+    ["time_slot", "int4[]", timeSlot],
+    ["appointment", "int8[]", appointment],
+    ["appointed_by", "uuid[]", appointedBy],
+    ...(includeOldAppointmentDatetime
+      ? [["old_appointment_datetime", "timestamp[]", oldAppointmentDatetime]]
+      : []),
+  ];
+  const colList = defs.map(([col]) => col).join(", ");
+  const unnestList = defs
+    .map(([, pgType], idx) => `$${idx + 1}::${pgType}`)
+    .join(", ");
   const ins = await pgClient.query(
     `
-    INSERT INTO public.appointment_reschedules (
-      appointment_datetime, time_slot, appointment, appointed_by
-    )
-    SELECT * FROM unnest(
-      $1::timestamp[],
-      $2::int4[],
-      $3::int8[],
-      $4::uuid[]
-    )
+    INSERT INTO public.appointment_reschedules (${colList})
+    SELECT * FROM unnest(${unnestList})
     `,
-    [appointmentDatetime, timeSlot, appointment, appointedBy],
+    defs.map(([, , arr]) => arr),
   );
   return ins.rowCount ?? payloads.length;
 }
@@ -247,6 +296,8 @@ export async function runAppointmentReschedulesChunkPostLoad(
 
   const slotByClock = await getSlotIdByClock(pgClient);
   const appointmentByOldDbId = await getAppointmentIdByOldDbId(pgClient);
+  const includeOldAppointmentDatetime =
+    await hasOldAppointmentDatetimeColumn(pgClient);
 
   const failingLogKeySet = new Set();
   let totalFieldIssueCount = 0;
@@ -298,13 +349,18 @@ export async function runAppointmentReschedulesChunkPostLoad(
       time_slot: mapped.time_slot,
       appointment: mapped.appointment,
       appointed_by: mapped.appointed_by,
+      old_appointment_datetime: mapped.old_appointment_datetime,
     });
   }
 
   // เก็บทุกแถว log จาก MSSQL: insert ตรงๆ ทุกแถว ไม่ dedupe ตาม natural key
   // (appointment, appointment_datetime) — ตารางปลายทางไม่มี unique constraint
   // บนคู่นั้น (มีแค่ PK id) จึงมีแถวซ้ำได้ตามจำนวน log จริง
-  const rowsWritten = await bulkInsertReschedules(pgClient, payloads);
+  const rowsWritten = await bulkInsertReschedules(
+    pgClient,
+    payloads,
+    includeOldAppointmentDatetime,
+  );
 
   return {
     failedLogKeys: [...failingLogKeySet].sort(),
@@ -357,4 +413,5 @@ export async function warmupAppointmentReschedulesLookups(pgClient) {
 export function invalidateAppointmentReschedulesLookupCache() {
   cachedSlotIdByClock = null;
   cachedAppointmentIdByOldDbId = null;
+  cachedHasOldAppointmentDatetimeColumn = null;
 }

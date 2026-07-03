@@ -97,6 +97,26 @@ function toDirectusDateTime(value) {
   return `${year}-${month}-${day}T${hh}:${mm}:${ss}`;
 }
 
+/** ค่า default ของคอลัมน์ appointment_status ใน public.appointment */
+export const APPOINTMENT_STATUS_NOT_YET = "ยังไม่ถึงเวลานัด/ยังไม่มา";
+export const APPOINTMENT_STATUS_COMPLETED = "เสร็จสิ้น";
+
+/**
+ * เวลาปัจจุบันโซน Asia/Bangkok (UTC+7 คงที่ ไม่มี DST) รูปแบบ "YYYY-MM-DDTHH:mm:ss"
+ * ให้เทียบ string กับผลของ toDirectusDateTime ได้ตรง ๆ
+ */
+function bangkokNowDirectusDateTime() {
+  return new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 19);
+}
+
+/** นัดที่เวลาผ่านมาแล้ว = เสร็จสิ้น, นอกนั้นคงค่า default ของคอลัมน์ */
+function mapAppointmentStatus(appointmentDatetime, nowBangkok) {
+  if (appointmentDatetime != null && appointmentDatetime < nowBangkok) {
+    return APPOINTMENT_STATUS_COMPLETED;
+  }
+  return APPOINTMENT_STATUS_NOT_YET;
+}
+
 function normalizeSlotLabel(slot) {
   const t = nullIfTrimEmpty(slot);
   if (t == null) return null;
@@ -131,11 +151,16 @@ export function mapSchedulePatientTypeToPatientCategory(mssqlPatientType) {
  * - เก็บ Schedule_ID ไปที่ old_db_id เพื่อ trace กลับข้อมูลต้นทาง
  * - ไม่แตะ field system เช่น user_created/date_created
  */
-export function mapScheduleRowToAppointment(row) {
+export function mapScheduleRowToAppointment(
+  row,
+  nowBangkok = bangkokNowDirectusDateTime(),
+) {
+  const appointmentDatetime = toDirectusDateTime(
+    getField(row, "Schedule_Datetime"),
+  );
   return {
-    appointment_datetime: toDirectusDateTime(
-      getField(row, "Schedule_Datetime"),
-    ),
+    appointment_datetime: appointmentDatetime,
+    appointment_status: mapAppointmentStatus(appointmentDatetime, nowBangkok),
     appointment_no: toInt(getField(row, "Schedule_Number")),
     prefix: nullIfTrimEmpty(getField(row, "Prefix")),
     first_name: nullIfTrimEmpty(getField(row, "Name")),
@@ -402,6 +427,7 @@ async function resolveAppointmentPatientColumn(pgClient) {
 function buildAppointmentColumnArrays(payloads, patientColumn) {
   const arrays = {
     appointment_datetime: [],
+    appointment_status: [],
     appointment_no: [],
     prefix: [],
     first_name: [],
@@ -429,6 +455,9 @@ function buildAppointmentColumnArrays(payloads, patientColumn) {
 
   for (const item of payloads) {
     arrays.appointment_datetime.push(item.appointment_datetime);
+    arrays.appointment_status.push(
+      item.appointment_status ?? APPOINTMENT_STATUS_NOT_YET,
+    );
     arrays.appointment_no.push(item.appointment_no);
     arrays.prefix.push(item.prefix);
     arrays.first_name.push(item.first_name);
@@ -459,6 +488,7 @@ function buildAppointmentColumnArrays(payloads, patientColumn) {
 function buildAppointmentInsertDefs(arrays, patientColumn) {
   return [
     ["appointment_datetime", "timestamp[]", arrays.appointment_datetime],
+    ["appointment_status", "text[]", arrays.appointment_status],
     ["appointment_no", "int4[]", arrays.appointment_no],
     ["prefix", "text[]", arrays.prefix],
     ["first_name", "text[]", arrays.first_name],
@@ -555,7 +585,16 @@ async function bulkInsertAppointments(pgClient, insertDefs) {
 async function bulkUpdateAppointmentsByOldDbId(pgClient, insertDefs) {
   const setList = insertDefs
     .filter(([col]) => col !== "old_db_id")
-    .map(([col]) => `${col} = v.${col}`)
+    .map(([col]) =>
+      // อย่าทับ status ที่ถูกเปลี่ยนใน Directus แล้ว (เช่น ยกเลิกนัด/ไม่มาตามนัด)
+      // เขียนทับเฉพาะแถวที่ยังเป็นค่า default ของคอลัมน์เท่านั้น
+      col === "appointment_status"
+        ? `${col} = CASE
+             WHEN a.appointment_status = '${APPOINTMENT_STATUS_NOT_YET}' THEN v.${col}
+             ELSE a.appointment_status
+           END`
+        : `${col} = v.${col}`,
+    )
     .join(", ");
   const unnestList = insertDefs
     .map(([, pgType], idx) => `$${idx + 1}::${pgType}`)
