@@ -66,9 +66,9 @@ EOF
 }
 
 if [[ "$COMPRESS" == "true" ]]; then
-  dump_stream | gzip -c >"$OUT"
+  dump_stream | sed -E '/^\\restrict /d; /^\\unrestrict /d' | gzip -c >"$OUT"
 else
-  dump_stream >"$OUT"
+  dump_stream | sed -E '/^\\restrict /d; /^\\unrestrict /d' >"$OUT"
 fi
 
 echo "Done. Size: $(du -h "$OUT" | cut -f1)" >&2

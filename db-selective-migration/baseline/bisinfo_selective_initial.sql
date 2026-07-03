@@ -6,7 +6,6 @@
 -- PostgreSQL database dump
 --
 
-\restrict Uy2Kw2pEbp0hqtswnh6pWnhAiV6IrLcMtwy8iUba2QS2rJvBoJ6kiqjJYq49y3N
 
 -- Dumped from database version 16.11
 -- Dumped by pg_dump version 16.11
@@ -11276,13 +11275,11 @@ ALTER TABLE ONLY public.worklist
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Uy2Kw2pEbp0hqtswnh6pWnhAiV6IrLcMtwy8iUba2QS2rJvBoJ6kiqjJYq49y3N
 
 --
 -- PostgreSQL database dump
 --
 
-\restrict iJVa8qeUPXDU9vrAXC4oQa6xraCRrwYkFwGu6y2fEB1eqZPNw7gPzEe92URdf0K
 
 -- Dumped from database version 16.11
 -- Dumped by pg_dump version 16.11
@@ -19812,5 +19809,4 @@ SELECT pg_catalog.setval('public.underlying_disease_id_seq', 9, true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict iJVa8qeUPXDU9vrAXC4oQa6xraCRrwYkFwGu6y2fEB1eqZPNw7gPzEe92URdf0K
 
