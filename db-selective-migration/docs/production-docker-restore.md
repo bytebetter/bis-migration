@@ -1,6 +1,8 @@
 # Production: PostgreSQL ด้วย Docker + restore ไฟล์ selective dump
 
-ไฟล์ dump จาก `db-dump-selective-backup.sh` ถูกสร้างด้วย **PostgreSQL 16** และอาจมีคำสั่ง `\restrict` ใน `psql` — ควร restore ด้วย **image `postgres:16`** (หรือ client 16+)
+ไฟล์ dump จาก `db-dump-selective-backup.sh` ถูกสร้างด้วย **PostgreSQL 16** — restore ด้วย **`psql`** (ไม่ใช่ `pg_restore`) หรือรัน SQL ผ่าน client อื่น (เช่น TablePlus Query)
+
+> สคริปต์ dump จะลบ `\\restrict` / `\\unrestrict` ออกให้แล้ว (เป็น meta-command ของ `psql` เท่านั้น ไม่ใช่ SQL)
 
 ## ไฟล์ตั้งต้นใน Git (baseline)
 

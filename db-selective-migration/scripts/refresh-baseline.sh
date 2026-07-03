@@ -53,4 +53,9 @@ pg_dump -U "\$POSTGRES_USER" -d ${_q_db} --data-only --no-owner --no-privileges 
   ${BUSINESS_ARGS}
 EOF
 
+# pg_dump 16 emits psql-only \\restrict/\\unrestrict markers; strip for GUI clients (TablePlus, etc.)
+_tmp="$(mktemp)"
+sed -E '/^\\restrict /d; /^\\unrestrict /d' "$OUT" >"$_tmp"
+mv "$_tmp" "$OUT"
+
 echo "Done. Size: $(du -h "$OUT" | cut -f1), lines: $(wc -l <"$OUT" | tr -d ' ')" >&2
