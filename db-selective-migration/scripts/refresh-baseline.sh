@@ -13,6 +13,7 @@ set -euo pipefail
 #
 # Optional:
 # - OUTPUT_PATH (default: package root/baseline/bisinfo_selective_initial.sql)
+# - SQL_DATA_FORMAT=copy|inserts (default: copy; use inserts for TablePlus Execute SQL)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=db-selective-tables.inc.sh
@@ -28,11 +29,12 @@ OUT="${OUTPUT_PATH:-${REPO_ROOT}/baseline/bisinfo_selective_initial.sql}"
 
 DIRECTUS_ARGS="$(join_pg_tables "${DIRECTUS_TABLES[@]}")"
 BUSINESS_ARGS="$(join_pg_tables "${MIGRATE_TABLES[@]}")"
+DATA_FORMAT_ARGS="$(pg_dump_data_format_args)"
 
 _q_db="$(printf '%q' "$SOURCE_DB")"
 
 echo "Refreshing baseline from ${SOURCE_DB} (${K8S_CONTEXT}/${K8S_NAMESPACE}/${POSTGRES_POD})" >&2
-echo "Output: ${OUT}" >&2
+echo "Output: ${OUT} (SQL_DATA_FORMAT=${SQL_DATA_FORMAT:-copy})" >&2
 
 mkdir -p "$(dirname "$OUT")"
 
@@ -47,6 +49,7 @@ cat <<'HDR'
 HDR
 pg_dump -U "\$POSTGRES_USER" -d ${_q_db} --schema-only --no-owner --no-privileges
 pg_dump -U "\$POSTGRES_USER" -d ${_q_db} --data-only --no-owner --no-privileges \\
+  ${DATA_FORMAT_ARGS} \\
   ${DIRECTUS_ARGS} \\
   --exclude-table=public.directus_activity \\
   --exclude-table=public.directus_revisions \\
@@ -55,7 +58,7 @@ EOF
 
 # pg_dump 16 emits psql-only \\restrict/\\unrestrict markers; strip for GUI clients (TablePlus, etc.)
 _tmp="$(mktemp)"
-sed -E '/^\\restrict /d; /^\\unrestrict /d' "$OUT" >"$_tmp"
+strip_psql_meta_commands <"$OUT" >"$_tmp"
 mv "$_tmp" "$OUT"
 
 echo "Done. Size: $(du -h "$OUT" | cut -f1), lines: $(wc -l <"$OUT" | tr -d ' ')" >&2
