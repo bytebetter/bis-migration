@@ -21,8 +21,8 @@ MIGRATE_TABLES=(
   bx_options
   tab_exam_option
   certificate_reason
-  lab_options
   lab_list
+  finance_cost
   tab_procedure_options
   tab_clinical_options
   tab_procedures_options
@@ -41,6 +41,8 @@ MIGRATE_TABLES=(
   place
   donate_for
   beds
+  role_menu_directus_policies
+  role_menu_directus_roles
 )
 
 DIRECTUS_TABLES=(

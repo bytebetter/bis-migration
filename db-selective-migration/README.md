@@ -7,6 +7,7 @@
 - `scripts/db-selective-tables.inc.sh` — รายชื่อตารางที่ย้ายข้อมูลร่วมกัน
 - `scripts/db-migrate-selective.sh` — migrate จาก DB ต้นทางไป DB ปลายทางผ่าน `kubectl exec`
 - `scripts/db-dump-selective-backup.sh` — สร้างไฟล์ `.sql` สำหรับ restore บนเครื่องอื่น
+- `scripts/refresh-baseline.sh` — อัปเดต `baseline/bisinfo_selective_initial.sql` จาก pod ต้นทาง (ไม่ต้องตั้ง PGPASSWORD ในเครื่อง)
 - `docs/db-migration-selective-runbook.md` — คู่มือรันจริงและ restore
 - `docs/production-docker-restore.md` — ติดตั้ง Postgres 16 ด้วย Docker + restore dump บน production server
 - `docker/docker-compose.yml` — **Postgres 16 + Directus 11 + BIS Backoffice (Next.js)** (แนะนำ)
