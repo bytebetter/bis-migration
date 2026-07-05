@@ -1,4 +1,4 @@
--- bis-backoffice selective backup
+-- selective DB backup (schema + partial data)
 -- schema: full (no owner/privileges)
 -- data: listed directus tables except directus_activity, directus_revisions + business whitelist
 -- Restore: create empty DB, then psql -v ON_ERROR_STOP=1 -f this_file.sql
@@ -6,7 +6,6 @@
 -- PostgreSQL database dump
 --
 
-\restrict fQ26F9xg4Wofp2VeAbf0XPwksu1cxIsvPFVoJPhxiCVZhtbqjoYR2OnJ9CmQtle
 
 -- Dumped from database version 16.11
 -- Dumped by pg_dump version 16.11
@@ -261,7 +260,8 @@ CREATE TABLE public.appointment_reschedules (
     appointed_by uuid,
     time_slot integer,
     appointment bigint,
-    appointment_datetime timestamp without time zone
+    appointment_datetime timestamp without time zone,
+    old_appointment_datetime timestamp without time zone
 );
 
 
@@ -423,7 +423,9 @@ CREATE TABLE public.billing (
     total_exam numeric(10,5),
     exam_datetime timestamp without time zone,
     extra_discount numeric(10,5),
-    payment_type integer
+    payment_type integer,
+    finance_case_owner uuid,
+    service_total numeric(10,5)
 );
 
 
@@ -562,7 +564,9 @@ CREATE TABLE public.bx_options (
     value character varying(255),
     label character varying(255),
     subtype character varying(255),
-    is_after_hours boolean DEFAULT false
+    is_after_hours boolean DEFAULT false,
+    is_default_cyto boolean DEFAULT false,
+    is_default_patho boolean DEFAULT false
 );
 
 
@@ -678,7 +682,10 @@ CREATE TABLE public.center_income (
     billing integer,
     is_treasurer boolean,
     donate_for character varying(255),
-    status character varying(255)
+    status character varying(255),
+    requester_type character varying(255),
+    note character varying(255),
+    requester_name character varying(255)
 );
 
 
@@ -1847,7 +1854,6 @@ CREATE TABLE public.examination (
     date_created timestamp with time zone,
     user_updated uuid,
     date_updated timestamp with time zone,
-    exam_date timestamp without time zone,
     patient integer,
     tech_login_name character varying(255) DEFAULT NULL::character varying,
     mobile boolean,
@@ -1981,7 +1987,8 @@ CREATE TABLE public.examination (
     is_mam_done boolean DEFAULT false,
     has_recommend_bx_form boolean DEFAULT false,
     previous_result_from character varying(255),
-    nurse_work integer
+    nurse_work integer,
+    exam_date timestamp with time zone
 );
 
 
@@ -2311,6 +2318,44 @@ ALTER SEQUENCE public.external_exam_records_id_seq OWNED BY public.external_exam
 
 
 --
+-- Name: finance_cost; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.finance_cost (
+    id integer NOT NULL,
+    user_created uuid,
+    date_created timestamp with time zone,
+    user_updated uuid,
+    date_updated timestamp with time zone,
+    hospital_code character varying(255),
+    procedure_name character varying(255),
+    cgd_code character varying(255),
+    procedure_price numeric(10,5),
+    excess_price numeric(10,5)
+);
+
+
+--
+-- Name: finance_cost_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.finance_cost_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: finance_cost_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.finance_cost_id_seq OWNED BY public.finance_cost.id;
+
+
+--
 -- Name: finance_work; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2587,122 +2632,6 @@ CREATE SEQUENCE public.lab_list_id_seq
 --
 
 ALTER SEQUENCE public.lab_list_id_seq OWNED BY public.lab_list.id;
-
-
---
--- Name: lab_options; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.lab_options (
-    id integer NOT NULL,
-    user_created uuid,
-    date_created timestamp with time zone,
-    user_updated uuid,
-    date_updated timestamp with time zone,
-    type character varying(255),
-    label character varying(255)
-);
-
-
---
--- Name: lab_options_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.lab_options_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: lab_options_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.lab_options_id_seq OWNED BY public.lab_options.id;
-
-
---
--- Name: lab_orders; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.lab_orders (
-    id integer NOT NULL,
-    user_created uuid,
-    date_created timestamp with time zone,
-    user_updated uuid,
-    date_updated timestamp with time zone,
-    side character varying(255),
-    breast_quadrant integer,
-    breast_quadrant_other character varying(255),
-    patho integer,
-    patho_other character varying(255),
-    cyto integer,
-    cyto_other character varying(255)
-);
-
-
---
--- Name: lab_orders_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.lab_orders_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: lab_orders_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.lab_orders_id_seq OWNED BY public.lab_orders.id;
-
-
---
--- Name: lab_plans; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.lab_plans (
-    id integer NOT NULL,
-    user_created uuid,
-    date_created timestamp with time zone,
-    user_updated uuid,
-    date_updated timestamp with time zone,
-    side character varying(255),
-    nurse_work integer,
-    breast_quadrant integer,
-    breast_quadrant_other character varying(255),
-    patho integer,
-    patho_other character varying(255),
-    cyto integer,
-    cyto_other character varying(255)
-);
-
-
---
--- Name: lab_plans_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.lab_plans_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: lab_plans_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.lab_plans_id_seq OWNED BY public.lab_plans.id;
 
 
 --
@@ -3124,7 +3053,7 @@ CREATE TABLE public.notification (
     date_created timestamp with time zone,
     user_updated uuid,
     date_updated timestamp with time zone,
-    status character varying(255),
+    status character varying(255) DEFAULT 'inbox'::character varying,
     doctor_work integer,
     is_front_noti boolean DEFAULT false,
     from_dept character varying(255),
@@ -3214,7 +3143,6 @@ CREATE TABLE public.nurse_work (
     date_updated timestamp with time zone,
     appointment bigint,
     status character varying(255),
-    examination_elsewhere character varying(255),
     mg_before boolean DEFAULT false,
     us_before boolean DEFAULT false,
     referring_physician uuid,
@@ -3252,7 +3180,8 @@ CREATE TABLE public.nurse_work (
     procedure_step integer DEFAULT 1,
     is_summary_mode boolean DEFAULT false,
     st_procedure_step integer DEFAULT 1,
-    us_procedure_step integer DEFAULT 1
+    us_procedure_step integer DEFAULT 1,
+    tech_recieve_time timestamp with time zone
 );
 
 
@@ -3429,8 +3358,6 @@ CREATE TABLE public.pacs_sync_info (
     sync_file_name character varying(255) DEFAULT NULL::character varying,
     patient integer,
     exam integer,
-    end_time timestamp without time zone,
-    start_time timestamp without time zone,
     num_of_mam integer,
     num_of_spot integer,
     num_of_implant integer,
@@ -3439,8 +3366,10 @@ CREATE TABLE public.pacs_sync_info (
     confirm_num_of_mam integer,
     confirm_num_of_spot integer,
     confirm_num_of_implant integer,
-    called_time timestamp without time zone,
-    spot_called_time timestamp without time zone
+    start_time timestamp with time zone,
+    end_time timestamp with time zone,
+    called_time timestamp with time zone,
+    spot_called_time timestamp with time zone
 );
 
 
@@ -4471,8 +4400,73 @@ CREATE TABLE public.special_procedure_plans (
     breast_compression integer,
     breast_compression_other character varying(255),
     approach integer,
-    approach_other character varying(255)
+    approach_other character varying(255),
+    is_cyto_request boolean DEFAULT false,
+    is_patho_request boolean DEFAULT false,
+    patho_lab_other text
 );
+
+
+--
+-- Name: special_procedure_plans_bx_options; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.special_procedure_plans_bx_options (
+    id integer NOT NULL,
+    special_procedure_plans_id integer,
+    bx_options_id integer
+);
+
+
+--
+-- Name: special_procedure_plans_bx_options_1; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.special_procedure_plans_bx_options_1 (
+    id integer NOT NULL,
+    special_procedure_plans_id integer,
+    bx_options_id integer
+);
+
+
+--
+-- Name: special_procedure_plans_bx_options_1_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.special_procedure_plans_bx_options_1_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: special_procedure_plans_bx_options_1_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.special_procedure_plans_bx_options_1_id_seq OWNED BY public.special_procedure_plans_bx_options_1.id;
+
+
+--
+-- Name: special_procedure_plans_bx_options_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.special_procedure_plans_bx_options_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: special_procedure_plans_bx_options_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.special_procedure_plans_bx_options_id_seq OWNED BY public.special_procedure_plans_bx_options.id;
 
 
 --
@@ -4493,6 +4487,37 @@ CREATE SEQUENCE public.special_procedure_plans_id_seq
 --
 
 ALTER SEQUENCE public.special_procedure_plans_id_seq OWNED BY public.special_procedure_plans.id;
+
+
+--
+-- Name: special_procedure_plans_lab_list; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.special_procedure_plans_lab_list (
+    id integer NOT NULL,
+    special_procedure_plans_id integer,
+    lab_list_id integer
+);
+
+
+--
+-- Name: special_procedure_plans_lab_list_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.special_procedure_plans_lab_list_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: special_procedure_plans_lab_list_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.special_procedure_plans_lab_list_id_seq OWNED BY public.special_procedure_plans_lab_list.id;
 
 
 --
@@ -4520,15 +4545,52 @@ CREATE TABLE public.special_procedures (
     scrub uuid,
     tech_circulate uuid,
     equipment integer,
-    specimen_count numeric(10,5),
-    lab character varying(255),
+    specimen_count numeric(10,2),
     nurse_work integer,
     breast_quadrant integer,
     breast_quadrant_other character varying(255),
     breast_compression integer,
     breast_compression_other character varying(255),
-    specimen_count_unit character varying(255)
+    specimen_count_unit character varying(255),
+    charged boolean DEFAULT false,
+    is_cyto_request boolean DEFAULT false,
+    is_patho_request boolean DEFAULT false,
+    patho_lab_other text,
+    equipment_count numeric(10,2),
+    lab_sent_date timestamp without time zone,
+    lab_result_receive_date timestamp without time zone
 );
+
+
+--
+-- Name: special_procedures_bx_options; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.special_procedures_bx_options (
+    id integer NOT NULL,
+    special_procedures_id integer,
+    bx_options_id integer
+);
+
+
+--
+-- Name: special_procedures_bx_options_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.special_procedures_bx_options_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: special_procedures_bx_options_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.special_procedures_bx_options_id_seq OWNED BY public.special_procedures_bx_options.id;
 
 
 --
@@ -4552,13 +4614,43 @@ ALTER SEQUENCE public.special_procedures_id_seq OWNED BY public.special_procedur
 
 
 --
+-- Name: special_procedures_lab_list; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.special_procedures_lab_list (
+    id integer NOT NULL,
+    special_procedures_id integer,
+    lab_list_id integer
+);
+
+
+--
+-- Name: special_procedures_lab_list_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.special_procedures_lab_list_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: special_procedures_lab_list_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.special_procedures_lab_list_id_seq OWNED BY public.special_procedures_lab_list.id;
+
+
+--
 -- Name: special_procedures_lab_orders; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.special_procedures_lab_orders (
     id integer NOT NULL,
-    special_procedures_id integer,
-    lab_orders_id integer
+    special_procedures_id integer
 );
 
 
@@ -6025,6 +6117,13 @@ ALTER TABLE ONLY public.external_exam_records ALTER COLUMN id SET DEFAULT nextva
 
 
 --
+-- Name: finance_cost id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finance_cost ALTER COLUMN id SET DEFAULT nextval('public.finance_cost_id_seq'::regclass);
+
+
+--
 -- Name: finance_work id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -6071,27 +6170,6 @@ ALTER TABLE ONLY public.lab_cost ALTER COLUMN id SET DEFAULT nextval('public.lab
 --
 
 ALTER TABLE ONLY public.lab_list ALTER COLUMN id SET DEFAULT nextval('public.lab_list_id_seq'::regclass);
-
-
---
--- Name: lab_options id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_options ALTER COLUMN id SET DEFAULT nextval('public.lab_options_id_seq'::regclass);
-
-
---
--- Name: lab_orders id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_orders ALTER COLUMN id SET DEFAULT nextval('public.lab_orders_id_seq'::regclass);
-
-
---
--- Name: lab_plans id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_plans ALTER COLUMN id SET DEFAULT nextval('public.lab_plans_id_seq'::regclass);
 
 
 --
@@ -6375,10 +6453,45 @@ ALTER TABLE ONLY public.special_procedure_plans ALTER COLUMN id SET DEFAULT next
 
 
 --
+-- Name: special_procedure_plans_bx_options id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedure_plans_bx_options ALTER COLUMN id SET DEFAULT nextval('public.special_procedure_plans_bx_options_id_seq'::regclass);
+
+
+--
+-- Name: special_procedure_plans_bx_options_1 id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedure_plans_bx_options_1 ALTER COLUMN id SET DEFAULT nextval('public.special_procedure_plans_bx_options_1_id_seq'::regclass);
+
+
+--
+-- Name: special_procedure_plans_lab_list id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedure_plans_lab_list ALTER COLUMN id SET DEFAULT nextval('public.special_procedure_plans_lab_list_id_seq'::regclass);
+
+
+--
 -- Name: special_procedures id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.special_procedures ALTER COLUMN id SET DEFAULT nextval('public.special_procedures_id_seq'::regclass);
+
+
+--
+-- Name: special_procedures_bx_options id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedures_bx_options ALTER COLUMN id SET DEFAULT nextval('public.special_procedures_bx_options_id_seq'::regclass);
+
+
+--
+-- Name: special_procedures_lab_list id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedures_lab_list ALTER COLUMN id SET DEFAULT nextval('public.special_procedures_lab_list_id_seq'::regclass);
 
 
 --
@@ -7089,6 +7202,14 @@ ALTER TABLE ONLY public.external_exam_records
 
 
 --
+-- Name: finance_cost finance_cost_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finance_cost
+    ADD CONSTRAINT finance_cost_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: finance_work finance_work_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7142,30 +7263,6 @@ ALTER TABLE ONLY public.lab_cost
 
 ALTER TABLE ONLY public.lab_list
     ADD CONSTRAINT lab_list_pkey PRIMARY KEY (id);
-
-
---
--- Name: lab_options lab_options_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_options
-    ADD CONSTRAINT lab_options_pkey PRIMARY KEY (id);
-
-
---
--- Name: lab_orders lab_orders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_orders
-    ADD CONSTRAINT lab_orders_pkey PRIMARY KEY (id);
-
-
---
--- Name: lab_plans lab_plans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_plans
-    ADD CONSTRAINT lab_plans_pkey PRIMARY KEY (id);
 
 
 --
@@ -7505,11 +7602,51 @@ ALTER TABLE ONLY public.settings
 
 
 --
+-- Name: special_procedure_plans_bx_options_1 special_procedure_plans_bx_options_1_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedure_plans_bx_options_1
+    ADD CONSTRAINT special_procedure_plans_bx_options_1_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: special_procedure_plans_bx_options special_procedure_plans_bx_options_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedure_plans_bx_options
+    ADD CONSTRAINT special_procedure_plans_bx_options_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: special_procedure_plans_lab_list special_procedure_plans_lab_list_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedure_plans_lab_list
+    ADD CONSTRAINT special_procedure_plans_lab_list_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: special_procedure_plans special_procedure_plans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.special_procedure_plans
     ADD CONSTRAINT special_procedure_plans_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: special_procedures_bx_options special_procedures_bx_options_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedures_bx_options
+    ADD CONSTRAINT special_procedures_bx_options_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: special_procedures_lab_list special_procedures_lab_list_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedures_lab_list
+    ADD CONSTRAINT special_procedures_lab_list_pkey PRIMARY KEY (id);
 
 
 --
@@ -7721,13 +7858,6 @@ CREATE INDEX examination_case_owner_doctor_index ON public.examination USING btr
 --
 
 CREATE INDEX examination_case_owner_tech_index ON public.examination USING btree (case_owner_tech);
-
-
---
--- Name: examination_exam_date_index; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX examination_exam_date_index ON public.examination USING btree (exam_date);
 
 
 --
@@ -8387,6 +8517,14 @@ ALTER TABLE ONLY public.billing_discount
 
 ALTER TABLE ONLY public.billing
     ADD CONSTRAINT billing_exam_foreign FOREIGN KEY (exam) REFERENCES public.examination(id) ON DELETE SET NULL;
+
+
+--
+-- Name: billing billing_finance_case_owner_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing
+    ADD CONSTRAINT billing_finance_case_owner_foreign FOREIGN KEY (finance_case_owner) REFERENCES public.directus_users(id) ON DELETE SET NULL;
 
 
 --
@@ -9310,6 +9448,22 @@ ALTER TABLE ONLY public.external_exam_records
 
 
 --
+-- Name: finance_cost finance_cost_user_created_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finance_cost
+    ADD CONSTRAINT finance_cost_user_created_foreign FOREIGN KEY (user_created) REFERENCES public.directus_users(id);
+
+
+--
+-- Name: finance_cost finance_cost_user_updated_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.finance_cost
+    ADD CONSTRAINT finance_cost_user_updated_foreign FOREIGN KEY (user_updated) REFERENCES public.directus_users(id);
+
+
+--
 -- Name: finance_work finance_work_appointment_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9411,110 +9565,6 @@ ALTER TABLE ONLY public.income
 
 ALTER TABLE ONLY public.income
     ADD CONSTRAINT income_user_updated_foreign FOREIGN KEY (user_updated) REFERENCES public.directus_users(id);
-
-
---
--- Name: lab_options lab_options_user_created_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_options
-    ADD CONSTRAINT lab_options_user_created_foreign FOREIGN KEY (user_created) REFERENCES public.directus_users(id);
-
-
---
--- Name: lab_options lab_options_user_updated_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_options
-    ADD CONSTRAINT lab_options_user_updated_foreign FOREIGN KEY (user_updated) REFERENCES public.directus_users(id);
-
-
---
--- Name: lab_orders lab_orders_breast_quadrant_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_orders
-    ADD CONSTRAINT lab_orders_breast_quadrant_foreign FOREIGN KEY (breast_quadrant) REFERENCES public.bx_options(id) ON DELETE SET NULL;
-
-
---
--- Name: lab_orders lab_orders_cyto_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_orders
-    ADD CONSTRAINT lab_orders_cyto_foreign FOREIGN KEY (cyto) REFERENCES public.bx_options(id) ON DELETE SET NULL;
-
-
---
--- Name: lab_orders lab_orders_patho_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_orders
-    ADD CONSTRAINT lab_orders_patho_foreign FOREIGN KEY (patho) REFERENCES public.bx_options(id) ON DELETE SET NULL;
-
-
---
--- Name: lab_orders lab_orders_user_created_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_orders
-    ADD CONSTRAINT lab_orders_user_created_foreign FOREIGN KEY (user_created) REFERENCES public.directus_users(id);
-
-
---
--- Name: lab_orders lab_orders_user_updated_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_orders
-    ADD CONSTRAINT lab_orders_user_updated_foreign FOREIGN KEY (user_updated) REFERENCES public.directus_users(id);
-
-
---
--- Name: lab_plans lab_plans_breast_quadrant_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_plans
-    ADD CONSTRAINT lab_plans_breast_quadrant_foreign FOREIGN KEY (breast_quadrant) REFERENCES public.bx_options(id) ON DELETE SET NULL;
-
-
---
--- Name: lab_plans lab_plans_cyto_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_plans
-    ADD CONSTRAINT lab_plans_cyto_foreign FOREIGN KEY (cyto) REFERENCES public.bx_options(id) ON DELETE SET NULL;
-
-
---
--- Name: lab_plans lab_plans_nurse_work_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_plans
-    ADD CONSTRAINT lab_plans_nurse_work_foreign FOREIGN KEY (nurse_work) REFERENCES public.nurse_work(id) ON DELETE SET NULL;
-
-
---
--- Name: lab_plans lab_plans_patho_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_plans
-    ADD CONSTRAINT lab_plans_patho_foreign FOREIGN KEY (patho) REFERENCES public.bx_options(id) ON DELETE SET NULL;
-
-
---
--- Name: lab_plans lab_plans_user_created_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_plans
-    ADD CONSTRAINT lab_plans_user_created_foreign FOREIGN KEY (user_created) REFERENCES public.directus_users(id);
-
-
---
--- Name: lab_plans lab_plans_user_updated_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.lab_plans
-    ADD CONSTRAINT lab_plans_user_updated_foreign FOREIGN KEY (user_updated) REFERENCES public.directus_users(id);
 
 
 --
@@ -10358,6 +10408,54 @@ ALTER TABLE ONLY public.special_procedure_plans
 
 
 --
+-- Name: special_procedure_plans_bx_options_1 special_procedure_plans_bx_options_1_bx_options_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedure_plans_bx_options_1
+    ADD CONSTRAINT special_procedure_plans_bx_options_1_bx_options_id_foreign FOREIGN KEY (bx_options_id) REFERENCES public.bx_options(id) ON DELETE SET NULL;
+
+
+--
+-- Name: special_procedure_plans_bx_options_1 special_procedure_plans_bx_options_1_speci__209cb0d8_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedure_plans_bx_options_1
+    ADD CONSTRAINT special_procedure_plans_bx_options_1_speci__209cb0d8_foreign FOREIGN KEY (special_procedure_plans_id) REFERENCES public.special_procedure_plans(id) ON DELETE CASCADE;
+
+
+--
+-- Name: special_procedure_plans_bx_options special_procedure_plans_bx_options_bx_options_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedure_plans_bx_options
+    ADD CONSTRAINT special_procedure_plans_bx_options_bx_options_id_foreign FOREIGN KEY (bx_options_id) REFERENCES public.bx_options(id) ON DELETE SET NULL;
+
+
+--
+-- Name: special_procedure_plans_bx_options special_procedure_plans_bx_options_special__552b211a_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedure_plans_bx_options
+    ADD CONSTRAINT special_procedure_plans_bx_options_special__552b211a_foreign FOREIGN KEY (special_procedure_plans_id) REFERENCES public.special_procedure_plans(id) ON DELETE SET NULL;
+
+
+--
+-- Name: special_procedure_plans_lab_list special_procedure_plans_lab_list_lab_list_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedure_plans_lab_list
+    ADD CONSTRAINT special_procedure_plans_lab_list_lab_list_id_foreign FOREIGN KEY (lab_list_id) REFERENCES public.lab_list(id) ON DELETE SET NULL;
+
+
+--
+-- Name: special_procedure_plans_lab_list special_procedure_plans_lab_list_special_p__1f10c11f_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedure_plans_lab_list
+    ADD CONSTRAINT special_procedure_plans_lab_list_special_p__1f10c11f_foreign FOREIGN KEY (special_procedure_plans_id) REFERENCES public.special_procedure_plans(id) ON DELETE CASCADE;
+
+
+--
 -- Name: special_procedure_plans special_procedure_plans_nurse_work_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10438,6 +10536,22 @@ ALTER TABLE ONLY public.special_procedures
 
 
 --
+-- Name: special_procedures_bx_options special_procedures_bx_options_bx_options_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedures_bx_options
+    ADD CONSTRAINT special_procedures_bx_options_bx_options_id_foreign FOREIGN KEY (bx_options_id) REFERENCES public.bx_options(id) ON DELETE SET NULL;
+
+
+--
+-- Name: special_procedures_bx_options special_procedures_bx_options_special_procedures_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedures_bx_options
+    ADD CONSTRAINT special_procedures_bx_options_special_procedures_id_foreign FOREIGN KEY (special_procedures_id) REFERENCES public.special_procedures(id) ON DELETE SET NULL;
+
+
+--
 -- Name: special_procedures special_procedures_equipment_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10446,11 +10560,19 @@ ALTER TABLE ONLY public.special_procedures
 
 
 --
--- Name: special_procedures_lab_orders special_procedures_lab_orders_lab_orders_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: special_procedures_lab_list special_procedures_lab_list_lab_list_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.special_procedures_lab_orders
-    ADD CONSTRAINT special_procedures_lab_orders_lab_orders_id_foreign FOREIGN KEY (lab_orders_id) REFERENCES public.lab_orders(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.special_procedures_lab_list
+    ADD CONSTRAINT special_procedures_lab_list_lab_list_id_foreign FOREIGN KEY (lab_list_id) REFERENCES public.lab_list(id) ON DELETE SET NULL;
+
+
+--
+-- Name: special_procedures_lab_list special_procedures_lab_list_special_procedures_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.special_procedures_lab_list
+    ADD CONSTRAINT special_procedures_lab_list_special_procedures_id_foreign FOREIGN KEY (special_procedures_id) REFERENCES public.special_procedures(id) ON DELETE SET NULL;
 
 
 --
@@ -11153,13 +11275,11 @@ ALTER TABLE ONLY public.worklist
 -- PostgreSQL database dump complete
 --
 
-\unrestrict fQ26F9xg4Wofp2VeAbf0XPwksu1cxIsvPFVoJPhxiCVZhtbqjoYR2OnJ9CmQtle
 
 --
 -- PostgreSQL database dump
 --
 
-\restrict xP8YAlRFmUp7J3tXBxDIfjjxVnn0eax6JSrdGhNQUHAfI8snrSBz4eEy3zc7fLJ
 
 -- Dumped from database version 16.11
 -- Dumped by pg_dump version 16.11
@@ -11211,24 +11331,24 @@ df75acb0-f451-4bc8-b90c-6b3687326220	Super User 2	supervised_user_circle	Super U
 
 COPY public.directus_users (id, first_name, last_name, email, password, location, title, description, tags, avatar, language, tfa_secret, status, role, token, last_access, last_page, provider, external_identifier, auth_data, email_notifications, appearance, theme_dark, theme_light, theme_light_overrides, theme_dark_overrides, username, first_name_en, last_name_en, license_no, send_patho, abbreviation) FROM stdin;
 856bbcdc-704a-42ba-ba93-a19c0eccc3dc	ณิชา	ใจชุ่มบุญ	nicha@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$B/8WBBbe2dtEx2+GAjKMJA$ZzzHyo0LBouMOshWOfLeOgVJK8K01R1mnFR1XKpuBYQ	\N	\N	\N	\N	\N	\N	\N	active	61ecc39b-e02b-4dce-86fa-7b800dcbe443	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	nicha	NICHA	JAICHUMBOON	\N	\N	NJ
-f748f768-61a6-420d-be8b-e48df54a0988	ทดสอบ	หมอ	testdoctor@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$dKH6FCHlAk7dSPPA7CP9aQ$/615NmbSZ4i3y6TNQqHN/Z+/Lhb9kRCTNWFfbTwQGTE	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	2026-05-13 07:22:27.424+00	\N	default	\N	\N	t	\N	\N	\N	\N	\N	testdoctor	Test	Doctor	1150	\N	TD
-1a4564d5-384b-4299-b8de-c2761baa1413	อธิพงษ์	ศรีเจริญจิระ	march@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$m81HuOajDgq7hXcfzFC1Zw$a6eYZAO56sIbMZd0+eyvQLyweKfsR3DwNoBZWI0Gj9Q	\N	\N	\N	\N	84464c15-2f95-422e-9b9a-153d555d3c79	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	2026-05-13 03:51:20.389+00	/content/notification	default	\N	\N	t	\N	\N	\N	\N	\N	march	Atiphong	Srijaroenjira	\N	\N	AS
+a9634c90-69be-4b98-bf67-e00e782712bc	ทดสอบ	ultrasound	testus@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$eNW+mEr14m/6cq+tbrK8sQ$GutdCNweg5NbBFJHvvnbi60ZENPwtk5hqxBJUpuhEog	\N	\N	\N	\N	\N	\N	\N	active	8699d55b-5b19-4e0e-97d5-e716fd49e0d6	\N	2026-07-03 10:23:40.063+00	\N	default	\N	\N	t	\N	\N	\N	\N	\N	testus	Test	US	\N	\N	TU
+f748f768-61a6-420d-be8b-e48df54a0988	ทดสอบ	หมอ	testdoctor@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$dKH6FCHlAk7dSPPA7CP9aQ$/615NmbSZ4i3y6TNQqHN/Z+/Lhb9kRCTNWFfbTwQGTE	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	2026-07-03 10:34:54.006+00	\N	default	\N	\N	t	\N	\N	\N	\N	\N	testdoctor	Test	Doctor	1150	\N	TD
+ac5f0a25-9aac-4440-91c5-5632d172a6c6	เทส	การเงิน	testfinance@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$J0zXMCHShJkESqsxM9gEVQ$2VH1Ia62UjyElOqg84RLWbb0eMDfJro9mZG4G+2Xxd0	\N	\N	\N	\N	\N	\N	\N	active	4c79b35b-3905-44bb-9fe7-3361c16faf8a	\N	2026-07-03 10:57:56.058+00	\N	default	\N	\N	t	\N	\N	\N	\N	\N	testfinance	Test	Finance	\N	\N	\N
+eeae556b-97ea-4681-8df3-1facf4bc11be	ทดสอบ	Front	testfront@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$ax22VVnDeJxmSCJoUZ4H2Q$QyHKDEOTPLqJAUj5zjrN24rxP68szuOm5rEHgbMoCV4	\N	\N	\N	\N	\N	\N	\N	active	787b76ac-185a-4e6a-8cb2-869b39c450b0	\N	2026-07-03 10:18:22.058+00	\N	default	\N	\N	t	\N	\N	\N	\N	\N	testfront	Test	Front	\N	\N	TF
 1e289386-8265-4024-a591-c23faa2fa9d2	พิณทิพย์ 	โชติเสน	pintip@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$hU/UZsBv5sDqVNmy0iMDBA$BE3HS2fdXeixxGXnAH3q1koRLATe8jwUJBsQq8yt32s	\N	\N	\N	\N	\N	\N	\N	active	61ecc39b-e02b-4dce-86fa-7b800dcbe443	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	pintip	\N	\N	\N	\N	\N
 9a0b7913-d97b-479a-9539-df60d8015a76	อริสา	ใยยธรรม	arisa@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$DVMFAC3zcJIVFWF05B6F/g$kYnsomPVMzVoO3LKMw/8seB2G0XA/IbfeNRXMt6d0Zw	\N	\N	\N	\N	\N	\N	\N	active	61ecc39b-e02b-4dce-86fa-7b800dcbe443	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	arisa	Arisa	Yaiyatum	\N	\N	AY
 00f2a015-62ea-4b52-8d2f-c97bf2f15e30	พญ.สุวรา	อิสรไกรศีล	suwara@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$EmEd8xmnZv555r9Cn70o3A$Y/1Z1LtvWhB/c+rav92iT/Hpxg/oQXTqe2BjKqA9ouc	\N	\N	\N	\N	42c59418-fb46-4d75-b2d6-4a060625de11	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	suwara	Suwara	Issaragrisil	43814	\N	SI
-a9634c90-69be-4b98-bf67-e00e782712bc	ทดสอบ	ultrasound	testus@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$eNW+mEr14m/6cq+tbrK8sQ$GutdCNweg5NbBFJHvvnbi60ZENPwtk5hqxBJUpuhEog	\N	\N	\N	\N	\N	\N	\N	active	8699d55b-5b19-4e0e-97d5-e716fd49e0d6	\N	2026-03-30 03:34:27.694+00	\N	default	\N	\N	t	\N	\N	\N	\N	\N	testus	Test	US	\N	\N	TU
+1a4564d5-384b-4299-b8de-c2761baa1413	อธิพงษ์	ศรีเจริญจิระ	march@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$m81HuOajDgq7hXcfzFC1Zw$a6eYZAO56sIbMZd0+eyvQLyweKfsR3DwNoBZWI0Gj9Q	\N	\N	\N	\N	84464c15-2f95-422e-9b9a-153d555d3c79	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	2026-07-03 06:18:45.37+00	/content/notification	default	\N	\N	t	\N	\N	\N	\N	\N	march	Atiphong	Srijaroenjira	\N	\N	AS
 da209e7e-852a-4c19-a3b6-0e8489385c2f	พญ.พร้อมเพียง	ศรีชัยกุล	phromphiang@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$dAXaO7vrvBd2UgTu/9AJKQ$JSUlTq8S8S6EeJsU8ZBEr+oQwpT/bmalRk9rzDrE4Rk	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	phromphiang	Phromphiang	Srichaikul	27796	\N	PS
 0f000ad7-172f-4f1a-b079-e955fe83136d	นพ.จุฑาเกียรติ	เครือตราชู	chutakiat@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$ZGBY+GAvp8b3pdYnTRe9/A$N49Q4ZFH1CIqHorkVnS7GWa5p4sJJuSZitbMhTH78xE	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	chutakiat	Chutakiat	Kruatrachue, M.D.	\N	\N	CK
 91907b1c-d77f-4904-b1e9-80582afcce6a	พญ.อชิรญา	ปัญญาวัฒนานุกุล	achiraya@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$dEjHJbig3BAwbF4o0K2wrQ$qFLO/0aaPiwdzUFhGPe6cJzhZ5kA3ETdZ0eSZo2G0kw	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	achiraya	Achiraya	Punyawatthananukool	47786	\N	AP
 274e4dfc-5cae-4b37-b469-28cc9a5cae40	ทดสอบ	รับบริจาค	testcenterincome@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$jRCHb67TsEFEwJDGY/0eMQ$E9c1pfnwTX0GqBa1dTUb7qMMroF9/b4eyZ5R6B0GY2w	\N	\N	\N	\N	\N	\N	\N	active	22a72313-f537-4fa0-8b46-38894aeb86fe	\N	2025-07-13 22:20:31.458+00	\N	default	\N	\N	t	\N	\N	\N	\N	\N	testcenterincome	\N	\N	\N	\N	\N
 0281d237-ee0a-4880-b82e-f09437ee8b77	พญ.จิดาภา	เอี่ยมวัฒน์	jidapa@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$iPVSCL3eQs5NBrSA40ydXA$UZ7aWt454Y2fQCrK2RCItLteDyf0fdv7lMdvedC5ykM	\N	\N	\N	\N	f79052b0-2d53-43d2-9eb8-499580fdbbd1	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	jidapa	Jidapa	Iamwat., M.D.	52523	\N	JI
 a5d5c275-806e-4024-827a-0068a570ac34	กลมลักษณ์ 	วงศ์สุวัฒน์	kamonlak@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$h/KxB4PkapG4f/9L6H3jQg$LRqvNdEJAwJbPp9F5hrpj7VyrQQfXjt0AQ81fl9ex1Q	\N	\N	\N	\N	\N	\N	\N	active	61ecc39b-e02b-4dce-86fa-7b800dcbe443	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	kamonlak	Kamonlak	Wongsuwat	\N	\N	KL
-e9f7b4ee-9489-4230-bd70-240ca91d6d21	ทดสอบ	พยาบาล	testnurse@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$H+dMaFujCUI3HXh+qW9/9w$RrGXXNlU+Hcxse5h+9L5TPl5YH8WpNivaX6upSIrTQE	\N	\N	\N	\N	\N	\N	\N	active	904055b8-7ab9-4c76-9420-f13ee21a0755	\N	2026-05-13 08:16:29.039+00	\N	default	\N	\N	t	\N	\N	\N	\N	\N	testnurse	Test	Nurse	\N	\N	TN
+7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	User กลาง	แผนก Tech	testtech@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$f3ha4nFwle9uPFWZsjxOJg$ktxmzZoYL1u19zaCjyR57QlF4uncmJxWu2U0FeJyeUk	\N	\N	user สำหรับทดสอบผู้ใช้งาน tech	\N	\N	\N	\N	active	61ecc39b-e02b-4dce-86fa-7b800dcbe443	\N	2026-07-03 10:21:13.118+00	\N	default	\N	\N	t	\N	\N	\N	\N	\N	testtech	Center	Technician	\N	\N	TT
 31e59f09-6b5c-431f-9fc8-ae277c72b064	ศิริกุล	ไชยเรืองศิริกุล	sirikul@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$j++MTyvLF8xG4GijD01MuQ$hlOtdWWF6SdIMd0af2PVVAMS06tJXNFnYKHiE9eIZ0I	\N	\N	\N	\N	\N	\N	\N	active	61ecc39b-e02b-4dce-86fa-7b800dcbe443	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	sirikul	Sirikul	Chairuangsirikul	\N	\N	SI
 974ffcae-efb0-483f-8aa3-d605a53594d0	ภณิตา	งามทิพานนท์	panita@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$w/jOI9OZhBI9NRs6GF+C3w$R2xdkha/P2d9jMoBeL6DQoAXQfkjk0xKtLBKrSg5nhg	\N	\N	\N	\N	\N	\N	\N	active	61ecc39b-e02b-4dce-86fa-7b800dcbe443	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	panita	Panita	Ngamtipanon	\N	\N	PN
-ac5f0a25-9aac-4440-91c5-5632d172a6c6	เทส	การเงิน	testfinance@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$J0zXMCHShJkESqsxM9gEVQ$2VH1Ia62UjyElOqg84RLWbb0eMDfJro9mZG4G+2Xxd0	\N	\N	\N	\N	\N	\N	\N	active	4c79b35b-3905-44bb-9fe7-3361c16faf8a	\N	2026-05-13 07:25:12.859+00	\N	default	\N	\N	t	\N	\N	\N	\N	\N	testfinance	Test	Finance	\N	\N	\N
-7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	User กลาง	แผนก Tech	testtech@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$f3ha4nFwle9uPFWZsjxOJg$ktxmzZoYL1u19zaCjyR57QlF4uncmJxWu2U0FeJyeUk	\N	\N	user สำหรับทดสอบผู้ใช้งาน tech	\N	\N	\N	\N	active	61ecc39b-e02b-4dce-86fa-7b800dcbe443	\N	2026-05-13 07:19:14.245+00	\N	default	\N	\N	t	\N	\N	\N	\N	\N	testtech	Center	Technician	\N	\N	TT
-eeae556b-97ea-4681-8df3-1facf4bc11be	ทดสอบ	Front	testfront@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$ax22VVnDeJxmSCJoUZ4H2Q$QyHKDEOTPLqJAUj5zjrN24rxP68szuOm5rEHgbMoCV4	\N	\N	\N	\N	\N	\N	\N	active	787b76ac-185a-4e6a-8cb2-869b39c450b0	\N	2026-05-13 09:05:54.326+00	\N	default	\N	\N	t	\N	\N	\N	\N	\N	testfront	Test	Front	\N	\N	TF
+e9f7b4ee-9489-4230-bd70-240ca91d6d21	ทดสอบ	พยาบาล	testnurse@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$H+dMaFujCUI3HXh+qW9/9w$RrGXXNlU+Hcxse5h+9L5TPl5YH8WpNivaX6upSIrTQE	\N	\N	\N	\N	\N	\N	\N	active	904055b8-7ab9-4c76-9420-f13ee21a0755	\N	2026-07-02 07:42:42.495+00	\N	default	\N	\N	t	\N	\N	\N	\N	\N	testnurse	Test	Nurse	\N	\N	TN
 2eca2a32-377f-4036-8959-433f92864e84	อารยา	สาตร์เพ็ชร	araya@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$YqpJiul+RrU0U1+k1b9q+w$T99Ou3q2P8PlbJ9dErKCQ0VEsCFYdfWkQOvgxmsOvnM	\N	\N	\N	\N	\N	\N	\N	active	8e7ed584-4109-45ee-a739-59ee9d31322c	\N	2025-03-17 16:33:38.692+00	\N	default	\N	\N	t	\N	\N	\N	\N	\N	araya	Araya	Sathpeth	\N	\N	AS
 52d4c98f-fa67-43b4-9c65-b85a74228b46	กัลยานี	เขียวเกษม	kalayanee@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$TABHrN9475dBvTpjclWPfQ$MHlYW9I+VxrsqgiTXSvJX/tsgeGg6btYIplhi54OOko	\N	\N	\N	\N	\N	\N	\N	active	8e7ed584-4109-45ee-a739-59ee9d31322c	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	kalayanee	\N	\N	\N	\N	KK
 b5527927-caca-4cf5-a912-09e37d446e6b	อังคณา	คณิชชาพงษ์	aungkana@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$+vnU+/L5vgZCKANXTqJdbA$7fZPh2uNjYFCPjt2Brm+yqlCIBAt3Qf182m9vPhzW7M	\N	\N	\N	\N	\N	\N	\N	active	61ecc39b-e02b-4dce-86fa-7b800dcbe443	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	aungkana	Aungkana	K.	\N	\N	AK
@@ -11308,8 +11428,8 @@ f5a76f7a-a391-42d4-a624-b0a214b86580	พญ.วรรณวรางค์	ส�
 e462a49e-1496-459b-958f-f9a167691483	พญ.วิยะดา	ภู่พัฒน์	wiyada@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$h/sq0XT5XdDCsMXgodqVTA$Xmw628giiFGZ/ZFx+U0bsCRMPf1T6utEtgg2jIXkREg	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	wiyada	Wiyada	Bhoopat, M.D.	\N	\N	WB
 87a08917-65a8-4025-9ed7-f7fb42ddf3f8	พญ.วิไลพร	โพธิสุวรรณ	wilaiporn@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$BIVFluC9DvZneoZscmei0A$QFLR5WEL9N28flFAzcWcG99Wg9BDmftEMV9h8lORyv8	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	wilaiporn	Wilaiporn	Bhothisuwan, M.D.	\N	\N	WB
 8aad68d0-16b1-42d1-bc0c-d743cbf90c66	พญ.วสุนธรา	บุญศรี	wasunthara@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$N6L/w2vU3cQaUeGpWnqNYg$BUWBVqwEKkzSaEDv2GJ7FzuMkciZhODzsdEuxkDGWbk	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	wasunthara	Wasunthara	Boonsri	37490	\N	\N
-14bb706e-8573-452f-993a-20254f24d730	พญ.วัชระ	วิมลทรง	bas@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$2Xioz0aY9GqhHwejzanZcA$FAd52GbtsagDiWtAo5xPfMRuSnR/lIYI0YG+ZwTrt9s	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	2026-05-13 02:25:08.647+00	/users/14bb706e-8573-452f-993a-20254f24d730	default	\N	\N	t	\N	\N	\N	\N	\N	bas	Watchara	Wimonsong, MD	11501112	\N	WW
-f0e0b60d-69de-45ef-aab0-14da792a6145	Admin	User	dev@bytebetter.io	$argon2id$v=19$m=65536,t=3,p=4$vyvcBijhxTPfg3W2wYYywQ$LdhhcZn155ao4JBqpvWA4viHWxMBG0iGV14DbQnxFKo	\N	\N	\N	\N	\N	\N	\N	active	b8723b40-9f9c-43b1-9475-d480037e4daf	JktxvezD6FuYp8K4gLI0JawPL2MGN7PF	2026-05-13 14:13:03.406+00	/content/examination/727	default	\N	\N	t	\N	\N	\N	\N	\N	admin	\N	\N	\N	\N	\N
+f0e0b60d-69de-45ef-aab0-14da792a6145	Admin	User	dev@bytebetter.io	$argon2id$v=19$m=65536,t=3,p=4$vyvcBijhxTPfg3W2wYYywQ$LdhhcZn155ao4JBqpvWA4viHWxMBG0iGV14DbQnxFKo	\N	\N	\N	\N	\N	\N	\N	active	b8723b40-9f9c-43b1-9475-d480037e4daf	JktxvezD6FuYp8K4gLI0JawPL2MGN7PF	2026-07-03 11:08:43.277+00	/content/patient_info	default	\N	\N	t	\N	\N	\N	\N	\N	admin	\N	\N	\N	\N	\N
+14bb706e-8573-452f-993a-20254f24d730	พญ.วัชระ	วิมลทรง	bas@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$2Xioz0aY9GqhHwejzanZcA$FAd52GbtsagDiWtAo5xPfMRuSnR/lIYI0YG+ZwTrt9s	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	2026-07-03 02:50:50.88+00	/users/14bb706e-8573-452f-993a-20254f24d730	default	\N	\N	t	\N	\N	\N	\N	\N	bas	Watchara	Wimonsong, MD	11501112	\N	WW
 e281d11c-16ba-47f5-8334-ec6b06581823	อ.ดร.ดุลยพัฒน์	สงวนรักษา	dulyapat@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$GAsYXxvZy6NvVcycofuxJw$DN0ii6LLzt+Mbmp2eryqa4hKJnjgpjbMjYpy71a7Qaw	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	dulyapat	Dr.Dulyapat	Sanguanraksa	39217	\N	DS
 573fe3c3-5913-43f4-b3a6-7e550a3de1a4	นพ.ธนากร	ธราพงษ์พันธ์	thanakorn@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$ehRr9x93GPezlZbDqLyOOg$7HhxnEywDb9gdfGmtkkM72Ri2IWq3+5sOb9tSGYVsdY	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	thanakorn	Dr.Thanakorn	Tharaphongphan	43041	\N	TT
 8752ba4f-47ee-4736-982e-cdf1a022592a	ผศ.ดร.นพ.ประดิษฐ์	รัชตามุขยนันท์	pradit@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$KfwgWyzwMZwrNzLtkwkjzQ$DtPkq6Rpl83pS47579qda1SFPrtQszUgo8kJqTGry5Y	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	pradit	Asst. Prof. Dr.Pradit	Ratchathamukyanan	24311	\N	PR
@@ -11322,9 +11442,9 @@ c8d932ba-71e6-4737-8c1d-741d38ab2c60	อ.พญ.ณัฐกาญจน์	จ�
 1d773ed4-2303-49e1-93cb-0bfe48543385	รศ.ดร.สืบวงศ์	จุฑาภิสิทธิ์	suebuang@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$atBPEUddzEhs7DBd7B+m8A$gt/BpCHTu0dSmy/hnq5GpARTc+jQikWQz0pLgDoprC8	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	suebuang	Assoc. Prof. Dr.Suebuang	Juthaphisit	19886	\N	SJ
 f54b8019-5ac7-42a3-9d0f-a91d8a17acc2	ศ.คลินิก นพ.อดุลย์	รัตนวิจิตราศิลป์	adul@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$OHqsZ6qJgyXXEtm4ial/bg$ONCL8hy2NCIYlky4C/JWJ60uSyCp6ewDwfVAOXnmBi0	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	adul	Clinical Professor Dr.Adul	Rattanavijitrasilp	13114	\N	AR
 610a2b13-cde4-493a-956d-26c70700accb	รศ.นพ.กริช	โพธสุวรรณ	krit@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$CcjVmS/OBV5AS6+kgX9cog$0Qs9wsh7+WaFn55ogF9RYPnAKxfgfLP9gpNP/cTcPGs	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	krit	Assoc. Prof. Dr.Krit	Phothisuwan	05172	\N	KP
-bd338144-090c-40e1-b016-f89cf67be5ad	ดร.พญ.มหาสมุทร	ชาวสมุทร	stamp@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$f5fDOyNSetzNYxDaKZVDRA$UHapAd0V7m1rDTFR3OYb8v6kuMqmLSi7xQHdUXU6EeQ	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	2026-05-13 15:09:46.586+00	/users/bd338144-090c-40e1-b016-f89cf67be5ad	default	\N	\N	t	\N	\N	\N	\N	\N	stamp	Mahasamut	Chaosamut	imba96	\N	MC
+bd338144-090c-40e1-b016-f89cf67be5ad	ดร.พญ.มหาสมุทร	ชาวสมุทร	stamp@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$f5fDOyNSetzNYxDaKZVDRA$UHapAd0V7m1rDTFR3OYb8v6kuMqmLSi7xQHdUXU6EeQ	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	2026-07-02 16:43:08.522+00	/users/bd338144-090c-40e1-b016-f89cf67be5ad	default	\N	\N	t	\N	\N	\N	\N	\N	stamp	Mahasamut	Chaosamut	imba96	\N	MC
+859fd704-aec3-446d-8c4e-e3d6f33a170c	ธนาวุฒิ	เสมอใจ	service@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$QWoaxpK+r2XdHUxliv5+lw$CA3BkccztbBmFNkNhrFdZ8I0bGZ7tibBQTT/8yaFRUM	\N	\N	\N	\N	dcf64aba-5049-446b-b830-78d0b8a22e5b	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	2026-07-03 03:36:42.314+00	\N	default	\N	\N	t	\N	\N	\N	\N	\N	service	Thanawoot	Samerjai	\N	\N	\N
 c33ba4a2-2397-4dc9-8a46-c107343f1ffd	พญ.ทิชากร	ศรีอนุชาต	tichakorn@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$+fwG/7yANslYcTzYMP3EPQ$l3pdwBzLDPfEYe4xT4br9k6hc109hYa1uEBGGumZwow	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	2026-02-11 00:46:07.338+00	\N	default	\N	\N	t	\N	\N	\N	\N	\N	tichakorn	Tichakorn	Srianujata, M.D.	27249	\N	TS
-859fd704-aec3-446d-8c4e-e3d6f33a170c	ธนาวุฒิ	เสมอใจ	service@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$QWoaxpK+r2XdHUxliv5+lw$CA3BkccztbBmFNkNhrFdZ8I0bGZ7tibBQTT/8yaFRUM	\N	\N	\N	\N	\N	\N	\N	active	c2993f1f-d1c8-4444-9d02-76909eca822a	\N	2026-04-01 22:59:29.235+00	\N	default	\N	\N	t	\N	\N	\N	\N	\N	service	Thanawoot	Samerjai	\N	\N	\N
 e64dcb59-a744-46e5-bd27-4d50c82ced00	กนกพร 	รุ่งเรืองบูรณะกุล	kanokphorn@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$wXNUSA9fHPS4BC/CGlN7zw$0gyMDkWtIdBlQlaAzByZmDuO3nvQJA5spJ0SUpSpmi4	\N	\N	\N	\N	\N	\N	\N	active	8e7ed584-4109-45ee-a739-59ee9d31322c	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	kanokphorn	Kanokphorn	Rungrueangburanakul	\N	\N	KR
 d3502d8f-ad4c-4ef2-8559-b163e36c2dee	ธนิตนันท์	หมายเจริญ	thanitnan@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$EnQT64dwdrYMXxW5+cntZg$UL1ToTn1Soi4I5eLB18Rb1Mw3Njro7ptgRjmC/QgvNI	\N	\N	\N	\N	\N	\N	\N	active	8e7ed584-4109-45ee-a739-59ee9d31322c	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	thanitnan	Thanitnan	Maicharoen	\N	\N	TM
 970d541e-39d9-4bd4-bb5d-f63374506d32	วัชราภรณ์	คำอิ่น (WK)	watcharaporn@thanyarak.or.th	$argon2id$v=19$m=65536,t=3,p=4$Tt0FRYVnxT1v1emEXACiqA$/RPWePQTI5iGLdGPJFnQWBSigy5Q34wfLEEyui1CSV0	\N	\N	\N	\N	\N	\N	\N	active	8e7ed584-4109-45ee-a739-59ee9d31322c	\N	\N	\N	default	\N	\N	t	\N	\N	\N	\N	\N	watcharaporn	Watcharaporn	Khumin	\N	\N	WK
@@ -11389,49 +11509,45 @@ COPY public.bx_code (id, user_created, date_created, user_updated, date_updated,
 -- Data for Name: bx_options; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-COPY public.bx_options (id, user_created, date_created, user_updated, date_updated, type, value, label, subtype, is_after_hours) FROM stdin;
-10	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:28:42.955+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:16:33.719+00	procedure	rgl	Radar Localization (SCOUT)	\N	f
-11	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:28:49.592+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:17:11.535+00	procedure	sm	Skin Mark	\N	f
-12	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:38:22.693+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:17:17.544+00	quadrant	cen	Center	\N	f
-13	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:38:29.097+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:17:24.76+00	quadrant	sup	Superior	\N	f
-33	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-02-03 10:10:15.62+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:11:54.164+00	approach	lat	Lateral (Outer)	\N	f
-14	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:38:36.968+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:17:31.968+00	quadrant	so	SO	\N	f
-34	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-02 08:45:57.105+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:11:59.981+00	other	other	Other	\N	f
-15	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:38:44.152+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:17:37.821+00	quadrant	out	Outer	\N	f
-35	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-06 06:53:58.926+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:12:39.096+00	lab	gs	Gram stain	cyto	f
-36	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-06 07:25:04.501+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:12:50.68+00	lab	cul	Culture	cyto	f
-16	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:38:50.094+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:17:42.977+00	quadrant	io	IO	\N	f
-37	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-06 07:35:03.775+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:13:32.196+00	lab	pro2	Mycobacteria: Culture PROFILE 2	cyto	f
-38	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-06 07:35:20.874+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:13:38.923+00	lab	afb	AFB	cyto	f
-39	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-06 07:36:07.526+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:13:42.913+00	lab	er	ER	patho	f
-17	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:38:56.924+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:17:50.033+00	quadrant	inf	Inferior	\N	f
-18	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:40:22.598+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:17:55.293+00	quadrant	ii	II	\N	f
-19	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:40:29.117+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:18:02.308+00	quadrant	inn	Inner	\N	f
-20	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:40:34.604+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:18:08.362+00	quadrant	si	SI	\N	f
-21	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:40:41.174+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:18:48.238+00	quadrant	ax	Axilla	\N	f
-40	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-06 07:36:21.511+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:13:47.874+00	lab	pr	PR	patho	f
-41	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-06 07:36:32.708+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:13:56.028+00	lab	her2	HER2	patho	f
-42	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-06 07:40:35.763+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:14:07.971+00	lab	ki67	Ki-67	patho	f
-1	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:19:29.769+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:14:15.999+00	technique	us	Ultrasound guided	\N	t
-30	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-02-03 10:09:22.554+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:10:59.125+00	approach	sup	Superior (Upper)	\N	f
-26	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-02-03 10:08:24.178+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:11:07.42+00	patient position	prone	Prone	\N	f
-27	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-02-03 10:08:38.475+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:11:16.869+00	breast compression	none	None	\N	f
-28	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-02-03 10:08:47.231+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:11:25.209+00	breast compression	cc	CC	\N	f
-29	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-02-03 10:08:56.706+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:11:35.003+00	breast compression	ml	ML	\N	f
-31	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-02-03 10:09:43.928+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:11:41.481+00	approach	inf	Inferior (Lower)	\N	f
-32	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-02-03 10:09:58.977+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:11:48.849+00	approach	med	Medial (Inner)	\N	f
-2	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:20:01.206+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:14:20.678+00	technique	st	Stereotactic guided	\N	f
-3	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:21:21.623+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:14:25.572+00	procedure	cnb	CNB	\N	t
-4	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:24:27.065+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:14:30.268+00	procedure	vbaa	VABB	\N	f
-5	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:25:39.19+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:14:34.761+00	procedure	fna	FNA	\N	t
-6	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:25:56.614+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:14:39.607+00	procedure	asp	Aspiration	\N	t
-7	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:26:16.604+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:14:45.945+00	procedure	nl	Needle Localization	\N	f
-8	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:28:19.052+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:14:53.89+00	procedure	ci	Clip Insertion	\N	t
-9	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:28:29.681+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:15:07.609+00	procedure	cip	Clip Insertion (post VABB)	\N	f
-22	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:40:47.717+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:18:55.104+00	quadrant	cw	Chest wall	\N	f
-23	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:40:57.253+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:19:23.937+00	quadrant	scv	Supraclavicular	\N	f
-24	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:41:02.389+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:19:33.904+00	quadrant	icv	Infraclavicular	\N	f
-25	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-02-03 10:08:12.203+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:20:18.629+00	patient position	spn	Supine	\N	f
+COPY public.bx_options (id, user_created, date_created, user_updated, date_updated, type, value, label, subtype, is_after_hours, is_default_cyto, is_default_patho) FROM stdin;
+3	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:21:21.623+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-27 04:42:02.544+00	procedure	cnb	CNB	\N	t	f	t
+10	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:28:42.955+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:16:33.719+00	procedure	rgl	Radar Localization (SCOUT)	\N	f	f	f
+11	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:28:49.592+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:17:11.535+00	procedure	sm	Skin Mark	\N	f	f	f
+12	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:38:22.693+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:17:17.544+00	quadrant	cen	Center	\N	f	f	f
+13	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:38:29.097+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:17:24.76+00	quadrant	sup	Superior	\N	f	f	f
+33	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-02-03 10:10:15.62+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:11:54.164+00	approach	lat	Lateral (Outer)	\N	f	f	f
+14	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:38:36.968+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:17:31.968+00	quadrant	so	SO	\N	f	f	f
+34	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-02 08:45:57.105+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:11:59.981+00	other	other	Other	\N	f	f	f
+15	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:38:44.152+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:17:37.821+00	quadrant	out	Outer	\N	f	f	f
+16	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:38:50.094+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:17:42.977+00	quadrant	io	IO	\N	f	f	f
+4	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:24:27.065+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-27 04:42:13.946+00	procedure	vbaa	VABB	\N	f	f	t
+5	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:25:39.19+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-27 10:27:05.142+00	procedure	fna	FNA	\N	t	t	f
+39	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-06 07:36:07.526+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:13:42.913+00	lab	er	ER	patho	f	f	f
+17	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:38:56.924+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:17:50.033+00	quadrant	inf	Inferior	\N	f	f	f
+18	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:40:22.598+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:17:55.293+00	quadrant	ii	II	\N	f	f	f
+19	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:40:29.117+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:18:02.308+00	quadrant	inn	Inner	\N	f	f	f
+20	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:40:34.604+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:18:08.362+00	quadrant	si	SI	\N	f	f	f
+21	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:40:41.174+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:18:48.238+00	quadrant	ax	Axilla	\N	f	f	f
+40	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-06 07:36:21.511+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:13:47.874+00	lab	pr	PR	patho	f	f	f
+41	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-06 07:36:32.708+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:13:56.028+00	lab	her2	HER2	patho	f	f	f
+42	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-06 07:40:35.763+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:14:07.971+00	lab	ki67	Ki-67	patho	f	f	f
+1	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:19:29.769+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:14:15.999+00	technique	us	Ultrasound guided	\N	t	f	f
+30	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-02-03 10:09:22.554+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:10:59.125+00	approach	sup	Superior (Upper)	\N	f	f	f
+26	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-02-03 10:08:24.178+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:11:07.42+00	patient position	prone	Prone	\N	f	f	f
+27	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-02-03 10:08:38.475+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:11:16.869+00	breast compression	none	None	\N	f	f	f
+28	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-02-03 10:08:47.231+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:11:25.209+00	breast compression	cc	CC	\N	f	f	f
+29	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-02-03 10:08:56.706+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:11:35.003+00	breast compression	ml	ML	\N	f	f	f
+31	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-02-03 10:09:43.928+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:11:41.481+00	approach	inf	Inferior (Lower)	\N	f	f	f
+32	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-02-03 10:09:58.977+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:11:48.849+00	approach	med	Medial (Inner)	\N	f	f	f
+2	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:20:01.206+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:14:20.678+00	technique	st	Stereotactic guided	\N	f	f	f
+7	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:26:16.604+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:14:45.945+00	procedure	nl	Needle Localization	\N	f	f	f
+8	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:28:19.052+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:14:53.89+00	procedure	ci	Clip Insertion	\N	t	f	f
+9	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:28:29.681+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:15:07.609+00	procedure	cip	Clip Insertion (post VABB)	\N	f	f	f
+22	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:40:47.717+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:18:55.104+00	quadrant	cw	Chest wall	\N	f	f	f
+23	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:40:57.253+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:19:23.937+00	quadrant	scv	Supraclavicular	\N	f	f	f
+24	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-03 03:41:02.389+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:19:33.904+00	quadrant	icv	Infraclavicular	\N	f	f	f
+25	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-02-03 10:08:12.203+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-29 08:20:18.629+00	patient position	spn	Supine	\N	f	f	f
+6	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-12-02 17:25:56.614+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-27 04:41:51.747+00	procedure	asp	Aspiration	\N	t	t	f
 \.
 
 
@@ -11918,14 +12034,12 @@ d5371474-98a3-464c-a7f5-7b0d75294dbf	\N	14bb706e-8573-452f-993a-20254f24d730	059
 a13c801c-fad4-43c6-b5ae-566eb6f37eac	\N	859fd704-aec3-446d-8c4e-e3d6f33a170c	2250e075-a2c0-435c-a914-b19edbb1f5b1	2
 dddafea1-f68a-415e-b3d0-64044bd2bbc2	\N	859fd704-aec3-446d-8c4e-e3d6f33a170c	e71dde65-db51-45dc-96cb-983da47dd902	3
 626cce4b-c1ee-4960-be25-982c95f44372	\N	859fd704-aec3-446d-8c4e-e3d6f33a170c	d9d4890f-8ffc-4243-a880-7dc5704d4d0c	4
-53e1433b-f1f6-4c10-a021-a2321e1b3b0c	\N	859fd704-aec3-446d-8c4e-e3d6f33a170c	e91e3d21-4c06-44cf-88db-45cecbeca4ab	5
 27c1b610-6626-4d31-af1f-a439f5ae8971	\N	859fd704-aec3-446d-8c4e-e3d6f33a170c	cc6e04e3-02d7-4422-a70a-021b0a529c2d	6
 a960b62f-8a9b-4b7f-a3e4-cfad4bc7509d	\N	859fd704-aec3-446d-8c4e-e3d6f33a170c	0317e5ce-3983-4493-b76a-ab4c0b9cb6c9	7
 9cdbb4a6-4aee-4bd4-834f-646bd6041a02	\N	859fd704-aec3-446d-8c4e-e3d6f33a170c	898699e3-4b48-4907-ab91-786e6aac07b2	8
 afd168ff-2eff-4d7c-97e8-d201b4df0eae	\N	859fd704-aec3-446d-8c4e-e3d6f33a170c	00b023d2-2be6-44cd-ac18-0797db0a9b33	9
 22d1b550-fecf-460f-8b45-3519a4c00a3d	\N	859fd704-aec3-446d-8c4e-e3d6f33a170c	684de547-f66d-400b-bd82-3446d07b443e	10
 b57a2191-9251-4ced-b7db-419074d73cd3	\N	859fd704-aec3-446d-8c4e-e3d6f33a170c	6a100111-7584-4df9-8a61-122c023e978a	11
-42e78296-2c76-4cb3-9457-0a273a080858	\N	859fd704-aec3-446d-8c4e-e3d6f33a170c	9b36f75a-3274-4773-ac09-5a73da7d60aa	12
 6d745fcf-0948-4615-8953-b646bc9e3fed	\N	859fd704-aec3-446d-8c4e-e3d6f33a170c	daec5484-1f3c-44ec-8681-0dce364ca752	13
 509776e9-90f0-4471-a8a3-c30a8c14ec31	\N	859fd704-aec3-446d-8c4e-e3d6f33a170c	a860cd29-129e-46cc-8272-afb326372386	1
 8674bd04-760f-4297-8c70-e8bcb30f944b	\N	208fb37d-ba6f-42bd-9878-ec9ef0f36291	cc6e04e3-02d7-4422-a70a-021b0a529c2d	\N
@@ -11942,6 +12056,9 @@ e48d9d31-e87b-4e01-bbbe-449e8311b312	\N	e64dcb59-a744-46e5-bd27-4d50c82ced00	cc6
 d87d4a0b-9c1e-421d-9a0e-35f7d3aac13e	8e7ed584-4109-45ee-a739-59ee9d31322c	\N	6a100111-7584-4df9-8a61-122c023e978a	2
 5c1bd57a-39d0-47da-9e7e-020d4f752181	904055b8-7ab9-4c76-9420-f13ee21a0755	\N	d9d4890f-8ffc-4243-a880-7dc5704d4d0c	3
 59e72345-373c-4dba-9305-ec0fd9b9247c	61ecc39b-e02b-4dce-86fa-7b800dcbe443	\N	daec5484-1f3c-44ec-8681-0dce364ca752	3
+53e1433b-f1f6-4c10-a021-a2321e1b3b0c	\N	859fd704-aec3-446d-8c4e-e3d6f33a170c	e91e3d21-4c06-44cf-88db-45cecbeca4ab	5
+42e78296-2c76-4cb3-9457-0a273a080858	\N	859fd704-aec3-446d-8c4e-e3d6f33a170c	9b36f75a-3274-4773-ac09-5a73da7d60aa	12
+81594949-4de2-468f-8eac-d1456524e41a	\N	859fd704-aec3-446d-8c4e-e3d6f33a170c	6ddcf187-8a3b-4984-8fbe-0391aef5d16f	14
 \.
 
 
@@ -11964,111 +12081,113 @@ tab_recommendation_options	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	6	tab_pr
 doctor_work	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	1	Doctor	open	\N	f
 hospitals	local_hospital	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	4	Systems	open	\N	f
 mammogram_mass	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	5	Examination_Reports	open	\N	f
-place	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	2	Center_Income	open	\N	f
-donate_for	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	3	Center_Income	open	\N	f
 ultrasound	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	6	Examination_Reports	open	\N	f
-bx_statuses	sell	เก็บ statuses ของงาน bx  สำหรับแสดงผลที่ตารางต่างๆ	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	15	Investigation	open	\N	f
 patient_info	spatial_audio_off	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	2	Patient_and_Appointment	open	\N	t
 Worklist	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	3	Main_Process	open	\N	f
 Examination	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	4	Main_Process	open	\N	f
 Center_Income	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	6	Finance	open	\N	f
 ultrasound_mass	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	7	Examination_Reports	open	\N	f
-special_procedures_lab_orders	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	25	\N	open	\N	f
-patient_type	how_to_reg	\N	\N	f	f	\N	status	t	archived	draft	sort	all	#FFA439	\N	1	Investigation	open	\N	f
+donate_type	payments	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	2	Financial	open	\N	t
 appointment	calendar_month	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	3	Patient_and_Appointment	open	\N	f
+patient_type	how_to_reg	\N	\N	f	f	\N	status	t	archived	draft	sort	all	#FFA439	\N	1	Investigation	open	\N	f
+bx_code	barcode_scanner	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	3	Investigation	open	\N	f
 pacs_export_pdf	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	8	Examination_Reports	open	\N	f
 ultrasound_cyst	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	9	Examination_Reports	open	\N	f
 patient_result	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	5	Patient_and_Appointment	open	\N	f
-lab_plans	edit_document	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	2	Procedure_Plans	open	\N	f
-donate_type	payments	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	2	Financial	open	\N	t
+exam_reason	stethoscope	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	4	Investigation	open	\N	f
+Finance	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	7	\N	open	\N	f
 billing	attach_money	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	1	Finance	open	\N	f
 income	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	2	Finance	open	\N	f
-examination_cost	attach_money	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	4	Financial	open	\N	f
+Ultrasound	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	8	\N	open	\N	f
 finance_work	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	3	Finance	open	\N	f
+examination_cost	attach_money	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	4	Financial	open	\N	f
 environment_data	place_item	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	1	\N	open	\N	f
-bx_code	barcode_scanner	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	3	Investigation	open	\N	f
+bx_statuses	sell	เก็บ statuses ของงาน bx  สำหรับแสดงผลที่ตารางต่างๆ	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	16	Investigation	open	\N	f
+form_consent	privacy_tip	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	2	Nurse_Work	open	\N	f
 exam_costs	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	4	Finance	open	\N	f
-Master_Data	database	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	2	\N	closed	\N	f
-Chat_and_Notification	mark_unread_chat_alt	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#2ECDA7	\N	3	\N	closed	\N	f
+finance_cost	attach_money	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	6	Financial	open	\N	f
 ultrasound_work	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	1	Ultrasound	open	\N	f
 beds	bed	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	2	Ultrasound	open	\N	f
-exam_reason	stethoscope	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	4	Investigation	open	\N	f
-Main_Process	browse_activity	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#1787BD	\N	4	\N	open	\N	f
+Master_Data	database	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	2	\N	closed	\N	f
+place	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	2	Center_Income	open	\N	f
 recommend_bx_form	surgical	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	3	Ultrasound	open	\N	f
-lab_orders	labs	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	1	special_procedures	open	\N	f
+Chat_and_Notification	mark_unread_chat_alt	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#2ECDA7	\N	3	\N	closed	\N	f
+Main_Process	browse_activity	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#1787BD	\N	4	\N	open	\N	f
 examination	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	1	Examination	open	\N	f
 examination_recommend_birads45	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	1	Examination_Reports	open	\N	f
 pacs_sync_info	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	2	Examination	open	\N	f
 examination_general	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	2	Examination_Reports	open	\N	f
+F14	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	5	\N	open	\N	f
 mammogram	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	3	Examination_Reports	open	\N	f
 mammogram_cal	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	4	Examination_Reports	open	\N	f
 billing_discount	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	5	Finance	open	\N	f
 address	add_home_work	\N	\N	f	f	\N	status	t	archived	draft	sort	all	\N	\N	1	Patient_and_Appointment	open	\N	f
-form_consent	privacy_tip	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	2	Nurse_Work	open	\N	f
+Doctor	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	6	\N	open	\N	f
 locations	location_on	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	1	Systems	open	\N	f
 holiday	holiday_village	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	2	Systems	open	\N	f
-F14	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	5	\N	open	\N	f
-Doctor	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	6	\N	open	\N	f
+donate_for	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	3	Center_Income	open	\N	f
 queue	format_list_numbered	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	1	Main_Process	open	\N	f
 settings	settings_alert	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	3	Systems	open	\N	f
-tab_location_options	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	3	tab_procedure_options	open	\N	f
-Finance	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	7	\N	open	\N	f
-Ultrasound	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	8	\N	open	\N	f
 notification	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	9	\N	open	\N	f
 Nurse_Work	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#2ECDA7	\N	10	\N	open	\N	f
+tab_location_options	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	3	tab_procedure_options	open	\N	f
 queue_files	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	11	\N	open	\N	f
 appointment_files	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	12	\N	open	\N	f
+special_procedures_lab_orders	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	25	\N	open	\N	f
+tab_exam_option	format_list_numbered	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	11	Investigation	open	\N	f
 tab_procedures_options	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	2	tab_procedure_options	open	\N	f
 tab_technique_options	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	4	tab_procedure_options	open	\N	f
 tab_result_options	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	5	tab_procedure_options	open	\N	f
-tab_assessment_options	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	7	tab_procedure_options	open	\N	f
-medical_certificate	\N	\N	\N	f	f	\N	\N	t	archived	draft	\N	all	\N	\N	4	Patient_and_Appointment	open	\N	f
-tab_exam_option	format_list_numbered	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	11	Investigation	open	\N	f
 certificate_reason	format_list_numbered	\N	\N	f	f	\N	\N	t	archived	draft	\N	all	#FFA439	\N	12	Investigation	open	\N	f
-lab_options	format_list_numbered	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	13	Investigation	open	\N	f
+tab_assessment_options	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	7	tab_procedure_options	open	\N	f
+special_procedures	surgical	\N	\N	f	f	\N	status	t	archived	draft	\N	all	\N	\N	6	Nurse_Work	open	\N	f
+medical_certificate	\N	\N	\N	f	f	\N	\N	t	archived	draft	\N	all	\N	\N	4	Patient_and_Appointment	open	\N	f
 role_menu	settings	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	5	Systems	open	\N	f
 Examination_Reports	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	3	Examination	open	\N	f
 procedure	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	4	Examination	open	\N	f
 time_slot	av_timer	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	6	Systems	open	\N	f
 mobile_location	fire_truck	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	7	Systems	open	\N	f
-patient_result_appointment	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	13	\N	open	\N	f
-tab_procedure_options	format_list_numbered	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	14	Investigation	open	\N	f
-billing_discount_exam_costs	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	20	\N	open	\N	f
-patient_result_files	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	14	\N	open	\N	f
-special_procedure_plans	edit_document	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	1	Procedure_Plans	open	\N	f
-role_menu_directus_roles	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	15	\N	open	\N	f
-examination_examination	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	21	\N	open	\N	f
-medical_certificate_undefined	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	22	\N	open	\N	f
-tab_exam_option_tab_exam_option	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	16	\N	open	\N	f
 payment_type	payments	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	1	Financial	open	\N	f
-lab_list	cancel	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#E35169	\N	1	lab_options	open	\N	f
-examination_exam_reason	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	17	\N	open	\N	f
-recommended_procedures	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	1	Doctor_Consult	open	\N	f
-nurse_work	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	1	Nurse_Work	open	\N	f
-Doctor_Consult	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	3	Nurse_Work	open	\N	f
-Procedure_Plans	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	4	Nurse_Work	open	\N	f
-special_procedures	surgical	\N	\N	f	f	\N	status	t	archived	draft	\N	all	\N	\N	5	Nurse_Work	open	\N	f
-recommended_lab_orders	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	2	Doctor_Consult	open	\N	f
-role_menu_directus_policies	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	18	\N	open	\N	f
-pacs_riscode	barcode_scanner	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	2	Investigation	open	\N	f
-recommend_bx_form_bx_code_1	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	23	\N	open	\N	f
-bx_options_bx_options	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	24	\N	open	\N	f
-referring_md	stethoscope_arrow	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	5	Investigation	open	\N	f
-tab_clinical_options	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	1	tab_procedure_options	open	\N	f
-Systems	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	1	Master_Data	open	\N	f
 lab_cost	attach_money	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	3	Financial	open	\N	f
 procedure_cost	attach_money	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	5	Financial	open	\N	f
-external_exam_records	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	1	appointment	open	\N	f
-Investigation	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	2	Master_Data	open	\N	f
-appointment_reschedules	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	2	appointment	open	\N	f
+billing_discount_exam_costs	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	20	\N	open	\N	f
+examination_examination	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	21	\N	open	\N	f
+recommended_procedures	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	1	Doctor_Consult	open	\N	f
+medical_certificate_undefined	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	22	\N	open	\N	f
+recommend_bx_form_bx_code_1	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	23	\N	open	\N	f
+bx_options_bx_options	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	24	\N	open	\N	f
+special_procedure_plans_bx_options	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	26	\N	open	\N	f
+recommended_lab_orders	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	2	Doctor_Consult	open	\N	f
+tab_procedure_options	format_list_numbered	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	15	Investigation	open	\N	f
+lab_list	format_list_numbered	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	13	Investigation	open	\N	f
+nurse_work	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	1	Nurse_Work	open	\N	f
+Doctor_Consult	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	3	Nurse_Work	open	\N	f
+pacs_riscode	barcode_scanner	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	2	Investigation	open	\N	f
+patient_result_appointment	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	13	\N	open	\N	f
+referring_md	stethoscope_arrow	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	5	Investigation	open	\N	f
 location_surgery	outpatient_med	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	6	Investigation	open	\N	f
+tab_clinical_options	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	1	tab_procedure_options	open	\N	f
 procedure_item	labs	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	7	Investigation	open	\N	f
+Systems	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	1	Master_Data	open	\N	f
+special_procedure_plans_bx_options_1	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	27	\N	open	\N	f
+special_procedure_plans_lab_list	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	28	\N	open	\N	f
+special_procedures_bx_options	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	29	\N	open	\N	f
+external_exam_records	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	1	appointment	open	\N	f
 nurse_work_statuses	sell	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	8	Investigation	open	\N	f
-Financial	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	4	Master_Data	open	\N	f
-vital_signs	\N	\N	\N	f	f	\N	\N	t	archived	draft	\N	all	\N	\N	3	appointment	open	\N	f
-examination_directus_users	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	19	\N	open	\N	f
+Investigation	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	2	Master_Data	open	\N	f
 underlying_diseases	coronavirus	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	9	Investigation	open	\N	f
+appointment_reschedules	\N	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	2	appointment	open	\N	f
+patient_result_files	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	14	\N	open	\N	f
+role_menu_directus_roles	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	15	\N	open	\N	f
+tab_exam_option_tab_exam_option	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	16	\N	open	\N	f
+Financial	folder	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	4	Master_Data	open	\N	f
+special_procedure_plans	edit_document	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	\N	\N	5	Nurse_Work	open	\N	f
+vital_signs	\N	\N	\N	f	f	\N	\N	t	archived	draft	\N	all	\N	\N	3	appointment	open	\N	f
+examination_exam_reason	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	17	\N	open	\N	f
+role_menu_directus_policies	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	18	\N	open	\N	f
+examination_directus_users	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	19	\N	open	\N	f
 bx_options	format_list_numbered	\N	\N	f	f	\N	\N	t	\N	\N	\N	all	#FFA439	\N	10	Investigation	open	\N	f
+special_procedures_lab_list	import_export	\N	\N	t	f	\N	\N	t	\N	\N	\N	all	\N	\N	30	\N	open	\N	f
 \.
 
 
@@ -12111,33 +12230,20 @@ t	96d8c57a-b48e-46bf-ab56-64a4356f702f	bis-birads-mass	local	\N
 COPY public.directus_fields (id, collection, field, special, interface, options, display, display_options, readonly, hidden, sort, width, translations, note, conditions, required, "group", validation, validation_message) FROM stdin;
 2399	spot	r_cone_comp_tomo_cc	cast-boolean	\N	\N	\N	\N	f	f	25	half	\N	\N	\N	f	\N	\N	\N
 2148	exam_reason	old_db_id	\N	\N	\N	\N	\N	f	t	13	full	\N	\N	\N	f	\N	\N	\N
-1306	examination	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
-1329	examination	prev_mammo_date	\N	datetime	\N	\N	\N	f	f	42	half	\N	\N	\N	f	\N	\N	\N
 2146	coordinate	doctor_work	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
-1309	examination	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
-1327	examination	referring_md	m2o	select-dropdown-m2o	\N	\N	\N	f	t	40	half	\N	\N	\N	f	\N	\N	\N
 1286	chat_message	id	\N	input	\N	\N	\N	t	t	1	half	\N	\N	\N	f	\N	\N	\N
 1287	chat_message	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 1288	chat_message	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
 1289	chat_message	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	6	half	\N	\N	\N	f	\N	\N	\N
 1290	chat_message	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	7	half	\N	\N	\N	f	\N	\N	\N
 1291	chat_message	message	\N	input	\N	\N	\N	f	f	3	full	\N	\N	\N	t	\N	\N	\N
-1328	examination	referring_hospital	\N	input	\N	\N	\N	f	t	41	half	\N	\N	\N	f	\N	\N	\N
 2581	mammogram	l_std_mam_tomo	cast-boolean	boolean	\N	\N	\N	f	f	76	full	\N	\N	\N	f	\N	\N	\N
-1310	examination	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
-1314	examination	mobile	cast-boolean	boolean	\N	\N	\N	f	t	22	half	\N	\N	\N	f	\N	\N	\N
-2164	examination	last_saved_at	\N	datetime	{}	\N	\N	f	f	138	full	\N	\N	\N	f	\N	\N	\N
-1307	examination	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
-1325	examination	ovaries_removed	cast-boolean	boolean	\N	\N	\N	f	f	39	full	\N	\N	\N	f	\N	\N	\N
-1326	examination	pregnant	cast-boolean	boolean	\N	\N	\N	f	f	38	full	\N	\N	\N	f	\N	\N	\N
 19	directus_users	username	\N	input	\N	\N	\N	f	f	1	half	\N	\N	\N	t	\N	\N	\N
 20	directus_roles	parrent	\N	\N	\N	\N	\N	f	t	\N	full	\N	\N	\N	f	\N	\N	\N
-1320	examination	cont_use	cast-boolean	boolean	\N	\N	\N	f	f	31	half	\N	\N	\N	f	\N	\N	\N
-1315	examination	mobile_update	cast-boolean	boolean	\N	\N	\N	f	t	23	half	\N	\N	\N	f	\N	\N	\N
-1321	examination	cont_yrs	\N	input	\N	\N	\N	f	f	32	half	\N	\N	\N	f	\N	\N	\N
 1292	chat_message	room_id	m2o	select-dropdown-m2o	\N	\N	\N	f	f	2	half	\N	\N	\N	t	\N	\N	\N
 1293	chat_room	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 2400	spot	l_cone_comp_tomo_cc	cast-boolean	\N	\N	\N	\N	f	f	26	half	\N	\N	\N	f	\N	\N	\N
+3833	finance_cost	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 2375	spot	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
 1294	chat_room	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 1295	chat_room	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
@@ -12151,80 +12257,49 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 1303	notification_message	subtitle	\N	input	\N	\N	\N	f	f	5	full	\N	\N	\N	f	\N	\N	\N
 1304	notification_message	is_read	cast-boolean	boolean	\N	\N	\N	f	f	8	half	\N	\N	\N	t	\N	\N	\N
 1305	notification_message	receiver	m2o	select-dropdown-m2o	{"template":"{{name}}"}	\N	\N	f	f	7	half	\N	\N	\N	t	\N	\N	\N
-1313	examination	tech_login_name	\N	input	\N	\N	\N	f	t	136	full	\N	\N	\N	f	\N	\N	\N
-1308	examination	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
-1312	examination	patient	m2o	select-dropdown-m2o	\N	\N	\N	f	f	9	half	\N	\N	\N	f	\N	\N	\N
 2403	spot	r_cone_comp_tomo_lat	cast-boolean	\N	\N	\N	\N	f	f	29	half	\N	\N	\N	f	\N	\N	\N
 2404	spot	l_cone_comp_tomo_lat	cast-boolean	\N	\N	\N	\N	f	f	30	half	\N	\N	\N	f	\N	\N	\N
 2405	spot	l_cone_comp_tomo_axilla	cast-boolean	\N	\N	\N	\N	f	f	32	half	\N	\N	\N	f	\N	\N	\N
 5	directus_users	theming_divider	\N	\N	\N	\N	\N	f	t	23	full	\N	\N	\N	f	\N	\N	\N
-1322	examination	hormone_use	cast-boolean	boolean	\N	\N	\N	f	f	28	half	\N	\N	\N	f	\N	\N	\N
-2530	examination	doctor_comment	\N	select-dropdown	{"choices":[{"text":"Complete MAM","value":"0"},{"text":"Spot MAM","value":"1"}]}	\N	\N	f	f	141	half	\N	\N	\N	f	\N	\N	\N
 28	directus_users	theming_divider	alias,no-data	presentation-divider	\N	\N	\N	f	t	20	full	\N	\N	\N	f	\N	\N	\N
-1323	examination	hormone_yrs	\N	input	\N	\N	\N	f	f	29	half	\N	\N	\N	f	\N	\N	\N
 2371	spot	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 2373	spot	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 2360	spot_shape	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
-1330	examination	prev_mammo_loc	\N	input	\N	\N	\N	f	f	43	half	\N	\N	\N	f	\N	\N	\N
-1324	examination	hysterectomy	cast-boolean	boolean	\N	\N	\N	f	f	37	full	\N	\N	\N	f	\N	\N	\N
 3037	recommend_bx_form	examination	m2o	select-dropdown-m2o	\N	\N	\N	f	f	6	half	\N	\N	\N	f	\N	\N	\N
-2147	pacs_sync_info	start_time	\N	datetime	\N	\N	\N	f	f	20	half	\N	\N	\N	f	\N	\N	\N
+1307	examination	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 3039	ultrasound_work	cancel_detail	\N	input	\N	\N	\N	f	f	20	half	\N	\N	\N	f	\N	\N	\N
-1311	examination	exam_date	date-created	datetime	\N	datetime	{"format":"short"}	f	f	6	half	\N	\N	\N	f	\N	\N	\N
 3038	ultrasound_work	cancel_reason	\N	select-radio	{"choices":[{"text":"ไม่ต้องทำนัด","value":"1"},{"text":"ขอทำนัดใหม่","value":"2"}]}	\N	\N	f	f	19	half	\N	\N	\N	f	\N	\N	\N
-1365	examination	rnww	cast-boolean	boolean	\N	\N	\N	f	f	110	half	\N	\N	\N	f	\N	\N	\N
 2437	mammogram_cal	r_position_des	cast-json	input-code	\N	\N	\N	f	f	23	full	\N	\N	\N	f	\N	\N	\N
-1351	examination	lnwn	cast-boolean	boolean	\N	\N	\N	f	f	111	half	\N	\N	\N	f	\N	\N	\N
 2438	mammogram_cal	l_position_des	cast-json	input-code	\N	\N	\N	f	f	24	full	\N	\N	\N	f	\N	\N	\N
-1364	examination	rnwn	cast-boolean	boolean	\N	\N	\N	f	f	112	half	\N	\N	\N	f	\N	\N	\N
 2256	examination_general	radiologist	\N	input	\N	\N	\N	f	f	36	full	\N	\N	\N	f	\N	\N	\N
+1308	examination	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 2255	examination_general	impression_lastexaminationdates	\N	input	\N	\N	\N	f	f	35	full	\N	\N	\N	f	\N	\N	\N
-1335	examination	biopsy_l_date	\N	datetime	\N	\N	\N	f	f	54	half	\N	\N	\N	f	\N	\N	\N
-1336	examination	biopsy_r_date	\N	datetime	\N	\N	\N	f	f	55	half	\N	\N	\N	f	\N	\N	\N
-1357	examination	lm	cast-boolean	boolean	\N	\N	\N	f	f	113	half	\N	\N	\N	f	\N	\N	\N
-1348	examination	rad_r_date	\N	datetime	\N	\N	\N	f	f	67	half	\N	\N	\N	f	\N	\N	\N
-1343	examination	lump_l_date	\N	datetime	\N	\N	\N	f	f	56	half	\N	\N	\N	f	\N	\N	\N
-1339	examination	cyst_l_date	\N	datetime	\N	\N	\N	f	t	68	half	\N	\N	\N	f	\N	\N	\N
-1344	examination	lump_r_date	\N	datetime	\N	\N	\N	f	f	57	half	\N	\N	\N	f	\N	\N	\N
-1353	examination	ln	cast-boolean	boolean	\N	\N	\N	f	f	89	half	\N	\N	\N	f	\N	\N	\N
-1362	examination	lses	cast-boolean	boolean	\N	\N	\N	f	f	99	half	\N	\N	\N	f	\N	\N	\N
-1366	examination	rn	cast-boolean	boolean	\N	\N	\N	f	f	90	half	\N	\N	\N	f	\N	\N	\N
-1397	examination	ca_hormone_yrs	\N	input	\N	\N	\N	f	f	35	half	\N	\N	\N	f	\N	\N	\N
-1375	examination	rses	cast-boolean	boolean	\N	\N	\N	f	f	100	half	\N	\N	\N	f	\N	\N	\N
-1361	examination	ls	cast-boolean	boolean	\N	\N	\N	f	f	101	half	\N	\N	\N	f	\N	\N	\N
-1367	examination	rnen	cast-boolean	boolean	\N	\N	\N	f	f	91	half	\N	\N	\N	f	\N	\N	\N
-1370	examination	rm	cast-boolean	boolean	\N	\N	\N	f	f	114	half	\N	\N	\N	f	\N	\N	\N
-1374	examination	rs	cast-boolean	boolean	\N	\N	\N	f	f	102	half	\N	\N	\N	f	\N	\N	\N
-1377	examination	lother	cast-boolean	boolean	\N	\N	\N	f	f	117	half	\N	\N	\N	f	\N	\N	\N
-1341	examination	irr_l_date	\N	datetime	\N	\N	\N	f	f	44	half	\N	\N	\N	f	\N	\N	\N
-1354	examination	lnen	cast-boolean	boolean	\N	\N	\N	f	f	92	half	\N	\N	\N	f	\N	\N	\N
-1342	examination	irr_r_date	\N	datetime	\N	\N	\N	f	f	45	half	\N	\N	\N	f	\N	\N	\N
-1359	examination	lsws	cast-boolean	boolean	\N	\N	\N	f	f	103	half	\N	\N	\N	f	\N	\N	\N
-1372	examination	rsws	cast-boolean	boolean	\N	\N	\N	f	f	104	half	\N	\N	\N	f	\N	\N	\N
-1360	examination	lsww	cast-boolean	boolean	\N	\N	\N	f	f	105	half	\N	\N	\N	f	\N	\N	\N
-1388	examination	bct_l_date	\N	datetime	\N	\N	\N	f	f	60	half	\N	\N	\N	f	\N	\N	\N
-1389	examination	bct_r_date	\N	datetime	\N	\N	\N	f	f	61	half	\N	\N	\N	f	\N	\N	\N
-1345	examination	mast_l_date	\N	datetime	\N	\N	\N	f	f	62	half	\N	\N	\N	f	\N	\N	\N
-1378	examination	rother	cast-boolean	boolean	\N	\N	\N	f	f	118	half	\N	\N	\N	f	\N	\N	\N
-1355	examination	lnee	cast-boolean	boolean	\N	\N	\N	f	f	93	half	\N	\N	\N	f	\N	\N	\N
-1368	examination	rnee	cast-boolean	boolean	\N	\N	\N	f	f	94	half	\N	\N	\N	f	\N	\N	\N
+1309	examination	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
+1310	examination	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
+1312	examination	patient	m2o	select-dropdown-m2o	\N	\N	\N	f	f	9	half	\N	\N	\N	f	\N	\N	\N
+1314	examination	mobile	cast-boolean	boolean	\N	\N	\N	f	t	22	half	\N	\N	\N	f	\N	\N	\N
+1315	examination	mobile_update	cast-boolean	boolean	\N	\N	\N	f	t	23	half	\N	\N	\N	f	\N	\N	\N
+1322	examination	hormone_use	cast-boolean	boolean	\N	\N	\N	f	f	28	half	\N	\N	\N	f	\N	\N	\N
+1323	examination	hormone_yrs	\N	input	\N	\N	\N	f	f	29	half	\N	\N	\N	f	\N	\N	\N
+1320	examination	cont_use	cast-boolean	boolean	\N	\N	\N	f	f	31	half	\N	\N	\N	f	\N	\N	\N
+1321	examination	cont_yrs	\N	input	\N	\N	\N	f	f	32	half	\N	\N	\N	f	\N	\N	\N
+1324	examination	hysterectomy	cast-boolean	boolean	\N	\N	\N	f	f	37	full	\N	\N	\N	f	\N	\N	\N
+1326	examination	pregnant	cast-boolean	boolean	\N	\N	\N	f	f	38	full	\N	\N	\N	f	\N	\N	\N
+1325	examination	ovaries_removed	cast-boolean	boolean	\N	\N	\N	f	f	39	full	\N	\N	\N	f	\N	\N	\N
+1327	examination	referring_md	m2o	select-dropdown-m2o	\N	\N	\N	f	t	40	half	\N	\N	\N	f	\N	\N	\N
+1328	examination	referring_hospital	\N	input	\N	\N	\N	f	t	41	half	\N	\N	\N	f	\N	\N	\N
+1329	examination	prev_mammo_date	\N	datetime	\N	\N	\N	f	f	42	half	\N	\N	\N	f	\N	\N	\N
+1330	examination	prev_mammo_loc	\N	input	\N	\N	\N	f	f	43	half	\N	\N	\N	f	\N	\N	\N
+1365	examination	rnww	cast-boolean	boolean	\N	\N	\N	f	f	110	half	\N	\N	\N	f	\N	\N	\N
+1351	examination	lnwn	cast-boolean	boolean	\N	\N	\N	f	f	111	half	\N	\N	\N	f	\N	\N	\N
+1364	examination	rnwn	cast-boolean	boolean	\N	\N	\N	f	f	112	half	\N	\N	\N	f	\N	\N	\N
+1313	examination	tech_login_name	\N	input	\N	\N	\N	f	t	136	full	\N	\N	\N	f	\N	\N	\N
+2164	examination	last_saved_at	\N	datetime	{}	\N	\N	f	f	137	full	\N	\N	\N	f	\N	\N	\N
+2530	examination	doctor_comment	\N	select-dropdown	{"choices":[{"text":"Complete MAM","value":"0"},{"text":"Spot MAM","value":"1"}]}	\N	\N	f	f	140	half	\N	\N	\N	f	\N	\N	\N
+1306	examination	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 2150	exam_reason	parent_sequence	\N	input	{"min":1,"iconLeft":null,"placeholder":"ลำดับของ type"}	\N	\N	f	f	2	half	\N	\N	\N	t	\N	\N	\N
-1400	examination	rm_l_date	\N	datetime	\N	\N	\N	f	f	46	half	\N	\N	\N	f	\N	\N	\N
-1356	examination	le	cast-boolean	boolean	\N	\N	\N	f	f	95	half	\N	\N	\N	f	\N	\N	\N
-1369	examination	re	cast-boolean	boolean	\N	\N	\N	f	f	96	half	\N	\N	\N	f	\N	\N	\N
-1373	examination	rsww	cast-boolean	boolean	\N	\N	\N	f	f	106	half	\N	\N	\N	f	\N	\N	\N
-1358	examination	lw	cast-boolean	boolean	\N	\N	\N	f	f	107	half	\N	\N	\N	f	\N	\N	\N
-1401	examination	rm_r_date	\N	datetime	\N	\N	\N	f	f	47	half	\N	\N	\N	f	\N	\N	\N
-1371	examination	rw	cast-boolean	boolean	\N	\N	\N	f	f	108	half	\N	\N	\N	f	\N	\N	\N
-1402	examination	ri_l_date	\N	datetime	\N	\N	\N	f	f	48	half	\N	\N	\N	f	\N	\N	\N
-1352	examination	lnww	cast-boolean	boolean	\N	\N	\N	f	f	109	half	\N	\N	\N	f	\N	\N	\N
-1346	examination	mast_r_date	\N	datetime	\N	\N	\N	f	f	63	half	\N	\N	\N	f	\N	\N	\N
-1337	examination	chemo_l_date	\N	datetime	\N	\N	\N	f	f	64	half	\N	\N	\N	f	\N	\N	\N
-1338	examination	chemo_r_date	\N	datetime	\N	\N	\N	f	f	65	half	\N	\N	\N	f	\N	\N	\N
-2165	pacs_sync_info	num_of_mam	\N	input	{"min":0}	\N	\N	f	f	27	half	\N	\N	\N	f	\N	\N	\N
-1376	examination	rsee	cast-boolean	boolean	\N	\N	\N	f	f	98	half	\N	\N	\N	f	\N	\N	\N
-1347	examination	rad_l_date	\N	datetime	\N	\N	\N	f	f	66	half	\N	\N	\N	f	\N	\N	\N
-1403	examination	ri_r_date	\N	datetime	\N	\N	\N	f	f	49	half	\N	\N	\N	f	\N	\N	\N
+3834	finance_cost	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
+1397	examination	ca_hormone_yrs	\N	input	\N	\N	\N	f	f	35	half	\N	\N	\N	f	\N	\N	\N
 2439	mammogram_mass	r_position_des	cast-json	input-code	\N	\N	\N	f	f	30	full	\N	\N	\N	f	\N	\N	\N
 2440	mammogram_mass	l_position_des	cast-json	input-code	\N	\N	\N	f	f	31	full	\N	\N	\N	f	\N	\N	\N
 2992	pacs_riscode	modality	\N	select-dropdown	{"choices":[{"text":"MG","value":"MG"},{"text":"Special Radiograph","value":"Special Radiograph"},{"text":"US","value":"US"},{"text":"Special Procedure","value":"Special Procedure"}]}	\N	\N	f	f	2	half	\N	\N	\N	t	\N	\N	\N
@@ -12244,7 +12319,6 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2591	mammogram	l_implant	cast-json	input-code	\N	\N	\N	f	f	81	full	\N	\N	\N	f	\N	\N	\N
 2592	mammogram	l_implant_des	cast-json	input-code	\N	\N	\N	f	f	82	full	\N	\N	\N	f	\N	\N	\N
 1490	mammogram	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	2	half	\N	\N	\N	f	\N	\N	\N
-1396	examination	ca_hormone_use	cast-boolean	boolean	\N	\N	\N	f	f	34	half	\N	\N	\N	f	\N	\N	\N
 2697	ultrasound_mass	orientation	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2700	ultrasound_mass	posterior_features_des	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2533	center_income	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
@@ -12256,10 +12330,51 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2259	examination_general	specialcase_point_des	\N	input	\N	\N	\N	f	f	39	full	\N	\N	\N	f	\N	\N	\N
 2260	examination_general	specialcase_detail	\N	input	\N	\N	\N	f	f	40	full	\N	\N	\N	f	\N	\N	\N
 2261	examination_general	recommendation_followup_with	\N	input	\N	\N	\N	f	f	41	full	\N	\N	\N	f	\N	\N	\N
+1341	examination	irr_l_date	\N	datetime	\N	\N	\N	f	f	44	half	\N	\N	\N	f	\N	\N	\N
 1415	examination_general	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
+1342	examination	irr_r_date	\N	datetime	\N	\N	\N	f	f	45	half	\N	\N	\N	f	\N	\N	\N
+1400	examination	rm_l_date	\N	datetime	\N	\N	\N	f	f	46	half	\N	\N	\N	f	\N	\N	\N
+1401	examination	rm_r_date	\N	datetime	\N	\N	\N	f	f	47	half	\N	\N	\N	f	\N	\N	\N
+1402	examination	ri_l_date	\N	datetime	\N	\N	\N	f	f	48	half	\N	\N	\N	f	\N	\N	\N
+1403	examination	ri_r_date	\N	datetime	\N	\N	\N	f	f	49	half	\N	\N	\N	f	\N	\N	\N
+1335	examination	biopsy_l_date	\N	datetime	\N	\N	\N	f	f	54	half	\N	\N	\N	f	\N	\N	\N
+1336	examination	biopsy_r_date	\N	datetime	\N	\N	\N	f	f	55	half	\N	\N	\N	f	\N	\N	\N
+1343	examination	lump_l_date	\N	datetime	\N	\N	\N	f	f	56	half	\N	\N	\N	f	\N	\N	\N
+1344	examination	lump_r_date	\N	datetime	\N	\N	\N	f	f	57	half	\N	\N	\N	f	\N	\N	\N
+1389	examination	bct_r_date	\N	datetime	\N	\N	\N	f	f	61	half	\N	\N	\N	f	\N	\N	\N
+1345	examination	mast_l_date	\N	datetime	\N	\N	\N	f	f	62	half	\N	\N	\N	f	\N	\N	\N
+1346	examination	mast_r_date	\N	datetime	\N	\N	\N	f	f	63	half	\N	\N	\N	f	\N	\N	\N
+1337	examination	chemo_l_date	\N	datetime	\N	\N	\N	f	f	64	half	\N	\N	\N	f	\N	\N	\N
+1338	examination	chemo_r_date	\N	datetime	\N	\N	\N	f	f	65	half	\N	\N	\N	f	\N	\N	\N
+1347	examination	rad_l_date	\N	datetime	\N	\N	\N	f	f	66	half	\N	\N	\N	f	\N	\N	\N
+1348	examination	rad_r_date	\N	datetime	\N	\N	\N	f	f	67	half	\N	\N	\N	f	\N	\N	\N
+1339	examination	cyst_l_date	\N	datetime	\N	\N	\N	f	t	68	half	\N	\N	\N	f	\N	\N	\N
+1353	examination	ln	cast-boolean	boolean	\N	\N	\N	f	f	89	half	\N	\N	\N	f	\N	\N	\N
+1366	examination	rn	cast-boolean	boolean	\N	\N	\N	f	f	90	half	\N	\N	\N	f	\N	\N	\N
+1367	examination	rnen	cast-boolean	boolean	\N	\N	\N	f	f	91	half	\N	\N	\N	f	\N	\N	\N
+1354	examination	lnen	cast-boolean	boolean	\N	\N	\N	f	f	92	half	\N	\N	\N	f	\N	\N	\N
+1355	examination	lnee	cast-boolean	boolean	\N	\N	\N	f	f	93	half	\N	\N	\N	f	\N	\N	\N
+1368	examination	rnee	cast-boolean	boolean	\N	\N	\N	f	f	94	half	\N	\N	\N	f	\N	\N	\N
+1356	examination	le	cast-boolean	boolean	\N	\N	\N	f	f	95	half	\N	\N	\N	f	\N	\N	\N
+1369	examination	re	cast-boolean	boolean	\N	\N	\N	f	f	96	half	\N	\N	\N	f	\N	\N	\N
+1376	examination	rsee	cast-boolean	boolean	\N	\N	\N	f	f	98	half	\N	\N	\N	f	\N	\N	\N
+1362	examination	lses	cast-boolean	boolean	\N	\N	\N	f	f	99	half	\N	\N	\N	f	\N	\N	\N
+1375	examination	rses	cast-boolean	boolean	\N	\N	\N	f	f	100	half	\N	\N	\N	f	\N	\N	\N
+1361	examination	ls	cast-boolean	boolean	\N	\N	\N	f	f	101	half	\N	\N	\N	f	\N	\N	\N
+1374	examination	rs	cast-boolean	boolean	\N	\N	\N	f	f	102	half	\N	\N	\N	f	\N	\N	\N
+1359	examination	lsws	cast-boolean	boolean	\N	\N	\N	f	f	103	half	\N	\N	\N	f	\N	\N	\N
+1360	examination	lsww	cast-boolean	boolean	\N	\N	\N	f	f	105	half	\N	\N	\N	f	\N	\N	\N
+1373	examination	rsww	cast-boolean	boolean	\N	\N	\N	f	f	106	half	\N	\N	\N	f	\N	\N	\N
+1358	examination	lw	cast-boolean	boolean	\N	\N	\N	f	f	107	half	\N	\N	\N	f	\N	\N	\N
+1371	examination	rw	cast-boolean	boolean	\N	\N	\N	f	f	108	half	\N	\N	\N	f	\N	\N	\N
+1352	examination	lnww	cast-boolean	boolean	\N	\N	\N	f	f	109	half	\N	\N	\N	f	\N	\N	\N
+1357	examination	lm	cast-boolean	boolean	\N	\N	\N	f	f	113	half	\N	\N	\N	f	\N	\N	\N
+1370	examination	rm	cast-boolean	boolean	\N	\N	\N	f	f	114	half	\N	\N	\N	f	\N	\N	\N
+1377	examination	lother	cast-boolean	boolean	\N	\N	\N	f	f	117	half	\N	\N	\N	f	\N	\N	\N
+1378	examination	rother	cast-boolean	boolean	\N	\N	\N	f	f	118	half	\N	\N	\N	f	\N	\N	\N
+1396	examination	ca_hormone_use	cast-boolean	boolean	\N	\N	\N	f	f	34	half	\N	\N	\N	f	\N	\N	\N
 2534	center_income	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
-2744	billing	center_incomes	o2m	list-o2m	{"template":"{{id}}"}	\N	\N	f	f	94	full	\N	\N	\N	f	\N	\N	\N
-2001	examination	id_l_date	\N	datetime	\N	\N	\N	f	f	58	half	\N	\N	\N	f	\N	\N	\N
+3835	finance_cost	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 2655	settings	key	\N	input	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
 2656	settings	value	\N	input	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
 1476	examination_recommend_birads45	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
@@ -12275,9 +12390,7 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 1486	examination_recommend_birads45	breast_side	\N	input	\N	\N	\N	f	f	11	full	\N	\N	\N	f	\N	\N	\N
 1487	examination_recommend_birads45	location	\N	input	\N	\N	\N	f	f	12	full	\N	\N	\N	f	\N	\N	\N
 1572	mammogram_mass	size_width	\N	input	\N	\N	\N	f	f	15	full	\N	\N	\N	f	\N	\N	\N
-2740	examination	us_bed_id	\N	select-dropdown	{"choices":[{"text":"1","value":"0"},{"text":"2","value":"1"},{"text":"3","value":"2"},{"text":"4","value":"3"},{"text":"5","value":"4"},{"text":"6","value":"5"},{"text":"7","value":"6"},{"text":"8 (Teaching)","value":"7"},{"text":"9 (Teaching)","value":"8"}]}	\N	\N	f	f	146	full	\N	\N	\N	f	\N	\N	\N
 2713	ultrasound	mass_des	\N	\N	\N	\N	\N	f	f	20	full	\N	\N	\N	f	\N	\N	\N
-2004	examination	mother_cancer	cast-boolean	boolean	\N	\N	\N	f	f	76	half	\N	\N	\N	f	\N	\N	\N
 2670	ultrasound_cyst	shape	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2671	ultrasound_cyst	shape_des	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2672	ultrasound_cyst	size_width	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
@@ -12320,6 +12433,8 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 1542	mammogram_cal	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
 1543	mammogram_cal	described_cal_id	\N	input	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
 2453	doctor_work	exam	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
+2004	examination	mother_cancer	cast-boolean	boolean	\N	\N	\N	f	f	76	half	\N	\N	\N	f	\N	\N	\N
+2001	examination	id_l_date	\N	datetime	\N	\N	\N	f	f	58	half	\N	\N	\N	f	\N	\N	\N
 1544	mammogram_cal	old_exam_id	\N	input	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
 1545	mammogram_cal	exam_date	\N	datetime	\N	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
 1546	mammogram_cal	old_pid	\N	input	\N	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
@@ -12347,7 +12462,6 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 1569	mammogram_mass	wall_margin	\N	input	\N	\N	\N	f	f	12	full	\N	\N	\N	f	\N	\N	\N
 1570	mammogram_mass	wall_margin_des	\N	input	\N	\N	\N	f	f	13	full	\N	\N	\N	f	\N	\N	\N
 1571	mammogram_mass	cal_in_mass	\N	input	\N	\N	\N	f	f	14	full	\N	\N	\N	f	\N	\N	\N
-2541	pacs_sync_info	called_time	\N	datetime	\N	\N	\N	f	f	18	full	\N	\N	\N	f	\N	\N	\N
 2544	mammogram	r_spot_mag_cc	cast-boolean	boolean	\N	\N	\N	f	f	39	full	\N	\N	\N	f	\N	\N	\N
 2545	mammogram	l_spot_mag_cc	cast-boolean	boolean	\N	\N	\N	f	f	40	full	\N	\N	\N	f	\N	\N	\N
 2546	mammogram	r_spot_mag_mmo	cast-boolean	boolean	\N	\N	\N	f	f	41	full	\N	\N	\N	f	\N	\N	\N
@@ -12404,14 +12518,12 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2491	billing_discount	discount_amount	\N	input	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
 2152	coordinate	case_tag	\N	select-dropdown	{"choices":[{"text":"เคสปล่อยกลับบ้าน","value":"0"},{"text":"เคสถ่ายเพิ่มหลังจบ","value":"1"},{"text":"เคสถ่ายเพิ่มหลัง US","value":"2"},{"text":"เคสแนะนำ BX","value":"3"},{"text":"เคสยกเลิก","value":"4"}]}	\N	\N	f	f	12	full	\N	\N	\N	f	\N	\N	\N
 2999	recommend_bx_form_bx_code_1	recommend_bx_form_id	\N	\N	\N	\N	\N	f	t	2	full	\N	\N	\N	f	\N	\N	\N
-1382	examination	exam_reason_text	\N	input	{"softLength":null}	\N	\N	f	t	122	half	\N	\N	\N	f	\N	\N	\N
+3836	finance_cost	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 2557	mammogram	l_cone_comp_lat	cast-boolean	boolean	\N	\N	\N	f	f	52	full	\N	\N	\N	f	\N	\N	\N
-2122	examination	case_owner_tech	m2o	select-dropdown-m2o	{"filter":{"_and":[{"role":{"_eq":"61ecc39b-e02b-4dce-86fa-7b800dcbe443"}}]}}	\N	\N	f	f	20	half	\N	\N	\N	f	\N	\N	\N
 2950	income	date_created	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
-2066	examination	no_cd_and_previous_result	cast-boolean	boolean	{"label":"ไม่มี CD และผลเก่ามา"}	\N	\N	f	f	70	full	\N	\N	\N	f	\N	\N	\N
-1409	examination	appointment	m2o	select-dropdown-m2o	\N	\N	\N	f	f	10	half	\N	\N	\N	f	\N	\N	\N
 2558	mammogram	r_cone_comp_axilla	cast-boolean	boolean	\N	\N	\N	f	f	53	full	\N	\N	\N	f	\N	\N	\N
 2559	mammogram	l_cone_comp_axilla	cast-boolean	boolean	\N	\N	\N	f	f	54	full	\N	\N	\N	f	\N	\N	\N
+3837	finance_cost	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
 1614	appointment	is_new_patient	\N	select-dropdown	{"choices":[{"text":"คนไข้เก่า","value":0},{"text":"คนไข้ใหม่","value":1}]}	\N	\N	f	f	12	half	\N	\N	\N	f	\N	\N	\N
 1616	appointment	patient_type	m2o	select-dropdown-m2o	\N	\N	\N	f	f	13	half	\N	\N	\N	f	\N	\N	\N
 1617	appointment	patient_info	m2o	select-dropdown-m2o	\N	\N	\N	f	f	14	half	\N	\N	\N	t	\N	\N	\N
@@ -12443,6 +12555,7 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 1606	appointment	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	57	half	\N	\N	\N	f	\N	\N	\N
 1607	appointment	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	f	58	half	\N	\N	\N	f	\N	\N	\N
 1661	appointment	reason_other	\N	input-multiline	{"placeholder":"เหตุผลอื่นๆ ยกเลิกนัด/ไม่มาตามนัด"}	\N	\N	f	f	60	full	\N	\N	\N	f	\N	\N	\N
+2122	examination	case_owner_tech	m2o	select-dropdown-m2o	{"filter":{"_and":[{"role":{"_eq":"61ecc39b-e02b-4dce-86fa-7b800dcbe443"}}]}}	\N	\N	f	f	20	half	\N	\N	\N	f	\N	\N	\N
 1603	appointment	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 1611	appointment	first_name	\N	input	\N	\N	\N	f	f	10	half	\N	\N	\N	f	\N	\N	\N
 1609	appointment	appointment_no	\N	input	\N	\N	\N	f	f	5	full	\N	\N	\N	t	\N	\N	\N
@@ -12450,6 +12563,9 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 1610	appointment	prefix	\N	input	\N	\N	\N	f	f	9	half	\N	\N	\N	f	\N	\N	\N
 1638	appointment	date_lastcheck	\N	datetime	\N	\N	\N	f	f	2	full	\N	\N	\N	f	\N	\N	\N
 1612	appointment	last_name	\N	input	\N	\N	\N	f	f	11	half	\N	\N	\N	f	\N	\N	\N
+2066	examination	no_cd_and_previous_result	cast-boolean	boolean	{"label":"ไม่มี CD และผลเก่ามา"}	\N	\N	f	f	70	full	\N	\N	\N	f	\N	\N	\N
+1382	examination	exam_reason_text	\N	input	{"softLength":null}	\N	\N	f	t	122	half	\N	\N	\N	f	\N	\N	\N
+1409	examination	appointment	m2o	select-dropdown-m2o	\N	\N	\N	f	f	10	half	\N	\N	\N	f	\N	\N	\N
 2560	mammogram	r_cone_comp_tomo_cc	cast-boolean	boolean	\N	\N	\N	f	f	55	full	\N	\N	\N	f	\N	\N	\N
 2556	mammogram	r_cone_comp_lat	cast-boolean	boolean	\N	\N	\N	f	f	51	full	\N	\N	\N	f	\N	\N	\N
 2951	income	date_updated	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
@@ -12467,6 +12583,7 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 1688	patient_info	disease	\N	input	\N	\N	\N	f	f	30	half	\N	\N	\N	f	\N	\N	\N
 1690	patient_info	status	\N	select-dropdown	{"choices":[{"text":"Active","value":1},{"text":"Inactive","value":0}]}	\N	\N	f	f	31	full	\N	\N	\N	f	\N	\N	\N
 1694	patient_info	photo	\N	input-multiline	\N	\N	\N	f	f	34	full	\N	\N	\N	f	\N	\N	\N
+3838	bx_options	is_default_cyto	cast-boolean	boolean	\N	\N	\N	f	f	12	half	\N	\N	\N	f	\N	\N	\N
 1680	patient_info	pid	\N	input	\N	\N	\N	f	f	2	half	\N	\N	\N	f	\N	\N	\N
 1668	patient_info	old_db_id	\N	input	\N	\N	\N	f	f	3	half	\N	\N	\N	f	\N	\N	\N
 1665	patient_info	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
@@ -12491,19 +12608,8 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 1685	patient_info	short_note	\N	input	\N	\N	\N	f	f	26	full	\N	\N	\N	f	\N	\N	\N
 2445	spot	doctor_work	m2o	select-dropdown-m2o	\N	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
 2964	income	patient	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
-1696	billing	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
-2153	examination	menstruation_age	\N	input	\N	\N	\N	f	f	24	half	\N	\N	\N	f	\N	\N	\N
 2466	exam_costs	price_tyr	\N	input	\N	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
 2467	exam_costs	price_ics	\N	input	\N	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
-2154	examination	menopause_age	\N	input	\N	\N	\N	f	f	25	half	\N	\N	\N	f	\N	\N	\N
-1703	billing	is_in_patient	cast-boolean	boolean	\N	\N	\N	f	f	9	half	\N	\N	\N	f	\N	\N	\N
-1704	billing	can_claim_expense	cast-boolean	boolean	\N	\N	\N	f	f	10	half	\N	\N	\N	f	\N	\N	\N
-1705	billing	hn	\N	input	\N	\N	\N	f	f	12	half	\N	\N	\N	f	\N	\N	\N
-1706	billing	an	\N	input	\N	\N	\N	f	f	13	half	\N	\N	\N	f	\N	\N	\N
-1707	billing	room	\N	input	\N	\N	\N	f	f	14	half	\N	\N	\N	f	\N	\N	\N
-1708	billing	building	\N	input	\N	\N	\N	f	f	15	half	\N	\N	\N	f	\N	\N	\N
-1710	billing	code_no	\N	input	\N	\N	\N	f	f	16	full	\N	\N	\N	f	\N	\N	\N
-1711	billing	note	\N	input	\N	\N	\N	f	f	17	full	\N	\N	\N	f	\N	\N	\N
 2270	examination_general	followupletterprintdate	\N	datetime	\N	\N	\N	f	f	46	full	\N	\N	\N	f	\N	\N	\N
 2271	examination_general	followup_date	\N	datetime	\N	\N	\N	f	f	47	full	\N	\N	\N	f	\N	\N	\N
 1662	appointment	requested_doctor	m2o	select-dropdown-m2o	{"filter":{"_and":[{"role":{"name":{"_contains":"Office Doctor"}}}]}}	\N	\N	f	f	42	half	\N	\N	\N	f	\N	\N	\N
@@ -12520,29 +12626,20 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 1646	appointment	time_slot	m2o	select-dropdown-m2o	\N	\N	\N	f	f	38	half	\N	\N	\N	f	\N	\N	\N
 1650	appointment	request_female_doctor	cast-boolean	boolean	\N	\N	\N	f	f	41	half	\N	\N	\N	f	\N	\N	\N
 1643	appointment	room	\N	input	\N	\N	\N	f	f	36	half	\N	\N	\N	f	\N	\N	\N
-1712	billing	patient_type	m2o	select-dropdown-m2o	\N	\N	\N	f	f	18	full	\N	\N	\N	f	\N	\N	\N
-1713	billing	total	\N	input	\N	\N	\N	f	f	20	half	\N	\N	\N	f	\N	\N	\N
-1714	billing	receipt	\N	input	\N	\N	\N	f	f	24	half	\N	\N	\N	f	\N	\N	\N
-1715	billing	receipt_no	\N	input	\N	\N	\N	f	f	25	half	\N	\N	\N	f	\N	\N	\N
-1697	billing	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
-1717	billing	a_price	\N	input	\N	\N	\N	f	f	27	half	\N	\N	\N	f	\N	\N	\N
-1718	billing	b	\N	input	\N	\N	\N	f	f	28	half	\N	\N	\N	f	\N	\N	\N
-1719	billing	b_price	\N	input	\N	\N	\N	f	f	29	half	\N	\N	\N	f	\N	\N	\N
-1720	billing	c	\N	input	\N	\N	\N	f	f	30	half	\N	\N	\N	f	\N	\N	\N
-1721	billing	c_price	\N	input	\N	\N	\N	f	f	31	half	\N	\N	\N	f	\N	\N	\N
-1722	billing	d	\N	input	\N	\N	\N	f	f	32	half	\N	\N	\N	f	\N	\N	\N
-1723	billing	d_price	\N	input	\N	\N	\N	f	f	33	half	\N	\N	\N	f	\N	\N	\N
-1724	billing	e	\N	input	\N	\N	\N	f	f	34	half	\N	\N	\N	f	\N	\N	\N
+1703	billing	is_in_patient	cast-boolean	boolean	\N	\N	\N	f	f	9	half	\N	\N	\N	f	\N	\N	\N
+1704	billing	can_claim_expense	cast-boolean	boolean	\N	\N	\N	f	f	10	half	\N	\N	\N	f	\N	\N	\N
+1705	billing	hn	\N	input	\N	\N	\N	f	f	12	half	\N	\N	\N	f	\N	\N	\N
+1706	billing	an	\N	input	\N	\N	\N	f	f	13	half	\N	\N	\N	f	\N	\N	\N
+1707	billing	room	\N	input	\N	\N	\N	f	f	14	half	\N	\N	\N	f	\N	\N	\N
+1708	billing	building	\N	input	\N	\N	\N	f	f	15	half	\N	\N	\N	f	\N	\N	\N
+1710	billing	code_no	\N	input	\N	\N	\N	f	f	16	full	\N	\N	\N	f	\N	\N	\N
+1711	billing	note	\N	input	\N	\N	\N	f	f	17	full	\N	\N	\N	f	\N	\N	\N
+2154	examination	menopause_age	\N	input	\N	\N	\N	f	f	25	half	\N	\N	\N	f	\N	\N	\N
+1696	billing	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
+2153	examination	menstruation_age	\N	input	\N	\N	\N	f	f	24	half	\N	\N	\N	f	\N	\N	\N
 2176	finance_work	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
-1695	billing	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
-1698	billing	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
-1716	billing	a	\N	input	\N	\N	\N	f	f	26	half	\N	\N	\N	f	\N	\N	\N
-1699	billing	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
-1701	billing	exam	m2o	select-dropdown-m2o	\N	\N	\N	f	f	7	half	\N	\N	\N	f	\N	\N	\N
-1702	billing	patient	m2o	select-dropdown-m2o	\N	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
 2177	finance_work	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 2178	finance_work	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
-2161	examination	other_cancer_age	\N	input	\N	\N	\N	f	f	88	full	\N	\N	\N	f	\N	\N	\N
 2562	mammogram	r_cone_comp_tomo_mmo	cast-boolean	boolean	\N	\N	\N	f	f	57	full	\N	\N	\N	f	\N	\N	\N
 2447	spot_shape	x	\N	input	\N	\N	\N	f	f	8	half	\N	\N	\N	f	\N	\N	\N
 1860	hospitals	date_updated	\N	\N	\N	\N	\N	t	t	6	half	\N	\N	\N	f	\N	\N	\N
@@ -12581,49 +12678,48 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2565	mammogram	l_cone_comp_tomo_lat	cast-boolean	boolean	\N	\N	\N	f	f	60	full	\N	\N	\N	f	\N	\N	\N
 2561	mammogram	l_cone_comp_tomo_cc	cast-boolean	boolean	\N	\N	\N	f	f	56	full	\N	\N	\N	f	\N	\N	\N
 18	directus_users	email	\N	\N	\N	\N	\N	f	f	2	half	\N	\N	\N	f	\N	\N	\N
-1732	billing	i	\N	input	\N	\N	\N	f	f	42	half	\N	\N	\N	f	\N	\N	\N
-1733	billing	i_price	\N	input	\N	\N	\N	f	f	43	half	\N	\N	\N	f	\N	\N	\N
-1734	billing	j	\N	input	\N	\N	\N	f	f	44	half	\N	\N	\N	f	\N	\N	\N
-1735	billing	j_price	\N	input	\N	\N	\N	f	f	45	half	\N	\N	\N	f	\N	\N	\N
-1736	billing	k	\N	input	\N	\N	\N	f	f	46	half	\N	\N	\N	f	\N	\N	\N
-1737	billing	k_price	\N	input	\N	\N	\N	f	f	47	half	\N	\N	\N	f	\N	\N	\N
-1738	billing	l	\N	input	\N	\N	\N	f	f	48	half	\N	\N	\N	f	\N	\N	\N
-1739	billing	l_price	\N	input	\N	\N	\N	f	f	49	half	\N	\N	\N	f	\N	\N	\N
-1740	billing	m	\N	input	\N	\N	\N	f	f	50	half	\N	\N	\N	f	\N	\N	\N
-1741	billing	m_price	\N	input	\N	\N	\N	f	f	51	half	\N	\N	\N	f	\N	\N	\N
-1742	billing	n	\N	input	\N	\N	\N	f	f	52	half	\N	\N	\N	f	\N	\N	\N
-1743	billing	n_price	\N	input	\N	\N	\N	f	f	53	half	\N	\N	\N	f	\N	\N	\N
-1745	billing	o_price	\N	input	\N	\N	\N	f	f	55	half	\N	\N	\N	f	\N	\N	\N
-1746	billing	p	\N	input	\N	\N	\N	f	f	56	half	\N	\N	\N	f	\N	\N	\N
-1747	billing	p_price	\N	input	\N	\N	\N	f	f	57	half	\N	\N	\N	f	\N	\N	\N
-1748	billing	q	\N	input	\N	\N	\N	f	f	58	half	\N	\N	\N	f	\N	\N	\N
-1749	billing	q_price	\N	input	\N	\N	\N	f	f	59	half	\N	\N	\N	f	\N	\N	\N
-1750	billing	r	\N	input	\N	\N	\N	f	f	60	half	\N	\N	\N	f	\N	\N	\N
-1751	billing	r_price	\N	input	\N	\N	\N	f	f	61	half	\N	\N	\N	f	\N	\N	\N
-1752	billing	s	\N	input	\N	\N	\N	f	f	62	half	\N	\N	\N	f	\N	\N	\N
-1753	billing	s_price	\N	input	\N	\N	\N	f	f	63	half	\N	\N	\N	f	\N	\N	\N
-1754	billing	t	\N	input	\N	\N	\N	f	f	64	half	\N	\N	\N	f	\N	\N	\N
-1755	billing	t_price	\N	input	\N	\N	\N	f	f	65	half	\N	\N	\N	f	\N	\N	\N
-1756	billing	u	\N	input	\N	\N	\N	f	f	66	half	\N	\N	\N	f	\N	\N	\N
-1757	billing	u_price	\N	input	\N	\N	\N	f	f	67	half	\N	\N	\N	f	\N	\N	\N
-1758	billing	mammogram_tec1	\N	input	\N	\N	\N	f	f	68	half	\N	\N	\N	f	\N	\N	\N
-1759	billing	mammogram_tec2	\N	input	\N	\N	\N	f	f	69	half	\N	\N	\N	f	\N	\N	\N
-1760	billing	ultrasound_tec3	\N	input	\N	\N	\N	f	f	70	half	\N	\N	\N	f	\N	\N	\N
-1762	billing	ultrasound_tec5	\N	input	\N	\N	\N	f	f	72	half	\N	\N	\N	f	\N	\N	\N
-1763	billing	ultrasound_tec6	\N	input	\N	\N	\N	f	f	73	half	\N	\N	\N	f	\N	\N	\N
-1765	billing	us_guided_bx_position	\N	input	\N	\N	\N	f	f	75	full	\N	\N	\N	f	\N	\N	\N
-1766	billing	aspiration_position	\N	input	\N	\N	\N	f	f	76	full	\N	\N	\N	f	\N	\N	\N
-1727	billing	f_price	\N	input	\N	\N	\N	f	f	37	half	\N	\N	\N	f	\N	\N	\N
-1768	billing	copy_film_film	\N	input	\N	\N	\N	f	f	78	full	\N	\N	\N	f	\N	\N	\N
-1769	billing	cash	cast-boolean	boolean	\N	\N	\N	f	f	79	full	\N	\N	\N	f	\N	\N	\N
-1770	billing	appointment	m2o	select-dropdown-m2o	\N	\N	\N	f	f	80	full	\N	\N	\N	f	\N	\N	\N
-1725	billing	e_price	\N	input	\N	\N	\N	f	f	35	half	\N	\N	\N	f	\N	\N	\N
-1726	billing	f	\N	input	\N	\N	\N	f	f	36	half	\N	\N	\N	f	\N	\N	\N
-1728	billing	g	\N	input	\N	\N	\N	f	f	38	half	\N	\N	\N	f	\N	\N	\N
-1764	billing	stereo_biop_position	\N	input	\N	\N	\N	f	f	74	full	\N	\N	\N	f	\N	\N	\N
-1729	billing	g_price	\N	input	\N	\N	\N	f	f	39	half	\N	\N	\N	f	\N	\N	\N
-1730	billing	h	\N	input	\N	\N	\N	f	f	40	half	\N	\N	\N	f	\N	\N	\N
-1731	billing	h_price	\N	input	\N	\N	\N	f	f	41	half	\N	\N	\N	f	\N	\N	\N
+1697	billing	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
+1699	billing	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
+1701	billing	exam	m2o	select-dropdown-m2o	\N	\N	\N	f	f	7	half	\N	\N	\N	f	\N	\N	\N
+1702	billing	patient	m2o	select-dropdown-m2o	\N	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
+1712	billing	patient_type	m2o	select-dropdown-m2o	\N	\N	\N	f	f	18	full	\N	\N	\N	f	\N	\N	\N
+1713	billing	total	\N	input	\N	\N	\N	f	f	21	half	\N	\N	\N	f	\N	\N	\N
+1714	billing	receipt	\N	input	\N	\N	\N	f	f	25	half	\N	\N	\N	f	\N	\N	\N
+1715	billing	receipt_no	\N	input	\N	\N	\N	f	f	26	half	\N	\N	\N	f	\N	\N	\N
+1716	billing	a	\N	input	\N	\N	\N	f	f	27	half	\N	\N	\N	f	\N	\N	\N
+1717	billing	a_price	\N	input	\N	\N	\N	f	f	28	half	\N	\N	\N	f	\N	\N	\N
+1718	billing	b	\N	input	\N	\N	\N	f	f	29	half	\N	\N	\N	f	\N	\N	\N
+1719	billing	b_price	\N	input	\N	\N	\N	f	f	30	half	\N	\N	\N	f	\N	\N	\N
+1720	billing	c	\N	input	\N	\N	\N	f	f	31	half	\N	\N	\N	f	\N	\N	\N
+1721	billing	c_price	\N	input	\N	\N	\N	f	f	32	half	\N	\N	\N	f	\N	\N	\N
+1722	billing	d	\N	input	\N	\N	\N	f	f	33	half	\N	\N	\N	f	\N	\N	\N
+1723	billing	d_price	\N	input	\N	\N	\N	f	f	34	half	\N	\N	\N	f	\N	\N	\N
+1724	billing	e	\N	input	\N	\N	\N	f	f	35	half	\N	\N	\N	f	\N	\N	\N
+1732	billing	i	\N	input	\N	\N	\N	f	f	43	half	\N	\N	\N	f	\N	\N	\N
+1733	billing	i_price	\N	input	\N	\N	\N	f	f	44	half	\N	\N	\N	f	\N	\N	\N
+1734	billing	j	\N	input	\N	\N	\N	f	f	45	half	\N	\N	\N	f	\N	\N	\N
+1735	billing	j_price	\N	input	\N	\N	\N	f	f	46	half	\N	\N	\N	f	\N	\N	\N
+1736	billing	k	\N	input	\N	\N	\N	f	f	47	half	\N	\N	\N	f	\N	\N	\N
+1737	billing	k_price	\N	input	\N	\N	\N	f	f	48	half	\N	\N	\N	f	\N	\N	\N
+1738	billing	l	\N	input	\N	\N	\N	f	f	49	half	\N	\N	\N	f	\N	\N	\N
+1739	billing	l_price	\N	input	\N	\N	\N	f	f	50	half	\N	\N	\N	f	\N	\N	\N
+1740	billing	m	\N	input	\N	\N	\N	f	f	51	half	\N	\N	\N	f	\N	\N	\N
+1741	billing	m_price	\N	input	\N	\N	\N	f	f	52	half	\N	\N	\N	f	\N	\N	\N
+1742	billing	n	\N	input	\N	\N	\N	f	f	53	half	\N	\N	\N	f	\N	\N	\N
+1743	billing	n_price	\N	input	\N	\N	\N	f	f	54	half	\N	\N	\N	f	\N	\N	\N
+1745	billing	o_price	\N	input	\N	\N	\N	f	f	56	half	\N	\N	\N	f	\N	\N	\N
+1746	billing	p	\N	input	\N	\N	\N	f	f	57	half	\N	\N	\N	f	\N	\N	\N
+1747	billing	p_price	\N	input	\N	\N	\N	f	f	58	half	\N	\N	\N	f	\N	\N	\N
+1748	billing	q	\N	input	\N	\N	\N	f	f	59	half	\N	\N	\N	f	\N	\N	\N
+1749	billing	q_price	\N	input	\N	\N	\N	f	f	60	half	\N	\N	\N	f	\N	\N	\N
+1750	billing	r	\N	input	\N	\N	\N	f	f	61	half	\N	\N	\N	f	\N	\N	\N
+1751	billing	r_price	\N	input	\N	\N	\N	f	f	62	half	\N	\N	\N	f	\N	\N	\N
+1752	billing	s	\N	input	\N	\N	\N	f	f	63	half	\N	\N	\N	f	\N	\N	\N
+1753	billing	s_price	\N	input	\N	\N	\N	f	f	64	half	\N	\N	\N	f	\N	\N	\N
+1754	billing	t	\N	input	\N	\N	\N	f	f	65	half	\N	\N	\N	f	\N	\N	\N
+1755	billing	t_price	\N	input	\N	\N	\N	f	f	66	half	\N	\N	\N	f	\N	\N	\N
+1695	billing	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
+2161	examination	other_cancer_age	\N	input	\N	\N	\N	f	f	88	full	\N	\N	\N	f	\N	\N	\N
 1843	exam_reason	display_order	\N	input	\N	\N	\N	f	t	11	full	\N	\N	\N	f	\N	\N	\N
 1840	exam_reason	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	7	half	\N	\N	\N	f	\N	\N	\N
 1833	donate_type	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
@@ -12676,10 +12772,28 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 1818	queue	patient_result	m2o	select-dropdown-m2o	\N	\N	\N	f	f	31	full	\N	\N	\N	f	\N	\N	\N
 1838	exam_reason	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
 1839	exam_reason	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	6	half	\N	\N	\N	f	\N	\N	\N
+1727	billing	f_price	\N	input	\N	\N	\N	f	f	38	half	\N	\N	\N	f	\N	\N	\N
+1728	billing	g	\N	input	\N	\N	\N	f	f	39	half	\N	\N	\N	f	\N	\N	\N
+1729	billing	g_price	\N	input	\N	\N	\N	f	f	40	half	\N	\N	\N	f	\N	\N	\N
+1730	billing	h	\N	input	\N	\N	\N	f	f	41	half	\N	\N	\N	f	\N	\N	\N
+1731	billing	h_price	\N	input	\N	\N	\N	f	f	42	half	\N	\N	\N	f	\N	\N	\N
+1756	billing	u	\N	input	\N	\N	\N	f	f	67	half	\N	\N	\N	f	\N	\N	\N
+1757	billing	u_price	\N	input	\N	\N	\N	f	f	68	half	\N	\N	\N	f	\N	\N	\N
+1758	billing	mammogram_tec1	\N	input	\N	\N	\N	f	f	69	half	\N	\N	\N	f	\N	\N	\N
+1760	billing	ultrasound_tec3	\N	input	\N	\N	\N	f	f	71	half	\N	\N	\N	f	\N	\N	\N
+1762	billing	ultrasound_tec5	\N	input	\N	\N	\N	f	f	73	half	\N	\N	\N	f	\N	\N	\N
+1763	billing	ultrasound_tec6	\N	input	\N	\N	\N	f	f	74	half	\N	\N	\N	f	\N	\N	\N
+1764	billing	stereo_biop_position	\N	input	\N	\N	\N	f	f	75	full	\N	\N	\N	f	\N	\N	\N
+1765	billing	us_guided_bx_position	\N	input	\N	\N	\N	f	f	76	full	\N	\N	\N	f	\N	\N	\N
+1766	billing	aspiration_position	\N	input	\N	\N	\N	f	f	77	full	\N	\N	\N	f	\N	\N	\N
+1768	billing	copy_film_film	\N	input	\N	\N	\N	f	f	79	full	\N	\N	\N	f	\N	\N	\N
+1769	billing	cash	cast-boolean	boolean	\N	\N	\N	f	f	80	full	\N	\N	\N	f	\N	\N	\N
+1770	billing	appointment	m2o	select-dropdown-m2o	\N	\N	\N	f	f	81	full	\N	\N	\N	f	\N	\N	\N
+1726	billing	f	\N	input	\N	\N	\N	f	f	37	half	\N	\N	\N	f	\N	\N	\N
 2009	examination	other_cancer	cast-boolean	boolean	\N	\N	\N	f	f	86	half	\N	\N	\N	f	\N	\N	\N
 1841	exam_reason	type	\N	select-dropdown	{"choices":[{"text":"--","value":"--"},{"text":"Screening","value":"Screening"},{"text":"BC Follow-up","value":"BC Follow-up"},{"text":"Diagnosis","value":"Diagnosis"},{"text":"Special Procedure","value":"Special Procedure"}]}	\N	\N	f	f	8	half	\N	\N	\N	f	\N	\N	\N
+3839	bx_options	is_default_patho	cast-boolean	boolean	\N	\N	\N	f	f	13	half	\N	\N	\N	f	\N	\N	\N
 2449	spot_shape	width	\N	input	\N	\N	\N	f	f	10	half	\N	\N	\N	f	\N	\N	\N
-2160	examination	grandmother_cancer_age	\N	input	\N	\N	\N	f	f	85	full	\N	\N	\N	f	\N	\N	\N
 2376	spot_shape	spot	m2o	select-dropdown-m2o	\N	\N	\N	f	f	6	half	\N	\N	\N	f	\N	\N	\N
 2450	spot_shape	height	\N	input	\N	\N	\N	f	f	11	half	\N	\N	\N	f	\N	\N	\N
 2396	spot	l_cone_comp_lat	cast-boolean	\N	\N	\N	\N	f	f	22	half	\N	\N	\N	f	\N	\N	\N
@@ -12694,7 +12808,6 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 1867	patient_type	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	11	half	\N	\N	\N	f	\N	\N	\N
 1868	patient_type	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	12	half	\N	\N	\N	f	\N	\N	\N
 1869	patient_type	description	\N	input	\N	\N	\N	f	f	2	full	\N	\N	\N	t	\N	\N	\N
-1870	patient_type	is_in_patient_type	\N	select-dropdown	{"choices":[{"text":"1","value":1},{"text":"2","value":2},{"text":"3","value":3}]}	\N	\N	f	f	3	half	\N	\N	\N	f	\N	\N	\N
 1871	patient_type	can_claim_expense	\N	select-dropdown	{"choices":[{"text":"เบิกได้","value":1},{"text":"เบิกไม่ได้","value":2}]}	\N	\N	f	f	4	half	\N	\N	\N	f	\N	\N	\N
 1872	patient_type	class	\N	select-dropdown	{"allowOther":true,"choices":[{"text":"0","value":0},{"text":"1","value":1},{"text":"2","value":2},{"text":"3","value":3}]}	\N	\N	f	f	5	half	\N	\N	\N	f	\N	\N	\N
 1873	patient_type	category	\N	select-dropdown	{"allowOther":true,"choices":[{"text":"ศิริราช","value":"ศิริราช"},{"text":"ศูนย์","value":"ศูนย์"}]}	\N	\N	f	f	6	half	\N	\N	\N	f	\N	\N	\N
@@ -12739,6 +12852,7 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 1902	time_slot	1st_fri_app	\N	input	\N	\N	\N	f	f	9	half	\N	\N	\N	f	\N	\N	\N
 1903	time_slot	sat_office	\N	input	\N	\N	\N	f	f	10	half	\N	\N	\N	f	\N	\N	\N
 1904	time_slot	sat_app	\N	input	\N	\N	\N	f	f	11	half	\N	\N	\N	f	\N	\N	\N
+2160	examination	grandmother_cancer_age	\N	input	\N	\N	\N	f	f	85	full	\N	\N	\N	f	\N	\N	\N
 1894	time_slot	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 2499	billing_discount	types_combination	m2m	list-m2m	\N	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
 17	directus_users	last_name	\N	\N	\N	\N	\N	f	f	6	half	\N	\N	\N	f	\N	\N	\N
@@ -12765,6 +12879,7 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 1947	progress	officer	\N	input	\N	\N	\N	f	f	13	full	\N	\N	\N	f	\N	\N	\N
 1948	progress	doctor	\N	input	\N	\N	\N	f	f	14	full	\N	\N	\N	f	\N	\N	\N
 2502	billing_discount_exam_costs	exam_costs_id	\N	\N	\N	\N	\N	f	t	3	full	\N	\N	\N	f	\N	\N	\N
+3840	finance_cost	hospital_code	\N	input	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
 21	directus_users	avatar	file	file	\N	\N	\N	f	f	4	full	\N	\N	\N	f	\N	\N	\N
 29	directus_users	first_name_en	\N	\N	\N	\N	\N	f	f	7	half	\N	\N	\N	f	\N	\N	\N
 1784	patient_result	status	\N	select-dropdown	{"choices":[{"text":"ยังไม่ออกผล","value":"0"},{"text":"กำลังออกผล","value":"1"},{"text":"รอชำระเงิน","value":"2"},{"text":"รอจัดส่ง","value":"3"},{"text":"เสร็จสิ้น","value":"4"},{"text":"จัดส่งแล้ว","value":"5"},{"text":"เรียกคิวแล้ว","value":"6"},{"text":"ยกเลิกคิว","value":"7"},{"text":"รอเรียกคิว","value":"8"}]}	\N	\N	f	f	16	full	\N	\N	\N	f	\N	\N	\N
@@ -12798,9 +12913,12 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 1938	progress	admission_time	\N	datetime	\N	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
 1939	progress	close_case_time	\N	datetime	\N	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
 1935	progress	worklist	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
+3841	finance_cost	procedure_name	\N	input	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
 3004	recommend_bx_form	ultrasound_work	m2o	select-dropdown-m2o	\N	\N	\N	f	f	7	half	\N	\N	\N	f	\N	\N	\N
 1940	queue	information_type	\N	select-radio	{"choices":[{"text":"ผู้มาตรวจ","value":"ผู้มาตรวจ"},{"text":"คนทั่วไป","value":"คนทั่วไป"}]}	\N	\N	f	f	33	full	\N	\N	\N	f	\N	\N	\N
 1968	environment_data	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
+3842	finance_cost	cgd_code	\N	input	\N	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
+3843	finance_cost	procedure_price	\N	input	\N	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
 1969	environment_data	url	\N	input	\N	\N	\N	f	f	2	full	\N	\N	\N	f	\N	\N	\N
 1970	environment_data	access_token	\N	input	\N	\N	\N	f	f	3	full	\N	\N	\N	f	\N	\N	\N
 1951	queue	worklist	o2m	list-o2m	{"template":"{{id}}"}	\N	\N	f	f	34	full	\N	\N	\N	f	\N	\N	\N
@@ -12811,10 +12929,6 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 1975	mobile_location	old_id	\N	input	\N	\N	\N	f	f	3	full	\N	\N	\N	f	\N	\N	\N
 2200	coordinate	reason	\N	input	\N	\N	\N	f	f	14	full	\N	\N	\N	f	\N	\N	\N
 2201	coordinate	detail	\N	input	\N	\N	\N	f	f	15	full	\N	\N	\N	f	\N	\N	\N
-2202	pacs_sync_info	num_of_spot	\N	input	{"min":0}	\N	\N	f	f	29	half	\N	\N	\N	f	\N	\N	\N
-2211	pacs_sync_info	is_mark_del	cast-boolean	boolean	\N	\N	\N	f	f	26	half	\N	\N	\N	f	\N	\N	\N
-2205	pacs_sync_info	num_of_implant	\N	input	{"min":0}	\N	\N	f	f	31	half	\N	\N	\N	f	\N	\N	\N
-2213	pacs_sync_info	confirm_num_of_spot	\N	input	{"min":0}	\N	\N	f	f	30	half	\N	\N	\N	f	\N	\N	\N
 2015	tab_exam_option	option_label	\N	input	\N	\N	\N	f	f	5	full	\N	\N	\N	f	\N	\N	\N
 1664	patient_info	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 2013	tab_exam_option	tab_id	\N	input	\N	\N	\N	f	f	2	full	\N	\N	\N	f	\N	\N	\N
@@ -12824,29 +12938,22 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2017	tab_exam_option	option_order	\N	input	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
 2012	tab_exam_option	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 2016	tab_exam_option	option_value	\N	input	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
-1761	billing	ultrasound_tec4	\N	input	\N	\N	\N	f	f	71	half	\N	\N	\N	f	\N	\N	\N
+3844	finance_cost	excess_price	\N	input	\N	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
 2291	mammogram	breast_composition_des	\N	input	\N	\N	\N	f	f	11	full	\N	\N	\N	f	\N	\N	\N
-2002	examination	id_r_date	\N	datetime	\N	\N	\N	f	f	59	half	\N	\N	\N	f	\N	\N	\N
 2293	mammogram	implant_des	\N	input	\N	\N	\N	f	f	13	full	\N	\N	\N	f	\N	\N	\N
 2294	mammogram	implant_finding	cast-json	input-code	\N	\N	\N	f	f	14	full	\N	\N	\N	f	\N	\N	\N
-2005	examination	daughter_cancer	cast-boolean	boolean	\N	\N	\N	f	f	78	half	\N	\N	\N	f	\N	\N	\N
 2296	mammogram	technique	\N	input	\N	\N	\N	f	f	16	full	\N	\N	\N	f	\N	\N	\N
 2193	finance_work	billing	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
 2297	mammogram	r_technique	cast-boolean	boolean	\N	\N	\N	f	f	17	full	\N	\N	\N	f	\N	\N	\N
-2214	pacs_sync_info	confirm_num_of_implant	\N	input	{"min":0}	\N	\N	f	f	32	half	\N	\N	\N	f	\N	\N	\N
 2298	mammogram	l_technique	cast-boolean	boolean	\N	\N	\N	f	f	18	full	\N	\N	\N	f	\N	\N	\N
-2212	pacs_sync_info	confirm_num_of_mam	\N	input	{"min":0}	\N	\N	f	f	28	half	\N	\N	\N	f	\N	\N	\N
+2195	billing	old_pid	\N	input	\N	\N	\N	f	f	83	full	\N	\N	\N	f	\N	\N	\N
 2110	patient_info	pacs_sync_infos	o2m	list-o2m	\N	\N	\N	f	f	37	full	\N	\N	\N	f	\N	\N	\N
-2195	billing	old_pid	\N	input	\N	\N	\N	f	f	82	full	\N	\N	\N	f	\N	\N	\N
 2299	mammogram	technique_des	\N	input	\N	\N	\N	f	f	19	full	\N	\N	\N	f	\N	\N	\N
 2300	mammogram	mass	\N	input	\N	\N	\N	f	f	20	full	\N	\N	\N	f	\N	\N	\N
 2616	center_income	staff_name	\N	input	\N	\N	\N	f	f	12	full	\N	\N	\N	f	\N	\N	\N
-2504	billing	is_overtime	cast-boolean	boolean	\N	\N	\N	f	f	86	full	\N	\N	\N	f	\N	\N	\N
 2301	mammogram	mass_des	\N	input	\N	\N	\N	f	f	21	full	\N	\N	\N	f	\N	\N	\N
 2302	mammogram	num_of_mass_actual_found	\N	input	\N	\N	\N	f	f	22	full	\N	\N	\N	f	\N	\N	\N
 2303	mammogram	cal	\N	input	\N	\N	\N	f	f	23	full	\N	\N	\N	f	\N	\N	\N
-2614	pacs_sync_info	spot_called_time	\N	datetime	\N	\N	\N	f	f	19	full	\N	\N	\N	f	\N	\N	\N
-2210	pacs_sync_info	is_normal_study	cast-boolean	boolean	\N	\N	\N	f	f	25	half	\N	\N	\N	f	\N	\N	\N
 2304	mammogram	cal_des	\N	input	\N	\N	\N	f	f	24	full	\N	\N	\N	f	\N	\N	\N
 2566	mammogram	r_cone_comp_tomo_axilla	cast-boolean	boolean	\N	\N	\N	f	f	61	full	\N	\N	\N	f	\N	\N	\N
 2568	mammogram	r_cone_comp_combo_cc	cast-boolean	boolean	\N	\N	\N	f	f	63	full	\N	\N	\N	f	\N	\N	\N
@@ -12866,20 +12973,28 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2612	examination_general	l_palpable	\N	input-code	\N	\N	\N	f	f	63	full	\N	\N	\N	f	\N	\N	\N
 1959	appointment	teaching_case	cast-boolean	boolean	\N	\N	\N	f	f	61	full	\N	\N	\N	f	\N	\N	\N
 2227	examination_general	pe_des	\N	input	\N	\N	\N	f	f	16	full	\N	\N	\N	f	\N	\N	\N
+2205	pacs_sync_info	num_of_implant	\N	input	{"min":0}	\N	\N	f	f	31	half	\N	\N	\N	f	\N	\N	\N
 1656	appointment	referral_form	files	files	{"folder":"1f252442-3078-4e04-9af6-05c1696a766b"}	\N	\N	f	f	51	full	\N	\N	\N	f	\N	\N	\N
 3022	medical_certificate	examining_physician	m2o	select-dropdown-m2o	\N	\N	\N	f	f	13	full	\N	\N	\N	f	\N	\N	\N
 3020	medical_certificate	location	\N	input	\N	\N	\N	f	f	16	half	\N	\N	\N	f	\N	\N	\N
 3021	medical_certificate	location_des	\N	input	\N	\N	\N	f	f	17	half	\N	\N	\N	f	\N	\N	\N
+2214	pacs_sync_info	confirm_num_of_implant	\N	input	{"min":0}	\N	\N	f	f	32	half	\N	\N	\N	f	\N	\N	\N
+1761	billing	ultrasound_tec4	\N	input	\N	\N	\N	f	f	72	half	\N	\N	\N	f	\N	\N	\N
+2005	examination	daughter_cancer	cast-boolean	boolean	\N	\N	\N	f	f	78	half	\N	\N	\N	f	\N	\N	\N
+2210	pacs_sync_info	is_normal_study	cast-boolean	boolean	\N	\N	\N	f	f	25	half	\N	\N	\N	f	\N	\N	\N
+2211	pacs_sync_info	is_mark_del	cast-boolean	boolean	\N	\N	\N	f	f	26	half	\N	\N	\N	f	\N	\N	\N
+2212	pacs_sync_info	confirm_num_of_mam	\N	input	{"min":0}	\N	\N	f	f	28	half	\N	\N	\N	f	\N	\N	\N
+2202	pacs_sync_info	num_of_spot	\N	input	{"min":0}	\N	\N	f	f	29	half	\N	\N	\N	f	\N	\N	\N
+2213	pacs_sync_info	confirm_num_of_spot	\N	input	{"min":0}	\N	\N	f	f	30	half	\N	\N	\N	f	\N	\N	\N
+2002	examination	id_r_date	\N	datetime	\N	\N	\N	f	f	59	half	\N	\N	\N	f	\N	\N	\N
 2318	mammogram	r_specialcase	cast-json	input-code	\N	\N	\N	f	f	26	full	\N	\N	\N	f	\N	\N	\N
 2322	mammogram	r_ass_finding	cast-json	input-code	\N	\N	\N	f	f	30	full	\N	\N	\N	f	\N	\N	\N
 1672	patient_info	prefix_en	\N	select-dropdown	{"choices":[{"text":"-","value":"-"},{"text":" MRS.","value":" MRS."},{"text":"Acthing.Sub.LT.","value":"Acthing.Sub.LT."},{"text":"Acting Sab Lt.","value":"Acting Sab Lt."},{"text":"Acting Sub Lt.","value":"Acting Sub Lt."},{"text":"Acting Sub.Lt.","value":"Acting Sub.Lt."},{"text":"Acting Sud.Lt.","value":"Acting Sud.Lt."},{"text":"Acting2Lt.","value":"Acting2Lt."},{"text":"Aie","value":"Aie"},{"text":"AMPAWA","value":"AMPAWA"},{"text":"anakanan","value":"anakanan"},{"text":"ASSOC.PROF.","value":"ASSOC.PROF."},{"text":"baitoey","value":"baitoey"},{"text":"bonloon","value":"bonloon"},{"text":"bread","value":"bread"},{"text":"C.P.O.1","value":"C.P.O.1"},{"text":"CA Breast เสียชีวิต","value":"CA Breast เสียชีวิต"},{"text":"Capt.","value":"Capt."},{"text":"CDR","value":"CDR"},{"text":"CDR.","value":"CDR."},{"text":"chalisa","value":"chalisa"},{"text":"chonlada","value":"chonlada"},{"text":"chonticha","value":"chonticha"},{"text":"Col.","value":"Col."},{"text":"COL.,","value":"COL.,"},{"text":"Col.Lt.Dr","value":"Col.Lt.Dr"},{"text":"Cpl.","value":"Cpl."},{"text":"CPT.","value":"CPT."},{"text":"Cupt.","value":"Cupt."},{"text":"dancehall","value":"dancehall"},{"text":"daowanit","value":"daowanit"},{"text":"dingdds","value":"dingdds"},{"text":"Dr","value":"Dr"},{"text":"Dr.","value":"Dr."},{"text":"eiddy","value":"eiddy"},{"text":"Female","value":"Female"},{"text":"Firdow","value":"Firdow"},{"text":"FLT.LT.","value":"FLT.LT."},{"text":"G.Cpt","value":"G.Cpt"},{"text":"Gp.Capt.","value":"Gp.Capt."},{"text":"Green","value":"Green"},{"text":"Jao","value":"Jao"},{"text":"joann","value":"joann"},{"text":"jun","value":"jun"},{"text":"Jutijuta","value":"Jutijuta"},{"text":"K.L., ","value":"K.L., "},{"text":"Kaewpradit","value":"Kaewpradit"},{"text":"KHUNYING","value":"KHUNYING"},{"text":"kipairoch","value":"kipairoch"},{"text":"LCdr","value":"LCdr"},{"text":"LCdr.","value":"LCdr."},{"text":"lookgade","value":"lookgade"},{"text":"Lt","value":"Lt"},{"text":"Lt.","value":"Lt."},{"text":"LT.COL","value":"LT.COL"},{"text":"Lt.Col.","value":"Lt.Col."},{"text":"Lt.GEN","value":"Lt.GEN"},{"text":"Ltcol","value":"Ltcol"},{"text":"M","value":"M"},{"text":"M.L","value":"M.L"},{"text":"M.L.","value":"M.L."},{"text":"M.L.,","value":"M.L.,"},{"text":"M.R.","value":"M.R."},{"text":"Maj.Gen.","value":"Maj.Gen."},{"text":"mint","value":"mint"},{"text":"Mir","value":"Mir"},{"text":"mirs","value":"mirs"},{"text":"Mis","value":"Mis"},{"text":"MIS.","value":"MIS."},{"text":"Misd","value":"Misd"},{"text":"MISS","value":"MISS"},{"text":"Miss.","value":"Miss."},{"text":"Missis","value":"Missis"},{"text":"misss","value":"misss"},{"text":"Mister","value":"Mister"},{"text":"MR","value":"MR"},{"text":"MR.","value":"MR."},{"text":"MRS","value":"MRS"},{"text":"Mrs.","value":"Mrs."},{"text":"Mrs.,","value":"Mrs.,"},{"text":"Ms","value":"Ms"},{"text":"MS.","value":"MS."},{"text":"mss","value":"mss"},{"text":"name","value":"name"},{"text":"Namo","value":"Namo"},{"text":"nang","value":"nang"},{"text":"NASA","value":"NASA"},{"text":"nee","value":"nee"},{"text":"ning","value":"ning"},{"text":"nitball","value":"nitball"},{"text":"nun","value":"nun"},{"text":"Nutchar","value":"Nutchar"},{"text":"oily","value":"oily"},{"text":"pa","value":"pa"},{"text":"pani","value":"pani"},{"text":"parisa","value":"parisa"},{"text":"PHRAMAHA","value":"PHRAMAHA"},{"text":"Piyanuch","value":"Piyanuch"},{"text":"Plt.Off.","value":"Plt.Off."},{"text":"PO.LT.COL.","value":"PO.LT.COL."},{"text":"POL COL.","value":"POL COL."},{"text":"Pol.Capt.","value":"Pol.Capt."},{"text":"Pol.Col.","value":"Pol.Col."},{"text":"POL.GEN.","value":"POL.GEN."},{"text":"POL.LT.","value":"POL.LT."},{"text":"Pol.Lt.Col.","value":"Pol.Lt.Col."},{"text":"Pol.Sen.Sgt.Maj","value":"Pol.Sen.Sgt.Maj"},{"text":"Pol.Sen.Sgt.Maj.","value":"Pol.Sen.Sgt.Maj."},{"text":"Pol.Sub LT.","value":"Pol.Sub LT."},{"text":"Pol.Sub.Lt.","value":"Pol.Sub.Lt."},{"text":"Pol.Sub-Lt","value":"Pol.Sub-Lt"},{"text":"Pol.Sub-Lt.","value":"Pol.Sub-Lt."},{"text":"Polcpl","value":"Polcpl"},{"text":"POLLTCOL","value":"POLLTCOL"},{"text":"pornsiri","value":"pornsiri"},{"text":"pranee","value":"pranee"},{"text":"Prof.","value":"Prof."},{"text":"Proyrat","value":"Proyrat"},{"text":"puengpa","value":"puengpa"},{"text":"Radm.","value":"Radm."},{"text":"RAJM.","value":"RAJM."},{"text":"Rattana","value":"Rattana"},{"text":"Riantrakul","value":"Riantrakul"},{"text":"rlpanida","value":"rlpanida"},{"text":"RS","value":"RS"},{"text":"RungtiVa","value":"RungtiVa"},{"text":"SUB.LT.","value":"SUB.LT."},{"text":"Suchanun","value":"Suchanun"},{"text":"suchart","value":"suchart"},{"text":"THANPUYING","value":"THANPUYING"},{"text":"Thara","value":"Thara"},{"text":"third","value":"third"},{"text":"TSK","value":"TSK"},{"text":"Warunthorn","value":"Warunthorn"},{"text":"wijittra","value":"wijittra"},{"text":"women","value":"women"},{"text":"yupapin","value":"yupapin"},{"text":"ร.ท.หญิง","value":"ร.ท.หญิง"},{"text":"เสียชีวิต","value":"เสียชีวิต"},{"text":"เสียชีวิต (สส.มม.)","value":"เสียชีวิต (สส.มม.)"},{"text":"เสียชีวิต พ.ค.51","value":"เสียชีวิต พ.ค.51"},{"text":"Miss","value":"Miss"}]}	\N	\N	f	f	13	full	\N	\N	\N	f	\N	\N	\N
 2025	queue	pid	\N	input	{"placeholder":null}	\N	\N	f	f	35	full	\N	\N	\N	f	\N	\N	\N
 2086	coordinate	data_tag	\N	select-dropdown	{"choices":[{"text":"finance","value":"0"},{"text":"doctor","value":"1"}]}	\N	\N	f	f	11	full	\N	\N	\N	f	\N	\N	\N
 3019	directus_roles	role_name_code	\N	input	\N	\N	\N	f	f	1	full	\N	\N	\N	f	\N	\N	\N
-2588	billing	ultrasound_tec1	\N	\N	\N	\N	\N	f	f	89	full	\N	\N	\N	f	\N	\N	\N
-2589	billing	appointment_datetime	\N	\N	\N	\N	\N	f	f	90	full	\N	\N	\N	f	\N	\N	\N
-2634	examination	us	o2m	list-o2m	\N	\N	\N	f	f	17	full	\N	\N	\N	f	\N	\N	\N
-2621	billing	is_out_patient	cast-boolean	boolean	\N	\N	\N	f	f	11	half	\N	\N	\N	f	\N	\N	\N
+2194	billing	finance_work	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	82	full	\N	\N	\N	f	\N	\N	\N
+2187	finance_work	status	\N	select-dropdown	{"choices":[{"text":"รอดำเนินการ","value":"0"},{"text":"กำลังดำเนินการ","value":"1"},{"text":"รอบันทึกรับเงิน","value":"2"},{"text":"ชำระเงินแล้ว","value":"3"},{"text":"รอยอดเรียกเก็บ","value":"4"}]}	labels	{"choices":[{"text":"รอดำเนินการ","value":"0"},{"text":"กำลังดำเนินการ","value":"1"},{"text":"รอบันทึกรับเงิน","value":"2"},{"text":"ชำระเงินแล้ว","value":"3","background":null},{"text":"รอยอดเรียกเก็บ","value":"4"}]}	f	f	9	full	\N	\N	\N	f	\N	\N	\N
 2319	mammogram	r_specialcase_des	cast-json	input-code	\N	\N	\N	f	f	27	full	\N	\N	\N	f	\N	\N	\N
 2320	mammogram	l_specialcase	cast-json	input-code	\N	\N	\N	f	f	28	full	\N	\N	\N	f	\N	\N	\N
 2321	mammogram	l_specialcase_des	cast-json	input-code	\N	\N	\N	f	f	29	full	\N	\N	\N	f	\N	\N	\N
@@ -12891,18 +13006,11 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2330	mammogram	l_implant_finding_des	cast-json	input-code	\N	\N	\N	f	f	36	full	\N	\N	\N	f	\N	\N	\N
 2567	mammogram	l_cone_comp_tomo_axilla	cast-boolean	boolean	\N	\N	\N	f	f	62	full	\N	\N	\N	f	\N	\N	\N
 2305	mammogram	num_of_cal_actual_found	\N	input	\N	\N	\N	f	f	25	full	\N	\N	\N	f	\N	\N	\N
-2631	billing	total_exam	\N	input	\N	\N	\N	f	f	19	half	\N	\N	\N	f	\N	\N	\N
-2091	pacs_sync_info	user_created	user-created	\N	\N	\N	\N	f	t	1	half	\N	\N	\N	f	\N	\N	\N
 2632	queue	patient_category	\N	select-dropdown	{"choices":[{"text":"ผู้มาตรวจใหม่","value":"1"},{"text":"ผู้มาตรวจเก่า","value":"2"}]}	\N	\N	f	f	37	full	\N	\N	\N	f	\N	\N	\N
 1961	patient_info	patient_category	\N	select-dropdown	{"choices":[{"text":"ผู้มาตรวจใหม่","value":"1"},{"text":"ผู้มาตรวจเก่า","value":"2"}]}	\N	\N	f	f	35	full	\N	\N	\N	f	\N	\N	\N
-2196	billing	old_exam_id	\N	input	\N	\N	\N	f	f	83	full	\N	\N	\N	f	\N	\N	\N
-2194	billing	finance_work	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	81	full	\N	\N	\N	f	\N	\N	\N
 2617	center_income	full_name	\N	input	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
-2505	billing	is_foreigner	cast-boolean	boolean	\N	\N	\N	f	f	87	full	\N	\N	\N	f	\N	\N	\N
-2587	billing	ultrasound_tec2	\N	\N	\N	\N	\N	f	f	88	full	\N	\N	\N	f	\N	\N	\N
 2182	finance_work	exam	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
 2183	finance_work	appointment	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
-2187	finance_work	status	\N	select-dropdown	{"choices":[{"text":"รอดำเนินการ","value":"0"},{"text":"กำลังดำเนินการ","value":"1"},{"text":"รอบันทึกรับเงิน","value":"2"},{"text":"ชำระเงินแล้ว","value":"3"}]}	labels	{"choices":[{"text":"รอดำเนินการ","value":"0"},{"text":"กำลังดำเนินการ","value":"1"},{"text":"รอบันทึกรับเงิน","value":"2"},{"text":"ชำระเงินแล้ว","value":"3","background":null}]}	f	f	9	full	\N	\N	\N	f	\N	\N	\N
 2512	spot	l_spot_mag_axilla	cast-boolean	boolean	\N	\N	\N	f	f	16	half	\N	\N	\N	f	\N	\N	\N
 2761	beds	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 2217	examination_general	patientexamtype_des	\N	input	\N	\N	\N	f	f	12	full	\N	\N	\N	f	\N	\N	\N
@@ -12911,13 +13019,23 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2604	examination_general	r_problemindicated_des	cast-json	input-code	\N	\N	\N	f	f	57	full	\N	\N	\N	f	\N	\N	\N
 2605	examination_general	l_problemindicated	cast-json	input-code	\N	\N	\N	f	f	58	full	\N	\N	\N	f	\N	\N	\N
 2606	examination_general	l_problemindicated_des	cast-json	input-code	\N	\N	\N	f	f	59	full	\N	\N	\N	f	\N	\N	\N
+2196	billing	old_exam_id	\N	input	\N	\N	\N	f	f	84	full	\N	\N	\N	f	\N	\N	\N
 2216	examination_general	patientexamtype	\N	input	\N	\N	\N	f	f	11	full	\N	\N	\N	f	\N	\N	\N
+2505	billing	is_foreigner	cast-boolean	boolean	\N	\N	\N	f	f	87	full	\N	\N	\N	f	\N	\N	\N
+2587	billing	ultrasound_tec2	\N	\N	\N	\N	\N	f	f	88	full	\N	\N	\N	f	\N	\N	\N
+2588	billing	ultrasound_tec1	\N	\N	\N	\N	\N	f	f	89	full	\N	\N	\N	f	\N	\N	\N
+3845	billing	finance_case_owner	m2o	select-dropdown-m2o	{"template":"{{first_name}}{{last_name}}"}	\N	\N	f	f	96	full	\N	\N	\N	f	\N	\N	\N
+2091	pacs_sync_info	user_created	user-created	\N	\N	\N	\N	f	t	1	half	\N	\N	\N	f	\N	\N	\N
+2634	examination	us	o2m	list-o2m	\N	\N	\N	f	f	17	full	\N	\N	\N	f	\N	\N	\N
+2621	billing	is_out_patient	cast-boolean	boolean	\N	\N	\N	f	f	11	half	\N	\N	\N	f	\N	\N	\N
+2631	billing	total_exam	\N	input	\N	\N	\N	f	f	19	half	\N	\N	\N	f	\N	\N	\N
+2589	billing	appointment_datetime	\N	\N	\N	\N	\N	f	f	90	full	\N	\N	\N	f	\N	\N	\N
 2357	spot_shape	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 2334	mammogram	r_implant_finding_des	cast-json	input-code	\N	\N	\N	f	f	38	full	\N	\N	\N	f	\N	\N	\N
-2642	billing	exam_datetime	\N	datetime	\N	\N	\N	f	f	6	half	\N	\N	\N	f	\N	\N	\N
 2395	spot	r_cone_comp_lat	cast-boolean	\N	\N	\N	\N	f	f	21	half	\N	\N	\N	f	\N	\N	\N
 2361	spot_shape	type	\N	input	{"placeholder":"\\"rect\\" = สี่เหลี่ยม, \\"ellipse\\" = วงกลม"}	\N	\N	f	f	7	half	\N	\N	\N	f	\N	\N	\N
 2506	spot	l_spot_mag_cc	cast-boolean	boolean	\N	\N	\N	f	f	10	half	\N	\N	\N	f	\N	\N	\N
+1870	patient_type	is_in_patient_type	\N	select-dropdown	{"choices":[{"text":"ผู้ป่วยใน","value":1},{"text":"ผู้ป่วยนอก","value":2},{"text":"พิเศษ","value":3}],"allowNone":true}	labels	{"choices":[{"text":"ผู้ป่วยใน","value":"1"},{"text":"ผู้ป่วยนอก","value":"2"},{"text":"พิเศษ","value":"3"}]}	f	f	3	half	\N	\N	\N	f	\N	\N	\N
 2571	mammogram	l_cone_comp_combo_mmo	cast-boolean	boolean	\N	\N	\N	f	f	66	full	\N	\N	\N	f	\N	\N	\N
 2511	spot	r_spot_mag_lat	cast-boolean	boolean	\N	\N	\N	f	f	13	half	\N	\N	\N	f	\N	\N	\N
 2510	spot	l_spot_mag_lat	cast-boolean	boolean	\N	\N	\N	f	f	14	half	\N	\N	\N	f	\N	\N	\N
@@ -12931,38 +13049,17 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2410	spot	r_cone_comp_combo_lat	cast-boolean	\N	\N	\N	\N	f	f	37	half	\N	\N	\N	f	\N	\N	\N
 2377	spot	spot_shapes	o2m	list-o2m	{"sort":null}	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
 2509	spot	r_spot_mag_mmo	cast-boolean	boolean	\N	\N	\N	f	f	11	half	\N	\N	\N	f	\N	\N	\N
-2093	pacs_sync_info	user_updated	user-created	\N	\N	\N	\N	f	t	3	half	\N	\N	\N	f	\N	\N	\N
 2507	spot	r_spot_mag_cc	cast-boolean	boolean	\N	\N	\N	f	f	9	half	\N	\N	\N	f	\N	\N	\N
 2374	spot	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 2508	spot	l_spot_mag_mmo	cast-boolean	boolean	\N	\N	\N	f	f	12	half	\N	\N	\N	f	\N	\N	\N
 2406	spot	r_cone_comp_combo_cc	cast-boolean	\N	\N	\N	\N	f	f	33	half	\N	\N	\N	f	\N	\N	\N
-1767	billing	ductogram_fim	\N	input	\N	\N	\N	f	f	77	full	\N	\N	\N	f	\N	\N	\N
 2661	ultrasound_cyst	echo_pattern_des	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
-2087	pacs_sync_info	id	\N	\N	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
-2088	pacs_sync_info	patient	m2o	select-dropdown-m2o	\N	\N	\N	f	f	8	half	\N	\N	\N	f	\N	\N	\N
-2625	billing	center_income	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	93	full	\N	\N	\N	f	\N	\N	\N
 2683	ultrasound_mass	date_created	date-created	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
-2590	billing	care_type	\N	select-radio	{"choices":[{"text":"ผู้ป่วยนอก","value":"1"},{"text":"ผู้ป่วยใน","value":"2"},{"text":"ผู้ป่วยอื่นๆ ของศูนย์","value":"3"}]}	\N	\N	f	f	91	full	\N	\N	\N	f	\N	\N	\N
 2629	center_income	address	\N	input	\N	\N	\N	f	f	15	full	\N	\N	\N	f	\N	\N	\N
 2630	center_income	patient_info	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	16	full	\N	\N	\N	f	\N	\N	\N
-2628	billing	paid_amount	\N	input	\N	\N	\N	f	f	23	half	\N	\N	\N	f	\N	\N	\N
-2623	billing	final_total	\N	input	\N	\N	\N	f	f	21	half	\N	\N	\N	f	\N	\N	\N
-2622	billing	payment_method	\N	select-radio	{"choices":[{"text":"เงินสดเบิกได้","value":"1"},{"text":"เงินสดเบิกไม่ได้","value":"2"},{"text":"ออกใบแจ้งหนี้เรียกเก็บ","value":"3"}]}	\N	\N	f	f	85	full	\N	\N	\N	f	\N	\N	\N
 2685	ultrasound_mass	date_updated	date-updated	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2684	ultrasound_mass	user_updated	user-updated	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
-1363	examination	lsee	cast-boolean	boolean	\N	\N	\N	f	f	97	half	\N	\N	\N	f	\N	\N	\N
-1386	examination	mobile_updated	\N	input	\N	\N	\N	f	t	132	half	\N	\N	\N	f	\N	\N	\N
-1408	examination	send_exam_login_name	\N	input	\N	\N	\N	f	t	133	full	\N	\N	\N	f	\N	\N	\N
 2064	tab_exam_option	group	\N	select-dropdown	{"choices":[{"text":"A","value":"A"},{"text":"B","value":"B"}]}	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
-2102	pacs_sync_info	pacs_sync_time	\N	\N	\N	\N	\N	f	f	14	half	\N	\N	\N	f	\N	\N	\N
-2098	pacs_sync_info	dl_dt	\N	\N	\N	\N	\N	f	t	11	full	\N	\N	\N	f	\N	\N	\N
-2090	pacs_sync_info	sync_file_name	\N	\N	\N	\N	\N	f	f	13	half	\N	\N	\N	f	\N	\N	\N
-2094	pacs_sync_info	date_updated	date-updated	\N	\N	\N	\N	f	t	4	half	\N	\N	\N	f	\N	\N	\N
-2095	pacs_sync_info	accession_id	\N	\N	\N	\N	\N	f	f	12	full	\N	\N	\N	f	\N	\N	\N
-2106	pacs_sync_info	study_no	\N	\N	\N	\N	\N	f	f	23	full	\N	\N	\N	f	\N	\N	\N
-2111	pacs_sync_info	end_time	\N	datetime	\N	\N	\N	f	f	21	half	\N	\N	\N	f	\N	\N	\N
-2103	pacs_sync_info	seriesperformed	\N	\N	\N	\N	\N	f	t	22	full	\N	\N	\N	f	\N	\N	\N
-2100	pacs_sync_info	ris_code	\N	\N	\N	\N	\N	f	f	16	half	\N	\N	\N	f	\N	\N	\N
 2233	examination_general	assessment_birads_des	\N	input	\N	\N	\N	f	f	18	full	\N	\N	\N	f	\N	\N	\N
 2234	examination_general	recommendation	\N	input	\N	\N	\N	f	f	19	full	\N	\N	\N	f	\N	\N	\N
 2236	examination_general	recommendation_followupmounths	\N	input	\N	\N	\N	f	f	20	full	\N	\N	\N	f	\N	\N	\N
@@ -12972,14 +13069,36 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2603	examination_general	r_problemindicated	cast-json	input-code	\N	\N	\N	f	f	56	full	\N	\N	\N	f	\N	\N	\N
 2607	examination_general	r_palpable	cast-json	input-code	\N	\N	\N	f	f	60	full	\N	\N	\N	f	\N	\N	\N
 2608	examination_general	r_palpable_des	cast-json	input-code	\N	\N	\N	f	f	61	full	\N	\N	\N	f	\N	\N	\N
+3846	billing	service_total	\N	input	\N	\N	\N	f	f	20	half	\N	\N	\N	f	\N	\N	\N
 2238	examination_general	exam_date	\N	datetime	\N	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
+2642	billing	exam_datetime	\N	datetime	\N	\N	\N	f	f	6	half	\N	\N	\N	f	\N	\N	\N
 2037	time_slot	index	\N	input	\N	\N	\N	f	f	12	full	\N	\N	\N	f	\N	\N	\N
 2040	time_slot	is_disabled	cast-boolean	boolean	\N	\N	\N	f	f	15	full	\N	\N	\N	f	\N	\N	\N
-2097	pacs_sync_info	old_exam_id	\N	\N	\N	\N	\N	f	t	6	half	\N	\N	\N	f	\N	\N	\N
-2104	pacs_sync_info	status	\N	select-dropdown	{"choices":[{"text":"Not Synced","value":0},{"text":"PACs Synced","value":1}]}	\N	\N	f	f	15	full	\N	\N	\N	f	\N	\N	\N
-2101	pacs_sync_info	worklist_code	\N	\N	\N	\N	\N	f	f	17	half	\N	\N	\N	f	\N	\N	\N
-2096	pacs_sync_info	old_pid	\N	\N	\N	\N	\N	f	t	5	half	\N	\N	\N	f	\N	\N	\N
-2107	pacs_sync_info	study_description	\N	\N	\N	\N	\N	f	f	24	full	\N	\N	\N	f	\N	\N	\N
+2628	billing	paid_amount	\N	input	\N	\N	\N	f	f	24	half	\N	\N	\N	f	\N	\N	\N
+1767	billing	ductogram_fim	\N	input	\N	\N	\N	f	f	78	full	\N	\N	\N	f	\N	\N	\N
+2622	billing	payment_method	\N	select-radio	{"choices":[{"text":"เงินสดเบิกได้","value":"1"},{"text":"เงินสดเบิกไม่ได้","value":"2"},{"text":"ออกใบแจ้งหนี้เรียกเก็บ","value":"3"}]}	\N	\N	f	f	85	full	\N	\N	\N	f	\N	\N	\N
+2590	billing	care_type	\N	select-radio	{"choices":[{"text":"ผู้ป่วยนอก","value":"1"},{"text":"ผู้ป่วยใน","value":"2"},{"text":"ผู้ป่วยอื่นๆ ของศูนย์","value":"3"}]}	\N	\N	f	f	91	full	\N	\N	\N	f	\N	\N	\N
+2625	billing	center_income	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	93	full	\N	\N	\N	f	\N	\N	\N
+2623	billing	final_total	\N	input	\N	\N	\N	f	f	22	half	\N	\N	\N	f	\N	\N	\N
+3850	special_procedures	lab_sent_date	\N	datetime	\N	\N	\N	f	f	36	full	\N	\N	\N	f	\N	\N	\N
+3851	special_procedures	lab_result_receive_date	\N	datetime	\N	\N	\N	f	f	37	full	\N	\N	\N	f	\N	\N	\N
+2095	pacs_sync_info	accession_id	\N	\N	\N	\N	\N	f	f	12	full	\N	\N	\N	f	\N	\N	\N
+2090	pacs_sync_info	sync_file_name	\N	\N	\N	\N	\N	f	f	13	half	\N	\N	\N	f	\N	\N	\N
+2102	pacs_sync_info	pacs_sync_time	\N	\N	\N	\N	\N	f	f	14	half	\N	\N	\N	f	\N	\N	\N
+2100	pacs_sync_info	ris_code	\N	\N	\N	\N	\N	f	f	16	half	\N	\N	\N	f	\N	\N	\N
+3855	pacs_sync_info	start_time	\N	datetime	\N	\N	\N	f	f	20	half	\N	\N	\N	f	\N	\N	\N
+2103	pacs_sync_info	seriesperformed	\N	\N	\N	\N	\N	f	t	22	full	\N	\N	\N	f	\N	\N	\N
+2106	pacs_sync_info	study_no	\N	\N	\N	\N	\N	f	f	23	full	\N	\N	\N	f	\N	\N	\N
+2087	pacs_sync_info	id	\N	\N	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
+2165	pacs_sync_info	num_of_mam	\N	input	{"min":0}	\N	\N	f	f	27	half	\N	\N	\N	f	\N	\N	\N
+2088	pacs_sync_info	patient	m2o	select-dropdown-m2o	\N	\N	\N	f	f	8	half	\N	\N	\N	f	\N	\N	\N
+2093	pacs_sync_info	user_updated	user-created	\N	\N	\N	\N	f	t	3	half	\N	\N	\N	f	\N	\N	\N
+2098	pacs_sync_info	dl_dt	\N	\N	\N	\N	\N	f	t	11	full	\N	\N	\N	f	\N	\N	\N
+2094	pacs_sync_info	date_updated	date-updated	\N	\N	\N	\N	f	t	4	half	\N	\N	\N	f	\N	\N	\N
+1372	examination	rsws	cast-boolean	boolean	\N	\N	\N	f	f	104	half	\N	\N	\N	f	\N	\N	\N
+3859	examination	exam_date	date-created	datetime	\N	\N	\N	f	f	6	half	\N	\N	\N	f	\N	\N	\N
+1363	examination	lsee	cast-boolean	boolean	\N	\N	\N	f	f	97	half	\N	\N	\N	f	\N	\N	\N
+1386	examination	mobile_updated	\N	input	\N	\N	\N	f	t	132	half	\N	\N	\N	f	\N	\N	\N
 2662	ultrasound_cyst	id	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2077	coordinate	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 2054	tab_exam_option_tab_exam_option	id	\N	\N	\N	\N	\N	f	t	1	full	\N	\N	\N	f	\N	\N	\N
@@ -12991,7 +13110,6 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2079	coordinate	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 2080	coordinate	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 2059	role_menu	policies	m2m	list-m2m	{"template":"{{directus_policies_id.name}}"}	related-values	{"template":"{{directus_policies_id.name}}"}	f	f	11	full	\N	\N	\N	f	\N	\N	\N
-2099	pacs_sync_info	modality	\N	select-dropdown	{"choices":[{"text":"MG","value":"MG"},{"text":"US","value":"US"}]}	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
 2063	tab_exam_option	tab_name	\N	input	\N	\N	\N	f	f	3	full	\N	\N	\N	f	\N	\N	\N
 2074	exam_reason	exam_reason_multi	\N	select-dropdown-m2o	\N	\N	\N	f	t	12	full	\N	\N	\N	f	\N	\N	\N
 2058	tab_exam_option	is_have_child	cast-boolean	boolean	\N	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
@@ -13001,15 +13119,12 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2075	examination_exam_reason	examination_id	\N	\N	\N	\N	\N	f	t	2	full	\N	\N	\N	f	\N	\N	\N
 2076	examination_exam_reason	exam_reason_id	\N	\N	\N	\N	\N	f	t	3	full	\N	\N	\N	f	\N	\N	\N
 2071	exam_reason	parent	m2o	select-dropdown-m2o	\N	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
-2092	pacs_sync_info	date_created	date-created	\N	\N	datetime	{"format":"short","relative":true}	f	t	2	half	\N	\N	\N	f	\N	\N	\N
 2082	coordinate	exam	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
-2070	examination	have_cd	cast-boolean	boolean	{"label":"มี CD"}	\N	\N	f	f	71	half	\N	\N	\N	f	\N	\N	\N
 2358	spot_shape	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 2359	spot_shape	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 2083	coordinate	appointment	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
 2078	coordinate	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 2515	spot	l_cone_comp_mmo	cast-boolean	boolean	\N	\N	\N	f	f	20	half	\N	\N	\N	f	\N	\N	\N
-2089	pacs_sync_info	exam	m2o	select-dropdown-m2o	\N	\N	\N	f	f	9	half	\N	\N	\N	f	\N	\N	\N
 2664	ultrasound_cyst	date_created	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2666	ultrasound_cyst	date_updated	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2667	ultrasound_cyst	described_cyst_id	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
@@ -13019,7 +13134,6 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2124	user	created	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2127	user	email	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2129	user	alert	cast-boolean	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
-1395	examination	stophormone_yrs	\N	input	\N	\N	\N	f	t	30	full	\N	\N	\N	f	\N	\N	\N
 2134	coordinate	doctor	m2o	select-dropdown-m2o	{"template":"{{first_name}}{{last_name}}","filter":{"_and":[{"role":{"name":{"_contains":"Office Doctor"}}}]}}	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
 2014	tab_exam_option	option_type	\N	select-dropdown	{"choices":[{"text":"checkbox","value":"checkbox"},{"text":"radio","value":"radio"},{"text":"label","value":"label"}]}	\N	\N	f	f	4	full	\N	\N	\N	f	\N	\N	\N
 2748	center_income	is_treasurer	cast-boolean	boolean	\N	\N	\N	f	f	18	full	\N	\N	\N	f	\N	\N	\N
@@ -13027,6 +13141,24 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2245	examination_general	l_recommendation_mag	cast-json	input-code	\N	\N	\N	f	f	26	full	\N	\N	\N	f	\N	\N	\N
 2241	examination_general	l_recommendation_coned_compression	cast-json	input-code	\N	\N	\N	f	f	22	full	\N	\N	\N	f	\N	\N	\N
 1649	appointment	front_note_2	cast-json	select-multiple-checkbox	{"allowOther":true,"choices":[{"text":"เปลนอน","value":"เปลนอน"},{"text":"รถนั่ง","value":"รถนั่ง"},{"text":"หูไม่ดี","value":"หูไม่ดี"},{"text":"ใช้ไม้เท้า","value":"ใช้ไม้เท้า"},{"text":"ญาตินัดให้","value":"ญาตินัดให้"},{"text":"คนไข้ VIP","value":"คนไข้ VIP"},{"text":"พิเศษ","value":"พิเศษ"},{"text":"เร่งด่วน","value":"เร่งด่วน"}]}	\N	\N	f	f	40	full	\N	\N	\N	f	\N	\N	\N
+1698	billing	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
+1725	billing	e_price	\N	input	\N	\N	\N	f	f	36	half	\N	\N	\N	f	\N	\N	\N
+1759	billing	mammogram_tec2	\N	input	\N	\N	\N	f	f	70	half	\N	\N	\N	f	\N	\N	\N
+2504	billing	is_overtime	cast-boolean	boolean	\N	\N	\N	f	f	86	full	\N	\N	\N	f	\N	\N	\N
+2744	billing	center_incomes	o2m	list-o2m	{"template":"{{id}}"}	\N	\N	f	f	94	full	\N	\N	\N	f	\N	\N	\N
+2104	pacs_sync_info	status	\N	select-dropdown	{"choices":[{"text":"Not Synced","value":0},{"text":"PACs Synced","value":1}]}	\N	\N	f	f	15	full	\N	\N	\N	f	\N	\N	\N
+2101	pacs_sync_info	worklist_code	\N	\N	\N	\N	\N	f	f	17	half	\N	\N	\N	f	\N	\N	\N
+3856	pacs_sync_info	end_time	\N	datetime	\N	\N	\N	f	f	21	half	\N	\N	\N	f	\N	\N	\N
+2107	pacs_sync_info	study_description	\N	\N	\N	\N	\N	f	f	24	full	\N	\N	\N	f	\N	\N	\N
+1388	examination	bct_l_date	\N	datetime	\N	\N	\N	f	f	60	half	\N	\N	\N	f	\N	\N	\N
+2092	pacs_sync_info	date_created	date-created	\N	\N	datetime	{"format":"short","relative":true}	f	t	2	half	\N	\N	\N	f	\N	\N	\N
+2097	pacs_sync_info	old_exam_id	\N	\N	\N	\N	\N	f	t	6	half	\N	\N	\N	f	\N	\N	\N
+2096	pacs_sync_info	old_pid	\N	\N	\N	\N	\N	f	t	5	half	\N	\N	\N	f	\N	\N	\N
+2089	pacs_sync_info	exam	m2o	select-dropdown-m2o	\N	\N	\N	f	f	9	half	\N	\N	\N	f	\N	\N	\N
+2099	pacs_sync_info	modality	\N	select-dropdown	{"choices":[{"text":"MG","value":"MG"},{"text":"US","value":"US"}]}	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
+1395	examination	stophormone_yrs	\N	input	\N	\N	\N	f	t	30	full	\N	\N	\N	f	\N	\N	\N
+2070	examination	have_cd	cast-boolean	boolean	{"label":"มี CD"}	\N	\N	f	f	71	half	\N	\N	\N	f	\N	\N	\N
+3852	center_income	requester_type	\N	input	\N	\N	\N	f	f	21	full	\N	\N	\N	f	\N	\N	\N
 2117	examination_directus_users	id	\N	\N	\N	\N	\N	f	t	1	full	\N	\N	\N	f	\N	\N	\N
 2118	examination_directus_users	examination_id	\N	\N	\N	\N	\N	f	t	2	full	\N	\N	\N	f	\N	\N	\N
 2119	examination_directus_users	directus_users_id	\N	\N	\N	\N	\N	f	t	3	full	\N	\N	\N	f	\N	\N	\N
@@ -13035,21 +13167,16 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2125	user	name	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2126	user	username	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2128	user	password	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
-2145	examination	r_side_mass	cast-boolean	boolean	\N	\N	\N	f	f	127	half	\N	\N	\N	f	\N	\N	\N
+3853	center_income	note	\N	input	\N	\N	\N	f	f	22	full	\N	\N	\N	f	\N	\N	\N
 2514	spot	r_cone_comp_mmo	cast-boolean	boolean	\N	\N	\N	f	f	19	half	\N	\N	\N	f	\N	\N	\N
 2517	spot	l_cone_comp_tomo_mmo	cast-boolean	boolean	\N	\N	\N	f	f	28	half	\N	\N	\N	f	\N	\N	\N
 2516	spot	r_cone_comp_tomo_mmo	cast-boolean	boolean	\N	\N	\N	f	f	27	half	\N	\N	\N	f	\N	\N	\N
-2144	examination	l_side_mass	cast-boolean	boolean	\N	\N	\N	f	f	125	half	\N	\N	\N	f	\N	\N	\N
-2121	examination	case_owner_doctor	m2o	select-dropdown-m2o	{"filter":{"_and":[{"role":{"_eq":"c2993f1f-d1c8-4444-9d02-76909eca822a"}}]}}	\N	\N	f	f	21	half	\N	\N	\N	f	\N	\N	\N
 3006	ultrasound_work	doctor_change	cast-boolean	boolean	\N	\N	\N	f	f	18	half	\N	\N	\N	f	\N	\N	\N
 2710	ultrasound	date_updated	\N	\N	\N	\N	\N	f	t	3	half	\N	\N	\N	f	\N	\N	\N
 3028	locations	name_en	\N	input	{"placeholder":"ชื่อสาขา (ภาษาอังกฤษ)"}	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
-2349	examination	cancel_reason	\N	select-dropdown	{"choices":[{"text":"ยกเลิกเคส","value":"1"},{"text":"ขอทำนัดใหม่","value":"2"}]}	\N	\N	f	f	143	half	\N	\N	\N	f	\N	\N	\N
-2072	examination	exam_reason_multi	m2m	list-m2m	{"sort":null,"template":"{{exam_reason_id.parent.type}} > {{exam_reason_id.reason_text}}"}	\N	\N	f	f	124	half	\N	\N	\N	f	\N	\N	\N
 2627	mammogram	patient	\N	\N	\N	\N	\N	f	f	86	full	\N	\N	\N	f	\N	\N	\N
 2709	ultrasound	date_created	date-created	\N	\N	\N	\N	f	t	1	half	\N	\N	\N	f	\N	\N	\N
 2688	ultrasound_mass	echo_pattern	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
-2067	examination	pacs_uploaded	cast-boolean	boolean	{"label":"ลงข้อมูลใน PACs แล้ว"}	\N	\N	f	f	73	half	\N	\N	\N	f	\N	\N	\N
 2689	ultrasound_mass	echo_pattern_des	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2690	ultrasound_mass	shape	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2691	ultrasound_mass	shape_des	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
@@ -13089,6 +13216,13 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2139	doctor_work	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
 2141	doctor_work	appointment	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
 2143	doctor_work	doctor	m2o	select-dropdown-m2o	{"template":"{{first_name}}  {{last_name}}  ({{abbreviation}})"}	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
+3857	pacs_sync_info	called_time	\N	datetime	\N	\N	\N	f	f	18	half	\N	\N	\N	f	\N	\N	\N
+2072	examination	exam_reason_multi	m2m	list-m2m	{"sort":null,"template":"{{exam_reason_id.parent.type}} > {{exam_reason_id.reason_text}}"}	\N	\N	f	f	124	half	\N	\N	\N	f	\N	\N	\N
+2144	examination	l_side_mass	cast-boolean	boolean	\N	\N	\N	f	f	125	half	\N	\N	\N	f	\N	\N	\N
+2067	examination	pacs_uploaded	cast-boolean	boolean	{"label":"ลงข้อมูลใน PACs แล้ว"}	\N	\N	f	f	73	half	\N	\N	\N	f	\N	\N	\N
+2145	examination	r_side_mass	cast-boolean	boolean	\N	\N	\N	f	f	127	half	\N	\N	\N	f	\N	\N	\N
+2349	examination	cancel_reason	\N	select-dropdown	{"choices":[{"text":"ยกเลิกเคส","value":"1"},{"text":"ขอทำนัดใหม่","value":"2"}]}	\N	\N	f	f	142	half	\N	\N	\N	f	\N	\N	\N
+2740	examination	us_bed_id	\N	select-dropdown	{"choices":[{"text":"1","value":"0"},{"text":"2","value":"1"},{"text":"3","value":"2"},{"text":"4","value":"3"},{"text":"5","value":"4"},{"text":"6","value":"5"},{"text":"7","value":"6"},{"text":"8 (Teaching)","value":"7"},{"text":"9 (Teaching)","value":"8"}]}	\N	\N	f	f	144	full	\N	\N	\N	f	\N	\N	\N
 2639	center_income	service_fee	\N	select-dropdown	{"choices":[{"text":"undefined","value":"0"},{"text":"ขอ Copy CD","value":"1"},{"text":"ขอประวัตการตรวจ","value":"2"}]}	\N	\N	f	f	14	full	\N	\N	\N	f	\N	\N	\N
 2707	ultrasound	id	\N	\N	\N	\N	\N	f	f	5	half	\N	\N	\N	f	\N	\N	\N
 2767	beds	bed_type	\N	select-dropdown	\N	\N	\N	f	f	12	full	\N	\N	\N	f	\N	\N	\N
@@ -13097,8 +13231,6 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2413	spot	r_cone_comp_combo_axilla	cast-boolean	\N	\N	\N	\N	f	f	39	half	\N	\N	\N	f	\N	\N	\N
 2414	spot	l_cone_comp_combo_axilla	cast-boolean	\N	\N	\N	\N	f	f	40	half	\N	\N	\N	f	\N	\N	\N
 2769	ultrasound_work	bed	m2o	select-dropdown-m2o	\N	\N	\N	f	f	9	half	\N	\N	\N	f	\N	\N	\N
-1744	billing	o	\N	input	\N	\N	\N	f	f	54	half	\N	\N	\N	f	\N	\N	\N
-2611	billing	is_invoice_requested	cast-boolean	boolean	\N	\N	\N	f	f	92	full	\N	\N	\N	f	\N	\N	\N
 2711	ultrasound	exam_date	\N	\N	\N	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
 2768	beds	note	\N	input	\N	\N	\N	f	f	13	full	\N	\N	\N	f	\N	\N	\N
 2717	ultrasound	cyst	\N	\N	\N	\N	\N	f	f	24	full	\N	\N	\N	f	\N	\N	\N
@@ -13155,51 +13287,17 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2704	ultrasound_mass	elasticity_des	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2705	ultrasound_mass	old_exam_id	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2706	ultrasound_mass	old_pid	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
+1744	billing	o	\N	input	\N	\N	\N	f	f	55	half	\N	\N	\N	f	\N	\N	\N
+2611	billing	is_invoice_requested	cast-boolean	boolean	\N	\N	\N	f	f	92	full	\N	\N	\N	f	\N	\N	\N
+3854	center_income	requester_name	\N	input	\N	\N	\N	f	f	23	full	\N	\N	\N	f	\N	\N	\N
+3858	pacs_sync_info	spot_called_time	\N	datetime	\N	\N	\N	f	f	19	half	\N	\N	\N	f	\N	\N	\N
 2640	finance_work	receive_result	cast-boolean	boolean	\N	\N	\N	f	f	11	full	\N	\N	\N	f	\N	\N	\N
-1398	examination	stop_ca_hormone_yrs	\N	input	\N	\N	\N	f	t	36	full	\N	\N	\N	f	\N	\N	\N
-1387	examination	mobile_loc	\N	input	\N	\N	\N	f	t	131	half	\N	\N	\N	f	\N	\N	\N
-2751	billing	extra_discount	\N	input	{"min":0}	\N	\N	f	f	22	half	\N	\N	\N	f	\N	\N	\N
-1390	examination	patient_cancer_age	\N	input	\N	\N	\N	f	t	75	full	\N	\N	\N	f	\N	\N	\N
-1380	examination	r_axillar	cast-boolean	boolean	\N	\N	\N	f	f	116	half	\N	\N	\N	f	\N	\N	\N
-1379	examination	l_axillar	cast-boolean	boolean	\N	\N	\N	f	f	115	half	\N	\N	\N	f	\N	\N	\N
-2068	examination	have_revious_result	cast-boolean	boolean	{"label":"มีผลเก่ามา"}	\N	\N	f	f	72	half	\N	\N	\N	f	\N	\N	\N
-1393	examination	sister_cancer_age_more	cast-boolean	boolean	\N	\N	\N	f	f	82	half	\N	\N	\N	f	\N	\N	\N
-1406	examination	fnx_l_date	\N	datetime	\N	\N	\N	f	f	52	half	\N	\N	\N	f	\N	\N	\N
-1407	examination	fnx_r_date	\N	datetime	\N	\N	\N	f	f	53	half	\N	\N	\N	f	\N	\N	\N
-2007	examination	sister_cancer	cast-boolean	boolean	\N	\N	\N	f	f	81	half	\N	\N	\N	f	\N	\N	\N
-1394	examination	other_cancer_age_more	cast-boolean	boolean	\N	\N	\N	f	f	87	half	\N	\N	\N	f	\N	\N	\N
-1385	examination	pain_r_duration	\N	input	\N	\N	\N	f	t	119	half	\N	\N	\N	f	\N	\N	\N
-2008	examination	grandmother_cancer	cast-boolean	boolean	\N	\N	\N	f	f	84	half	\N	\N	\N	f	\N	\N	\N
-1384	examination	pain_l_duration	\N	input	\N	\N	\N	f	t	120	half	\N	\N	\N	f	\N	\N	\N
 2732	ultrasound	l_associated_features	cast-json	input-code	\N	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
-1399	examination	stop_contr_yrs	\N	input	\N	\N	\N	f	t	33	full	\N	\N	\N	f	\N	\N	\N
 2738	ultrasound	r_associated_features	cast-json	input-code	\N	\N	\N	f	f	12	full	\N	\N	\N	f	\N	\N	\N
 2739	ultrasound	r_associated_features_des	cast-json	input-code	\N	\N	\N	f	f	13	full	\N	\N	\N	f	\N	\N	\N
 2759	ultrasound_work	appointment	m2o	select-dropdown-m2o	\N	\N	\N	f	f	12	half	\N	\N	\N	f	\N	\N	\N
-2109	examination	pacs_sync_infos	o2m	list-o2m	{"sort":null}	\N	\N	f	f	11	half	\N	\N	\N	f	\N	\N	\N
-2436	examination	spots	o2m	list-o2m	{"sort":null}	\N	\N	f	f	12	half	\N	\N	\N	f	\N	\N	\N
-2338	examination	examination_general	o2m	list-o2m	{"template":"{{id}}"}	\N	\N	f	f	13	full	\N	\N	\N	f	\N	\N	\N
-2341	examination	mam	o2m	list-o2m	{"template":"{{id}}"}	\N	\N	f	f	14	full	\N	\N	\N	f	\N	\N	\N
-2619	examination	mammogram_mass	o2m	list-o2m	\N	\N	\N	f	f	15	half	\N	\N	\N	f	\N	\N	\N
-2620	examination	mammogram_cal	o2m	list-o2m	{"sort":null}	\N	\N	f	f	16	half	\N	\N	\N	f	\N	\N	\N
-2155	examination	first_pregnancy_age	\N	input	\N	\N	\N	f	f	26	half	\N	\N	\N	f	\N	\N	\N
-2156	examination	num_pregnancy	\N	input	\N	\N	\N	f	f	27	half	\N	\N	\N	f	\N	\N	\N
-1404	examination	fna_l_date	\N	datetime	\N	\N	\N	f	f	50	half	\N	\N	\N	f	\N	\N	\N
-1405	examination	fna_r_date	\N	datetime	\N	\N	\N	f	f	51	half	\N	\N	\N	f	\N	\N	\N
-2069	examination	have_infectious_disease	cast-boolean	boolean	{"label":"มีโรคติดเชื้อ"}	\N	\N	f	f	74	half	\N	\N	\N	f	\N	\N	\N
-2157	examination	mother_cancer_age	\N	input	\N	\N	\N	f	f	77	full	\N	\N	\N	f	\N	\N	\N
-1392	examination	daughter_cancer_age_more	cast-boolean	boolean	\N	\N	\N	f	f	79	half	\N	\N	\N	f	\N	\N	\N
-2158	examination	daughter_cancer_age	\N	input	\N	\N	\N	f	f	80	full	\N	\N	\N	f	\N	\N	\N
-2159	examination	sister_cancer_age	\N	input	\N	\N	\N	f	f	83	full	\N	\N	\N	f	\N	\N	\N
-2162	examination	num_left_mass	\N	input	\N	\N	\N	f	f	126	half	\N	\N	\N	f	\N	\N	\N
-2163	examination	num_right_mass	\N	input	\N	\N	\N	f	f	128	half	\N	\N	\N	f	\N	\N	\N
-2204	examination	exam_reason_memotext	\N	input	\N	\N	\N	f	f	129	half	\N	\N	\N	f	\N	\N	\N
-2203	examination	limitation	\N	input	\N	\N	\N	f	f	130	half	\N	\N	\N	f	\N	\N	\N
-1410	examination	old_exam_id	\N	\N	\N	\N	\N	f	t	134	half	\N	\N	\N	f	\N	\N	\N
-1411	examination	old_pid	\N	\N	\N	\N	\N	f	t	135	half	\N	\N	\N	f	\N	\N	\N
-2348	examination	consult_detail	\N	input	\N	\N	\N	f	f	140	half	\N	\N	\N	f	\N	\N	\N
-2347	examination	doctor_comment_detail	\N	input	\N	\N	\N	f	f	142	half	\N	\N	\N	f	\N	\N	\N
-2350	examination	cancel_detail	\N	input	\N	\N	\N	f	f	144	half	\N	\N	\N	f	\N	\N	\N
+1406	examination	fnx_l_date	\N	datetime	\N	\N	\N	f	f	52	half	\N	\N	\N	f	\N	\N	\N
+2751	billing	extra_discount	\N	input	{"min":0}	\N	\N	f	f	23	half	\N	\N	\N	f	\N	\N	\N
 2772	place	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 2773	place	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 2774	place	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
@@ -13211,6 +13309,47 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2780	donate_for	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 2781	donate_for	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
 2782	donate_for	title	\N	input	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
+2436	examination	spots	o2m	list-o2m	{"sort":null}	\N	\N	f	f	12	half	\N	\N	\N	f	\N	\N	\N
+2338	examination	examination_general	o2m	list-o2m	{"template":"{{id}}"}	\N	\N	f	f	13	full	\N	\N	\N	f	\N	\N	\N
+2341	examination	mam	o2m	list-o2m	{"template":"{{id}}"}	\N	\N	f	f	14	full	\N	\N	\N	f	\N	\N	\N
+2619	examination	mammogram_mass	o2m	list-o2m	\N	\N	\N	f	f	15	half	\N	\N	\N	f	\N	\N	\N
+2620	examination	mammogram_cal	o2m	list-o2m	{"sort":null}	\N	\N	f	f	16	half	\N	\N	\N	f	\N	\N	\N
+2121	examination	case_owner_doctor	m2o	select-dropdown-m2o	{"filter":{"_and":[{"role":{"_eq":"c2993f1f-d1c8-4444-9d02-76909eca822a"}}]}}	\N	\N	f	f	21	half	\N	\N	\N	f	\N	\N	\N
+2156	examination	num_pregnancy	\N	input	\N	\N	\N	f	f	27	half	\N	\N	\N	f	\N	\N	\N
+1399	examination	stop_contr_yrs	\N	input	\N	\N	\N	f	t	33	full	\N	\N	\N	f	\N	\N	\N
+1398	examination	stop_ca_hormone_yrs	\N	input	\N	\N	\N	f	t	36	full	\N	\N	\N	f	\N	\N	\N
+1404	examination	fna_l_date	\N	datetime	\N	\N	\N	f	f	50	half	\N	\N	\N	f	\N	\N	\N
+1405	examination	fna_r_date	\N	datetime	\N	\N	\N	f	f	51	half	\N	\N	\N	f	\N	\N	\N
+1407	examination	fnx_r_date	\N	datetime	\N	\N	\N	f	f	53	half	\N	\N	\N	f	\N	\N	\N
+2068	examination	have_revious_result	cast-boolean	boolean	{"label":"มีผลเก่ามา"}	\N	\N	f	f	72	half	\N	\N	\N	f	\N	\N	\N
+2069	examination	have_infectious_disease	cast-boolean	boolean	{"label":"มีโรคติดเชื้อ"}	\N	\N	f	f	74	half	\N	\N	\N	f	\N	\N	\N
+1390	examination	patient_cancer_age	\N	input	\N	\N	\N	f	t	75	full	\N	\N	\N	f	\N	\N	\N
+2157	examination	mother_cancer_age	\N	input	\N	\N	\N	f	f	77	full	\N	\N	\N	f	\N	\N	\N
+1392	examination	daughter_cancer_age_more	cast-boolean	boolean	\N	\N	\N	f	f	79	half	\N	\N	\N	f	\N	\N	\N
+2158	examination	daughter_cancer_age	\N	input	\N	\N	\N	f	f	80	full	\N	\N	\N	f	\N	\N	\N
+2007	examination	sister_cancer	cast-boolean	boolean	\N	\N	\N	f	f	81	half	\N	\N	\N	f	\N	\N	\N
+1393	examination	sister_cancer_age_more	cast-boolean	boolean	\N	\N	\N	f	f	82	half	\N	\N	\N	f	\N	\N	\N
+2159	examination	sister_cancer_age	\N	input	\N	\N	\N	f	f	83	full	\N	\N	\N	f	\N	\N	\N
+2008	examination	grandmother_cancer	cast-boolean	boolean	\N	\N	\N	f	f	84	half	\N	\N	\N	f	\N	\N	\N
+1394	examination	other_cancer_age_more	cast-boolean	boolean	\N	\N	\N	f	f	87	half	\N	\N	\N	f	\N	\N	\N
+1379	examination	l_axillar	cast-boolean	boolean	\N	\N	\N	f	f	115	half	\N	\N	\N	f	\N	\N	\N
+1380	examination	r_axillar	cast-boolean	boolean	\N	\N	\N	f	f	116	half	\N	\N	\N	f	\N	\N	\N
+1385	examination	pain_r_duration	\N	input	\N	\N	\N	f	t	119	half	\N	\N	\N	f	\N	\N	\N
+1384	examination	pain_l_duration	\N	input	\N	\N	\N	f	t	120	half	\N	\N	\N	f	\N	\N	\N
+2162	examination	num_left_mass	\N	input	\N	\N	\N	f	f	126	half	\N	\N	\N	f	\N	\N	\N
+2163	examination	num_right_mass	\N	input	\N	\N	\N	f	f	128	half	\N	\N	\N	f	\N	\N	\N
+2204	examination	exam_reason_memotext	\N	input	\N	\N	\N	f	f	129	half	\N	\N	\N	f	\N	\N	\N
+2203	examination	limitation	\N	input	\N	\N	\N	f	f	130	half	\N	\N	\N	f	\N	\N	\N
+1387	examination	mobile_loc	\N	input	\N	\N	\N	f	t	131	half	\N	\N	\N	f	\N	\N	\N
+1410	examination	old_exam_id	\N	\N	\N	\N	\N	f	t	134	half	\N	\N	\N	f	\N	\N	\N
+1411	examination	old_pid	\N	\N	\N	\N	\N	f	t	135	half	\N	\N	\N	f	\N	\N	\N
+2348	examination	consult_detail	\N	input	\N	\N	\N	f	f	139	half	\N	\N	\N	f	\N	\N	\N
+2347	examination	doctor_comment_detail	\N	input	\N	\N	\N	f	f	141	half	\N	\N	\N	f	\N	\N	\N
+2350	examination	cancel_detail	\N	input	\N	\N	\N	f	f	143	half	\N	\N	\N	f	\N	\N	\N
+2035	examination	status	\N	select-dropdown	{"choices":[{"text":"รอเรียกคิว","value":"0"},{"text":"กำลังสัมภาษณ์","value":"1"},{"text":"รอปรึกษาแพทย์","value":"2"},{"text":"แพทย์ตอบกลับ - รอเรียกคิว","value":"3"},{"text":"ส่งต่อแผนก US","value":"4"},{"text":"undefined","value":"5"},{"text":"เสร็จสิ้น","value":"6"},{"text":"ยกเลิก","value":"7"},{"text":"undefined","value":"8"},{"text":"แพทย์ตอบกลับ - ยกเลิกการตรวจ","value":"9"},{"text":"ถ่ายเพิ่มก่อน US - รอเรียกคิว","value":"10"},{"text":"ถ่ายเพิ่มก่อน US - รับเคส","value":"11"},{"text":"ถ่ายเพิ่มก่อน US - หยุดชั่วคราว","value":"12"},{"text":"แพทย์ตอบกลับ - รับเคส","value":"13"},{"text":"แพทย์ตอบกลับ - หยุดชั่วคราว","value":"14"},{"text":"ถ่ายเพิ่มก่อน US - ปิดเคส","value":" 15"},{"text":"แพทย์ตอบกลับ - ปิดเคส","value":"16"},{"text":"ถ่ายเพิ่มหลัง US - รอเรียกคิว","value":"17"},{"text":"ถ่ายเพิ่มหลัง US - รับเคส","value":"18"},{"text":"ถ่ายเพิ่มหลัง US - หยุดชั่วคราว","value":"19"},{"text":"ถ่ายเพิ่มหลัง US - ปิดเคส","value":"20"},{"text":"ส่งต่อแพทย์","value":"ส่งต่อแพทย์"},{"text":"ส่ง MAM - รอเรียกคิว","value":"ส่ง MAM - รอเรียกคิว"},{"text":"ส่ง MAM - รับเคส","value":"ส่ง MAM - รับเคส"},{"text":"ส่ง MAM - หยุดชั่วคราว","value":"ส่ง MAM - หยุดชั่วคราว"},{"text":"ส่ง MAM - ปิดเคส","value":"ส่ง MAM - ปิดเคส"},{"text":"ส่งต่อพยาบาล","value":"21"}]}	labels	{"choices":[{"text":"รอเรียกคิว","value":"0","foreground":"#FFA439","background":"#FEF9C3"},{"text":"กำลังสัมภาษณ์","value":"1","background":"#EFF6FF","foreground":"#126994"},{"text":"รอปรึกษาแพทย์","value":"2"},{"text":"รอเรียกคิว (ปรึกษาแพทย์)","value":"3","foreground":"#FFA439","background":"#FEF9C3"},{"text":"ส่งต่อแผนก US","value":"4","background":"#DCFCE7","foreground":"#15803D"},{"text":"undefined","value":"5"},{"text":"เสร็จสิ้น","value":"6","background":"#DCFCE7","foreground":"#15803D"},{"text":"ยกเลิก","value":"7","background":"#E3CDD1","foreground":"#E35169"},{"text":"undefined","value":"8"},{"text":"ยกเลิกการตรวจ (ปรึกษาแพทย์)","value":"9","foreground":"#E35169","background":"#E3CDD1"},{"text":"รอเรียกคิว (spot ก่อน us)","value":"10","foreground":"#FFC23B","background":"#FEF9C3"},{"text":"รับเคส (spot ก่อน us)","value":"11","foreground":"#126994","background":"#EFFFF6"},{"text":"ถ่ายเพิ่มก่อน US - หยุดชั่วคราว","value":"12","foreground":"#FFA439","background":"#FEF9C3"},{"text":"รับเคส (ปรึกษาแพทย์)","value":"13","background":"#EFF6FF","foreground":"#126994"},{"text":"หยุดชั่วคราว (ปรึกษาแพทย์)","value":"14","foreground":"#FFA439","background":"#FEF9C3"},{"text":"ปิดเคส  (spot ก่อน us)","value":"15"},{"text":"ปิดเคส (ปรึกษาแพทย์)","value":"16"},{"text":"รอเรียกคิว (spot หลัง us)","value":"17","foreground":"#FFA439","background":"#FEF9C3"},{"text":"รับเคส (spot หลัง us)","value":"18","background":"#EFFFF6","foreground":"#126994"},{"text":"หยุดชั่วคราว (spot หลัง us)","value":"19","foreground":"#FFA439","background":"#FEF9C3"},{"text":"ปิดเคส (spot หลัง us)","value":"20"},{"text":"ส่งต่อแพทย์","value":"ส่งต่อแพทย์","foreground":"#15803D","background":"#DCFCE7"},{"text":"ส่งต่อพยาบาล","value":"21","background":"#1258E2","foreground":"#364F5E"}]}	f	f	7	half	\N	\N	\N	f	\N	\N	\N
+2109	examination	pacs_sync_infos	o2m	list-o2m	{"sort":null}	\N	\N	f	f	11	half	\N	\N	\N	f	\N	\N	\N
+2155	examination	first_pregnancy_age	\N	input	\N	\N	\N	f	f	26	half	\N	\N	\N	f	\N	\N	\N
+1408	examination	send_exam_login_name	\N	input	\N	\N	\N	f	t	133	full	\N	\N	\N	f	\N	\N	\N
 2787	pacs_riscode	default_mam	\N	input	{"min":0}	\N	\N	f	f	3	full	\N	\N	\N	t	\N	\N	\N
 2788	pacs_riscode	default_implant	\N	input	{"min":0}	\N	\N	f	f	4	full	\N	\N	\N	t	\N	\N	\N
 2785	center_income	donate_for	\N	input	\N	\N	\N	f	f	19	full	\N	\N	\N	f	\N	\N	\N
@@ -13223,7 +13362,6 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2797	ultrasound_cyst	r_position_clock	cast-json	input-code	\N	\N	\N	f	f	5	full	\N	\N	\N	f	\N	\N	\N
 2798	mammogram_mass	patient	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2885	recommend_bx_form	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
-3032	examination	has_recommend_bx_form	cast-boolean	boolean	\N	\N	\N	f	f	150	full	\N	\N	\N	f	\N	\N	\N
 2882	recommend_bx_form	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 3041	ultrasound	patient	\N	\N	\N	\N	\N	f	f	7	half	\N	\N	\N	f	\N	\N	\N
 2800	ultrasound_mass	l_position	\N	input	\N	\N	\N	f	f	1	full	\N	\N	\N	f	\N	\N	\N
@@ -13236,13 +13374,15 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2808	ultrasound_mass	exam	m2o	select-dropdown-m2o	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
 2789	ultrasound_work	called_time	\N	datetime	\N	\N	\N	f	f	16	full	\N	\N	\N	f	\N	\N	\N
 2895	recommend_bx_form	other_reason	\N	input	\N	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
+1340	examination	cyst_r_date	\N	datetime	\N	\N	\N	f	t	69	half	\N	\N	\N	f	\N	\N	\N
 2883	recommend_bx_form	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 3062	notification	from_room	\N	input	\N	\N	\N	f	f	11	half	\N	\N	\N	f	\N	\N	\N
 2816	notification	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
+2114	examination	exam_reason	m2o	select-dropdown-m2o	\N	\N	\N	f	t	121	half	\N	\N	\N	f	\N	\N	\N
+2113	examination	exam_reason_type	\N	select-dropdown	{"allowOther":true,"allowNone":true,"choices":[{"text":"--","value":"--"},{"text":"BC Follow-up","value":"BC Follow-up"},{"text":"Diagnosis","value":"Diagnosis"},{"text":"Screening","value":"Screening"},{"text":"Special Procedure","value":"Special Procedure"}]}	\N	\N	f	f	123	half	\N	\N	\N	f	\N	\N	\N
 2817	notification	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 2790	ultrasound_work	case_owner_ultrasound	m2o	select-dropdown-m2o	{"filter":{"_and":[{"role":{"_eq":"61ecc39b-e02b-4dce-86fa-7b800dcbe443"}}]}}	\N	\N	f	f	8	half	\N	\N	\N	f	\N	\N	\N
 2818	notification	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
-3031	examination	is_mam_done	cast-boolean	boolean	\N	\N	\N	f	f	149	full	\N	\N	\N	f	\N	\N	\N
 2884	recommend_bx_form	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 2829	directus_notifications	notification	o2m	list-o2m	{"template":"{{id}}"}	\N	\N	f	f	1	full	\N	\N	\N	f	\N	\N	\N
 2824	notification	status	\N	select-dropdown	{"choices":[{"text":"inbox","value":"inbox"},{"text":"read","value":"read"}]}	\N	\N	f	f	6	half	\N	\N	\N	f	\N	\N	\N
@@ -13254,23 +13394,21 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2820	notification	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
 2763	beds	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 2897	bx_code	is_require_reason	cast-boolean	boolean	\N	\N	\N	f	f	8	half	\N	\N	\N	t	\N	\N	\N
-2869	examination	location	m2o	select-dropdown-m2o	\N	related-values	{"template":"{{label}}"}	f	f	8	full	\N	\N	\N	t	\N	\N	\N
 2881	recommend_bx_form	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 2845	beds	room	\N	select-dropdown	\N	\N	\N	f	f	8	half	\N	\N	[{"name":"Room option at TYR","rule":{"_and":[{"location":{"_eq":1}}]},"options":{"allowOther":false,"allowNone":false,"choices":[{"text":"ห้อง 1","value":"1"},{"text":"ห้อง 2","value":"2"},{"text":"ห้อง 3","value":"3"}]}},{"name":"Room option at ICS","rule":{"_and":[{"location":{"_eq":3}}]},"options":{"allowOther":false,"allowNone":false,"choices":[{"text":"ห้อง 1","value":"1"},{"text":"ห้อง 2","value":"2"},{"text":"ห้อง 3","value":"3"},{"text":"ห้อง 4","value":"4"}]}}]	f	\N	\N	\N
-1340	examination	cyst_r_date	\N	datetime	\N	\N	\N	f	t	69	half	\N	\N	\N	f	\N	\N	\N
 2873	ultrasound_work	note_us	\N	input	\N	\N	\N	f	f	15	full	\N	\N	\N	f	\N	\N	\N
 3034	ultrasound_work	is_room_2	cast-boolean	boolean	\N	\N	\N	f	f	17	half	\N	\N	\N	f	\N	\N	\N
-2114	examination	exam_reason	m2o	select-dropdown-m2o	\N	\N	\N	f	t	121	half	\N	\N	\N	f	\N	\N	\N
-2113	examination	exam_reason_type	\N	select-dropdown	{"allowOther":true,"allowNone":true,"choices":[{"text":"--","value":"--"},{"text":"BC Follow-up","value":"BC Follow-up"},{"text":"Diagnosis","value":"Diagnosis"},{"text":"Screening","value":"Screening"},{"text":"Special Procedure","value":"Special Procedure"}]}	\N	\N	f	f	123	half	\N	\N	\N	f	\N	\N	\N
 3067	lab_list	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 3068	lab_list	key	\N	input	\N	\N	\N	f	f	2	full	\N	\N	\N	f	\N	\N	\N
 3069	lab_list	value	\N	input	\N	\N	\N	f	f	3	full	\N	\N	\N	f	\N	\N	\N
-3080	nurse_work	appointment	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	6	half	\N	\N	\N	f	\N	\N	\N
+3080	nurse_work	appointment	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	11	half	\N	\N	\N	f	\N	\N	\N
 3043	examination_general	detail	\N	input	\N	\N	\N	f	f	66	full	\N	\N	\N	f	\N	\N	\N
 2842	doctor_work	notification	o2m	list-o2m	{"sort":null}	\N	\N	f	f	12	full	\N	\N	\N	f	\N	\N	\N
+3031	examination	is_mam_done	cast-boolean	boolean	\N	\N	\N	f	f	147	full	\N	\N	\N	f	\N	\N	\N
 3075	nurse_work	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 3047	patient_info	d	\N	select-dropdown-m2o	\N	\N	\N	f	t	39	full	\N	\N	\N	f	\N	\N	\N
-2345	examination	consult_reason	\N	select-dropdown	{"choices":[{"text":"มาก่อนกำหนดไม่ครบ 1 ปี (ไม่มีอาการ/มีอาการ)","value":"0"},{"text":"มีผลตรวจจากที่อื่น ไม่ครบปี และเป็น Pt. มาตรวจเอง","value":"1"},{"text":"ผลอ่านกับ Request ไม่ตรงกัน","value":"2"},{"text":"ของเดิมไม่มีถ่าย Spot แต่อ่านให้ถ่าย Spot","value":"3"}]}	\N	\N	f	f	139	half	\N	\N	\N	f	\N	\N	\N
+3032	examination	has_recommend_bx_form	cast-boolean	boolean	\N	\N	\N	f	f	148	full	\N	\N	\N	f	\N	\N	\N
+2869	examination	location	m2o	select-dropdown-m2o	\N	related-values	{"template":"{{label}}"}	f	f	8	full	\N	\N	\N	t	\N	\N	\N
 2867	finance_work	location	m2o	select-dropdown-m2o	{"template":"{{id}}"}	related-values	{"template":"{{label}}"}	f	f	8	full	\N	\N	\N	f	\N	\N	\N
 2846	beds	bed_number	\N	input	\N	\N	\N	f	f	9	half	\N	\N	\N	f	\N	\N	\N
 2179	finance_work	reason	\N	select-dropdown	{"choices":[{"text":"ไม่พบอะไรผิดปกติ / ทำนัด 3M","value":"1"},{"text":"ไม่พบอะไรผิดปกติ / ทำนัด 6M","value":"2"},{"text":"ไม่พบอะไรผิดปกติ / ทำนัด 9M","value":"3"},{"text":"ไม่พบอะไรผิดปกติ / ทำนัด 12M","value":"4"},{"text":"ไม่พบอะไรผิดปกติ","value":"5"}]}	labels	{"choices":[{"text":"WNL F/U 3M","value":"1"},{"text":"WNL F/U  6M","value":"2"},{"text":"WNL F/U  9M","value":"3"},{"text":"WNL F/U  12M","value":"4"},{"text":"WNL","value":"5"}]}	f	f	4	full	\N	\N	\N	f	\N	\N	\N
@@ -13302,8 +13440,6 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3051	notification	is_f14_noti	cast-boolean	boolean	\N	\N	\N	f	f	19	half	\N	\N	\N	f	\N	\N	\N
 3050	notification	is_tech_noti	cast-boolean	boolean	\N	\N	\N	f	f	20	half	\N	\N	\N	f	\N	\N	\N
 2896	bx_code	is_mark_del	cast-boolean	boolean	\N	\N	\N	f	f	7	half	\N	\N	\N	t	\N	\N	\N
-2917	examination	ultrasound_mass	o2m	list-o2m	\N	\N	\N	f	f	18	half	\N	\N	\N	f	\N	\N	\N
-2918	examination	ultrasound_cyst	o2m	list-o2m	\N	\N	\N	f	f	19	half	\N	\N	\N	f	\N	\N	\N
 3036	recommend_bx_form	number	\N	input	\N	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
 2849	beds	location	\N	select-dropdown	{"min":1,"max":3,"choices":[{"text":"TYR","value":1},{"text":"MOBILE","value":2},{"text":"ICS","value":3}]}	labels	{"choices":[{"text":"TYR","value":"1","foreground":null,"color":null},{"text":"MOBILE","value":"2"},{"text":"ICS","value":"3"}],"conditionalFormatting":null}	f	f	6	half	\N	\N	\N	t	\N	\N	\N
 2766	beds	status	\N	select-dropdown	{"choices":[{"text":"ว่าง","value":"0"},{"text":"เต็ม","value":"1"},{"text":"ปิดปรับปรุง","value":"3"}]}	labels	{"choices":[{"text":"ว่าง","value":"0","color":null,"background":"#DCFCE7","foreground":"#15803D"},{"text":"เต็ม","value":"1","color":null,"background":"#FEE2E2","foreground":"#B91C1C"},{"text":"จอง","value":"2","foreground":"#FFA439","background":"#FEF9C3"},{"text":"ปิดปรับปรุง","value":"3","foreground":"#18222F","background":"#F3F4F6"}]}	f	f	11	full	\N	\N	\N	f	\N	\N	\N
@@ -13313,18 +13449,19 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2915	examination_examination	related_examination_id	\N	\N	\N	\N	\N	f	t	3	full	\N	\N	\N	f	\N	\N	\N
 2907	ultrasound	l_specialcase	cast-json	input-code	\N	\N	\N	f	f	14	full	\N	\N	\N	f	\N	\N	\N
 2932	medical_certificate	status	\N	input	\N	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
+2917	examination	ultrasound_mass	o2m	list-o2m	\N	\N	\N	f	f	18	half	\N	\N	\N	f	\N	\N	\N
 2920	medical_certificate	id	\N	input	\N	\N	\N	t	f	1	full	\N	\N	\N	f	\N	\N	\N
+2918	examination	ultrasound_cyst	o2m	list-o2m	\N	\N	\N	f	f	19	half	\N	\N	\N	f	\N	\N	\N
 2908	ultrasound	l_specialcase_des	cast-json	input-code	\N	\N	\N	f	f	15	full	\N	\N	\N	f	\N	\N	\N
 2909	ultrasound	r_specialcase	cast-json	input-code	\N	\N	\N	f	f	16	full	\N	\N	\N	f	\N	\N	\N
 2910	ultrasound	r_specialcase_des	cast-json	input-code	\N	\N	\N	f	f	17	full	\N	\N	\N	f	\N	\N	\N
 3064	notification	appointment	m2o	select-dropdown-m2o	\N	\N	\N	f	f	7	half	\N	\N	\N	f	\N	\N	\N
 2967	patient_info	medical_certificate	o2m	list-o2m	\N	\N	\N	f	f	38	full	\N	\N	\N	f	\N	\N	\N
-2945	examination	is_us_done	cast-boolean	boolean	\N	\N	\N	f	f	147	half	\N	\N	\N	f	\N	\N	\N
-2946	examination	is_mam_after_us_done	cast-boolean	boolean	\N	\N	\N	f	f	148	half	\N	\N	\N	f	\N	\N	\N
 2936	medical_certificate_undefined	id	\N	\N	\N	\N	\N	f	t	1	full	\N	\N	\N	f	\N	\N	\N
 2937	medical_certificate_undefined	medical_certificate_id	\N	\N	\N	\N	\N	f	t	2	full	\N	\N	\N	f	\N	\N	\N
 2938	medical_certificate_undefined	item	\N	\N	\N	\N	\N	f	t	3	full	\N	\N	\N	f	\N	\N	\N
 2939	medical_certificate_undefined	collection	\N	\N	\N	\N	\N	f	t	4	full	\N	\N	\N	f	\N	\N	\N
+2345	examination	consult_reason	\N	select-dropdown	{"choices":[{"text":"มาก่อนกำหนดไม่ครบ 1 ปี (ไม่มีอาการ/มีอาการ)","value":"0"},{"text":"มีผลตรวจจากที่อื่น ไม่ครบปี และเป็น Pt. มาตรวจเอง","value":"1"},{"text":"ผลอ่านกับ Request ไม่ตรงกัน","value":"2"},{"text":"ของเดิมไม่มีถ่าย Spot แต่อ่านให้ถ่าย Spot","value":"3"}]}	\N	\N	f	f	138	half	\N	\N	\N	f	\N	\N	\N
 2084	coordinate	status	\N	select-dropdown	{"choices":[{"text":"รอหมอรับเคส","value":"0"},{"text":"รับเคสแล้ว","value":"1"},{"text":"รอเรียกคิว","value":"2"},{"text":"เรียกคิวแล้ว","value":"3"},{"text":"เสร็จสิ้น","value":"4"},{"text":"ยกเลิกเคส","value":"5"},{"text":"ขอนัดหมายใหม่","value":"6"},{"text":"แจ้งแอดมินแล้ว","value":"7"},{"text":"รอปรึกษาแพทย์","value":"8"},{"text":"รับเคสแล้ว (ปรึกษาแพทย์)","value":"9"},{"text":"รอหมอรับเคส (US)","value":"10"},{"text":"รับเคสแล้ว (US)","value":"11"},{"text":"เปลี่ยนแพทย์ US","value":"12"}]}	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
 2952	income	user_updated	uuid	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2953	income	income_id	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
@@ -13333,28 +13470,35 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2962	income	mobile_updated	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2963	income	mobile_loc	\N	\N	\N	\N	\N	f	f	\N	full	\N	\N	\N	f	\N	\N	\N
 2965	beds	is_available	cast-boolean	boolean	\N	\N	\N	f	f	15	full	\N	\N	\N	t	\N	\N	\N
+2945	examination	is_us_done	cast-boolean	boolean	\N	\N	\N	f	f	145	half	\N	\N	\N	f	\N	\N	\N
 2978	certificate_reason	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 2987	certificate_reason	value	\N	input	\N	\N	\N	f	f	5	full	\N	\N	\N	f	\N	\N	\N
 2988	certificate_reason	label	\N	input	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
 2989	certificate_reason	type	\N	input	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
+2946	examination	is_mam_after_us_done	cast-boolean	boolean	\N	\N	\N	f	f	146	half	\N	\N	\N	f	\N	\N	\N
 2966	medical_certificate	patient_info	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
 3070	location_surgery	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 3072	location_surgery	location_surgery	\N	input	\N	\N	\N	f	f	3	full	\N	\N	\N	f	\N	\N	\N
 3073	location_surgery	abbreviation	\N	input	\N	\N	\N	f	f	4	full	\N	\N	\N	f	\N	\N	\N
 3074	location_surgery	pickup_and_dropoff	\N	input	\N	\N	\N	f	f	5	full	\N	\N	\N	f	\N	\N	\N
-3077	nurse_work	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 2969	medical_certificate	certificate_date	\N	datetime	\N	\N	\N	f	f	11	full	\N	\N	\N	f	\N	\N	\N
 2977	medical_certificate	case_owner_doctor	m2o	select-dropdown-m2o	\N	\N	\N	f	f	12	full	\N	\N	\N	f	\N	\N	\N
 2990	medical_certificate	inspection_date	\N	input	\N	\N	\N	f	f	14	half	\N	\N	\N	f	\N	\N	\N
 2991	medical_certificate	inspection_date_des	\N	input	\N	\N	\N	f	f	15	half	\N	\N	\N	f	\N	\N	\N
+3077	nurse_work	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 2922	medical_certificate	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 2923	medical_certificate	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 2924	medical_certificate	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 2925	medical_certificate	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
 2927	medical_certificate	certification_text	\N	input	\N	\N	\N	f	f	6	half	\N	\N	\N	f	\N	\N	\N
 2934	medical_certificate	language	\N	input	\N	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
+3860	appointment_reschedules	old_appointment_datetime	\N	datetime	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
 3078	nurse_work	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 3079	nurse_work	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
+3175	nurse_work	bx_status	\N	input	{"choices":[{"text":"รอเรียกคิว","value":"0"},{"text":"เรียกคิวแล้ว","value":"1"},{"text":"ยังไม่ลงรายละเอียดก่อนเจาะ","value":"2"},{"text":"ส่งตรวจ","value":"3"},{"text":"เสร็จสิ้น","value":"4"},{"text":"ไม่มาตามนัด","value":"5"},{"text":"ยกเลิกนัด","value":"6"},{"text":"ยังไม่ถึงเวลานัด/ยังไม่มา","value":"7"},{"text":"สรุปหัตการ/รออ่านผล","value":"8"},{"text":"หยุดชั่วคราว","value":"8"},{"text":"US.BX","value":"9"},{"text":"แพทย์ Sign to PACS","value":"10"}]}	labels	{"choices":[{"text":"สร้างนัดหมาย BX สำเร็จ","value":"0","foreground":"#FFA439","background":"#FEF9C3"},{"text":"แพทย์ลงรายละเอียดก่อนเจาะ แต่เคสยังไม่ได้กดคิว","value":"1"},{"text":"แพทย์ลงรายละเอียดก่อนเจาะ และเคสกดคิวแล้ว","value":"2","background":"#FEF9C3","foreground":"#FFA439"},{"text":"tech สัมภาษณ์เสร็จ และส่งมาที่แผนกพยาบาล","value":"3"},{"text":"พยาบาลเรียกคิว","value":"4"},{"text":"พยาบาลส่งทำหัตการ","value":"5","foreground":"#FF0000","background":"#E3CDD1"},{"text":"พยาบาลเริ่มทำการเจาะ US.BX","value":"6","foreground":"#FF0000","background":"#E3CDD1"},{"text":"พยาบาลส่งสรุปหัตถการ และกดปุ่มส่งต่อเคส","value":"7"},{"text":"แพทย์ทำการ Sign to PACs","value":"8"},{"text":"ทำการยกเลิกนัด","value":"9"},{"text":"ผู้ป่วยไม่มาตรวจตามนัด","value":"10"},{"text":"พยาบาลส่งเจาะ ST.BX","value":"11"}]}	f	f	10	half	\N	\N	\N	f	\N	\N	\N
+3861	nurse_work	tech_recieve_time	\N	datetime	\N	\N	\N	f	f	49	full	\N	\N	\N	f	\N	\N	\N
+3108	bx_options	parent	m2m	list-m2m	{"template":"{{related_bx_options_id.id}}: {{related_bx_options_id.label}}"}	related-values	{"template":"{{related_bx_options_id.label}}"}	f	f	10	full	\N	\N	\N	f	\N	\N	\N
+3090	nurse_work	radiologist	m2o	select-dropdown-m2o	\N	\N	\N	f	f	23	full	\N	แพทย์ปรึกษา	\N	f	\N	\N	\N
 1412	examination_general	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 1413	examination_general	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 1414	examination_general	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
@@ -13374,31 +13518,29 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 2602	examination_general	l_followup_des	cast-json	input-code	\N	\N	\N	f	f	55	full	\N	\N	\N	f	\N	\N	\N
 2610	examination_general	l_palpable_des	cast-json	input-code	\N	\N	\N	f	f	62	full	\N	\N	\N	f	\N	\N	\N
 3040	examination_general	cosign	m2o	select-dropdown-m2o	\N	\N	\N	f	f	65	full	\N	\N	\N	f	\N	\N	\N
+3092	nurse_work	blood_thinning_medications	\N	input	\N	\N	\N	f	f	24	full	\N	\N	\N	f	\N	\N	\N
+3097	nurse_work	surgical_facility	\N	input	\N	\N	\N	f	f	28	full	\N	\N	\N	f	\N	\N	\N
+3095	nurse_work	scan_Pacs	cast-boolean	boolean	\N	\N	\N	f	f	26	half	\N	\N	\N	f	\N	\N	\N
+3096	nurse_work	surgery_time	\N	input	\N	\N	\N	f	f	27	full	\N	\N	\N	f	\N	\N	\N
+3098	nurse_work	anesthesia	\N	input	\N	\N	\N	f	f	29	full	\N	\N	\N	f	\N	\N	\N
+3094	nurse_work	CD_Pacs	cast-boolean	boolean	\N	\N	\N	f	f	25	half	\N	\N	\N	f	\N	\N	\N
+3862	appointment	examination	o2m	list-o2m	{"sort":null}	\N	\N	f	f	76	full	\N	\N	\N	f	\N	\N	\N
+3087	nurse_work	mg_before	cast-boolean	boolean	\N	\N	\N	f	f	20	half	\N	\N	\N	f	\N	\N	\N
 3088	nurse_work	us_before	cast-boolean	boolean	\N	\N	\N	f	f	21	half	\N	\N	\N	f	\N	\N	\N
-3089	nurse_work	referring_physician	m2o	select-dropdown-m2o	\N	\N	\N	f	f	22	full	\N	\N	\N	f	\N	\N	\N
+3089	nurse_work	referring_physician	m2o	select-dropdown-m2o	\N	\N	\N	f	f	22	full	\N	แพทย์เจ้าของเคส	\N	f	\N	\N	\N
 3102	bx_options	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 3109	bx_options_bx_options	id	\N	\N	\N	\N	\N	f	t	1	full	\N	\N	\N	f	\N	\N	\N
 3100	bx_options	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 3104	bx_options	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
 3106	bx_options	value	\N	input	\N	\N	\N	f	f	8	half	\N	\N	\N	f	\N	\N	\N
-3097	nurse_work	surgical_facility	\N	input	\N	\N	\N	f	f	28	full	\N	\N	\N	f	\N	\N	\N
 3101	bx_options	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
-3108	bx_options	parent	m2m	list-m2m	\N	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
-3090	nurse_work	radiologist	m2o	select-dropdown-m2o	\N	\N	\N	f	f	23	full	\N	\N	\N	f	\N	\N	\N
 3107	bx_options	label	\N	input	\N	\N	\N	f	f	9	half	\N	\N	\N	f	\N	\N	\N
 3065	appointment	department_bx	\N	select-dropdown	{"choices":[{"text":"tech-ลงข้อมูลในระบบ pacs","value":"tech-cd"},{"text":"tech-ลงข้อมูลในระบบ pacs หรือ ทำนัดหมาย bx","value":"tech"},{"text":"nurse","value":"nurse"}]}	\N	\N	f	f	3	half	\N	\N	\N	f	\N	\N	\N
 3085	time_slot	is_bx_time	cast-boolean	boolean	\N	\N	\N	f	f	16	half	\N	\N	\N	t	\N	\N	\N
-3092	nurse_work	blood_thinning_medications	\N	input	\N	\N	\N	f	f	24	full	\N	\N	\N	f	\N	\N	\N
-3094	nurse_work	CD_Pacs	cast-boolean	boolean	\N	\N	\N	f	f	25	half	\N	\N	\N	f	\N	\N	\N
-3095	nurse_work	scan_Pacs	cast-boolean	boolean	\N	\N	\N	f	f	26	half	\N	\N	\N	f	\N	\N	\N
-3096	nurse_work	surgery_time	\N	input	\N	\N	\N	f	f	27	full	\N	\N	\N	f	\N	\N	\N
 3103	bx_options	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
-3098	nurse_work	anesthesia	\N	input	\N	\N	\N	f	f	29	full	\N	\N	\N	f	\N	\N	\N
 3336	form_consent	st_cnb_organ	\N	input	\N	\N	\N	f	f	14	half	\N	\N	\N	f	\N	\N	\N
 3345	form_consent	us_nl_organ	\N	input	\N	\N	\N	f	f	23	half	\N	\N	\N	f	\N	\N	\N
 3349	form_consent	st_nl_side	\N	input	\N	\N	\N	f	f	27	half	\N	\N	\N	f	\N	\N	\N
-3086	nurse_work	examination_elsewhere	\N	input	\N	\N	\N	f	f	19	full	\N	\N	\N	f	\N	\N	\N
-3087	nurse_work	mg_before	cast-boolean	boolean	\N	\N	\N	f	f	20	half	\N	\N	\N	f	\N	\N	\N
 3405	nurse_work_statuses	description	\N	input	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
 3406	nurse_work_statuses	status_value	\N	input	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
 3319	form_consent	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
@@ -13411,6 +13553,11 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3557	tab_result_options	order	\N	input	\N	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
 3111	bx_options_bx_options	related_bx_options_id	\N	\N	{"template":"{{label}}"}	\N	{"template":"{{value}}{{label}}"}	f	f	3	full	\N	\N	\N	f	\N	\N	\N
 3110	bx_options_bx_options	bx_options_id	\N	\N	{"template":"{{label}}"}	\N	{"template":"{{label}}"}	f	t	2	full	\N	\N	\N	f	\N	\N	\N
+3633	special_procedures	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
+3634	special_procedures	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
+3635	special_procedures	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
+3639	special_procedures	procedure	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"procedure"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	11	half	\N	\N	\N	f	\N	\N	\N
+3640	special_procedures	procedure_other	\N	input	\N	\N	\N	f	f	12	half	\N	\N	\N	f	\N	\N	\N
 1641	appointment	appointment_channels	\N	select-dropdown	{"allowOther":true,"choices":[{"text":"มานัดด้วยตนเอง","value":"มานัดด้วยตนเอง"},{"text":"ช่องทางออนไลน์","value":"ช่องทางออนไลน์"},{"text":"นัดทางโทรศัพท์","value":"นัดทางโทรศัพท์"},{"text":"Telemed","value":"Telemed"}]}	\N	\N	f	f	33	half	\N	\N	\N	f	\N	\N	\N
 1637	appointment	request	\N	select-radio	{"choices":[{"text":"MAM","value":"mam"},{"text":"US","value":"us"},{"text":"MAM + US","value":"mam+us"},{"text":"MAM + US (±)","value":"mam+us(±)"},{"text":"Confirm BX","value":"confirm_bx"},{"text":"BX","value":"bx"}]}	\N	\N	f	f	44	full	\N	\N	\N	f	\N	\N	\N
 3440	tab_assessment_options	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
@@ -13418,50 +13565,46 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3340	form_consent	st_vabb_side	\N	input	\N	\N	\N	f	f	18	half	\N	\N	\N	f	\N	\N	\N
 2870	appointment	location	m2o	select-dropdown-m2o	\N	\N	\N	f	f	63	full	\N	\N	\N	t	\N	\N	\N
 3343	form_consent	fna_asp_side	\N	input	\N	\N	\N	f	f	21	half	\N	\N	\N	f	\N	\N	\N
-1645	appointment	appointment_status	\N	select-dropdown	{"choices":[{"text":"ยังไม่ถึงเวลานัด/ยังไม่มา","value":"ยังไม่ถึงเวลานัด/ยังไม่มา"},{"text":"ไม่มาตามนัด","value":"ไม่มาตามนัด"},{"text":"เรียกแล้ว","value":"เรียกแล้ว"},{"text":"ส่งตรวจ","value":"ส่งตรวจ"},{"text":"ยกเลิกนัด","value":"ยกเลิกนัด"},{"text":"รอเรียกคิว","value":"รอเรียกคิว"}]}	\N	\N	f	f	8	half	\N	\N	\N	f	\N	\N	\N
+3643	special_procedures	side	\N	select-dropdown	{"choices":[{"text":"Left","value":"l"},{"text":"Right","value":"r"}]}	labels	{"choices":[{"text":"Left","value":"l"},{"text":"Right","value":"r"}]}	f	f	13	full	\N	\N	\N	f	\N	\N	\N
+1645	appointment	appointment_status	\N	select-dropdown	{"choices":[{"text":"ยังไม่ถึงเวลานัด/ยังไม่มา","value":"ยังไม่ถึงเวลานัด/ยังไม่มา"},{"text":"ไม่มาตามนัด","value":"ไม่มาตามนัด"},{"text":"เรียกแล้ว","value":"เรียกแล้ว"},{"text":"ส่งตรวจ","value":"ส่งตรวจ"},{"text":"ยกเลิกนัด","value":"ยกเลิกนัด"},{"text":"รอเรียกคิว","value":"รอเรียกคิว"},{"text":"เสร็จสิ้น","value":"เสร็จสิ้น"}]}	\N	\N	f	f	8	half	\N	\N	\N	f	\N	\N	\N
 3344	form_consent	us_nl	cast-boolean	boolean	\N	\N	\N	f	f	22	full	\N	\N	\N	f	\N	\N	\N
 3347	form_consent	st_nl	cast-boolean	boolean	\N	\N	\N	f	f	25	full	\N	\N	\N	f	\N	\N	\N
 3348	form_consent	st_nl_organ	\N	input	\N	\N	\N	f	f	26	half	\N	\N	\N	f	\N	\N	\N
 1615	appointment	care_type	\N	select-radio	{"choices":[{"text":"ผู้ป่วยนอก","value":1},{"text":"ผู้ป่วยใน","value":2}]}	\N	\N	f	f	29	full	\N	\N	[{"name":"payment_type == เบิกไม่ได้","rule":{"_and":[{"payment_type":{"_eq":8}}]},"options":{"iconOn":"radio_button_checked","iconOff":"radio_button_unchecked","allowOther":false,"choices":[{"text":"ผู้ป่วยใน","value":1},{"text":"ผู้ป่วยนอก","value":2},{"text":"ผู้ป่วยนอก (พิเศษ)","value":3}]}}]	f	\N	\N	\N
 3368	procedure	location_right_other	\N	input	\N	\N	\N	f	f	65	full	\N	\N	\N	f	\N	\N	\N
 3369	procedure	location_left_other	\N	input	\N	\N	\N	f	f	66	full	\N	\N	\N	f	\N	\N	\N
+3644	special_procedures	patient_position	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"patient position"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	16	half	\N	\N	\N	f	\N	\N	\N
+3645	special_procedures	patient_position_other	\N	input	\N	\N	\N	f	f	17	half	\N	\N	\N	f	\N	\N	\N
+3648	special_procedures	bx_doctor	m2o	select-dropdown-m2o	{"filter":{"_and":[{"policies":{"policy":{"name":{"_eq":"TYR"}}}}]}}	\N	\N	f	f	22	full	\N	\N	\N	f	\N	\N	\N
 3441	tab_assessment_options	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 3442	tab_assessment_options	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 3443	tab_assessment_options	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 3444	tab_assessment_options	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
-3592	lab_options	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
-3593	lab_options	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
-3594	lab_options	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 3622	tab_technique_options	procedure_id_4	m2o	select-dropdown-m2o	\N	\N	\N	f	f	13	full	\N	\N	\N	f	\N	\N	\N
 3558	tab_result_options	type	\N	select-dropdown	{"choices":[{"text":"input","value":"input"},{"text":"radio-group","value":"radio-group"},{"text":"checkbox","value":"checkbox"},{"text":"radio-group-input","value":"radio-group-input"},{"text":"checkbox-input","value":"checkbox-input"},{"text":"textarea","value":"textarea"}]}	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
 3559	tab_recommendation_options	tab	\N	input	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
 3560	tab_recommendation_options	label	\N	input	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
 3561	tab_recommendation_options	order	\N	input	\N	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
 3562	tab_recommendation_options	type	\N	select-dropdown	{"choices":[{"text":"input","value":"input"},{"text":"radio-group","value":"radio-group"},{"text":"checkbox","value":"checkbox"},{"text":"radio-group-input","value":"radio-group-input"},{"text":"checkbox-input","value":"checkbox-input"},{"text":"textarea","value":"textarea"}]}	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
-3595	lab_options	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
-3643	special_procedures	side	\N	select-dropdown	{"choices":[{"text":"Left","value":"l"},{"text":"Right","value":"r"}]}	labels	{"choices":[{"text":"Left","value":"l"},{"text":"Right","value":"r"}]}	f	f	9	full	\N	\N	\N	f	\N	\N	\N
-3648	special_procedures	bx_doctor	m2o	select-dropdown-m2o	{"filter":{"_and":[{"policies":{"policy":{"name":{"_eq":"TYR"}}}}]}}	\N	\N	f	f	22	full	\N	\N	\N	f	\N	\N	\N
-3633	special_procedures	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
-3634	special_procedures	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
-3635	special_procedures	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
-3645	special_procedures	patient_position_other	\N	input	\N	\N	\N	f	f	17	half	\N	\N	\N	f	\N	\N	\N
-3639	special_procedures	procedure	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"procedure"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	12	half	\N	\N	\N	f	\N	\N	\N
-3640	special_procedures	procedure_other	\N	input	\N	\N	\N	f	f	13	half	\N	\N	\N	f	\N	\N	\N
-3644	special_procedures	patient_position	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"patient position"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	16	half	\N	\N	\N	f	\N	\N	\N
+3123	nurse_work	appointed_dept	\N	select-dropdown	{"choices":[{"text":"tech","value":"tech"},{"text":"nurse","value":"nurse"}]}	\N	\N	f	f	15	half	\N	\N	\N	f	\N	\N	\N
 3124	nurse_work	proceed_dept	\N	select-dropdown	{"choices":[{"text":"tech","value":"tech"},{"text":"nurse","value":"nurse"}]}	\N	\N	f	f	16	half	\N	\N	\N	f	\N	\N	\N
 3115	appointment	appointment_bx_id	\N	input	\N	\N	\N	f	f	64	full	\N	\N	\N	f	\N	\N	\N
 3116	appointment	bx_created_by	m2o	select-dropdown-m2o	{"sort":null}	\N	\N	f	f	65	full	\N	\N	\N	f	\N	\N	\N
 3119	nurse_work	congenital_disease	cast-json	input-code	\N	\N	\N	f	f	30	full	\N	\N	\N	f	\N	\N	\N
-3076	nurse_work	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
+3120	nurse_work	ex_type	\N	input	\N	\N	\N	f	f	31	full	\N	\N	\N	f	\N	\N	\N
 3126	procedure_cost	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 3350	form_consent	ci	cast-boolean	boolean	\N	\N	\N	f	f	28	full	\N	\N	\N	f	\N	\N	\N
-3120	nurse_work	ex_type	\N	input	\N	\N	\N	f	f	31	full	\N	\N	\N	f	\N	\N	\N
+3076	nurse_work	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
+3125	nurse_work	create_appointment_queue	m2o	select-dropdown-m2o	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
 3134	nurse_work	additional_info	\N	input	\N	\N	\N	f	f	32	full	\N	\N	\N	f	\N	\N	\N
 3135	nurse_work	consult_detail	\N	input	\N	\N	\N	f	f	33	half	\N	\N	\N	f	\N	\N	\N
+3136	nurse_work	doctor_reply	\N	input	\N	\N	\N	f	f	34	half	\N	\N	\N	f	\N	\N	\N
 3131	procedure_cost	technique	\N	input	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
 3132	procedure_cost	procedure	\N	input	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
 3133	procedure_cost	price	\N	input	\N	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
+3118	nurse_work	appointment_datetime	\N	datetime	\N	\N	\N	f	f	13	half	\N	\N	\N	f	\N	\N	\N
 3412	tab_clinical_options	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
+3122	nurse_work	appointed_by	m2o	select-dropdown-m2o	\N	\N	\N	f	f	14	half	\N	\N	\N	f	\N	\N	\N
 3141	lab_cost	lab_name	\N	input	\N	\N	\N	f	f	2	full	\N	\N	\N	f	\N	\N	\N
 3145	lab_cost	lab_cost	\N	input	\N	\N	\N	f	f	3	full	\N	\N	\N	f	\N	\N	\N
 3144	lab_cost	official_hours	\N	input	\N	\N	\N	f	f	5	full	\N	\N	\N	f	\N	\N	\N
@@ -13471,7 +13614,6 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3413	tab_clinical_options	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 3414	tab_clinical_options	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 3415	tab_clinical_options	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
-3136	nurse_work	doctor_reply	\N	input	\N	\N	\N	f	f	34	half	\N	\N	\N	f	\N	\N	\N
 2065	appointment	infectious_disease	cast-json	select-multiple-checkbox	{"itemsShown":12,"choices":[{"text":"มีโรคติดเชื้อ","value":"มีโรคติดเชื้อ"},{"text":"ไม่มีโรคติดเชื้อ","value":"ไม่มีโรคติดเชื้อ"},{"text":"อื่นๆ","value":"อื่นๆ"},{"text":"Precaution","value":"Precaution"},{"text":"ไวรัสตับอักเสบ B","value":"ไวรัสตับอักเสบ B"},{"text":"ไวรัสตับอักเสบ C","value":"ไวรัสตับอักเสบ C"},{"text":"วัณโรคปอด","value":"วัณโรคปอด"},{"text":"โควิด","value":"โควิด"},{"text":"อีสุกอีใส","value":"อีสุกอีใส"},{"text":"งูสวัด","value":"งูสวัด"},{"text":"ตาแดง","value":"ตาแดง"},{"text":"เชื้อดื้อยา","value":"เชื้อดื้อยา"}]}	\N	\N	f	f	62	full	\N	\N	\N	f	\N	\N	\N
 3416	tab_clinical_options	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
 3450	tab_location_options	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
@@ -13486,61 +13628,53 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3459	tab_recommendation_options	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
 3489	tab_procedure_options	recommendation_id	o2m	list-o2m	{"template":"{{id}} {{label}}"}	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
 3626	tab_procedure_options	technique_id_5	o2m	list-o2m	{"template":"{{id}} {{label}}"}	\N	\N	f	f	15	full	\N	\N	\N	f	\N	\N	\N
-3125	nurse_work	create_appointment_queue	m2o	select-dropdown-m2o	\N	\N	\N	f	f	12	full	\N	\N	\N	f	\N	\N	\N
-3118	nurse_work	appointment_datetime	\N	datetime	\N	\N	\N	f	f	13	half	\N	\N	\N	f	\N	\N	\N
-3122	nurse_work	appointed_by	m2o	select-dropdown-m2o	\N	\N	\N	f	f	14	half	\N	\N	\N	f	\N	\N	\N
-3123	nurse_work	appointed_dept	\N	select-dropdown	{"choices":[{"text":"tech","value":"tech"},{"text":"nurse","value":"nurse"}]}	\N	\N	f	f	15	half	\N	\N	\N	f	\N	\N	\N
+3632	special_procedures	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 3007	doctor_work	doctor_change	cast-boolean	boolean	\N	\N	\N	f	f	13	full	\N	\N	\N	f	\N	\N	\N
+3636	special_procedures	order	\N	input	\N	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
+3150	nurse_work	spot	m2o	select-dropdown-m2o	\N	\N	\N	f	f	35	full	\N	\N	\N	f	\N	\N	\N
 3151	payment_type	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 3152	payment_type	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 3153	payment_type	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 3154	payment_type	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 3155	payment_type	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
+3646	special_procedures	approach	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"approach"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	20	half	\N	\N	\N	f	\N	\N	\N
 3157	payment_type	value	\N	input	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
 3158	payment_type	label	\N	input	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
 3159	payment_type	care_type	\N	select-dropdown	{"choices":[{"text":"ผู้ป่วยนอก","value":"1"},{"text":"ผู้ป่วยใน","value":"2"},{"text":"ผู้ป่วยอื่นๆ","value":"3"}]}	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
-3160	billing	payment_type	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	95	full	\N	\N	\N	f	\N	\N	\N
+3649	special_procedures	scrub	m2o	select-dropdown-m2o	{"filter":{"_and":[{"role":{"role_name_code":{"_eq":"nurse"}}}]}}	\N	\N	f	f	23	full	\N	\N	\N	f	\N	\N	\N
 3771	appointment	external_exam_records	o2m	list-o2m	{"sort":null,"template":"{{hospital_name}}{{is_success_uploaded}}"}	\N	\N	f	t	74	full	\N	\N	\N	f	\N	\N	\N
+3160	billing	payment_type	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	95	full	\N	\N	\N	f	\N	\N	\N
+3650	special_procedures	tech_circulate	m2o	select-dropdown-m2o	{"filter":{"_and":[{"role":{"role_name_code":{"_eq":"tech_circulate"}}}]}}	\N	\N	f	f	24	full	\N	\N	\N	f	\N	\N	\N
 3617	tab_technique_options	procedure_id_1	m2o	select-dropdown-m2o	\N	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
+3651	special_procedures	equipment	m2o	select-dropdown-m2o	{"template":"{{type}}"}	related-values	{"template":"{{type}}"}	f	f	25	half	\N	\N	\N	f	\N	\N	\N
+3652	special_procedures	specimen_count	\N	input	{"min":0}	\N	\N	f	f	27	half	\N	\N	\N	f	\N	\N	\N
+3827	special_procedures	patho_lab_other	\N	input	\N	\N	\N	f	f	33	half	\N	\N	\N	f	\N	\N	\N
 3351	form_consent	ci_organ	\N	input	\N	\N	\N	f	f	29	half	\N	\N	\N	f	\N	\N	\N
 3352	form_consent	ci_side	\N	input	\N	\N	\N	f	f	30	half	\N	\N	\N	f	\N	\N	\N
+3584	special_procedure_plans	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
+3585	special_procedure_plans	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 3460	tab_result_options	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 3461	tab_result_options	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 3462	tab_result_options	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 3463	tab_result_options	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 3464	tab_result_options	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
 3566	tab_assessment_options	type	\N	select-dropdown	{"choices":[{"text":"input","value":"input"},{"text":"radio-group","value":"radio-group"},{"text":"checkbox","value":"checkbox"},{"text":"radio-group-input","value":"radio-group-input"},{"text":"checkbox-input","value":"checkbox-input"},{"text":"textarea","value":"textarea"}]}	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
-3596	lab_options	type	\N	select-dropdown	{"allowOther":true,"allowNone":true,"choices":[{"text":"pathology","value":"pathology"},{"text":"micobiology","value":"micobiology"}]}	\N	\N	f	f	6	half	\N	\N	\N	f	\N	\N	\N
-3597	lab_options	label	\N	input	\N	\N	\N	f	f	7	half	\N	\N	\N	f	\N	\N	\N
-3664	special_procedures	nurse_work	m2o	select-dropdown-m2o	{"template":"{{id}}: {{appointment.patient_info.first_name_th}} {{appointment.patient_info.last_name_th}}"}	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
-3650	special_procedures	tech_circulate	m2o	select-dropdown-m2o	{"filter":{"_and":[{"role":{"role_name_code":{"_eq":"tech_circulate"}}}]}}	\N	\N	f	f	24	full	\N	\N	\N	f	\N	\N	\N
+3665	special_procedure_plans	nurse_work	m2o	select-dropdown-m2o	{"template":"{{id}}: {{appointment.patient_info.first_name_th}} {{appointment.patient_info.last_name_th}}"}	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
+3829	special_procedures_lab_list	id	\N	\N	\N	\N	\N	f	t	1	full	\N	\N	\N	f	\N	\N	\N
+3664	special_procedures	nurse_work	m2o	select-dropdown-m2o	{"template":"{{id}}: {{appointment.patient_info.first_name_th}} {{appointment.patient_info.last_name_th}}"}	related-values	{"template":"{{id}}: {{appointment.patient_info.first_name_th}} {{appointment.patient_info.last_name_th}}"}	f	f	6	full	\N	\N	\N	f	\N	\N	\N
+3637	special_procedures	technique	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"technique"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{value}}"}	f	f	9	half	\N	\N	\N	f	\N	\N	\N
 3661	special_procedures_lab_orders	id	\N	\N	\N	\N	\N	f	t	1	full	\N	\N	\N	f	\N	\N	\N
 3662	special_procedures_lab_orders	special_procedures_id	\N	\N	\N	\N	\N	f	t	2	full	\N	\N	\N	f	\N	\N	\N
-3663	special_procedures_lab_orders	lab_orders_id	\N	\N	\N	\N	\N	f	t	3	full	\N	\N	\N	f	\N	\N	\N
-3654	special_procedures	lab	\N	select-dropdown	{"choices":[{"text":"ไม่ส่งแลป","value":"0","icon":"cancel","color":"#E35169"},{"text":"Patho","value":"1"},{"text":"Cyto","value":"2"}]}	\N	\N	f	f	29	half	\N	\N	\N	f	\N	\N	\N
-3649	special_procedures	scrub	m2o	select-dropdown-m2o	{"filter":{"_and":[{"role":{"role_name_code":{"_eq":"nurse"}}}]}}	\N	\N	f	f	23	full	\N	\N	\N	f	\N	\N	\N
-3636	special_procedures	order	\N	input	\N	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
-3637	special_procedures	technique	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"technique"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	10	half	\N	\N	\N	f	\N	\N	\N
-3651	special_procedures	equipment	m2o	select-dropdown-m2o	{"template":"{{type}}"}	related-values	{"template":"{{type}}"}	f	f	25	full	\N	\N	\N	f	\N	\N	\N
-3652	special_procedures	specimen_count	\N	input	{"min":0}	\N	\N	f	f	26	half	\N	\N	\N	f	\N	\N	\N
-3665	special_procedure_plans	nurse_work	m2o	select-dropdown-m2o	{"template":"{{id}}: {{appointment.patient_info.first_name_th}} {{appointment.patient_info.last_name_th}}"}	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
-3660	special_procedures	lab_orders	m2m	list-m2m	\N	\N	\N	f	f	30	half	\N	\N	\N	f	\N	\N	\N
-3666	lab_plans	nurse_work	m2o	select-dropdown-m2o	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
-3632	special_procedures	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
-3656	lab_orders	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
-3657	lab_orders	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
-3658	lab_orders	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
-3659	lab_orders	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
-3667	lab_orders	side	\N	select-dropdown	{"choices":[{"text":"Left","value":"l"},{"text":"Right","value":"r"}]}	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
+3830	special_procedures_lab_list	special_procedures_id	\N	\N	\N	\N	\N	f	t	2	full	\N	\N	\N	f	\N	\N	\N
+3831	special_procedures_lab_list	lab_list_id	\N	\N	\N	\N	\N	f	t	3	full	\N	\N	\N	f	\N	\N	\N
 3619	tab_procedure_options	technique_id_1	o2m	list-o2m	{"template":"{{id}} {{label}}"}	\N	{"template":"{{id}}{{label}}"}	f	f	11	full	\N	\N	\N	f	\N	\N	\N
 3624	tab_procedure_options	technique_id_3	o2m	list-o2m	{"template":"{{id}} {{label}}"}	\N	\N	f	f	13	full	\N	\N	\N	f	\N	\N	\N
 3625	tab_procedure_options	technique_id_4	o2m	list-o2m	{"template":"{{id}} {{label}}"}	\N	\N	f	f	14	full	\N	\N	\N	f	\N	\N	\N
-3646	special_procedures	approach	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"approach"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	20	half	\N	\N	\N	f	\N	\N	\N
-3584	special_procedure_plans	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
-3585	special_procedure_plans	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
-3150	nurse_work	spot	m2o	select-dropdown-m2o	\N	\N	\N	f	f	35	full	\N	\N	\N	f	\N	\N	\N
 3772	appointment	is_uploaded_success	cast-boolean	boolean	\N	\N	\N	f	f	68	half	\N	\N	\N	f	\N	\N	\N
+3638	special_procedures	technique_other	\N	input	\N	\N	\N	f	f	10	half	\N	\N	\N	f	\N	\N	\N
+3647	special_procedures	approach_other	\N	input	\N	\N	\N	f	f	21	half	\N	\N	\N	f	\N	\N	\N
 3162	queue	status_queue_b	\N	select-dropdown	{"choices":[{"text":"เสร็จสิ้น","value":"2"}]}	\N	\N	f	f	39	full	\N	\N	\N	f	\N	\N	\N
+3178	examination	previous_result_from	\N	input	\N	\N	\N	f	f	149	full	\N	\N	\N	f	\N	\N	\N
 2142	doctor_work	status	\N	select-dropdown	{"choices":[{"text":"รออ่านผล","value":"0"},{"text":"รอส่ง US","value":"1"},{"text":"F14/ยกเลิก","value":"2"},{"text":"F14/ปล่อยกลับบ้าน","value":"3"},{"text":"ทำ Mammogram","value":"4"},{"text":"ปรึกษาแพทย์","value":"5"},{"text":"รออ่านผล/MAM เพิ่ม","value":"6"},{"text":"รออ่านผล/ปล่อยกลับบ้าน","value":"7"},{"text":"ส่ง US แล้ว","value":"8"},{"text":"F14/แนะนำ Bx","value":"9"},{"text":"จ่ายเงินแล้ว","value":"10"},{"text":"หยุดชั่วคราว","value":"11"},{"text":"ทำ Mammogram (หลัง US)","value":"12"},{"text":"รออ่านผล/MAM เพิ่ม (หลัง US)","value":"13"},{"text":"รออ่านผล/Confirm Bx","value":"14"},{"text":"ยกเลิก US","value":"15"},{"text":"สำเร็จ","value":"16"},{"text":"ยกเลิก","value":"17"},{"text":"ยกเลิก MAM","value":"18"},{"text":"ปรึกษาแพทย์/ทำนัด BX","value":"19"},{"text":"ส่งทำนัด BX แล้ว","value":"20"},{"text":"ส่งทำนัด Confirm BX แล้ว","value":"21"},{"text":"รอดำเนินการ/ทำนัด BX","value":"22"}]}	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
 3168	lab_cost	doctor_fee	\N	input	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
 3169	procedure_cost	doctor_fee	\N	input	\N	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
@@ -13548,8 +13682,7 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3171	procedure_cost	df_step	\N	input	\N	\N	\N	f	f	11	full	\N	\N	\N	f	\N	\N	\N
 3172	procedure_cost	isAllowedAfterHour	cast-boolean	boolean	\N	\N	\N	f	f	12	full	\N	\N	\N	f	\N	\N	\N
 3174	lab_cost	df_cap	cast-boolean	boolean	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
-3638	special_procedures	technique_other	\N	input	\N	\N	\N	f	f	11	half	\N	\N	\N	f	\N	\N	\N
-3178	examination	previous_result_from	\N	input	\N	\N	\N	f	f	151	full	\N	\N	\N	f	\N	\N	\N
+3167	nurse_work	nurse_receive_time	\N	datetime	\N	\N	\N	f	f	37	half	\N	\N	\N	f	\N	\N	\N
 3353	form_consent	tc_99m	cast-boolean	boolean	\N	\N	\N	f	f	31	full	\N	\N	\N	f	\N	\N	\N
 3355	form_consent	tc_99m_side	\N	input	\N	\N	\N	f	f	33	half	\N	\N	\N	f	\N	\N	\N
 3543	tab_procedures_options	tab	\N	input	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
@@ -13570,15 +13703,16 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3479	tab_recommendation_options	procedure_id	m2o	select-dropdown-m2o	\N	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
 3478	tab_assessment_options	procedure_id	m2o	select-dropdown-m2o	\N	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
 3618	tab_technique_options	procedure_id_2	m2o	select-dropdown-m2o	\N	\N	\N	f	f	11	full	\N	\N	\N	f	\N	\N	\N
-3591	lab_options	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
-3647	special_procedures	approach_other	\N	input	\N	\N	\N	f	f	21	half	\N	\N	\N	f	\N	\N	\N
 3176	appointment	previous_result_from	\N	input	\N	\N	\N	f	f	66	half	\N	\N	\N	f	\N	\N	\N
-3655	lab_orders	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 3177	appointment	previous_result_uploaded_by	m2o	select-dropdown-m2o	{"enableCreate":false,"filter":{"_and":[{"role":{"role_name_code":{"_eq":"Office Tech"}}}]}}	\N	\N	f	f	67	half	\N	\N	\N	f	\N	\N	\N
-3167	nurse_work	nurse_receive_time	\N	datetime	\N	\N	\N	f	f	36	full	\N	\N	\N	f	\N	\N	\N
+3189	nurse_work	us_order	\N	input	\N	\N	\N	f	f	40	half	\N	\N	\N	f	\N	\N	\N
 2757	ultrasound_work	status	\N	select-dropdown	{"choices":[{"text":"รอดำเนินการ","value":"0"},{"text":"รอเรียกคิว","value":"1"},{"text":"รับเคส","value":"2"},{"text":"รอแพทย์","value":"3"},{"text":"เริ่มถ่าย","value":"4"},{"text":"หยุดชั่วคราว","value":"5"},{"text":"ถ่ายสำเร็จ","value":"6"},{"text":"ขอเปลี่ยนเตียง","value":"7"},{"text":"ยกเลิก","value":"8"}]}	labels	{"choices":[{"text":"รอดำเนินการ","value":"0","color":null,"foreground":"#FFA439","background":"#FEF9C3"},{"text":"รอเรียกคิว","value":"1"},{"text":"รับเคส","value":"2","foreground":"#126994","background":"#EFF6FF"},{"text":"รอแพทย์","value":"3","foreground":"#126994","background":"#EFF6FF"},{"text":"เริ่มถ่าย","value":"4","foreground":"#126994","background":"#EFF6FF"},{"text":"หยุดชั่วคราว","value":"5","foreground":"#FFA439","background":"#FEF9C3"},{"text":"ถ่ายสำเร็จ","value":"6","foreground":"#15803D","background":"#DCFCE7"},{"text":"ขอเปลี่ยนเตียง","value":"7","foreground":"#FFA439","background":"#FEF9C3"},{"text":"ยกเลิก","value":"8","foreground":"#FF0000","background":"#E3CDD1"},{"text":"ขอเปลี่ยนแพทย์","value":"9","foreground":"#FFA439","background":"#FEF9C3"}]}	f	f	6	half	\N	\N	\N	f	\N	\N	\N
+3184	nurse_work	congenital_disease_option	\N	input	\N	\N	\N	f	f	38	full	\N	\N	\N	f	\N	\N	\N
 3048	notification	from_dept	\N	select-dropdown	{"choices":[{"text":"Front","value":"Front"},{"text":"Front (F.14)","value":"Front (F.14)"},{"text":"US","value":"US"},{"text":"แพทย์","value":"แพทย์"},{"text":"การเงิน","value":"การเงิน"},{"text":"Tech","value":"Tech"},{"text":"พยาบาล","value":"พยาบาล"}]}	\N	\N	f	f	12	half	\N	\N	\N	f	\N	\N	\N
 3056	notification	to_dept	\N	select-dropdown	{"choices":[{"text":"Front","value":"Front"},{"text":"Front (F.14)","value":"Front (F.14)"},{"text":"US","value":"US"},{"text":"แพทย์","value":"แพทย์"},{"text":"การเงิน","value":"การเงิน"},{"text":"Tech","value":"Tech"},{"text":"พยาบาล","value":"พยาบาล"}]}	\N	\N	f	f	13	half	\N	\N	\N	f	\N	\N	\N
+3190	nurse_work	nurse_appointment_received_at	\N	datetime	\N	\N	\N	f	f	36	half	\N	\N	\N	f	\N	\N	\N
+3188	nurse_work	st_order	\N	input	\N	\N	\N	f	f	39	half	\N	\N	\N	f	\N	\N	\N
+3185	nurse_work	bx_prepared	cast-boolean	boolean	\N	\N	\N	f	f	41	half	\N	\N	\N	f	\N	\N	\N
 3196	location_surgery	key	\N	input	\N	\N	\N	f	f	2	full	\N	\N	\N	f	\N	\N	\N
 3197	underlying_disease	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 3198	underlying_disease	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
@@ -13604,18 +13738,15 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3324	form_consent	form_type	\N	select-dropdown	{"choices":[{"text":"ใบยินยอมการเจาะชิ้นเนื้อ","value":"0"},{"text":"ใบยินยอมการเจาะ Stereotactic guided","value":"1"},{"text":"ใบยินยอมการเจาะ Ultrasound guided","value":"2"},{"text":"ใบยินยอมการเจาะ Stereotactic guided - VBAA","value":"3"}]}	labels	{"choices":[{"text":"ใบยินยอมการเจาะชิ้นเนื้อ","value":"0"},{"text":"ใบยินยอมการเจาะ Stereotactic guided","value":"1"},{"text":"ใบยินยอมการเจาะ Ultrasound guided","value":"2"},{"text":"ใบยินยอมการเจาะ Stereotactic guided - VBAA","value":"3"}]}	f	f	8	full	\N	\N	\N	f	\N	\N	\N
 3424	tab_clinical_options	tab	\N	input	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
 3425	tab_clinical_options	label	\N	input	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
-3185	nurse_work	bx_prepared	cast-boolean	boolean	\N	\N	\N	f	f	41	half	\N	\N	\N	f	\N	\N	\N
-3188	nurse_work	st_order	\N	input	\N	\N	\N	f	f	38	full	\N	\N	\N	f	\N	\N	\N
 3183	appointment	us_mass	cast-json	input-code	\N	\N	\N	f	f	71	full	\N	\N	\N	f	\N	\N	\N
-3189	nurse_work	us_order	\N	input	\N	\N	\N	f	f	39	full	\N	\N	\N	f	\N	\N	\N
-3190	nurse_work	nurse_appointment_received_at	\N	datetime	\N	\N	\N	f	f	40	full	\N	\N	\N	f	\N	\N	\N
-3184	nurse_work	congenital_disease_option	\N	input	\N	\N	\N	f	f	37	full	\N	\N	\N	f	\N	\N	\N
 3470	tab_procedures_options	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 3471	tab_procedures_options	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 3472	tab_procedures_options	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 3473	tab_procedures_options	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 3181	appointment	assessment_birads_des	\N	input	\N	\N	\N	f	f	70	full	\N	\N	\N	f	\N	\N	\N
 3212	notification	is_nurse_noti	cast-boolean	boolean	\N	\N	\N	f	f	24	half	\N	\N	\N	f	\N	\N	\N
+3234	nurse_work	examination	m2o	select-dropdown-m2o	\N	\N	\N	f	f	12	half	\N	\N	\N	f	\N	\N	\N
+3211	nurse_work	bx_prepared_doctor	m2o	select-dropdown-m2o	\N	\N	\N	f	f	42	half	\N	\N	\N	f	\N	\N	\N
 1896	time_slot	time_period	\N	select-dropdown	{"choices":[{"text":"เช้า","value":"morning"},{"text":"บ่าย","value":"afternoon"},{"text":"เย็น","value":"evening"}]}	\N	\N	f	f	3	half	\N	\N	\N	f	\N	\N	\N
 3216	time_slot	time_start	\N	input	\N	\N	\N	f	f	13	half	\N	\N	\N	f	\N	\N	\N
 3217	time_slot	time_end	\N	input	\N	\N	\N	f	f	14	half	\N	\N	\N	f	\N	\N	\N
@@ -13631,8 +13762,6 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3226	procedure	patient_type	\N	input	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
 3227	procedure	patient_type_des	\N	input-code	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
 3228	procedure	clinical	\N	input	\N	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
-3234	nurse_work	examination	m2o	select-dropdown-m2o	\N	\N	\N	f	f	7	half	\N	\N	\N	f	\N	\N	\N
-3211	nurse_work	bx_prepared_doctor	m2o	select-dropdown-m2o	\N	\N	\N	f	f	42	full	\N	\N	\N	f	\N	\N	\N
 3474	tab_procedures_options	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
 3550	tab_location_options	type	\N	select-dropdown	{"choices":[{"text":"input","value":"input"},{"text":"radio-group","value":"radio-group"},{"text":"checkbox","value":"checkbox"},{"text":"radio-group-input","value":"radio-group-input"},{"text":"checkbox-input","value":"checkbox-input"},{"text":"textarea","value":"textarea"}]}	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
 3551	tab_technique_options	tab	\N	input	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
@@ -13655,13 +13784,16 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3435	tab_procedure_options	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 3436	tab_procedure_options	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 3437	tab_procedure_options	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
-3268	examination	procedure	o2m	list-o2m	\N	\N	\N	f	f	152	full	\N	\N	\N	f	\N	\N	\N
+3630	special_procedures	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
+3279	examination	nurse_work	m2o	select-dropdown-m2o	\N	\N	\N	f	f	151	full	\N	\N	\N	f	\N	\N	\N
+3631	special_procedures	status	\N	select-dropdown	{"choices":[{"text":"ไม่ดำเนินการ","value":"0","color":"#E35169","icon":"cancel"},{"text":"ดำเนินการแล้ว","value":"1","color":"#2ECDA7","icon":"check_circle"}]}	labels	{"choices":[{"text":"ไม่ดำเนินการ","value":"0","icon":"cancel","color":"#E35169"},{"text":"ดำเนินการแล้ว","value":"1","icon":"check_circle","color":"#2ECDA7"}]}	f	f	7	full	\N	\N	\N	f	\N	\N	\N
 3269	exam_costs	code_tyr	\N	input	\N	\N	\N	f	f	13	full	\N	\N	\N	f	\N	\N	\N
 3270	exam_costs	code_ics	\N	input	\N	\N	\N	f	f	14	full	\N	\N	\N	f	\N	\N	\N
+3278	nurse_work	is_visit	cast-boolean	boolean	\N	\N	\N	f	f	7	half	\N	ไว้แยกว่าเป็นวันมาตรวจหรือเปล่า	\N	f	\N	\N	\N
 3245	procedure	remark_text	\N	input	\N	\N	\N	f	f	23	full	\N	\N	\N	f	\N	\N	\N
-3630	special_procedures	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
-3631	special_procedures	status	\N	select-dropdown	{"choices":[{"text":"ไม่ดำเนินการ","value":"0","color":"#E35169","icon":"cancel"},{"text":"ดำเนินการแล้ว","value":"1","color":"#2ECDA7","icon":"check_circle"}]}	labels	{"showAsDot":true,"choices":[{"text":"ไม่ดำเนินการ","value":"0","icon":"cancel","color":"#E35169"},{"text":"ดำเนินการแล้ว","value":"1","icon":"check_circle","color":"#2ECDA7"}]}	f	f	7	full	\N	\N	\N	f	\N	\N	\N
-3279	examination	nurse_work	m2o	select-dropdown-m2o	\N	\N	\N	f	f	153	full	\N	\N	\N	f	\N	\N	\N
+3268	examination	procedure	o2m	list-o2m	\N	\N	\N	f	f	150	full	\N	\N	\N	f	\N	\N	\N
+3276	nurse_work	vital_sign	cast-json	input-code	{"template":"[]"}	\N	\N	f	f	43	full	\N	\N	\N	t	\N	\N	\N
+3277	nurse_work	bx_doctor	m2o	select-dropdown-m2o	\N	\N	\N	f	f	44	full	\N	\N	\N	f	\N	\N	\N
 3246	procedure	summary_doctor	m2o	select-dropdown-m2o	\N	\N	\N	f	f	24	full	\N	\N	\N	f	\N	\N	\N
 3267	procedure	exam	m2o	select-dropdown-m2o	\N	\N	\N	f	f	59	full	\N	\N	\N	f	\N	\N	\N
 3274	procedure	pathocode	\N	input	\N	\N	\N	f	f	60	full	\N	\N	\N	f	\N	\N	\N
@@ -13678,9 +13810,7 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3255	procedure	recommend_milignant	\N	input	\N	\N	\N	f	f	32	full	\N	\N	\N	f	\N	\N	\N
 3256	procedure	technique	\N	input	\N	\N	\N	f	f	33	full	\N	\N	\N	f	\N	\N	\N
 3257	procedure	technique_des	\N	input	\N	\N	\N	f	f	34	full	\N	\N	\N	f	\N	\N	\N
-3277	nurse_work	bx_doctor	m2o	select-dropdown-m2o	\N	\N	\N	f	f	43	full	\N	\N	\N	f	\N	\N	\N
 3258	procedure	patient_pos	\N	input	\N	\N	\N	f	f	35	full	\N	\N	\N	f	\N	\N	\N
-3276	nurse_work	vital_sign	cast-json	input-code	{"template":"[]"}	\N	\N	f	f	44	full	\N	\N	\N	t	\N	\N	\N
 3259	procedure	patient_pos_des	\N	input	\N	\N	\N	f	f	36	full	\N	\N	\N	f	\N	\N	\N
 3554	tab_technique_options	type	\N	select-dropdown	{"choices":[{"text":"input","value":"input"},{"text":"radio-group","value":"radio-group"},{"text":"checkbox","value":"checkbox"},{"text":"radio-group-input","value":"radio-group-input"},{"text":"checkbox-input","value":"checkbox-input"},{"text":"textarea","value":"textarea"}]}	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
 3365	form_consent	is_deleted	cast-boolean	boolean	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
@@ -13705,7 +13835,7 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3621	tab_technique_options	procedure_id_3	m2o	select-dropdown-m2o	\N	\N	\N	f	f	12	full	\N	\N	\N	f	\N	\N	\N
 3623	tab_technique_options	procedure_id_5	m2o	select-dropdown-m2o	\N	\N	\N	f	f	14	full	\N	\N	\N	f	\N	\N	\N
 3481	tab_procedure_options	procedures_id	o2m	list-o2m	{"template":"{{id}} {{label}}"}	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
-3278	nurse_work	is_visit	cast-boolean	boolean	\N	\N	\N	f	f	45	full	\N	ไว้แยกว่าเป็นวันมาตรวจหรือเปล่า	\N	f	\N	\N	\N
+3082	nurse_work	status	\N	select-dropdown	{"choices":[{"text":"รอเรียกคิว","value":"0"},{"text":"กำลังดำเนินการ","value":"1"},{"text":"เสร็จสิ้น","value":"2"},{"text":"รอชำระเงิน","value":"3"},{"text":"รอดำเนินการ","value":"4"},{"text":"ยกเลิกคิว","value":"5"},{"text":"ส่งปรึกษาแพทย์","value":"6"},{"text":"รอลงข้อมูล","value":"7"},{"text":"แพทย์ตอบกลับ","value":"8"},{"text":"แพทย์ตอบกลับ/ยกเลิกทำนัด BX","value":"9"},{"text":"รอทำหัตการ","value":"10"}]}	labels	{"choices":[{"text":"รอเรียกคิว","value":"0","foreground":"#FFA439","background":"#FEF9C3"},{"text":"กำลังดำเนินการ","value":"1"},{"text":"เสร็จสิ้น","value":"2","foreground":"#15803D","background":"#DCFCE7"},{"text":"รอชำระเงิน","value":"3"},{"text":"รอดำเนินการ","value":"4"},{"text":"ยกเลิกคิว","value":"5","color":null,"foreground":"#FF0000","background":"#E3CDD1"},{"text":"ส่งปรึกษาแพทย์","value":"6"},{"text":"รอลงข้อมูล","value":"7","background":"#FEF9C3","foreground":"#FFA439"},{"text":"แพทย์ตอบกลับ","value":"8","background":"#FEF9C3","foreground":"#FFA439"},{"text":"แพทย์ตอบกลับ/ยกเลิกทำนัด BX","value":"9","background":"#E3CDD1","foreground":"#FF0000"}]}	f	f	9	half	\N	\N	\N	f	\N	\N	\N
 3302	procedure	assessment_others_des	\N	input	\N	\N	\N	f	f	16	full	\N	\N	\N	f	\N	\N	\N
 3303	procedure	spontaneous_discharge	cast-boolean	boolean	\N	\N	\N	f	f	41	full	\N	\N	\N	f	\N	\N	\N
 3286	procedure	result_aspiration_cc	\N	input	\N	\N	\N	f	f	42	full	\N	\N	\N	f	\N	\N	\N
@@ -13729,7 +13859,6 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3323	form_consent	scanned_consent_form	file	file	{"folder":"423fb55e-956b-429f-bcba-040fd847f574"}	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
 3332	form_consent	us_cnb	cast-boolean	boolean	\N	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
 3331	procedure	needleno	\N	input	\N	\N	\N	f	f	64	full	\N	\N	\N	f	\N	\N	\N
-3082	nurse_work	status	\N	select-dropdown	{"choices":[{"text":"รอเรียกคิว","value":"0"},{"text":"กำลังดำเนินการ","value":"1"},{"text":"เสร็จสิ้น","value":"2"},{"text":"รอชำระเงิน","value":"3"},{"text":"รอดำเนินการ","value":"4"},{"text":"ยกเลิกคิว","value":"5"},{"text":"ส่งปรึกษาแพทย์","value":"6"},{"text":"รอลงข้อมูล","value":"7"},{"text":"แพทย์ตอบกลับ","value":"8"},{"text":"แพทย์ตอบกลับ/ยกเลิกทำนัด BX","value":"9"},{"text":"รอทำหัตการ","value":"10"}]}	labels	{"choices":[{"text":"รอเรียกคิว","value":"0","foreground":"#FFA439","background":"#FEF9C3"},{"text":"กำลังดำเนินการ","value":"1"},{"text":"เสร็จสิ้น","value":"2","foreground":"#15803D","background":"#DCFCE7"},{"text":"รอชำระเงิน","value":"3"},{"text":"รอดำเนินการ","value":"4"},{"text":"ยกเลิกคิว","value":"5","color":null,"foreground":"#FF0000","background":"#E3CDD1"},{"text":"ส่งปรึกษาแพทย์","value":"6"},{"text":"รอลงข้อมูล","value":"7","background":"#FEF9C3","foreground":"#FFA439"},{"text":"แพทย์ตอบกลับ","value":"8","background":"#FEF9C3","foreground":"#FFA439"},{"text":"แพทย์ตอบกลับ/ยกเลิกทำนัด BX","value":"9","background":"#E3CDD1","foreground":"#FF0000"}]}	f	f	17	half	\N	\N	\N	f	\N	\N	\N
 3359	form_consent	us_cnb_organ	\N	input	\N	\N	\N	f	f	11	half	\N	\N	\N	f	\N	\N	\N
 3334	form_consent	us_cnb_side	\N	input	\N	\N	\N	f	f	12	half	\N	\N	\N	f	\N	\N	\N
 3337	form_consent	st_cnb_side	\N	input	\N	\N	\N	f	f	15	half	\N	\N	\N	f	\N	\N	\N
@@ -13741,32 +13870,27 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3362	procedure_item	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 3363	procedure_item	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 3367	procedure_item	type	\N	input	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
-2035	examination	status	\N	select-dropdown	{"choices":[{"text":"รอเรียกคิว","value":"0"},{"text":"กำลังสัมภาษณ์","value":"1"},{"text":"รอปรึกษาแพทย์","value":"2"},{"text":"แพทย์ตอบกลับ - รอเรียกคิว","value":"3"},{"text":"ส่งต่อแผนก US","value":"4"},{"text":"undefined","value":"5"},{"text":"เสร็จสิ้น","value":"6"},{"text":"ยกเลิก","value":"7"},{"text":"undefined","value":"8"},{"text":"แพทย์ตอบกลับ - ยกเลิกการตรวจ","value":"9"},{"text":"ถ่ายเพิ่มก่อน US - รอเรียกคิว","value":"10"},{"text":"ถ่ายเพิ่มก่อน US - รับเคส","value":"11"},{"text":"ถ่ายเพิ่มก่อน US - หยุดชั่วคราว","value":"12"},{"text":"แพทย์ตอบกลับ - รับเคส","value":"13"},{"text":"แพทย์ตอบกลับ - หยุดชั่วคราว","value":"14"},{"text":"ถ่ายเพิ่มก่อน US - ปิดเคส","value":" 15"},{"text":"แพทย์ตอบกลับ - ปิดเคส","value":"16"},{"text":"ถ่ายเพิ่มหลัง US - รอเรียกคิว","value":"17"},{"text":"ถ่ายเพิ่มหลัง US - รับเคส","value":"18"},{"text":"ถ่ายเพิ่มหลัง US - หยุดชั่วคราว","value":"19"},{"text":"ถ่ายเพิ่มหลัง US - ปิดเคส","value":"20"},{"text":"ส่งต่อแพทย์","value":"ส่งต่อแพทย์"},{"text":"ส่ง MAM - รอเรียกคิว","value":"ส่ง MAM - รอเรียกคิว"},{"text":"ส่ง MAM - รับเคส","value":"ส่ง MAM - รับเคส"},{"text":"ส่ง MAM - หยุดชั่วคราว","value":"ส่ง MAM - หยุดชั่วคราว"},{"text":"ส่ง MAM - ปิดเคส","value":"ส่ง MAM - ปิดเคส"},{"text":"ส่งต่อพยาบาล","value":"21"}]}	labels	{"choices":[{"text":"รอเรียกคิว","value":"0","foreground":"#FFA439","background":"#FEF9C3"},{"text":"กำลังสัมภาษณ์","value":"1","background":"#EFF6FF","foreground":"#126994"},{"text":"รอปรึกษาแพทย์","value":"2"},{"text":"รอเรียกคิว (ปรึกษาแพทย์)","value":"3","foreground":"#FFA439","background":"#FEF9C3"},{"text":"ส่งต่อแผนก US","value":"4","background":"#DCFCE7","foreground":"#15803D"},{"text":"undefined","value":"5"},{"text":"เสร็จสิ้น","value":"6","background":"#DCFCE7","foreground":"#15803D"},{"text":"ยกเลิก","value":"7","background":"#E3CDD1","foreground":"#E35169"},{"text":"undefined","value":"8"},{"text":"ยกเลิกการตรวจ (ปรึกษาแพทย์)","value":"9","foreground":"#E35169","background":"#E3CDD1"},{"text":"รอเรียกคิว (spot ก่อน us)","value":"10","foreground":"#FFC23B","background":"#FEF9C3"},{"text":"รับเคส (spot ก่อน us)","value":"11","foreground":"#126994","background":"#EFFFF6"},{"text":"ถ่ายเพิ่มก่อน US - หยุดชั่วคราว","value":"12","foreground":"#FFA439","background":"#FEF9C3"},{"text":"รับเคส (ปรึกษาแพทย์)","value":"13","background":"#EFF6FF","foreground":"#126994"},{"text":"หยุดชั่วคราว (ปรึกษาแพทย์)","value":"14","foreground":"#FFA439","background":"#FEF9C3"},{"text":"ปิดเคส  (spot ก่อน us)","value":"15"},{"text":"ปิดเคส (ปรึกษาแพทย์)","value":"16"},{"text":"รอเรียกคิว (spot หลัง us)","value":"17","foreground":"#FFA439","background":"#FEF9C3"},{"text":"รับเคส (spot หลัง us)","value":"18","background":"#EFFFF6","foreground":"#126994"},{"text":"หยุดชั่วคราว (spot หลัง us)","value":"19","foreground":"#FFA439","background":"#FEF9C3"},{"text":"ปิดเคส (spot หลัง us)","value":"20"},{"text":"ส่งต่อแพทย์","value":"ส่งต่อแพทย์","foreground":"#15803D","background":"#DCFCE7"},{"text":"ส่งต่อพยาบาล","value":"21","background":"#1258E2","foreground":"#364F5E"}]}	f	f	7	half	\N	\N	\N	f	\N	\N	\N
+3828	special_procedures	other_labs	m2m	list-m2m	\N	related-values	\N	f	f	34	full	\N	\N	\N	f	\N	\N	\N
+3586	special_procedure_plans	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
+3587	special_procedure_plans	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 3373	recommended_procedures	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 3374	recommended_procedures	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 3366	procedure_item	room	\N	select-dropdown	{"choices":[{"text":"Stereotactic guided","value":"Stereotactic guided"},{"text":"Ultrasound guided","value":"Ultrasound guided"}]}	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
-3371	nurse_work	procedure_step	\N	input	{"min":1,"max":5}	\N	\N	f	f	47	full	\N	\N	\N	f	\N	\N	\N
-3372	nurse_work	is_summary_mode	cast-boolean	boolean	\N	\N	\N	f	f	48	full	\N	\N	\N	f	\N	\N	\N
+3588	special_procedure_plans	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
+3589	special_procedure_plans	side	\N	select-dropdown	{"choices":[{"text":"Left","value":"l"},{"text":"Right","value":"r"}]}	labels	{"choices":[{"text":"Left","value":"l"},{"text":"Right","value":"r"}]}	f	f	11	full	\N	\N	\N	f	\N	\N	\N
+3372	nurse_work	is_summary_mode	cast-boolean	boolean	\N	\N	\N	f	f	8	half	\N	\N	\N	f	\N	\N	\N
+3370	nurse_work	bx_doctor_status	\N	select-dropdown	{"choices":[{"text":"ยังไม่ลงรายละเอียดก่อนเจาะ","value":"0"},{"text":"ยังไม่ถึงเวลานัด/ยังไม่มา","value":"1"},{"text":"รอทำหัตถการ","value":"2"}]}	\N	\N	f	f	45	full	\N	\N	\N	f	\N	\N	\N
+3371	nurse_work	procedure_step	\N	input	{"min":1,"max":5}	\N	\N	f	f	46	full	\N	\N	\N	f	\N	\N	\N
 3394	recommended_lab_orders	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 3395	recommended_lab_orders	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 3396	recommended_lab_orders	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 3397	recommended_lab_orders	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 3398	recommended_lab_orders	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
-3589	special_procedure_plans	side	\N	select-dropdown	{"choices":[{"text":"Left","value":"l"},{"text":"Right","value":"r"}]}	labels	{"choices":[{"text":"Left","value":"l"},{"text":"Right","value":"r"}]}	f	f	7	full	\N	\N	\N	f	\N	\N	\N
-3586	special_procedure_plans	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
-3587	special_procedure_plans	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
-3588	special_procedure_plans	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
-3606	lab_plans	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
-3607	lab_plans	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
-3608	lab_plans	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
-3715	lab_plans	breast_quadrant	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"quadrant"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	8	half	\N	\N	\N	f	\N	\N	\N
-3604	lab_plans	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
-3605	lab_plans	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 3375	recommended_procedures	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 3376	recommended_procedures	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 3377	recommended_procedures	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
 3380	recommended_procedures	side	\N	select-dropdown	{"choices":[{"text":"Left","value":"l"},{"text":"Right","value":"r"}]}	labels	{"choices":[{"text":"Left","value":"l"},{"text":"Right","value":"r"}]}	f	f	7	full	\N	\N	\N	f	\N	\N	\N
-3370	nurse_work	bx_doctor_status	\N	select-dropdown	{"choices":[{"text":"ยังไม่ลงรายละเอียดก่อนเจาะ","value":"0"},{"text":"ยังไม่ถึงเวลานัด/ยังไม่มา","value":"1"},{"text":"รอทำหัตถการ","value":"2"}]}	\N	\N	f	f	46	full	\N	\N	\N	f	\N	\N	\N
+3705	special_procedure_plans	technique	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"technique"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	7	half	\N	\N	\N	f	\N	\N	\N
 3671	tab_result_options	procedure_id_1	m2o	select-dropdown-m2o	\N	\N	\N	f	f	11	full	\N	\N	\N	f	\N	\N	\N
 3672	tab_result_options	procedure_id_2	m2o	select-dropdown-m2o	\N	\N	\N	f	f	12	full	\N	\N	\N	f	\N	\N	\N
 3673	tab_result_options	procedure_id_3	m2o	select-dropdown-m2o	\N	\N	\N	f	f	13	full	\N	\N	\N	f	\N	\N	\N
@@ -13778,6 +13902,7 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3680	tab_procedure_options	result_id_4	o2m	list-o2m	{"template":"{{id}} {{label}}"}	\N	\N	f	f	24	full	\N	\N	\N	f	\N	\N	\N
 3681	tab_procedure_options	result_id_5	o2m	list-o2m	{"template":"{{id}} {{label}}"}	\N	\N	f	f	25	full	\N	\N	\N	f	\N	\N	\N
 3682	tab_procedure_options	result_id_6	o2m	list-o2m	{"template":"{{id}} {{label}}"}	\N	\N	f	f	26	full	\N	\N	\N	f	\N	\N	\N
+3706	special_procedure_plans	technique_other	\N	input	\N	\N	\N	f	f	8	half	\N	\N	\N	f	\N	\N	\N
 3684	tab_technique_options	procedure_id_6	m2o	select-dropdown-m2o	\N	\N	\N	f	f	15	full	\N	\N	\N	f	\N	\N	\N
 3685	tab_technique_options	procedure_id_7	m2o	select-dropdown-m2o	\N	\N	\N	f	f	16	full	\N	\N	\N	f	\N	\N	\N
 3686	tab_technique_options	procedure_id_8	m2o	select-dropdown-m2o	\N	\N	\N	f	f	17	full	\N	\N	\N	f	\N	\N	\N
@@ -13793,63 +13918,60 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3696	tab_procedure_options	technique_id_9	o2m	list-o2m	{"template":"{{id}} {{label}}"}	\N	\N	f	f	19	full	\N	\N	\N	f	\N	\N	\N
 3697	tab_procedure_options	technique_id_10	o2m	list-o2m	{"template":"{{id}} {{label}}"}	\N	\N	f	f	20	full	\N	\N	\N	f	\N	\N	\N
 3698	tab_procedure_options	result_id_7	o2m	list-o2m	{"template":"{{id}} {{label}}"}	\N	\N	f	f	27	full	\N	\N	\N	f	\N	\N	\N
+3708	special_procedure_plans	procedure_other	\N	input	\N	\N	\N	f	f	10	half	\N	\N	\N	f	\N	\N	\N
 3699	tab_procedure_options	result_id_8	o2m	list-o2m	{"sort":null,"template":"{{id}} {{label}}"}	\N	\N	f	f	28	full	\N	\N	\N	f	\N	\N	\N
 3700	tab_procedure_options	result_id_9	o2m	list-o2m	{"template":"{{id}} {{label}}"}	\N	\N	f	f	29	full	\N	\N	\N	f	\N	\N	\N
 3701	tab_procedure_options	result_id_10	o2m	list-o2m	{"template":"{{id}} {{label}}"}	\N	\N	f	f	30	full	\N	\N	\N	f	\N	\N	\N
-3707	special_procedure_plans	procedure	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"procedure"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	10	half	\N	\N	\N	f	\N	\N	\N
-3710	special_procedure_plans	patient_position_other	\N	input	\N	\N	\N	f	f	15	half	\N	\N	\N	f	\N	\N	\N
-3705	special_procedure_plans	technique	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"technique"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	8	half	\N	\N	\N	f	\N	\N	\N
-3488	tab_procedure_options	assessment_id	o2m	list-o2m	{"template":"{{id}} {{label}}"}	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
-3706	special_procedure_plans	technique_other	\N	input	\N	\N	\N	f	f	9	half	\N	\N	\N	f	\N	\N	\N
-3709	special_procedure_plans	patient_position	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"patient position"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	14	half	\N	\N	\N	f	\N	\N	\N
-3708	special_procedure_plans	procedure_other	\N	input	\N	\N	\N	f	f	11	half	\N	\N	\N	f	\N	\N	\N
-3677	tab_procedure_options	result_id_1	o2m	list-o2m	{"template":"{{id}} {{label}}"}	\N	\N	f	f	21	full	\N	\N	\N	f	\N	\N	\N
-3711	special_procedure_plans	breast_compression	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"breast compression"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	16	half	\N	\N	\N	f	\N	\N	\N
-3704	special_procedure_plans	breast_quadrant_other	\N	input	\N	\N	\N	f	f	13	half	\N	\N	\N	f	\N	\N	\N
+3707	special_procedure_plans	procedure	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"procedure"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	9	half	\N	\N	\N	f	\N	\N	\N
 3703	special_procedure_plans	breast_quadrant	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"quadrant"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	12	half	\N	\N	\N	f	\N	\N	\N
-3712	special_procedure_plans	breast_compression_other	\N	input	\N	\N	\N	f	f	17	half	\N	\N	\N	f	\N	\N	\N
-3713	special_procedure_plans	approach	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"approach"}},{"type":{"_eq":"other"}}]}]}}	related-values	{"template":"{{label}}"}	f	f	18	half	\N	\N	\N	f	\N	\N	\N
+3710	special_procedure_plans	patient_position_other	\N	input	\N	\N	\N	f	f	15	half	\N	\N	\N	f	\N	\N	\N
 3714	special_procedure_plans	approach_other	\N	input	\N	\N	\N	f	f	19	half	\N	\N	\N	f	\N	\N	\N
+3704	special_procedure_plans	breast_quadrant_other	\N	input	\N	\N	\N	f	f	13	half	\N	\N	\N	f	\N	\N	\N
+3488	tab_procedure_options	assessment_id	o2m	list-o2m	{"template":"{{id}} {{label}}"}	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
+3711	special_procedure_plans	breast_compression	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"breast compression"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	16	half	\N	\N	\N	f	\N	\N	\N
+3712	special_procedure_plans	breast_compression_other	\N	input	\N	\N	\N	f	f	17	half	\N	\N	\N	f	\N	\N	\N
+3677	tab_procedure_options	result_id_1	o2m	list-o2m	{"template":"{{id}} {{label}}"}	\N	\N	f	f	21	full	\N	\N	\N	f	\N	\N	\N
+3713	special_procedure_plans	approach	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"approach"}},{"type":{"_eq":"other"}}]}]}}	related-values	{"template":"{{label}}"}	f	f	18	half	\N	\N	\N	f	\N	\N	\N
+3709	special_procedure_plans	patient_position	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"patient position"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	14	half	\N	\N	\N	f	\N	\N	\N
 3105	bx_options	type	\N	select-dropdown	{"choices":[{"text":"technique","value":"technique"},{"text":"procedure","value":"procedure"},{"text":"quadrant","value":"quadrant"},{"text":"patient position","value":"patient position"},{"text":"breast compression","value":"breast compression"},{"text":"approach","value":"approach"},{"text":"lab","value":"lab"},{"text":"other","value":"other"}],"allowOther":true}	\N	\N	f	f	6	half	\N	\N	\N	t	\N	\N	\N
-3716	lab_plans	breast_quadrant_other	\N	input	\N	\N	\N	f	f	9	half	\N	\N	\N	f	\N	\N	\N
-3609	lab_plans	side	\N	select-dropdown	{"choices":[{"text":"Left","value":"l"},{"text":"Right","value":"r"}],"allowOther":true,"allowNone":true}	labels	{"choices":[{"text":"Left","value":"l"},{"text":"Right","value":"r"}]}	f	f	7	full	\N	\N	\N	f	\N	\N	\N
-3720	lab_orders	breast_quadrant_other	\N	input	\N	\N	\N	f	f	8	half	\N	\N	\N	f	\N	\N	\N
-3113	appointment	bx_status	\N	select-dropdown	{"choices":[{"text":"ยกเลิก","value":"0"},{"text":"รอเรียกคิว","value":"1"},{"text":"รอลงข้อมูล","value":"2"},{"text":"กำลังดำเนินการ","value":"3"},{"text":"รอชำระเงิน","value":"4"},{"text":"เสร็จสิ้น","value":"5"},{"text":"รอดำเนินการ","value":"6"}]}	\N	\N	f	f	4	half	\N	\N	\N	f	\N	\N	\N
-3161	appointment	payment_type	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	7	half	\N	\N	\N	f	\N	\N	\N
-1648	appointment	front_note_1	cast-json	select-multiple-checkbox	{"allowOther":true,"choices":[{"text":"ขอใบรับรองแพทย์ (ไทย)","value":"ขอใบรับรองแพทย์ (ไทย)"},{"text":"ขอใบรับรองแพทย์ (อังกฤษ)","value":"ขอใบรับรองแพทย์ (อังกฤษ)"},{"text":"รับผลเป็น CD","value":"รับผลเป็น CD"},{"text":"มี CD","value":"มี CD"},{"text":"รับผลตรวจวันนี้","value":"รับผลตรวจวันนี้"},{"text":"นำผลเก่ามา","value":"นำผลเก่ามา"},{"text":"ขอตรวจด่วนวันนี้","value":"ขอตรวจด่วนวันนี้"},{"text":"ตรวจล่าสุดตึก 72 ปี","value":"ตรวจล่าสุดตึก 72 ปี"}]}	\N	\N	f	f	39	full	\N	\N	\N	f	\N	\N	\N
-3731	recommended_procedures	breast_quadrant	m2o	select-dropdown-m2o	{"template":"{{label}}","filter":{"_and":[{"_or":[{"type":{"_eq":"quadrant"}},{"type":{"_eq":"other"}}]}]}}	\N	\N	f	f	8	half	\N	\N	\N	f	\N	\N	\N
-3732	recommended_procedures	breast_quadrant_other	\N	input	\N	\N	\N	f	f	9	half	\N	\N	\N	f	\N	\N	\N
-3727	recommended_procedures	technique	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"technique"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	\N	\N	f	f	10	half	\N	\N	\N	f	\N	\N	\N
-3728	recommended_procedures	technique_other	\N	input	\N	\N	\N	f	f	11	half	\N	\N	\N	f	\N	\N	\N
-3719	lab_orders	breast_quadrant	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"quadrant"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	7	half	\N	\N	\N	f	\N	\N	\N
-3729	recommended_procedures	procedure	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"procedure"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	\N	\N	f	f	12	half	\N	\N	\N	f	\N	\N	\N
-3730	recommended_procedures	procedure_other	\N	input	\N	\N	\N	f	f	13	half	\N	\N	\N	f	\N	\N	\N
 3721	special_procedures	breast_quadrant	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"quadrant"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	related-values	{"template":"{{label}}"}	f	f	14	half	\N	\N	\N	f	\N	\N	\N
 3722	special_procedures	breast_quadrant_other	\N	input	\N	\N	\N	f	f	15	half	\N	\N	\N	f	\N	\N	\N
 3723	special_procedures	breast_compression	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"breast compression"}},{"type":{"_eq":"other"}}]}]}}	\N	\N	f	f	18	half	\N	\N	\N	f	\N	\N	\N
 3724	special_procedures	breast_compression_other	\N	input	\N	\N	\N	f	f	19	half	\N	\N	\N	f	\N	\N	\N
+3832	special_procedures	equipment_count	\N	input	{"min":0}	\N	\N	f	f	26	half	\N	\N	\N	f	\N	\N	\N
+3803	special_procedures	charged	cast-boolean	boolean	\N	\N	\N	f	f	29	full	\N	\N	\N	f	\N	\N	\N
+3812	special_procedure_plans	patho_labs	m2m	list-m2m	{"filter":{"_and":[{"_or":[{"_and":[{"type":{"_eq":"lab"}},{"subtype":{"_eq":"patho"}}]},{"type":{"_eq":"other"}}]}]},"enableCreate":false}	related-values	{"template":"{{bx_options_id.id}}: {{bx_options_id.label}}"}	f	f	22	half	\N	\N	\N	f	\N	\N	\N
+3113	appointment	bx_status	\N	select-dropdown	{"choices":[{"text":"ยกเลิก","value":"0"},{"text":"รอเรียกคิว","value":"1"},{"text":"รอลงข้อมูล","value":"2"},{"text":"กำลังดำเนินการ","value":"3"},{"text":"รอชำระเงิน","value":"4"},{"text":"เสร็จสิ้น","value":"5"},{"text":"รอดำเนินการ","value":"6"}]}	\N	\N	f	f	4	half	\N	\N	\N	f	\N	\N	\N
+3820	special_procedure_plans	patho_lab_other	\N	input	\N	\N	\N	f	f	23	half	\N	\N	\N	f	\N	\N	\N
+3161	appointment	payment_type	m2o	select-dropdown-m2o	{"template":"{{id}}"}	\N	\N	f	f	7	half	\N	\N	\N	f	\N	\N	\N
+1648	appointment	front_note_1	cast-json	select-multiple-checkbox	{"allowOther":true,"choices":[{"text":"ขอใบรับรองแพทย์ (ไทย)","value":"ขอใบรับรองแพทย์ (ไทย)"},{"text":"ขอใบรับรองแพทย์ (อังกฤษ)","value":"ขอใบรับรองแพทย์ (อังกฤษ)"},{"text":"รับผลเป็น CD","value":"รับผลเป็น CD"},{"text":"มี CD","value":"มี CD"},{"text":"รับผลตรวจวันนี้","value":"รับผลตรวจวันนี้"},{"text":"นำผลเก่ามา","value":"นำผลเก่ามา"},{"text":"ขอตรวจด่วนวันนี้","value":"ขอตรวจด่วนวันนี้"},{"text":"ตรวจล่าสุดตึก 72 ปี","value":"ตรวจล่าสุดตึก 72 ปี"}]}	\N	\N	f	f	39	full	\N	\N	\N	f	\N	\N	\N
+3756	appointment_reschedules	appointment	m2o	select-dropdown-m2o	\N	related-values	{"template":"{{id}}: {{patient_info.first_name_th}} {{patient_info.last_name_th}}"}	f	f	10	full	\N	\N	\N	f	\N	\N	\N
+3731	recommended_procedures	breast_quadrant	m2o	select-dropdown-m2o	{"template":"{{label}}","filter":{"_and":[{"_or":[{"type":{"_eq":"quadrant"}},{"type":{"_eq":"other"}}]}]}}	\N	\N	f	f	8	half	\N	\N	\N	f	\N	\N	\N
+3732	recommended_procedures	breast_quadrant_other	\N	input	\N	\N	\N	f	f	9	half	\N	\N	\N	f	\N	\N	\N
+3727	recommended_procedures	technique	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"technique"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	\N	\N	f	f	10	half	\N	\N	\N	f	\N	\N	\N
+3728	recommended_procedures	technique_other	\N	input	\N	\N	\N	f	f	11	half	\N	\N	\N	f	\N	\N	\N
+3729	recommended_procedures	procedure	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"type":{"_eq":"procedure"}},{"type":{"_eq":"other"}}]}]},"template":"{{label}}"}	\N	\N	f	f	12	half	\N	\N	\N	f	\N	\N	\N
+3730	recommended_procedures	procedure_other	\N	input	\N	\N	\N	f	f	13	half	\N	\N	\N	f	\N	\N	\N
 3768	external_exam_records	is_success_uploaded	cast-boolean	boolean	\N	boolean	{"labelOn":"Success","colorOn":"#2ECDA7","colorOff":"#E35169","labelOff":"Failed"}	f	f	10	half	\N	\N	\N	f	\N	\N	\N
-3756	appointment_reschedules	appointment	m2o	select-dropdown-m2o	\N	related-values	{"template":"{{id}}: {{patient_info.first_name_th}} {{patient_info.last_name_th}}"}	f	f	9	full	\N	\N	\N	f	\N	\N	\N
-3739	lab_orders	patho	m2o	select-dropdown-m2o	{"template":"{{label}}","filter":{"_and":[{"_or":[{"type":{"_eq":"other"}},{"_and":[{"type":{"_eq":"lab"}},{"subtype":{"_eq":"patho"}}]}]}]}}	\N	\N	f	f	11	half	\N	\N	\N	f	\N	\N	\N
+3759	special_procedures	specimen_count_unit	\N	input	\N	\N	\N	f	f	28	half	\N	\N	\N	f	\N	\N	\N
+3823	special_procedures	patho_labs	m2m	list-m2m	{"filter":{"_and":[{"_or":[{"_and":[{"type":{"_eq":"lab"}},{"subtype":{"_eq":"patho"}}]},{"type":{"_eq":"other"}}]}]}}	related-values	{"template":"{{id}}: {{bx_options_id.label}}"}	f	f	32	half	\N	\N	\N	f	\N	\N	\N
+3818	special_procedure_plans_lab_list	special_procedure_plans_id	\N	\N	\N	\N	\N	f	t	2	full	\N	\N	\N	f	\N	\N	\N
+3747	appointment_reschedules	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 3733	bx_options	is_after_hours	cast-boolean	boolean	\N	\N	\N	f	f	11	full	\N	\N	\N	f	\N	\N	\N
-3740	lab_orders	patho_other	\N	input	\N	\N	\N	f	f	12	half	\N	\N	\N	f	\N	\N	\N
-3741	lab_orders	cyto	m2o	select-dropdown-m2o	{"template":"{{label}}","filter":{"_and":[{"_or":[{"_and":[{"type":{"_eq":"lab"}},{"subtype":{"_eq":"cyto"}}]},{"type":{"_eq":"other"}}]}]}}	\N	\N	f	f	13	half	\N	\N	\N	f	\N	\N	\N
-3742	lab_orders	cyto_other	\N	input	\N	\N	\N	f	f	14	half	\N	\N	\N	f	\N	\N	\N
-3735	nurse_work	recommended_procedures	o2m	list-o2m	{"template":"{{technique.label}} - {{procedure.label}} at {{side}} {{breast_quadrant.label}}"}	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
-3702	bx_options	subtype	\N	select-dropdown	{"choices":[{"text":"cyto","value":"cyto"},{"text":"patho","value":"patho"}],"allowOther":true}	\N	\N	f	f	7	half	\N	\N	[{"name":"subtype will be required when type IS \\"lab\\"","rule":{"_and":[{"type":{"_eq":"lab"}}]},"required":true,"options":{"allowOther":false,"allowNone":false,"font":"sans-serif","trim":false,"masked":false,"clear":false,"slug":false}},{"name":"disabled subtype field and clear there value when type IS NOT \\"lab\\"","rule":{"_and":[{"type":{"_neq":"lab"}}]},"hidden":false,"options":{"allowOther":false,"allowNone":false,"font":"sans-serif","trim":false,"masked":false,"clear":true,"slug":false},"readonly":true}]	f	\N	\N	\N
-3743	lab_plans	patho	m2o	select-dropdown-m2o	{"template":"{{label}}","filter":{"_and":[{"_or":[{"_and":[{"type":{"_eq":"lab"}},{"subtype":{"_eq":"patho"}}]},{"type":{"_eq":"other"}}]}]}}	\N	\N	f	f	12	half	\N	\N	\N	f	\N	\N	\N
-3744	lab_plans	patho_other	\N	input	\N	\N	\N	f	f	13	half	\N	\N	\N	f	\N	\N	\N
-3745	lab_plans	cyto	m2o	select-dropdown-m2o	{"filter":{"_and":[{"_or":[{"_and":[{"type":{"_eq":"lab"}},{"subtype":{"_eq":"cyto"}}]},{"type":{"_eq":"other"}}]}]}}	\N	\N	f	f	14	half	\N	\N	\N	f	\N	\N	\N
-3746	lab_plans	cyto_other	\N	input	\N	\N	\N	f	f	15	half	\N	\N	\N	f	\N	\N	\N
-3734	recommended_procedures	nurse_work	m2o	select-dropdown-m2o	{"template":"{{id}}: {{appointment.patient_info.first_name_th}} {{appointment.patient_info.last_name_th}}"}	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
+3748	appointment_reschedules	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
+3749	appointment_reschedules	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
+3819	special_procedure_plans_lab_list	lab_list_id	\N	\N	\N	\N	\N	f	t	3	full	\N	\N	\N	f	\N	\N	\N
 3750	appointment_reschedules	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 3751	appointment_reschedules	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
 3757	appointment_reschedules	appointment_datetime	\N	datetime	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
-3753	appointment_reschedules	appointed_by	m2o	select-dropdown-m2o	\N	related-values	{"template":"{{abbreviation}} {{first_name}} {{last_name}} ({{role.name}})"}	f	f	8	full	\N	\N	\N	f	\N	\N	\N
-3747	appointment_reschedules	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
-3748	appointment_reschedules	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
-3749	appointment_reschedules	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
-3759	special_procedures	specimen_count_unit	\N	input	\N	\N	\N	f	f	28	half	\N	\N	\N	f	\N	\N	\N
+3754	appointment_reschedules	time_slot	m2o	select-dropdown-m2o	\N	related-values	{"template":"{{time_period}} ({{slot}})"}	f	f	8	full	\N	\N	\N	f	\N	\N	\N
+3824	special_procedures_bx_options	id	\N	\N	\N	\N	\N	f	t	1	full	\N	\N	\N	f	\N	\N	\N
+3825	special_procedures_bx_options	special_procedures_id	\N	\N	\N	\N	\N	f	t	2	full	\N	\N	\N	f	\N	\N	\N
+3735	nurse_work	recommended_procedures	o2m	list-o2m	{"template":"{{technique.label}} - {{procedure.label}} at {{side}} {{breast_quadrant.label}}"}	\N	\N	f	f	17	full	\N	\N	\N	f	\N	\N	\N
+3753	appointment_reschedules	appointed_by	m2o	select-dropdown-m2o	\N	related-values	{"template":"{{abbreviation}} {{first_name}} {{last_name}} ({{role.name}})"}	f	f	9	full	\N	\N	\N	f	\N	\N	\N
+3736	nurse_work	special_procedure_plans	o2m	list-o2m	{"template":"{{id}}: {{technique.label}} - {{procedure.label}} at {{side}} {{breast_quadrant.label}}, Approach {{approach.label}}"}	\N	\N	f	f	18	half	\N	\N	\N	f	\N	\N	\N
+3738	nurse_work	special_procedures	o2m	list-o2m	{"template":"{{id}}: {{technique.label}} - {{procedure.label}} at {{side}} {{breast_quadrant.label}}, Approach {{approach.label}}"}	\N	\N	f	f	19	half	\N	\N	\N	f	\N	\N	\N
+3734	recommended_procedures	nurse_work	m2o	select-dropdown-m2o	{"template":"{{id}}: {{appointment.patient_info.first_name_th}} {{appointment.patient_info.last_name_th}}"}	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
 3762	external_exam_records	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
 3763	external_exam_records	user_updated	user-updated	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	4	half	\N	\N	\N	f	\N	\N	\N
 3764	external_exam_records	date_updated	date-updated	datetime	\N	datetime	{"relative":true}	t	t	5	half	\N	\N	\N	f	\N	\N	\N
@@ -13857,17 +13979,17 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3770	external_exam_records	uploaded_by	m2o	select-dropdown-m2o	{"template":"({{abbreviation}}) {{first_name}} {{last_name_en}} "}	\N	\N	f	f	7	half	\N	\N	\N	f	\N	\N	\N
 3769	external_exam_records	exam_date	\N	datetime	\N	\N	\N	f	f	9	half	\N	\N	\N	f	\N	\N	\N
 3767	external_exam_records	hospital_name	\N	input	\N	\N	\N	f	f	11	full	\N	\N	\N	f	\N	\N	\N
-3736	nurse_work	special_procedure_plans	o2m	list-o2m	{"template":"{{technique.label}} - {{procedure.label}} at {{side}} {{breast_quadrant.label}}, Approach {{approach.label}}"}	\N	\N	f	f	9	half	\N	\N	\N	f	\N	\N	\N
 3760	external_exam_records	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 3761	external_exam_records	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 3765	external_exam_records	is_del	cast-boolean	boolean	\N	\N	\N	f	f	8	half	\N	\N	\N	f	\N	\N	\N
-3754	appointment_reschedules	time_slot	m2o	select-dropdown-m2o	\N	related-values	{"template":"{{time_period}} ({{slot}})"}	f	f	7	full	\N	\N	\N	f	\N	\N	\N
 3773	appointment	upload_failure_reason	\N	input	\N	\N	\N	f	f	69	half	\N	\N	\N	f	\N	\N	\N
 3758	appointment	appointment_reschedules	o2m	list-o2m	\N	\N	\N	f	f	73	full	\N	\N	\N	f	\N	\N	\N
-3737	nurse_work	lab_plans	o2m	list-o2m	{"template":"{{method.label}} at {{side}}{{breast_quadrant.label}}"}	\N	\N	f	f	10	half	\N	\N	\N	f	\N	\N	\N
-3738	nurse_work	special_procedures	o2m	list-o2m	{"template":"{{technique.label}} - {{procedure.label}} at {{side}} {{breast_quadrant.label}}"}	\N	\N	f	f	11	full	\N	\N	\N	f	\N	\N	\N
+3702	bx_options	subtype	\N	select-dropdown	{"choices":[{"text":"cyto","value":"cyto"},{"text":"patho","value":"patho"}],"allowOther":true,"allowNone":true}	\N	\N	f	f	7	half	\N	\N	[{"name":"subtype will be required when type IS \\"lab\\"","rule":{"_and":[{"type":{"_eq":"lab"}}]},"required":true,"options":{"allowOther":false,"allowNone":false,"font":"sans-serif","trim":false,"masked":false,"clear":false,"slug":false}},{"name":"disabled subtype field and clear there value when type IS NOT \\"lab\\"","rule":{"_and":[{"type":{"_neq":"lab"}}]},"hidden":false,"options":{"allowOther":false,"allowNone":false,"font":"sans-serif","trim":false,"masked":false,"clear":true,"slug":false},"readonly":true}]	f	\N	\N	\N
 1660	appointment	reason_discard_appointment	\N	select-radio	{"choices":[{"text":"ไม่รับ","value":"ไม่รับ"},{"text":"ติดต่อไม่ได้","value":"ติดต่อไม่ได้"},{"text":"ติดธุระ/ไม่สะดวก","value":"ติดธุระ/ไม่สะดวก"},{"text":"ตรวจที่โรงพยาบาลอื่น","value":"ตรวจที่โรงพยาบาลอื่น"},{"text":"ลืมนัด","value":"ลืมนัด"},{"text":"สิทธิ์ไม่ส่งตัว","value":"สิทธิ์ไม่ส่งตัว"},{"text":"ไม่สบาย","value":"ไม่สบาย"},{"text":"เสียชีวิต","value":"เสียชีวิต"},{"text":"ไม่ครบกำหนดตรวจ","value":"ไม่ครบกำหนดตรวจ"},{"text":"อื่นๆ","value":"อื่นๆ"},{"text":"เปลี่ยนแผนการรักษา","value":"เปลี่ยนแผนการรักษา"},{"text":"รักษาตามสิทธิ ประกันสุขภาพถ้วนหน้า/ประกันสังคม","value":"รักษาตามสิทธิ ประกันสุขภาพถ้วนหน้า/ประกันสังคม"},{"text":"ประสงค์รักษา รพ. อื่น เช่น รพ.เอกชน","value":"ประสงค์รักษา รพ. อื่น เช่น รพ.เอกชน"},{"text":"ผู้มาตรวจปฏิเสธการรักษา","value":"ผู้มาตรวจปฏิเสธการรักษา"}]}	\N	\N	f	f	59	full	\N	\N	\N	f	\N	\N	\N
+3821	special_procedures	is_cyto_request	cast-boolean	boolean	\N	\N	\N	f	f	30	half	\N	\N	\N	f	\N	\N	\N
 3790	vital_signs	blood_pressure	\N	input	\N	\N	\N	f	f	10	full	\N	\N	\N	f	\N	\N	\N
+3822	special_procedures	is_patho_request	cast-boolean	boolean	\N	\N	\N	f	f	31	half	\N	\N	\N	f	\N	\N	\N
+3806	special_procedure_plans	is_cyto_request	cast-boolean	boolean	\N	\N	\N	f	f	20	half	\N	\N	\N	f	\N	\N	\N
 3791	vital_signs	pulse	\N	input	\N	\N	\N	f	f	11	full	\N	\N	\N	f	\N	\N	\N
 3792	vital_signs	oxygen_saturation	\N	input	\N	\N	\N	f	f	12	full	\N	\N	\N	f	\N	\N	\N
 3793	appointment	vital_signs	o2m	list-o2m	{"sort":"date_created","layout":"table","fields":["id","measuring_time","blood_pressure","pulse","oxygen_saturation"],"sortDirection":"-","enableLink":true}	\N	\N	f	f	75	full	\N	\N	\N	f	\N	\N	\N
@@ -13881,10 +14003,12 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3789	vital_signs	measuring_time	\N	datetime	\N	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
 3798	vital_signs	respiration_rate	\N	input	\N	\N	\N	f	f	13	full	\N	\N	\N	f	\N	\N	\N
 3786	vital_signs	appointment	m2o	select-dropdown-m2o	{"template":"{{id}}: {{appointment_datetime}} (request: {{request}})"}	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
+3807	special_procedure_plans	is_patho_request	cast-boolean	boolean	\N	\N	\N	f	f	21	half	\N	\N	\N	f	\N	\N	\N
 3795	bx_statuses	nurse_appointment	\N	input	{"trim":true}	\N	\N	f	f	8	full	\N	\N	\N	f	\N	\N	\N
-3802	nurse_work	us_procedure_step	\N	input	{"min":1,"max":5}	\N	\N	f	f	49	half	\N	\N	\N	f	\N	\N	\N
-3175	nurse_work	bx_status	\N	input	{"choices":[{"text":"รอเรียกคิว","value":"0"},{"text":"เรียกคิวแล้ว","value":"1"},{"text":"ยังไม่ลงรายละเอียดก่อนเจาะ","value":"2"},{"text":"ส่งตรวจ","value":"3"},{"text":"เสร็จสิ้น","value":"4"},{"text":"ไม่มาตามนัด","value":"5"},{"text":"ยกเลิกนัด","value":"6"},{"text":"ยังไม่ถึงเวลานัด/ยังไม่มา","value":"7"},{"text":"สรุปหัตการ/รออ่านผล","value":"8"},{"text":"หยุดชั่วคราว","value":"8"},{"text":"US.BX","value":"9"},{"text":"แพทย์ Sign to PACS","value":"10"}]}	labels	{"choices":[{"text":"สร้างนัดหมาย BX สำเร็จ","value":"0","foreground":"#FFA439","background":"#FEF9C3"},{"text":"แพทย์ลงรายละเอียดก่อนเจาะ แต่เคสยังไม่ได้กดคิว","value":"1"},{"text":"แพทย์ลงรายละเอียดก่อนเจาะ และเคสกดคิวแล้ว","value":"2","background":"#FEF9C3","foreground":"#FFA439"},{"text":"tech สัมภาษณ์เสร็จ และส่งมาที่แผนกพยาบาล","value":"3"},{"text":"พยาบาลเรียกคิว","value":"4"},{"text":"พยาบาลส่งทำหัตการ","value":"5","foreground":"#FF0000","background":"#E3CDD1"},{"text":"พยาบาลเริ่มทำการเจาะ US.BX","value":"6","foreground":"#FF0000","background":"#E3CDD1"},{"text":"พยาบาลส่งสรุปหัตถการ และกดปุ่มส่งต่อเคส","value":"7"},{"text":"แพทย์ทำการ Sign to PACs","value":"8"},{"text":"ทำการยกเลิกนัด","value":"9"},{"text":"ผู้ป่วยไม่มาตรวจตามนัด","value":"10"},{"text":"พยาบาลส่งเจาะ ST.BX","value":"11"}]}	f	f	18	half	\N	\N	\N	f	\N	\N	\N
-3801	nurse_work	st_procedure_step	\N	input	{"min":1,"max":5}	\N	\N	f	f	50	half	\N	\N	\N	f	\N	\N	\N
+3801	nurse_work	st_procedure_step	\N	input	{"min":1,"max":5}	\N	\N	f	f	48	half	\N	\N	\N	f	\N	\N	\N
+3809	special_procedure_plans_bx_options	id	\N	\N	\N	\N	\N	f	t	1	full	\N	\N	\N	f	\N	\N	\N
+3810	special_procedure_plans_bx_options	special_procedure_plans_id	\N	\N	\N	\N	\N	f	t	2	full	\N	\N	\N	f	\N	\N	\N
+3816	special_procedure_plans	other_labs	m2m	list-m2m	{"sort":null,"enableCreate":false}	related-values	{"template":"{{lab_list_id.id}}: {{lab_list_id.value}}"}	f	f	24	full	\N	\N	\N	f	\N	\N	\N
 3774	bx_statuses	id	\N	input	\N	\N	\N	t	t	1	full	\N	\N	\N	f	\N	\N	\N
 3775	bx_statuses	user_created	user-created	select-dropdown-m2o	{"template":"{{avatar.$thumbnail}} {{first_name}} {{last_name}}"}	user	\N	t	t	2	half	\N	\N	\N	f	\N	\N	\N
 3776	bx_statuses	date_created	date-created	datetime	\N	datetime	{"relative":true}	t	t	3	half	\N	\N	\N	f	\N	\N	\N
@@ -13893,6 +14017,13 @@ COPY public.directus_fields (id, collection, field, special, interface, options,
 3794	bx_statuses	status_key	\N	input	\N	\N	\N	f	f	6	full	\N	\N	\N	f	\N	\N	\N
 3800	bx_statuses	description	\N	input	\N	\N	\N	f	f	7	full	\N	\N	\N	f	\N	\N	\N
 3796	bx_statuses	nurse_procedure	\N	input	\N	\N	\N	f	f	9	full	\N	\N	\N	f	\N	\N	\N
+3811	special_procedure_plans_bx_options	bx_options_id	\N	\N	\N	\N	\N	f	t	3	full	\N	\N	\N	f	\N	\N	\N
+3802	nurse_work	us_procedure_step	\N	input	{"min":1,"max":5}	\N	\N	f	f	47	half	\N	\N	\N	f	\N	\N	\N
+3813	special_procedure_plans_bx_options_1	id	\N	\N	\N	\N	\N	f	t	1	full	\N	\N	\N	f	\N	\N	\N
+3814	special_procedure_plans_bx_options_1	special_procedure_plans_id	\N	\N	\N	\N	\N	f	t	2	full	\N	\N	\N	f	\N	\N	\N
+3815	special_procedure_plans_bx_options_1	bx_options_id	\N	\N	\N	\N	\N	f	t	3	full	\N	\N	\N	f	\N	\N	\N
+3817	special_procedure_plans_lab_list	id	\N	\N	\N	\N	\N	f	t	1	full	\N	\N	\N	f	\N	\N	\N
+3826	special_procedures_bx_options	bx_options_id	\N	\N	\N	\N	\N	f	t	3	full	\N	\N	\N	f	\N	\N	\N
 \.
 
 
@@ -14290,7 +14421,7 @@ b22c46d2-48e3-4382-98d7-835a4516979e	local	b22c46d2-48e3-4382-98d7-835a4516979e.
 c001bd4b-2dcf-48cf-a484-f47814dd201e	local	c001bd4b-2dcf-48cf-a484-f47814dd201e.pdf	ใบยินยอมการทำ Ultrasound guided.pdf	ใบยินยอมการทำ Ultrasound Guided	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-24 04:44:38.089+00	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-03-24 04:51:22.284+00	\N	198648	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-03-24 04:44:38.149+00
 ff6e0be9-cde7-405e-bdfd-8d4f62bd974a	local	ff6e0be9-cde7-405e-bdfd-8d4f62bd974a.pdf	ใบคำร้องทั่วไป.pdf	ใบคำร้องทั่วไป	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-29 10:04:13.207+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-29 10:04:54.188+00	\N	25159	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-29 10:04:13.228+00
 c901f630-7a92-4240-a396-9ff27028b334	local	c901f630-7a92-4240-a396-9ff27028b334.png	splash-icon.png	Splash Icon	image/png	\N	bd338144-090c-40e1-b016-f89cf67be5ad	2026-02-13 07:56:13.437+00	\N	2026-02-13 07:56:13.453+00	\N	17547	1024	1024	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-02-13 07:56:13.451+00
-903046d6-7317-4459-bb60-c35bfc301790	local	903046d6-7317-4459-bb60-c35bfc301790.svg	phone-call-svgrepo-com.svg	Phone Call Svgrepo Com	image/svg+xml	\N	bd338144-090c-40e1-b016-f89cf67be5ad	2026-02-13 08:02:03.533+00	\N	2026-02-13 08:02:03.554+00	\N	786	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-02-13 08:02:03.553+00
+903046d6-7317-4459-bb60-c35bfc301790	local	903046d6-7317-4459-bb60-c35bfc301790.svg	phone-call-svgrepo-com.svg	Phone Call Svgrepo Com	image/svg+xml	fc4d1cc1-491a-45e6-b582-f66179a65ff9	bd338144-090c-40e1-b016-f89cf67be5ad	2026-02-13 08:02:03.533+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-07-03 04:53:22.006+00	\N	786	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-02-13 08:02:03.553+00
 4dd47ff9-fdad-4e7b-9fcf-f036242819d7	local	4dd47ff9-fdad-4e7b-9fcf-f036242819d7.pdf	ใบยินยอม US เซ็นแล้ว.pdf	ใบยินยอม Us เซ็นแล้ว	application/pdf	\N	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-03-25 10:34:54.064+00	\N	2026-03-25 10:34:54.083+00	\N	425343	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-03-25 10:34:54.082+00
 bdd7abb0-ee9b-4dd5-8e4d-ea63691dfd2e	local	bdd7abb0-ee9b-4dd5-8e4d-ea63691dfd2e.pdf	_BX.pdf	 Bx	application/pdf	\N	bd338144-090c-40e1-b016-f89cf67be5ad	2026-04-09 04:06:09.565+00	\N	2026-04-09 04:06:09.593+00	\N	160462	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-04-09 04:06:09.591+00
 d3b5f1d6-9c72-4360-86d4-66414415a281	local	d3b5f1d6-9c72-4360-86d4-66414415a281.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-02 02:36:20.667+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-02 02:36:30.89+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2025-12-02 02:36:20.688+00
@@ -14319,6 +14450,7 @@ a058673b-37a1-4c41-ae73-30a231206d31	local	a058673b-37a1-4c41-ae73-30a231206d31.
 8f7da868-0056-4e17-9e46-bc26d2f10102	local	8f7da868-0056-4e17-9e46-bc26d2f10102.jpg	LINE_ALBUM_ใบคำสั่งแพทย์ BX_251116_1.jpg	Line Album ใบคำสั่งแพทย์ Bx 251116 1	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-26 11:48:44.639+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-30 09:54:28.321+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-03-26 11:48:44.689+00
 adfa9127-3eef-4560-83de-cf95d00dc46f	local	adfa9127-3eef-4560-83de-cf95d00dc46f.jpg	LINE_ALBUM_ใบคำสั่งแพทย์ BX_251116_1.jpg	Line Album ใบคำสั่งแพทย์ Bx 251116 1	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-30 03:26:49.083+00	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-03-30 08:47:16.915+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-03-30 03:26:49.12+00
 460e4342-0407-49f9-b7df-c8c1565738a1	local	460e4342-0407-49f9-b7df-c8c1565738a1.jpg	LINE_ALBUM_ใบคำสั่งแพทย์ BX_251116_1.jpg	Line Album ใบคำสั่งแพทย์ Bx 251116 1	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-30 07:50:31.821+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-30 07:50:47.039+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-03-30 07:50:31.864+00
+7623e5df-0c11-4be6-851b-618ebb37dca9	local	7623e5df-0c11-4be6-851b-618ebb37dca9.jpg	702590594_122123894013216952_4834369186476763862_n.jpg	702590594 122123894013216952 4834369186476763862 N	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-02 04:08:13.065+00	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-02 04:08:20.141+00	\N	49731	960	563	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-06-02 04:08:13.285+00
 a7466642-3b19-46f3-8bf4-14d0e6e3cff4	local	a7466642-3b19-46f3-8bf4-14d0e6e3cff4.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-09 04:28:32.568+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-09 04:35:00.292+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2025-12-09 04:28:32.586+00
 4c373ec8-86a7-4ff2-8d9b-791dc77f52d3	local	4c373ec8-86a7-4ff2-8d9b-791dc77f52d3.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-23 02:48:15.474+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-23 02:48:24.859+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2025-12-23 02:48:15.498+00
 87d374b3-0848-4427-86ac-db4c193b54b2	local	87d374b3-0848-4427-86ac-db4c193b54b2.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-22 08:41:13.586+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-22 08:41:26.492+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-22 08:41:13.601+00
@@ -14344,6 +14476,7 @@ e7f0aa29-70ee-41a1-ab54-a560a67abac8	local	e7f0aa29-70ee-41a1-ab54-a560a67abac8.
 e5362d97-9005-4732-8f33-55339f296600	local	e5362d97-9005-4732-8f33-55339f296600.pdf	ใบยินยอมการทำ Ultrasound guided.pdf	ใบยินยอมการทำ Ultrasound Guided	application/pdf	\N	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-25 03:13:52.322+00	\N	2026-03-25 03:13:52.345+00	\N	198648	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-03-25 03:13:52.344+00
 82625bf4-d18b-4d03-9968-58c1c76f786c	local	82625bf4-d18b-4d03-9968-58c1c76f786c.jpg	LINE_ALBUM_ใบคำสั่งแพทย์ BX_251116_1.jpg	Line Album ใบคำสั่งแพทย์ Bx 251116 1	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-30 07:51:17.296+00	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-03-30 11:03:21.786+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-03-30 07:51:17.342+00
 033c0653-0b3a-4d3e-819c-4579a4485ab1	local	033c0653-0b3a-4d3e-819c-4579a4485ab1.jpg	LINE_ALBUM_ใบคำสั่งแพทย์ BX_251116_1.jpg	Line Album ใบคำสั่งแพทย์ Bx 251116 1	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-26 11:49:50.115+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-27 07:37:35.129+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-03-26 11:49:50.155+00
+daa08cde-77f6-4431-a096-a239c6a80616	local	daa08cde-77f6-4431-a096-a239c6a80616.jpg	702590594_122123894013216952_4834369186476763862_n.jpg	702590594 122123894013216952 4834369186476763862 N	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-08 05:21:03.33+00	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-08 05:24:28.093+00	\N	49731	960	563	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-06-08 05:21:03.718+00
 08b53807-58d6-41d8-bbd2-133a6f428702	local	08b53807-58d6-41d8-bbd2-133a6f428702.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-11 03:16:21.321+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-11 03:22:11.052+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2025-12-11 03:16:21.376+00
 b4db557f-028d-456e-9435-6fd9de5d95dc	local	b4db557f-028d-456e-9435-6fd9de5d95dc.pdf	ใบคำร้องทั่วไป.pdf	ใบคำร้องทั่วไป	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-09 08:34:08.784+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-09 08:34:18.023+00	\N	25159	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-09 08:34:08.803+00
 2ebc3336-f05c-40bb-babd-1ff8ffeb6e0f	local	2ebc3336-f05c-40bb-babd-1ff8ffeb6e0f.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-23 03:30:10.284+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-23 03:33:57.65+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2025-12-23 03:30:10.306+00
@@ -14363,10 +14496,12 @@ baafa9f8-9f5e-426b-82e9-b800ba1c62a0	local	baafa9f8-9f5e-426b-82e9-b800ba1c62a0.
 31911294-2877-451a-b048-8053c8b60227	local	31911294-2877-451a-b048-8053c8b60227.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	\N	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-02-23 03:25:22.986+00	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-02-23 03:27:04.953+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-02-23 03:25:23.017+00
 10978775-b4c1-4d64-8843-dc534efd6779	local	10978775-b4c1-4d64-8843-dc534efd6779.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-30 07:00:10.579+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-30 07:01:08.789+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-30 07:00:10.609+00
 ab9d03f1-63a2-482c-a13d-76ef745af651	local	ab9d03f1-63a2-482c-a13d-76ef745af651.jpg	ใบสั่ง.jpg	ใบสั่ง	image/jpeg	\N	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-02-23 03:25:32.795+00	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-02-23 03:27:04.986+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-02-23 03:25:32.861+00
-7f9e0a9c-3afa-49e1-b547-99539c437f83	local	7f9e0a9c-3afa-49e1-b547-99539c437f83.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-22 02:52:30.435+00	14bb706e-8573-452f-993a-20254f24d730	2026-04-21 11:10:33.432+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-22 02:52:30.558+00
 6eac0e47-f5bb-497a-8d85-d03ee47f026f	local	6eac0e47-f5bb-497a-8d85-d03ee47f026f.jpg	LINE_ALBUM_ใบคำสั่งแพทย์ BX_251116_1.jpg	Line Album ใบคำสั่งแพทย์ Bx 251116 1	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-26 11:50:26.477+00	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-03-26 11:55:54.323+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-03-26 11:50:26.512+00
 d29f4209-dbdf-4a9f-9007-348b2ae64001	local	d29f4209-dbdf-4a9f-9007-348b2ae64001.pdf	ใบยินยอมการทำ Ultrasound guided.pdf	ใบยินยอมการทำ Ultrasound Guided	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-25 03:15:05.881+00	a9634c90-69be-4b98-bf67-e00e782712bc	2026-03-25 03:30:56.537+00	\N	198648	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-03-25 03:15:05.909+00
 ac922f4d-da5f-4f62-aacf-d244e02295a8	local	ac922f4d-da5f-4f62-aacf-d244e02295a8.pdf	ผล BX.pdf	ผล Bx	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-03-05 02:56:17.493+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-05 02:59:34.383+00	\N	3518689	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-03-05 02:56:17.547+00
+7f9e0a9c-3afa-49e1-b547-99539c437f83	local	7f9e0a9c-3afa-49e1-b547-99539c437f83.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-22 02:52:30.435+00	14bb706e-8573-452f-993a-20254f24d730	2026-05-25 03:16:02.857+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-22 02:52:30.558+00
+53a66a39-d4de-4a96-8b6e-ca648104b708	local	53a66a39-d4de-4a96-8b6e-ca648104b708.jpg	702590594_122123894013216952_4834369186476763862_n.jpg	702590594 122123894013216952 4834369186476763862 N	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-08 05:21:24.818+00	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-08 05:24:27.822+00	\N	49731	960	563	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-06-08 05:21:24.844+00
+a6d03970-d295-44f5-9874-674db1b17b90	local	a6d03970-d295-44f5-9874-674db1b17b90.pdf	_BX.pdf	 Bx	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-08 05:24:23.01+00	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-08 05:24:27.915+00	\N	160462	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-08 05:24:23.205+00
 a77f20b1-8658-43d3-b1ec-286dd4e75db9	local	a77f20b1-8658-43d3-b1ec-286dd4e75db9.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-11 03:30:38.669+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-11 03:32:01.358+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2025-12-11 03:30:38.694+00
 79d065dc-46d2-4ed3-bc49-c98edf330b90	local	79d065dc-46d2-4ed3-bc49-c98edf330b90.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	\N	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-24 02:57:48.238+00	\N	2025-12-24 02:57:48.26+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2025-12-24 02:57:48.259+00
 cce272a8-6dd1-4ac8-ba7f-2c02f3bdd706	local	cce272a8-6dd1-4ac8-ba7f-2c02f3bdd706.jpg	ใบสั่ง.jpg	ใบสั่ง	image/jpeg	\N	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-02-09 03:10:08.719+00	\N	2026-02-09 03:10:08.788+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-02-09 03:10:08.787+00
@@ -14380,10 +14515,18 @@ a214e29f-583a-4db1-a5ff-87f676090f43	local	a214e29f-583a-4db1-a5ff-87f676090f43.
 22837457-49e0-431c-9c25-ae0b43bbb283	local	22837457-49e0-431c-9c25-ae0b43bbb283.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-02-23 03:31:50.65+00	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-02-23 03:33:32.906+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-02-23 03:31:50.667+00
 bb901946-9953-495f-8232-29a478c5849e	local	bb901946-9953-495f-8232-29a478c5849e.pdf	ใบคำร้องทั่วไป.pdf	ใบคำร้องทั่วไป	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-23 07:22:07.354+00	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-01-23 07:23:26.105+00	\N	25159	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-23 07:22:07.375+00
 466d9eb3-78dc-4283-8548-494d72b0cb9c	local	466d9eb3-78dc-4283-8548-494d72b0cb9c.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-27 03:14:06.968+00	a9634c90-69be-4b98-bf67-e00e782712bc	2026-01-27 04:42:46.475+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-27 03:14:06.986+00
+bd48ac17-a66d-44b6-9b75-cd55872575be	local	bd48ac17-a66d-44b6-9b75-cd55872575be.pdf	Ep 11 - ราคาหัตถการ ปรับใหม่ - 02_02_69.docx - Google Docs (3) (1).pdf	Ep 11   ราคาหัตถการ ปรับใหม่   02 02 69.docx   Google Docs (3) (1)	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-08 05:24:23.005+00	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-08 05:24:27.821+00	\N	53089	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-08 05:24:23.201+00
 761e0529-6c26-4dd1-818c-0d4f5139ce1f	local	761e0529-6c26-4dd1-818c-0d4f5139ce1f.jpg	LINE_ALBUM_ใบคำสั่งแพทย์ BX_251116_1.jpg	Line Album ใบคำสั่งแพทย์ Bx 251116 1	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-30 07:53:10.002+00	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-03-30 08:43:53.313+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-03-30 07:53:10.048+00
 685853b3-b167-4ec3-8a7f-fb9dfa31dc73	local	685853b3-b167-4ec3-8a7f-fb9dfa31dc73.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-30 07:33:16.416+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-30 07:33:50.587+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-30 07:33:16.446+00
 04e58cf8-512e-4b95-889a-390769e8d0f3	local	04e58cf8-512e-4b95-889a-390769e8d0f3.pdf	Ep 11 - ราคาหัตถการ ปรับใหม่ - 02_02_69.docx - Google Docs (3).pdf	Ep 11   ราคาหัตถการ ปรับใหม่   02 02 69.docx   Google Docs (3)	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-24 02:21:25.264+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-24 02:25:10.253+00	\N	53089	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-03-24 02:21:25.282+00
+1465ce7b-9775-40e7-9afb-1acf4b7b6c33	local	1465ce7b-9775-40e7-9afb-1acf4b7b6c33.jpg	702590594_122123894013216952_4834369186476763862_n.jpg	702590594 122123894013216952 4834369186476763862 N	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-08 05:24:16.706+00	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-08 05:24:27.903+00	\N	49731	960	563	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-06-08 05:24:16.816+00
 742402df-f96a-40ff-9015-d5685f01695d	local	742402df-f96a-40ff-9015-d5685f01695d.jpg	LINE_ALBUM_ใบคำสั่งแพทย์ BX_251116_1.jpg	Line Album ใบคำสั่งแพทย์ Bx 251116 1	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-27 03:46:34.606+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-30 09:45:41.527+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-03-27 03:46:34.643+00
+0a714524-4389-49a3-87d4-f15fbc05d72b	local	0a714524-4389-49a3-87d4-f15fbc05d72b.pdf	_BX.pdf	 Bx	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-11 06:43:41.993+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-03 10:20:48.972+00	\N	160462	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-11 06:43:42.056+00
+2b566ee4-d10a-4c7e-8496-42373c020b57	local	2b566ee4-d10a-4c7e-8496-42373c020b57.jpg	LINE_ALBUM_ใบคำสั่งแพทย์ BX_251116_4.jpg	Line Album ใบคำสั่งแพทย์ Bx 251116 4	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-06-16 05:07:06.703+00	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-06-16 05:11:51.692+00	\N	1365954	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-06-16 05:07:06.913+00
+13fc6461-0719-4dc9-9981-a6acfd058576	local	13fc6461-0719-4dc9-9981-a6acfd058576.png	0d659be1-e442-496e-9f96-51e8ef7e4f47.png	0d659be1 E442 496e 9f96 51e8ef7e4f47	image/png	fc4d1cc1-491a-45e6-b582-f66179a65ff9	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-06-17 07:06:19.253+00	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-06-17 07:06:44.336+00	\N	2075581	1024	1024	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-06-17 07:06:19.415+00
+2d9711ab-90e9-4496-8435-71c4401ab94c	local	2d9711ab-90e9-4496-8435-71c4401ab94c.pdf	_BX.pdf	 Bx	application/pdf	\N	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-18 06:33:18.626+00	\N	2026-06-18 06:33:18.682+00	\N	160462	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-18 06:33:18.68+00
+66a48b6e-40ed-4693-b47b-a7312ee1ef3f	local	66a48b6e-40ed-4693-b47b-a7312ee1ef3f.pdf	0245_260530145147_001.pdf	0245 260530145147 001	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-06-17 11:53:21.847+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-06-17 11:54:37.257+00	\N	285271	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-17 11:53:21.922+00
+cb447f30-dce8-454a-a5cf-6095676aea7c	local	cb447f30-dce8-454a-a5cf-6095676aea7c.pdf	64c884a5-d2e9-4574-b3be-88ae15da3350.pdf	64c884a5 D2e9 4574 B3be 88ae15da3350	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-06-17 11:53:35.047+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-06-17 11:54:37.258+00	\N	23854	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-17 11:53:35.069+00
 cd773788-3ea5-4c77-b457-192ec8926dea	local	cd773788-3ea5-4c77-b457-192ec8926dea.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-15 02:05:18.487+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-15 02:05:34.857+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2025-12-15 02:05:18.562+00
 11304fa1-79ea-4912-9703-67634b181804	local	11304fa1-79ea-4912-9703-67634b181804.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-25 07:04:03.181+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-25 07:04:48.919+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2025-12-25 07:04:03.212+00
 54c69a09-54c6-48d7-8578-daad85d45e84	local	54c69a09-54c6-48d7-8578-daad85d45e84.pdf	ใบคำร้องทั่วไป.pdf	ใบคำร้องทั่วไป	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-09 08:47:22.622+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-09 08:47:35.61+00	\N	25159	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-09 08:47:22.638+00
@@ -14393,6 +14536,7 @@ cd773788-3ea5-4c77-b457-192ec8926dea	local	cd773788-3ea5-4c77-b457-192ec8926dea.
 e0be6b47-8f70-4add-9a17-2bfdd8b78154	local	e0be6b47-8f70-4add-9a17-2bfdd8b78154.pdf	test-medical-order.pdf	Test Medical Order	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-15 07:32:37.44+00	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-01-15 07:39:13.749+00	\N	721	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-15 07:32:37.463+00
 6d52cd36-1f60-4cc9-891e-11af1df332ab	local	6d52cd36-1f60-4cc9-891e-11af1df332ab.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-22 09:49:44.676+00	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-01-22 10:02:47.478+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-22 09:49:44.695+00
 3b0ce3ab-3348-48cd-b70d-d31ed493c4b2	local	3b0ce3ab-3348-48cd-b70d-d31ed493c4b2.pdf	ใบคำร้องทั่วไป.pdf	ใบคำร้องทั่วไป	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-19 08:43:03.237+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-19 08:43:13.623+00	\N	25159	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-19 08:43:03.26+00
+b3398a5a-99e1-4f84-901e-fa2a0c9c990e	local	b3398a5a-99e1-4f84-901e-fa2a0c9c990e.png	033d3f84-05db-4096-8a64-ded2961687e8.png	033d3f84 05db 4096 8a64 Ded2961687e8	image/png	\N	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-18 06:33:57.974+00	\N	2026-06-18 06:33:58.115+00	\N	1422913	946	1663	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-06-18 06:33:58.114+00
 cab59226-86ea-4e5a-8658-6a863522b51e	local	cab59226-86ea-4e5a-8658-6a863522b51e.pdf	ใบคำร้องทั่วไป.pdf	ใบคำร้องทั่วไป	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-23 07:26:18.347+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-23 07:26:32.558+00	\N	25159	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-23 07:26:18.367+00
 5bd899f2-fbfb-4069-ac7e-6bb038f15045	local	5bd899f2-fbfb-4069-ac7e-6bb038f15045.jpg	LINE_ALBUM_ใบคำสั่งแพทย์ BX_251116_1.jpg	Line Album ใบคำสั่งแพทย์ Bx 251116 1	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-30 08:16:15.178+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-13 03:37:59.684+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-03-30 08:16:15.213+00
 f4829123-2eaf-4d03-a6dc-a4ae0261c3e6	local	f4829123-2eaf-4d03-a6dc-a4ae0261c3e6.jpg	ใบสั่ง.jpg	ใบสั่ง	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-27 03:44:04.59+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-27 03:44:10.869+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-01-27 03:44:04.629+00
@@ -14400,6 +14544,10 @@ d9340df5-df2a-4edd-84b5-33c7215cfd6d	local	d9340df5-df2a-4edd-84b5-33c7215cfd6d.
 5d71a234-a070-4735-b2b2-13f5425d608c	local	5d71a234-a070-4735-b2b2-13f5425d608c.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	\N	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-02-09 03:10:12.852+00	\N	2026-02-09 03:10:12.868+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-02-09 03:10:12.867+00
 659ae4ea-ad84-4ddd-acee-21bb67195361	local	659ae4ea-ad84-4ddd-acee-21bb67195361.jpg	ใบสั่ง.jpg	ใบสั่ง	image/jpeg	\N	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-02-23 03:33:10.696+00	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-02-23 03:33:32.968+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-02-23 03:33:10.735+00
 7739226e-15b4-45c5-a8cd-e552b7af643f	local	7739226e-15b4-45c5-a8cd-e552b7af643f.pdf	ใบยินยอมการทำ Ultrasound guided.pdf	ใบยินยอมการทำ Ultrasound Guided	application/pdf	\N	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-03-24 03:00:05.233+00	\N	2026-03-24 03:00:05.283+00	\N	198648	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-03-24 03:00:05.281+00
+c3924d8c-96b0-4abd-ade6-5df4474a974d	local	c3924d8c-96b0-4abd-ade6-5df4474a974d.pdf	Ep 11 - ราคาหัตถการ ปรับใหม่ - 02_02_69.docx - Google Docs (3) (1).pdf	Ep 11   ราคาหัตถการ ปรับใหม่   02 02 69.docx   Google Docs (3) (1)	application/pdf	\N	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-11 06:57:24.781+00	\N	2026-06-11 06:57:24.841+00	\N	53089	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-11 06:57:24.838+00
+3bf53f3c-048e-45d9-937f-78f77ea09277	local	3bf53f3c-048e-45d9-937f-78f77ea09277.pdf	Ep 11 - ราคาหัตถการ ปรับใหม่ - 02_02_69.docx - Google Docs (3) (1).pdf	Ep 11   ราคาหัตถการ ปรับใหม่   02 02 69.docx   Google Docs (3) (1)	application/pdf	\N	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-11 06:57:29.329+00	\N	2026-06-11 06:57:29.346+00	\N	53089	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-11 06:57:29.345+00
+a1fb555b-1380-4700-9b29-fd2d63a24b00	local	a1fb555b-1380-4700-9b29-fd2d63a24b00.pdf	_BX.pdf	 Bx	application/pdf	\N	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-11 06:57:36.744+00	\N	2026-06-11 06:57:36.772+00	\N	160462	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-11 06:57:36.77+00
+633bc711-729d-4b34-bede-f102dd1c19d2	local	633bc711-729d-4b34-bede-f102dd1c19d2.jpg	LINE_ALBUM_ใบคำสั่งแพทย์ BX_251116_1.jpg	Line Album ใบคำสั่งแพทย์ Bx 251116 1	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-06-16 05:09:34.341+00	a9634c90-69be-4b98-bf67-e00e782712bc	2026-06-16 07:08:54.343+00	\N	1351595	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-06-16 05:09:34.399+00
 9d36f328-8e85-42fc-93d3-4aeceb06a2da	local	9d36f328-8e85-42fc-93d3-4aeceb06a2da.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-09 09:16:44.33+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-09 09:16:58.248+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-09 09:16:44.345+00
 7f480d15-50ae-465e-af95-aeebd1ad8c98	local	7f480d15-50ae-465e-af95-aeebd1ad8c98.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-15 04:21:21.763+00	1a4564d5-384b-4299-b8de-c2761baa1413	2025-12-15 05:13:25.462+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2025-12-15 04:21:21.783+00
 bbeb2bf6-b7d2-4fce-8f61-186ceb9bd366	local	bbeb2bf6-b7d2-4fce-8f61-186ceb9bd366.pdf	ใบรับรองแพทย์ENG.pdf	ใบรับรองแพทย์eng	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-02-02 07:59:29.868+00	1a4564d5-384b-4299-b8de-c2761baa1413	2026-02-03 11:28:13.339+00	\N	156750	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-02-02 07:59:29.887+00
@@ -14417,23 +14565,35 @@ e2c34a1a-1f6d-49e3-bbe8-ec1e1bdea86c	local	e2c34a1a-1f6d-49e3-bbe8-ec1e1bdea86c.
 28d4e85d-c744-4766-b838-939ded6a7b8a	local	28d4e85d-c744-4766-b838-939ded6a7b8a.pdf	ใบคำร้องทั่วไป.pdf	ใบคำร้องทั่วไป	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-02-23 03:45:54.301+00	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-02-25 05:24:16.653+00	\N	25159	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-02-23 03:45:54.319+00
 c12fcfb5-2dbb-4e2e-a939-ade2f52a0077	local	c12fcfb5-2dbb-4e2e-a939-ade2f52a0077.pdf	ใบยินยอมการทำ Ultrasound guided.pdf	ใบยินยอมการทำ Ultrasound Guided	application/pdf	\N	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-03-24 03:00:36.988+00	\N	2026-03-24 03:00:37.006+00	\N	198648	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-03-24 03:00:37.005+00
 dd3060ab-0159-4f7b-9d1d-a239e70c2541	local	dd3060ab-0159-4f7b-9d1d-a239e70c2541.jpg	LINE_ALBUM_ใบคำสั่งแพทย์ BX_251116_1.jpg	Line Album ใบคำสั่งแพทย์ Bx 251116 1	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-27 04:35:15.353+00	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-03-27 05:03:14.217+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-03-27 04:35:15.389+00
+b108f10f-1680-4753-aeb7-58fc9c7e85f7	local	b108f10f-1680-4753-aeb7-58fc9c7e85f7.jpg	702590594_122123894013216952_4834369186476763862_n.jpg	702590594 122123894013216952 4834369186476763862 N	image/jpeg	\N	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-18 06:37:13.699+00	\N	2026-06-18 06:37:13.741+00	\N	49731	960	563	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-06-18 06:37:13.737+00
 6cbe5266-061f-4d97-8d08-6bafaa76a210	local	6cbe5266-061f-4d97-8d08-6bafaa76a210.jpg	LINE_ALBUM_ใบคำสั่งแพทย์ BX_251116_1.jpg	Line Album ใบคำสั่งแพทย์ Bx 251116 1	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-30 08:50:17.622+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-30 08:50:26.202+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-03-30 08:50:17.657+00
+8d846c66-2296-41ad-a252-3dc0f62dcade	local	8d846c66-2296-41ad-a252-3dc0f62dcade.pdf	_BX.pdf	 Bx	application/pdf	\N	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-18 06:38:31.43+00	\N	2026-06-18 06:38:31.468+00	\N	160462	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-18 06:38:31.466+00
+aedda21c-2108-4a96-b73a-a7803108a259	local	aedda21c-2108-4a96-b73a-a7803108a259.pdf	Ep 11 - ราคาหัตถการ ปรับใหม่ - 02_02_69.docx - Google Docs (3) (1).pdf	Ep 11   ราคาหัตถการ ปรับใหม่   02 02 69.docx   Google Docs (3) (1)	application/pdf	\N	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-18 06:37:17.853+00	\N	2026-06-18 06:37:17.873+00	\N	53089	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-18 06:37:17.871+00
+8469f029-338c-4249-a823-3862b0b362f4	local	8469f029-338c-4249-a823-3862b0b362f4.pdf	_BX.pdf	 Bx	application/pdf	\N	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-18 06:40:40.613+00	\N	2026-06-18 06:40:40.679+00	\N	160462	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-18 06:40:40.677+00
+1a1a0174-1b51-4839-aaa3-0b615cb8877d	local	1a1a0174-1b51-4839-aaa3-0b615cb8877d.pdf	Ep 11 - ราคาหัตถการ ปรับใหม่ - 02_02_69.docx - Google Docs (3) (1).pdf	Ep 11   ราคาหัตถการ ปรับใหม่   02 02 69.docx   Google Docs (3) (1)	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-11 07:00:17.763+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-03 10:20:48.989+00	\N	53089	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-11 07:00:17.809+00
 dc45ec1f-3b24-4206-8b62-97ce37ee7a66	local	dc45ec1f-3b24-4206-8b62-97ce37ee7a66.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	\N	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-16 03:33:47.018+00	\N	2025-12-16 03:33:47.042+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2025-12-16 03:33:47.041+00
 f5e1a422-59f2-43b0-9098-7ca8b50580f6	local	f5e1a422-59f2-43b0-9098-7ca8b50580f6.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-26 03:18:02.248+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-26 03:18:10.982+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2025-12-26 03:18:02.279+00
 67a3c9e3-1cd9-4a0a-b44c-222054ad7ed4	local	67a3c9e3-1cd9-4a0a-b44c-222054ad7ed4.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-09 09:17:13.514+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-09 09:17:23.59+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-09 09:17:13.568+00
 e23f5e27-c29f-4f72-829c-57d010c16297	local	e23f5e27-c29f-4f72-829c-57d010c16297.pdf	ใบนัด BX  กรณีเคสทั่วไป  CNB  FNA ASP Clip  SCOUT.pdf	ใบนัด Bx  กรณีเคสทั่วไป  Cnb  Fna Asp Clip  Scout	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-08 03:30:53.035+00	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-01-08 03:34:58.357+00	\N	161504	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-08 03:30:53.058+00
 6b85017a-fd41-4789-9f12-51f16ff13e9a	local	6b85017a-fd41-4789-9f12-51f16ff13e9a.pdf	test-medical-order.pdf	Test Medical Order	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-09 05:26:46.43+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-09 05:26:59.922+00	\N	721	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-09 05:26:46.456+00
+5673be76-e6fe-4e95-808f-4d0bd3233b74	local	5673be76-e6fe-4e95-808f-4d0bd3233b74.pdf	Ep 11 - ราคาหัตถการ ปรับใหม่ - 02_02_69.docx - Google Docs (3) (1).pdf	Ep 11   ราคาหัตถการ ปรับใหม่   02 02 69.docx   Google Docs (3) (1)	application/pdf	1f252442-3078-4e04-9af6-05c1696a766b	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-07-03 04:54:28.717+00	\N	2026-07-03 04:54:28.734+00	\N	53089	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-07-03 04:54:28.732+00
+25d874c9-1833-4778-a7dc-75e0ff155971	local	25d874c9-1833-4778-a7dc-75e0ff155971.pdf	_BX.pdf	 Bx	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-18 07:02:23.753+00	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-18 07:02:25.613+00	\N	160462	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-18 07:02:23.786+00
 3bff6305-e815-4a3a-9b7d-602fa2c30dd3	local	3bff6305-e815-4a3a-9b7d-602fa2c30dd3.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-22 09:51:56.623+00	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-01-22 10:52:41.357+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-22 09:51:56.638+00
 06dc2166-c7c8-4eea-ae0e-afc75032df7b	local	06dc2166-c7c8-4eea-ae0e-afc75032df7b.pdf	ใบคำร้องทั่วไป.pdf	ใบคำร้องทั่วไป	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-15 10:01:16.625+00	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-01-15 10:49:50.495+00	\N	25159	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-15 10:01:16.657+00
 f40e03da-6d57-4ccf-947a-e3d629fc4b2c	local	f40e03da-6d57-4ccf-947a-e3d629fc4b2c.pdf	ผล BX.pdf	ผล Bx	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-24 03:21:31.388+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-24 04:02:03.99+00	\N	3518689	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-03-24 03:21:31.457+00
 6c512aa8-d8cb-42e2-a64b-3d573987d9aa	local	6c512aa8-d8cb-42e2-a64b-3d573987d9aa.pdf	ใบคำร้องทั่วไป.pdf	ใบคำร้องทั่วไป	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-20 03:22:18.31+00	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-01-20 07:57:02.16+00	\N	25159	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-20 03:22:18.329+00
 70ab2b79-48ea-4b90-8c92-69371745c4a5	local	70ab2b79-48ea-4b90-8c92-69371745c4a5.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-23 07:39:19.287+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-23 07:57:30.571+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-23 07:39:19.303+00
 dc57432a-b67c-4527-9b07-37fa67f84159	local	dc57432a-b67c-4527-9b07-37fa67f84159.pdf	Ep 11 - ราคาหัตถการ ปรับใหม่ - 02_02_69.docx - Google Docs (3) (1).pdf	Ep 11   ราคาหัตถการ ปรับใหม่   02 02 69.docx   Google Docs (3) (1)	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-25 04:46:30.763+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-25 04:46:34.905+00	\N	53089	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-03-25 04:46:30.784+00
+eeab682d-4254-4ae0-8b71-530a9c80307c	local	eeab682d-4254-4ae0-8b71-530a9c80307c.pdf	_BX.pdf	 Bx	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-07-03 04:54:21.203+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-07-03 04:54:34.918+00	\N	160462	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-07-03 04:54:21.235+00
 b2431380-e778-4c97-bffc-af5ed71b8529	local	b2431380-e778-4c97-bffc-af5ed71b8529.jpg	LINE_ALBUM_ใบคำสั่งแพทย์ BX_251116_1.jpg	Line Album ใบคำสั่งแพทย์ Bx 251116 1	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-27 04:35:52.61+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-27 04:36:03.641+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-03-27 04:35:52.652+00
 d5d8b4fe-a7b1-43f9-9051-6cb5d13a54bd	local	d5d8b4fe-a7b1-43f9-9051-6cb5d13a54bd.pdf	test-medical-order.pdf	Test Medical Order	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-27 04:04:15.064+00	14bb706e-8573-452f-993a-20254f24d730	2026-01-27 10:00:43.413+00	\N	721	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-27 04:04:15.082+00
 dc341ad7-f42d-457a-b987-1a87ece4d494	local	dc341ad7-f42d-457a-b987-1a87ece4d494.pdf	ใบยินยอมเซ็นแล้ว.pdf	ใบยินยอมเซ็นแล้ว	application/pdf	\N	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-03-30 09:25:53.307+00	\N	2026-03-30 09:25:53.335+00	\N	434893	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-03-30 09:25:53.333+00
 70937915-c3a9-483f-86eb-0abe760bf670	local	70937915-c3a9-483f-86eb-0abe760bf670.jpg	ใบสั่ง.jpg	ใบสั่ง	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-02-03 05:44:33.305+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-02-03 05:47:50.034+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-02-03 05:44:33.391+00
 f7bc8a2e-ca73-4fb0-a283-bc1c3f371744	local	f7bc8a2e-ca73-4fb0-a283-bc1c3f371744.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	\N	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-02-09 03:29:44.992+00	\N	2026-02-09 03:29:45.113+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-02-09 03:29:45.104+00
+91d24fbd-92e4-4ae6-a0a9-45c18248136d	local	91d24fbd-92e4-4ae6-a0a9-45c18248136d.pdf	Ep 11 - ราคาหัตถการ ปรับใหม่ - 02_02_69.docx - Google Docs (3) (1).pdf	Ep 11   ราคาหัตถการ ปรับใหม่   02 02 69.docx   Google Docs (3) (1)	application/pdf	\N	bd338144-090c-40e1-b016-f89cf67be5ad	2026-07-01 16:57:03.319+00	\N	2026-07-01 16:57:03.36+00	\N	53089	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-07-01 16:57:03.357+00
+ecb1b6af-3ee7-4dae-8eb9-c0be956095be	local	ecb1b6af-3ee7-4dae-8eb9-c0be956095be.pdf	89e46615-f25f-4386-825c-f6849d93e848.pdf	89e46615 F25f 4386 825c F6849d93e848	application/pdf	76feb963-dee8-4439-96bb-60c411916792	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-03 04:35:41.243+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-03 04:37:02.031+00	\N	11395	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-07-03 04:35:41.319+00
+c01d8b71-b468-4307-a8de-340d9ca9fb12	local	c01d8b71-b468-4307-a8de-340d9ca9fb12.pdf	_BX.pdf	 Bx	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-11 07:00:17.801+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-03 10:20:48.97+00	\N	160462	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-11 07:00:17.866+00
+c0d7259f-e34d-4dc1-a84a-2347477042ef	local	c0d7259f-e34d-4dc1-a84a-2347477042ef.pdf	Ep 11 - ราคาหัตถการ ปรับใหม่ - 02_02_69.docx - Google Docs (3) (1).pdf	Ep 11   ราคาหัตถการ ปรับใหม่   02 02 69.docx   Google Docs (3) (1)	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	bd338144-090c-40e1-b016-f89cf67be5ad	2026-06-11 06:43:44.285+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-03 10:20:49.015+00	\N	53089	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-11 06:43:44.312+00
 29f8fb55-ef3f-4d14-a1bc-a781b4d19bcd	local	29f8fb55-ef3f-4d14-a1bc-a781b4d19bcd.pdf	ใบคำร้องทั่วไป.pdf	ใบคำร้องทั่วไป	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-02-03 05:51:49.396+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-02-03 05:52:28.561+00	\N	25159	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-02-03 05:51:49.425+00
 9770a164-1ec3-4806-a2e1-084653f3c1f1	local	9770a164-1ec3-4806-a2e1-084653f3c1f1.pdf	ใบคำร้องทั่วไป.pdf	ใบคำร้องทั่วไป	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-12 03:02:27.863+00	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-01-12 07:26:21.02+00	\N	25159	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-12 03:02:27.876+00
 ab98618e-8ff1-478e-9471-c4a8e1271f9d	local	ab98618e-8ff1-478e-9471-c4a8e1271f9d.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-16 03:34:48.063+00	a9634c90-69be-4b98-bf67-e00e782712bc	2025-12-16 04:11:23.849+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2025-12-16 03:34:48.079+00
@@ -14445,17 +14605,23 @@ f971ba0a-95be-4239-a8ea-72fd0d5b4e0e	local	f971ba0a-95be-4239-a8ea-72fd0d5b4e0e.
 a3856f2f-263e-4029-b3b6-195768e545dc	local	a3856f2f-263e-4029-b3b6-195768e545dc.pdf	test-medical-order.pdf	Test Medical Order	application/pdf	\N	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-09 05:53:09.303+00	\N	2026-01-09 05:53:09.323+00	\N	721	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-09 05:53:09.322+00
 6d17716f-6c67-4e8c-bf00-118cf945447c	local	6d17716f-6c67-4e8c-bf00-118cf945447c.pdf	Special Proceduer.pdf	Special Proceduer	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-24 03:22:15.022+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-24 03:22:30.787+00	\N	839976	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-03-24 03:22:15.05+00
 2432ae4d-b9d4-4a6b-bd5f-4019b5a66d79	local	2432ae4d-b9d4-4a6b-bd5f-4019b5a66d79.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-20 03:42:59.273+00	14bb706e-8573-452f-993a-20254f24d730	2026-01-20 10:35:48.623+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-20 03:42:59.285+00
+8e4f153f-a745-4915-ab02-97703be58381	local	8e4f153f-a745-4915-ab02-97703be58381.jpeg	IMG_0BD4A99A326C-1.jpeg	Img 0 B D4 A99 A326 C 1	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-06-30 08:18:36.297+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-02 04:57:19.909+00	\N	875055	1084	1318	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-06-30 08:18:36.359+00
 37769678-a712-4203-b189-73166f61235e	local	37769678-a712-4203-b189-73166f61235e.jpg	ใบสั่ง.jpg	ใบสั่ง	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-28 03:00:25.907+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-28 03:00:32.1+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-01-28 03:00:25.963+00
 a7c3df8e-2bbb-48e6-a7f8-6b7c45cbeff0	local	a7c3df8e-2bbb-48e6-a7f8-6b7c45cbeff0.jpg	LINE_ALBUM_ใบคำสั่งแพทย์ BX_251116_1.jpg	Line Album ใบคำสั่งแพทย์ Bx 251116 1	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-27 04:36:26.559+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-30 09:16:14.751+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-03-27 04:36:26.592+00
 47d67d03-39f0-485b-98c7-2a9929d4ede9	local	47d67d03-39f0-485b-98c7-2a9929d4ede9.jpg	LINE_ALBUM_ใบคำสั่งแพทย์ BX_251116_1.jpg	Line Album ใบคำสั่งแพทย์ Bx 251116 1	image/jpeg	fc4d1cc1-491a-45e6-b582-f66179a65ff9	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-03-25 08:31:02.636+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-03-25 10:06:09.39+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-03-25 08:31:02.734+00
 6db247af-874c-4360-bba3-0670d61c2ba1	local	6db247af-874c-4360-bba3-0670d61c2ba1.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-23 07:56:29.683+00	1a4564d5-384b-4299-b8de-c2761baa1413	2026-02-02 12:56:02.395+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-23 07:56:29.757+00
 fe9c71f2-b0e2-4630-98c3-c2ff7c594b55	local	fe9c71f2-b0e2-4630-98c3-c2ff7c594b55.pdf	ใบยินยอมการทำ Stereotactic guided.pdf	ใบยินยอมการทำ Stereotactic Guided	application/pdf	\N	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-03-30 09:26:46.671+00	\N	2026-03-30 09:26:46.687+00	\N	197779	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-03-30 09:26:46.686+00
+77f88a64-4d61-443b-91e0-fb144a8a4bda	local	77f88a64-4d61-443b-91e0-fb144a8a4bda.png	033d3f84-05db-4096-8a64-ded2961687e8.png	033d3f84 05db 4096 8a64 Ded2961687e8	image/png	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-06-18 07:51:49.457+00	\N	2026-06-18 07:51:49.512+00	\N	1422913	946	1663	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-06-18 07:51:49.511+00
+30b92c25-f9a6-4f2f-8468-f32d5c703b2d	local	30b92c25-f9a6-4f2f-8468-f32d5c703b2d.pdf	_BX.pdf	 Bx	application/pdf	\N	bd338144-090c-40e1-b016-f89cf67be5ad	2026-07-01 16:57:03.324+00	\N	2026-07-01 16:57:03.358+00	\N	160462	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-07-01 16:57:03.356+00
+b113a16f-22a9-4bcf-9261-7ea813ae5d60	local	b113a16f-22a9-4bcf-9261-7ea813ae5d60.pdf	c832349d-15b3-4e76-8040-48e550f3661f.pdf	C832349d 15b3 4e76 8040 48e550f3661f	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-06-30 08:17:53.446+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-02 04:57:19.906+00	\N	10846	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-30 08:17:53.471+00
+72b25335-83a5-4f72-901f-621cd1b9a9e9	local	72b25335-83a5-4f72-901f-621cd1b9a9e9.png	bill.png	Bill	image/png	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-03 04:45:14.89+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-03 06:33:53.198+00	\N	87333	556	538	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-07-03 04:45:14.965+00
 77dc637e-0414-4349-a449-0a036b1af580	local	77dc637e-0414-4349-a449-0a036b1af580.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-17 06:47:37.247+00	a9634c90-69be-4b98-bf67-e00e782712bc	2025-12-17 07:16:13.35+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2025-12-17 06:47:37.267+00
 4314e639-e771-4157-97e5-d014bf62b94c	local	4314e639-e771-4157-97e5-d014bf62b94c.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-12 07:03:00.574+00	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-01-12 07:14:32.744+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-12 07:03:00.626+00
 1a8bcdb8-4294-49d7-aae9-c96af6a7b070	local	1a8bcdb8-4294-49d7-aae9-c96af6a7b070.pdf	ใบคำร้องทั่วไป.pdf	ใบคำร้องทั่วไป	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-08 04:19:12.95+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-08 04:19:30.87+00	\N	25159	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-08 04:19:12.966+00
 fc2b990e-cf8c-4ff1-89e6-a6879f2f7680	local	fc2b990e-cf8c-4ff1-89e6-a6879f2f7680.pdf	ใบคำสั่งแพทย์.pdf	ใบคำสั่งแพทย์	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	bd338144-090c-40e1-b016-f89cf67be5ad	2024-10-07 08:54:19.035+00	bd338144-090c-40e1-b016-f89cf67be5ad	2026-01-14 06:28:28.007+00	\N	108083	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2024-10-07 08:54:19.054+00
 3c78300c-fa22-462b-896d-114427ab547c	local	3c78300c-fa22-462b-896d-114427ab547c.pdf	ใบคำร้องทั่วไป.pdf	ใบคำร้องทั่วไป	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-09 06:19:05.875+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-09 06:26:40.492+00	\N	25159	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-09 06:19:05.91+00
 cfffeba8-ea1f-43c2-b6a0-b50c4e689c74	local	cfffeba8-ea1f-43c2-b6a0-b50c4e689c74.pdf	ใบคำร้องทั่วไป.pdf	ใบคำร้องทั่วไป	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-16 02:52:53.962+00	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-01-19 09:52:46.796+00	\N	25159	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-16 02:52:53.981+00
+3ef6dd21-c016-4913-9c9f-56fa17b7cb80	local	3ef6dd21-c016-4913-9c9f-56fa17b7cb80.pdf	_BX.pdf	 Bx	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	bd338144-090c-40e1-b016-f89cf67be5ad	2026-07-01 17:01:33.606+00	bd338144-090c-40e1-b016-f89cf67be5ad	2026-07-01 17:02:18.314+00	\N	160462	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-07-01 17:01:33.656+00
 b9ffdb01-3407-4790-8cea-0519cc49f7f4	local	b9ffdb01-3407-4790-8cea-0519cc49f7f4.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-20 03:43:41.919+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-20 03:43:48.85+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-20 03:43:41.941+00
 4c8be6d5-ba1a-47ed-a354-b2668e72f5cf	local	4c8be6d5-ba1a-47ed-a354-b2668e72f5cf.jpg	LINE_ALBUM_ใบคำสั่งแพทย์ BX_251116_1.jpg	Line Album ใบคำสั่งแพทย์ Bx 251116 1	image/jpeg	\N	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-03-25 08:38:02.873+00	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-03-25 08:40:26.724+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-03-25 08:38:02.918+00
 8adcdb5c-aafe-4c27-8b37-8f1d01c52449	local	8adcdb5c-aafe-4c27-8b37-8f1d01c52449.pdf	ใบยินยอมเซ็นแล้ว.pdf	ใบยินยอมเซ็นแล้ว	application/pdf	\N	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-03-27 07:51:21.135+00	\N	2026-03-27 07:51:21.155+00	\N	434893	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-03-27 07:51:21.152+00
@@ -14465,9 +14631,13 @@ ca430b70-9a39-4b43-85d1-e3a7bad1b537	local	ca430b70-9a39-4b43-85d1-e3a7bad1b537.
 e0b7b3e9-294c-46e3-b291-f463596e4443	local	e0b7b3e9-294c-46e3-b291-f463596e4443.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	\N	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-02-09 03:41:14.229+00	\N	2026-02-09 03:41:14.249+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-02-09 03:41:14.247+00
 d8d47141-58f5-4d55-ba25-d820e25acd47	local	d8d47141-58f5-4d55-ba25-d820e25acd47.jpg	ใบสั่ง.jpg	ใบสั่ง	image/jpeg	\N	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-02-09 03:41:29.983+00	\N	2026-02-09 03:41:30.03+00	\N	1351627	1489	2048	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-02-09 03:41:30.029+00
 bb27dc38-d010-43b2-a5f8-f7067308aad0	local	bb27dc38-d010-43b2-a5f8-f7067308aad0.pdf	ใบยินยอมการทำ Ultrasound guided.pdf	ใบยินยอมการทำ Ultrasound Guided	application/pdf	\N	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-03-24 04:30:53.404+00	\N	2026-03-24 04:30:53.429+00	\N	198648	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-03-24 04:30:53.428+00
+dcf64aba-5049-446b-b830-78d0b8a22e5b	local	dcf64aba-5049-446b-b830-78d0b8a22e5b.jpg	Macaca_nigra_self-portrait_large.jpg	Macaca Nigra Self Portrait Large	image/jpeg	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-06-18 07:53:23.844+00	\N	2026-06-18 07:53:23.907+00	\N	332277	960	1329	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-06-18 07:53:23.905+00
+cc8e8d9b-d9ae-4cf4-b234-52a9e5e7e60f	local	cc8e8d9b-d9ae-4cf4-b234-52a9e5e7e60f.pdf	สำนักงานใหญ่.pdf	สำนักงานใหญ่	application/pdf	76feb963-dee8-4439-96bb-60c411916792	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-02 14:10:46.339+00	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-02 14:11:00.393+00	\N	2735038	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-07-02 14:10:46.39+00
+9c2335c3-7598-472c-b3f8-a47e3e04d14e	local	9c2335c3-7598-472c-b3f8-a47e3e04d14e.pdf	c832349d-15b3-4e76-8040-48e550f3661f.pdf	C832349d 15b3 4e76 8040 48e550f3661f	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-06-30 08:50:20.08+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-06-30 08:58:56.766+00	\N	10846	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-30 08:50:20.11+00
 e3785f16-9743-4e24-ad2d-31aa25ed75f3	local	e3785f16-9743-4e24-ad2d-31aa25ed75f3.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-17 07:19:44.238+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-17 07:24:44.137+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2025-12-17 07:19:44.252+00
 3c51deed-a864-468e-86cc-93803d8828be	local	3c51deed-a864-468e-86cc-93803d8828be.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-23 03:27:07.097+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-23 03:27:43.165+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-23 03:27:07.118+00
 18c38166-3603-488c-8a84-5b131a5a3254	local	18c38166-3603-488c-8a84-5b131a5a3254.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-23 08:46:15.221+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-23 08:47:36.67+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-23 08:46:15.244+00
+14aa894f-df55-478d-ae71-0ef69c131d3e	local	14aa894f-df55-478d-ae71-0ef69c131d3e.pdf	แผนสะสมทรัพย์ - พี่เน - Google เอกสาร.pdf	แผนสะสมทรัพย์   พี่เน   Google เอกสาร	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-06-22 08:17:05.356+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-06-22 08:19:09.685+00	\N	548387	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-06-22 08:17:05.432+00
 9fb31131-6849-4fae-b40b-4057c4b94b57	local	9fb31131-6849-4fae-b40b-4057c4b94b57.pdf	Flow  การทำหัตถการ(BX).pdf	Flow  การทำหัตถการ(bx)	application/pdf	\N	bd338144-090c-40e1-b016-f89cf67be5ad	2026-01-29 04:51:58.901+00	bd338144-090c-40e1-b016-f89cf67be5ad	2026-01-29 04:52:21.028+00	\N	169972	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-29 04:51:58.929+00
 1b71a409-81bd-4c07-b857-0853e0c8afa0	local	1b71a409-81bd-4c07-b857-0853e0c8afa0.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-12 07:33:54.348+00	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-01-12 08:26:57.867+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-12 07:33:54.372+00
 3acd833b-85fb-432b-a404-0e88eaec3b6f	local	3acd833b-85fb-432b-a404-0e88eaec3b6f.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-05 03:05:16.765+00	bd338144-090c-40e1-b016-f89cf67be5ad	2026-01-05 09:09:16.791+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-05 03:05:16.778+00
@@ -14481,6 +14651,7 @@ e12f8fce-5334-46b2-acc8-93c6012c9277	local	e12f8fce-5334-46b2-acc8-93c6012c9277.
 10557edb-6029-4fcf-9fb9-ba39a78e144d	local	10557edb-6029-4fcf-9fb9-ba39a78e144d.png	convert uploaded ima 1.png	Convert Uploaded Ima 1	image/png	\N	bd338144-090c-40e1-b016-f89cf67be5ad	2026-02-11 16:52:46.858+00	\N	2026-02-11 16:52:46.885+00	\N	26393	195	195	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-02-11 16:52:46.883+00
 ed3bbbd1-e933-43ac-b586-9b44738b6868	local	ed3bbbd1-e933-43ac-b586-9b44738b6868.png	google-icon.png	Google Icon	image/png	\N	bd338144-090c-40e1-b016-f89cf67be5ad	2026-02-11 16:53:19.031+00	\N	2026-02-11 16:53:19.043+00	\N	8625	360	360	\N	\N	\N	\N	\N	{}	\N	\N	\N	\N	2026-02-11 16:53:19.042+00
 f6359e86-cd2e-4563-a368-d8f98868e258	local	f6359e86-cd2e-4563-a368-d8f98868e258.pdf	ใบยินยอมการทำ Ultrasound guided.pdf	ใบยินยอมการทำ Ultrasound Guided	application/pdf	\N	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-03-24 04:31:24.734+00	\N	2026-03-24 04:31:24.748+00	\N	198648	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-03-24 04:31:24.746+00
+d94faf66-4afd-4acb-974c-d6cbb5eff0a3	local	d94faf66-4afd-4acb-974c-d6cbb5eff0a3.pdf	Ep 11 - ราคาหัตถการ ปรับใหม่ - 02_02_69.docx - Google Docs (3) (1).pdf	Ep 11   ราคาหัตถการ ปรับใหม่   02 02 69.docx   Google Docs (3) (1)	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	bd338144-090c-40e1-b016-f89cf67be5ad	2026-07-01 17:02:06.675+00	bd338144-090c-40e1-b016-f89cf67be5ad	2026-07-01 17:02:18.321+00	\N	53089	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-07-01 17:02:06.715+00
 f5b82c6b-f24d-488f-a9da-6fa481e0c1bc	local	f5b82c6b-f24d-488f-a9da-6fa481e0c1bc.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-18 03:03:57.042+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2025-12-18 03:04:17.085+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2025-12-18 03:03:57.06+00
 7cb8fb6c-63e3-4471-b383-ec5a047f6448	local	7cb8fb6c-63e3-4471-b383-ec5a047f6448.pdf	ใบคำสั่งแพทย์PDF.pdf	ใบคำสั่งแพทย์pdf	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-05 03:14:20.93+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-05 03:14:31.681+00	\N	25316	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-05 03:14:20.949+00
 6767ae72-d443-463a-aa7f-e6d2865e9efc	local	6767ae72-d443-463a-aa7f-e6d2865e9efc.pdf	ใบคำร้องทั่วไป.pdf	ใบคำร้องทั่วไป	application/pdf	fc4d1cc1-491a-45e6-b582-f66179a65ff9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-12 07:53:48.355+00	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-01-12 07:53:51.66+00	\N	25159	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	2026-01-12 07:53:48.376+00
@@ -14509,13 +14680,11 @@ b1e04a8c-e551-468e-b336-820154f3ac1b	[id-16]<appointment.update>[appointment.upd
 89677e2f-7d1b-4e9c-8853-2e23650f65ac	[id-47]<WORKLIST> Call Queue (E)	queue_play_next	\N	เมื่อเรียกคิว E จะสร้าง Progress	active	event	all	{"type":"action","scope":["items.update"],"collections":["queue"]}	e737c04f-8e1c-4b4a-9310-cb855349b083	2024-10-07 07:01:12.643+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 d8536126-0a00-4f76-a891-f14d2651c938	[id-41]<patient_result.update>	bolt	\N	ย้ายไฟล์ของ appointment จาก folder temp ไป result referral form	active	event	all	{"type":"action","scope":["items.update"],"collections":["patient_result"]}	3da5a3eb-3b21-4fcb-a69a-aa1eb2b3418b	2024-10-09 07:00:27.154+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 123c9014-d9d2-4a4f-9a93-d59f291e1c24	[id-19]<appointment.update>[appointment.update]	browser_updated	\N	ถ้าเลื่อนนัดเป็นวันนี้ให้เป็นแทรกคิว	active	operation	all	{"return":"$last"}	fb953041-e718-4a4a-be55-1a0b67d01d47	2024-10-03 02:59:31.555+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-69f5e99d-d7b5-4afd-94ef-770ec1a60747	[id-24]<billing.create>[center_income.create, billing.update]	create_new_folder	\N	ถ้า Appointment มี Copy CD จะมาสร้าง center_income	active	event	all	{"type":"action","scope":["items.create"],"collections":["billing"]}	2c3943e1-d069-4f7a-81ce-997b257a1947	2025-04-22 05:30:43.476+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 440911df-8ca7-45e3-ad93-9e6587180683	[id-50]<WORKLIST> Call Queue (R)	queue_play_next	\N	เมื่อเรียกคิว R จะสร้าง Progress	active	event	all	{"type":"action","scope":["items.update"],"collections":["queue"]}	9126213b-0c52-4dc0-8c91-67167d29d35b	2024-10-04 05:32:59.327+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 714ee7c2-de29-48bb-abfb-c64046bff4b7	[id-37]<directus_users.create>	supervised_user_circle	\N	อัพเดท email ถ้า email มีค่าเป็น null โดยต่อท้าย "@thanyarak.or.th"	active	event	all	{"type":"action","scope":["items.create"],"collections":["directus_users"]}	04cd9a21-513b-4ed0-98d8-b35c20250ca7	2024-10-03 08:15:20.661+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 af896f59-cef0-47ab-b0ac-efdb21df529f	[id-49]<WORKLIST> Call Queue (M)	queue_play_next	\N	เมื่อเรียกคิว M จะสร้าง Progress	active	event	all	{"type":"action","scope":["items.update"],"collections":["queue"]}	34f70b23-33c3-471f-8eab-c4c61ec795f7	2024-10-02 08:04:03.257+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 d3f538b5-8d62-4058-9536-6fb9697e90d8	[id-62]<WORKLIST> Appointment Updated	browser_updated	\N	สร้าง Progress เมื่อ Appointment Update	active	event	all	{"type":"action","scope":["items.update"],"collections":["appointment"]}	752a7b27-ad4f-4a65-bd2a-f2bb1c60e8db	2024-10-21 05:19:10.735+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 a9851cbc-1c3d-4e30-b4e4-0a1446166bb6	[id-18]<appointment.create, appointment.update>	bolt	\N	ย้ายไฟล์ของ appointment จาก folder temp ไป referral form	active	event	all	{"type":"action","scope":["items.create","items.update"],"collections":["appointment"]}	c938824e-39d3-4dd2-9535-d43b113ba34e	2024-10-08 07:41:36.002+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-91f7c920-9249-42c7-9215-cf7a2a4eb971	[id-58]<WORKLIST> Progress Created	bolt	\N	ใส่ชื่อเจ้าหน้าที่เมื่อ Progress ถูกสร้าง	active	operation	all	{"return":"$last"}	de851b09-f1bc-42ec-a013-ad4ea51e6396	2024-10-16 04:57:44.909+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 2770ae3f-8314-4d3f-a4f8-4d58da1ec279	[id-51]<WORKLIST> Call Queue (S)	queue_play_next	\N	เมื่อเรียกคิว S จะสร้าง Progress	active	event	all	{"type":"action","scope":["items.update"],"collections":["queue"]}	6c8615f6-6e43-4050-ac3d-5e37950acb52	2024-10-07 05:47:29.35+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 2cf897be-be84-42be-b293-aa16e9f8885f	[id-52]<WORKLIST> Cancel Queue	free_cancellation	\N	เมื่อยกเลิกคิว จะสร้าง Progress	active	event	all	{"type":"action","scope":["items.update"],"collections":["queue"]}	9bac2d89-e960-4aad-ab39-a41b926e9aca	2024-10-17 10:59:41.321+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e2646ed5-054d-47a0-9237-070f20b2760f	[id-57]<WORKLIST> Patient Result Updated	browser_updated	\N	สร้าง Progress ขั้นตอนงานรับผล	active	event	all	{"type":"action","scope":["items.update"],"collections":["patient_result"]}	ba15a150-ddc8-4a4f-ae8f-79b1f7c27dfa	2024-10-16 11:18:05.319+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -14526,18 +14695,15 @@ df03660a-3cf7-4069-ad4f-0a92fec2ae9e	[id-44]<queue.create>[queue.update]	bolt	\N
 3d941e73-445e-466c-b537-c1fa1d85d7fd	[id-43]<patient_result.update>[queue.update]	data_saver_on	\N	เมื่อกดบันทึกแล้วจะมาอัพเดทสถานะคิวเป็น กำลังดำเนินการ	active	event	all	{"type":"action","scope":["items.update"],"collections":["patient_result"]}	e4e813bb-1a0f-4df8-9577-3ca4f48fa9f0	2024-10-28 03:16:45.655+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 a6078515-a2aa-435a-9862-4abe646ae8cc	[id-13]<examination.update>[pacs_sync_info.update]	bolt	\N	เมื่อ examination "ปิดเคส" ให้ update จำนวนรูปใน pacs_sync_info	active	event	all	{"type":"action","scope":["items.update"],"collections":["examination"]}	3ae6685f-b135-4460-8054-e80ea3be05db	2025-02-25 11:39:46.449+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f8348b38-4052-4bed-81f1-f1462291ae17	[id-35]<pacs_sync_info.create>	file_open	\N	ยิงไปเส้นสร้าง file ทุกครั้งที่มีการสร้าง record บน pacs_sync_info	active	event	all	{"type":"action","scope":["items.create"],"collections":["pacs_sync_info"]}	e7e97331-fdee-4b2e-8629-89313585573b	2025-01-16 04:25:32.553+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+91f7c920-9249-42c7-9215-cf7a2a4eb971	[id-58]<WORKLIST> Progress Created	bolt	\N	ใส่ชื่อเจ้าหน้าที่เมื่อ Progress ถูกสร้าง (v.User_Created)	active	operation	all	{"return":"$last"}	de851b09-f1bc-42ec-a013-ad4ea51e6396	2024-10-16 04:57:44.909+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+69f5e99d-d7b5-4afd-94ef-770ec1a60747	[id-24]<billing.create>[center_income.create, billing.update]	create_new_folder	\N	ถ้า Appointment มี Copy CD จะมาสร้าง center_income	active	event	all	{"type":"action","scope":["items.create"],"collections":["billing"]}	2c3943e1-d069-4f7a-81ce-997b257a1947	2025-04-22 05:30:43.476+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 75186f9e-7c67-41c7-a49d-e7073c1f2fe6	[id-31]<examination.create>[examination.update]	build	\N	(เช็คว่า optimize ได้ไหม) เปลี่ยน exam_date ซึ่งเป็น timestamp ของ record ที่สร้างใหม่จากหน้าบ้าน	active	event	all	{"type":"action","scope":["items.create"],"collections":["examination"]}	83e90f46-089b-4b8b-9b57-0c6144883e91	2025-01-30 02:50:57.95+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f5ad1f92-3584-40cb-8931-926f1cd88ff1	[id-28]<ENV>	bolt	\N	Flows สำหรับอ่าน Environment Data	active	operation	all	{"return":"$last"}	2241db89-10b5-4ec8-a858-c6ab5d31d734	2024-11-04 10:04:04.1+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 784933e7-b375-4551-954b-ab894d350f6c	[id-65]<recommend_bx_form.create>[recommend_bx_form.update]	bolt	\N	ใส่หมายเลขใบแนะนำเจาะ เมื่อทำการสร้าง	active	event	all	{"type":"action","scope":["items.create"],"collections":["recommend_bx_form"]}	1b3e6c1f-1e69-4cd0-bc3a-ccd4ff8f9bab	2025-09-02 07:34:15.067+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-745702ca-86a5-4630-86d5-0c21951b61ce	[id-38]<appointment.update>[patient_info.update, queue.update, patient_result.create]	browser_updated	\N	ส่งตรวจ appointment แล้วอัพเดท PID patient_info และสร้าง patient_result กรณีที่ รับผลตรวจวันนี้ และรับผลแบบ CD	active	event	all	{"type":"action","scope":["items.update"],"collections":["appointment"]}	dad45528-69a1-400b-ade5-c5a85d0de54a	2024-10-03 02:44:06.288+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 3d94c102-f959-4758-bf95-58c7f165f1d3	[id-32]<examination.update>[pacs_sync_info.update]	bolt	\N	เมื่ออัพเดต examination.status เป็น "ส่ง MAM - รอเรียกคิว" ให้นำ num_of_mam ไป update ใน pacs_sync_info	active	event	all	{"type":"action","scope":["items.update"],"collections":["examination"]}	01d41964-be52-45c9-9629-ebcc03f21ada	2025-02-24 11:54:31.101+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-ed9487b5-5316-42b2-96ee-6c58162b72bb	[id-54]<WORKLIST> Coordinate Updated	browser_updated	\N	สร้าง Progress เมื่อ Coordinate update	active	event	all	{"type":"action","scope":["items.update"],"collections":["coordinate"]}	ece3c6a2-3fb2-4fa2-a6a0-b4d099831021	2025-02-26 10:35:16.248+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 2e907bc7-59b0-451c-bf25-8bc2cd332ec8	[id-60]<WORKLIST> จัดส่งรับผล	send_and_archive	\N	สร้าง Progress ส่วนของจัดส่งผลตรวจ	active	event	all	{"type":"action","scope":["items.update"],"collections":["patient_result"]}	91ecb393-f162-43ad-baa5-97817e8a4a35	2024-10-28 04:17:27.881+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-cbd6eeeb-ea02-40ee-be82-36164ee8b18c	[id-56]<WORKLIST> Exam Updated 	biotech	\N	สร้าง Progress ขั้นตอนสัมภาษณ์ฝั่ง Tech	active	event	all	{"type":"action","scope":["items.update"],"collections":["examination"]}	45ebc37b-73ea-46a4-8423-d8e6c48aa3ec	2025-02-18 15:36:15.847+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 cdfc74cd-8e37-4fbd-b333-622e244a8e63	[id-33]<doctor_work.update>[coordinate.create, examination.update]	bolt	\N	???????????	active	event	all	{"type":"action","scope":["items.update"],"collections":["doctor_work"]}	c1bda475-1ffe-4029-9286-68bc95df4e7f	2025-02-04 11:42:39.467+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 308fa33c-b445-49f7-a5de-d732058b85e4	[id-61]<WORKLIST> เช็คสถานะ Progress ตัวสุดท้าย	library_add_check	\N	เช็คสถานะ Progress ตัวสุดท้ายก่อนเปลี่ยนสถานะเป็น เสร็จสิ้น	active	operation	all	{"return":"$last"}	a9cec322-400d-4515-b0bf-18f0aae29d62	2024-10-30 12:15:58.028+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-afbac7d9-554e-4ab6-a1c8-cd0a649312ae	[id-46]<WORKLIST> Billing Updated	browser_updated	\N	สร้าง Progress เมื่อ billing updated	active	event	all	{"type":"action","scope":["items.update"],"collections":["billing"]}	4d496a40-ae72-4fc8-b79e-ae42b35f5bfd	2025-03-10 09:50:17.495+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-7f07d6c2-0785-4b82-b2ba-4003555b0576	[id-55]<WORKLIST> Doctor_Work Updated	bolt	\N	สร้าง Progress เมื่อ Doctor_work update	active	event	all	{"type":"action","scope":["items.update"],"collections":["doctor_work"]}	cf3ebc88-3620-4778-81ce-6b499fcbd81e	2025-02-27 02:19:28.692+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 53cf63fc-e9d9-4345-8133-658d24c9fda3	[id-45]<spot.create>[examination.update, doctor_work.update]	bolt	\N	เมื่อทำการสร้าง spot (ทั้งจากหมอและ us) => ทำการอัพเดตสถานะของ examination + doctor_work + ultrasound_work  ใหม่	active	event	all	{"type":"action","scope":["items.create"],"collections":["spot"]}	d8e37811-57f8-4617-82c8-e950ecc45be7	2025-03-23 17:59:14.402+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f3f4611a-021c-47c0-be3a-e85f03734d53	[id-21]<queue.update>[queue.update, appointment.update]	browser_updated	\N	ถ้านัดหมายมีคิวแล้วยกเลิกคิวจะเอาคิวออกจากนัดหมาย	active	event	all	{"type":"action","scope":["items.update"],"collections":["queue"]}	f223058c-eac8-4e92-bdcf-dbef9a83906a	2024-10-22 10:53:02.363+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 143ac6af-1a05-4677-aadb-a581e192e062	[id-40]<queue.update>[patient_result.update]	free_cancellation	\N	เมื่อคิว R โดนยกเลิก ให้ยกเลิกสถานะของ patient_result ด้วย	active	event	all	{"type":"action","scope":["items.update"],"collections":["queue"]}	49e61863-885a-4038-ae87-68630e5f0e8d	2024-10-24 08:00:32.39+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -14546,13 +14712,14 @@ f41fb7e9-e20d-405f-955d-3e03d7bf74a3	[id-06]<ultrasound_work.update>[pacs_sync_i
 8dd34a74-0ce8-4d19-b333-786c90851a77	[id-03]<ultrasound_work.update>[ultrasound_work.update, directus_notifications.update]	bolt	\N	เมื่อคืนคิวจาก Ultrasound จะตัด Relation Beds ออก + ลบ noti ที่หมอ	active	event	all	{"type":"action","scope":["items.update"],"collections":["ultrasound_work"]}	12648482-abe6-4f99-a763-473016f42414	2025-06-25 02:27:25.25+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 5b6e538c-4ccb-4ce0-b266-b48257d08bf6	[id-08]<ultrasound_work.update>[notification.update]	folder_delete	\N	เมื่อ us_work ถูกอัพเดทถ้ามี action ส่งมาจะล้างค่า notification ของ doctorwork	active	event	all	{"type":"action","scope":["items.update"],"collections":["ultrasound_work"]}	bfbe4e79-6ee7-4fac-b40b-7e0af7366e98	2025-07-17 02:58:56.023+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 55b25593-7665-4f37-83f5-9e691af6b979	[id-11]<ultrasound_work.update>[coordinate.update, notification.update]	bolt	\N	เมื่อ ultrasound เปลี่ยนแพทย์ ถึงจะเข้า flows นี้	active	event	all	{"type":"action","scope":["items.update"],"collections":["ultrasound_work"]}	9a383f7d-ea12-4b89-8648-ea32fb053f3e	2025-07-25 05:36:07.035+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+afbac7d9-554e-4ab6-a1c8-cd0a649312ae	[id-46]<WORKLIST> Billing Updated	browser_updated	\N	สร้าง Progress เมื่อ billing updated	active	event	all	{"type":"action","scope":["items.update"],"collections":["billing"]}	4d496a40-ae72-4fc8-b79e-ae42b35f5bfd	2025-03-10 09:50:17.495+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+ed9487b5-5316-42b2-96ee-6c58162b72bb	[id-54]<WORKLIST> Coordinate Updated	browser_updated	\N	สร้าง Progress เมื่อ Coordinate update	active	event	all	{"type":"action","scope":["items.update"],"collections":["coordinate"]}	ece3c6a2-3fb2-4fa2-a6a0-b4d099831021	2025-02-26 10:35:16.248+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+7f07d6c2-0785-4b82-b2ba-4003555b0576	[id-55]<WORKLIST> Doctor_Work Updated	bolt	\N	สร้าง Progress เมื่อ Doctor_work update	active	event	all	{"type":"action","scope":["items.update"],"collections":["doctor_work"]}	cf3ebc88-3620-4778-81ce-6b499fcbd81e	2025-02-27 02:19:28.692+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+cbd6eeeb-ea02-40ee-be82-36164ee8b18c	[id-56]<WORKLIST> Exam Updated 	biotech	\N	สร้าง Progress ขั้นตอนสัมภาษณ์ฝั่ง Tech	active	event	all	{"type":"action","scope":["items.update"],"collections":["examination"]}	45ebc37b-73ea-46a4-8423-d8e6c48aa3ec	2025-02-18 15:36:15.847+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 d555b629-b0a2-4177-a879-10f65d083aaa	[id-29]<appointment.update>[examination.create]	create_new_folder	\N	สร้าง examination หลัง appointment_status เปลี่ยนเป็นส่งตรวจ	active	event	all	{"type":"action","scope":["items.update"],"collections":["appointment"]}	64750639-bb15-4648-b927-6736ead20576	2024-12-17 07:20:58.59+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-e472714e-dd02-4bfc-8038-133053a0a457	[id-01]<examination.update>[coordinate.create, doctor_work.update, ultrasound_work.create]	bolt	\N	เมื่อ examination ทำการ "ส่งต่อแพทย์" / "ยกเลิก" => จัดการ coordinate + doctor_work	active	event	all	{"type":"action","scope":["items.update"],"collections":["examination"]}	9544eb4f-2af7-4fa6-918b-ab0a4b868203	2025-01-23 02:19:46.695+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 d0764ae1-0dd4-43fc-bb30-8ed60868e7b1	[id-07]<recommend_bx_form.create>[coordinate.update, doctor_work.update, ultrasound_work.update]	recommend	\N	update ข้อมูล collection อื่น ๆ หลังการสร้าง  recommend_bx_form	active	event	all	{"type":"action","scope":["items.create"],"collections":["recommend_bx_form"]}	61badf5a-dd15-47c7-b249-f7e00ceb487e	2025-07-15 04:01:08.496+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-39fa8fb9-ea1b-4962-aeb5-1c92a10e8dde	[id-42]<queue.create>[patient_result.create]	create_new_folder	\N	ถ้าสร้างคิว R แล้วจะมาสร้าง patient_result โดยผูกกับคิวด้วย	active	event	all	{"type":"action","scope":["items.create"],"collections":["queue"]}	e10e40a3-d832-4875-bbdc-0b88ade461b3	2024-10-03 02:41:12.278+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b8f2bdb4-070f-41a0-afc6-f5363c254fdc	[id-10]<coordinate.update>[examination.update]	bolt	\N	เมื่อคืนเคสจาก F14 ให้ล้าง Report mam, us	active	event	all	{"type":"action","scope":["items.update"],"collections":["coordinate"]}	37c4e88f-a4d8-4c2f-bdad-28a788940f76	2025-07-23 04:17:32.273+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 4c95d232-9f2a-49cd-8d54-da7d96c85f9e	[id-04]<directus_notifications>[notification.update]	notifications	\N	ทำหน้าที่ Trigger Notification แบบ Realtime	inactive	event	all	{"type":"action","scope":["items.create","items.update"],"collections":["directus_notifications"]}	454e1b90-728a-4e86-a8a3-a05bb7853d39	2025-06-30 03:55:18.72+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-4978440d-6b21-4b42-bf79-b63cdb9dd1be	[id-25]<billing.update>[center_income.create, center_income.update, center_income.delete, billing.update]	browser_updated	\N	action ไปหา center income เมื่อแก้ไขค่า Copy CD	active	event	all	{"type":"action","scope":["items.update"],"collections":["billing"]}	25b5633c-f960-4dce-9686-862e96b1f0b3	2025-05-09 05:26:42.729+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7ab7b1a9-793a-47ac-9092-675603a60a54	[id-12]<examination.update>[doctor_work.update]	bolt	\N	อัพเดต doctor_work เมื่อทาง tech ทำการปิดเคส (ถ่ายเพิ่ม/ปรึกษาแพทย์) และส่งกลับมาที่หมอ	active	event	all	{"type":"action","scope":["items.update"],"collections":["examination"]}	6ea1cabe-973f-489c-abe7-d106b2e002ef	2025-04-30 07:53:24.72+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 0bdb2833-d4c9-4c47-b433-2c48260d59c2	[id-09]<ultrasound_work.update>[examination.update, doctor_work.update]	bolt	\N	เมื่อเรียกหมอ แล้วเปลี่ยนหมอถึงจะเข้า flows นี้	active	event	all	{"type":"action","scope":["items.update"],"collections":["ultrasound_work"]}	2c04badc-ab9e-41e5-8962-aa34cbf0935a	2025-07-22 02:52:56.254+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	[id-23]<patient_result.update>[finance_work.create, finance.update, billing.create, billing.update, center_income.create]	\N	\N	เมื่อบันทึก Patient Result จะมาสร้าง center_income, finance_work	active	event	all	{"type":"action","scope":["items.update"],"collections":["patient_result"]}	516809cc-e440-4e54-86b9-d3c1f133a2c3	2025-05-20 04:17:43.07+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -14565,6 +14732,9 @@ b44bbffe-cbe8-4363-86b3-5c5841fd2e0c	[id-66]<ultrasound_work.update>[doctor_work
 836b85ad-418d-47b0-8d41-547021433cc7	[id-22]<billing.update>[billing.update, finance_work.update, queue.update, patient_info.update]	browser_updated	\N	หลังจากอัพเดท billing จาก form จะเปลี่ยนสถานะเป็น รอบันทึกรับเงิน และเงื่อนไขหลังชำระเงิน	active	event	all	{"type":"action","scope":["items.update"],"collections":["billing"]}	da298584-fdab-4a51-a782-8708f01692c5	2025-05-09 06:38:06.334+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b518e2cd-e651-4758-b71e-cee45014725d	[id-80]<appointment.update>[nurse_work.create]	bolt	\N	เมื่อฝั่ง tech ทำการเรียกคิว/ส่งต่อไปยังพยาบาล => สร้าง nurse_work	inactive	event	all	{"type":"action","scope":["items.update"],"collections":["appointment"]}	8a777282-4583-469d-8fbe-0fd7793bfda2	2025-12-12 02:46:59.903+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 32de3302-0f95-4186-81e2-955100e34997	[id-34]<coordinate.update>[finance_work.create, finance_work.update, coordinate.update, billing.create, billing.update]	bolt	\N	สร้างข้อมูลการเงินเมื่ออัพเดทสถานะ Coordinate เป็นเสร็จสิ้น (ส่งการเงิน)	active	event	all	{"type":"action","scope":["items.update"],"collections":["coordinate"]}	b16b54a4-fd7f-44ad-8c15-eb0d210127b7	2025-02-06 16:27:16.311+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+39fa8fb9-ea1b-4962-aeb5-1c92a10e8dde	[id-42]<queue.create>[patient_result.create]	create_new_folder	\N	ถ้าสร้างคิว R แล้วจะมาสร้าง patient_result โดยผูกกับคิวด้วย	active	event	all	{"type":"action","scope":["items.create"],"collections":["queue"]}	e10e40a3-d832-4875-bbdc-0b88ade461b3	2024-10-03 02:41:12.278+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+e472714e-dd02-4bfc-8038-133053a0a457	[id-01]<examination.update>[coordinate.create, doctor_work.update, ultrasound_work.create]	bolt	\N	เมื่อ examination ทำการ "ส่งต่อแพทย์" / "ยกเลิก" => จัดการ coordinate + doctor_work	active	event	all	{"type":"action","scope":["items.update"],"collections":["examination"]}	9544eb4f-2af7-4fa6-918b-ab0a4b868203	2025-01-23 02:19:46.695+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+4978440d-6b21-4b42-bf79-b63cdb9dd1be	[id-25]<billing.update>[center_income.create, center_income.update, center_income.delete, billing.update]	browser_updated	\N	action ไปหา center income เมื่อแก้ไขค่า Copy CD	active	event	all	{"type":"action","scope":["items.update"],"collections":["billing"]}	25b5633c-f960-4dce-9686-862e96b1f0b3	2025-05-09 05:26:42.729+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 58159f83-f036-41e2-a0cf-1dc28df97b35	[id-72]<spot.create>[ultrasound_work.update]	bolt	\N	เมื่อทำการสร้าง Spot ให้ดำเนินการว่าต้อง update สถานะของ ultrasound_work ไหม (สำหรับเคสส่ง spot จาก us)	active	event	all	{"type":"action","scope":["items.create"],"collections":["spot"]}	8342533d-4da9-4785-89a7-d8c78a25e1c5	2025-10-03 05:49:33.845+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8d8b90af-5df9-4ae5-bfc8-aa80a918ad0d	[id-68]<ultrasound_work.update> [doctor_work.update]	browser_updated	\N	เมื่อส่งเคสต่อ Ultrasound จะอัพเดทสถานะที่ doctor_work	active	event	all	{"type":"action","scope":["items.update"],"collections":["ultrasound_work"]}	0a762c3f-45d6-4454-b139-72735f102e45	2025-09-05 11:34:48.084+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 934f9b7b-6974-4d18-abde-8b6aee1307f9	[id-69]<ultrasound_work.create>[ultrasound_work.update]	bolt	\N	เมื่อสร้าง ultrasound_work ให้ map relation กับ exam ที่มีการ sign to pacs (ผล us) ล่าสุด	active	event	all	{"type":"action","scope":["items.create"],"collections":["ultrasound_work"]}	60355115-8ff8-49e7-8545-4216b86b8e66	2025-09-10 05:20:48.5+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -14572,7 +14742,6 @@ b518e2cd-e651-4758-b71e-cee45014725d	[id-80]<appointment.update>[nurse_work.crea
 62c45fee-1f13-4c6f-b11b-d156f06626df	[id-71]<ultrasound.update>[ultrasound_work.update]	bolt	\N	เมื่อทำการ Sign to PACs US Report => ให้ทำการอัพเดต last_signed_to_pacs ของ ultrasound_work ใหม่	active	event	all	{"type":"action","scope":["items.update"],"collections":["ultrasound"]}	3163ab61-acbf-417b-84fd-7c66cc831f3d	2025-09-16 16:26:55.749+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7898839c-500d-4f0e-b2b9-e792ad96579d	[id-75]<ultrasound_work.create>[notification.update]	bolt	\N	(เคสเปลี่ยนแพทย์) เมื่อทำการส่งเคสเปลี่ยนแพทย์ไปที่ US ให้ทำการปรับแจ้งเตือนเป็นอ่านแล้ว	active	event	all	{"type":"action","scope":["items.create"],"collections":["ultrasound_work"]}	6e5af4a9-da57-4c4c-ad7c-656d547c447e	2025-11-12 08:20:44.552+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f0c44979-cbe9-4484-a056-eb1181338f22	[id-30]<examination.update>[doctor_work.update]	bolt	\N	อัพเดต doctor_work เมื่อแพทย์ทำการส่งกลับมาที่ tech	active	event	all	{"type":"action","scope":["items.update"],"collections":["examination"]}	e696e574-540e-4c80-927d-5170023272d7	2025-04-17 03:31:58.864+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-38e52e80-eabb-4db2-8ee3-6de19379ff4f	[id-64]<WORKLIST> Ultrasound_Work Updated	browser_updated	\N	สร้าง Progress ขั้นตอนห้อง Ultrasound	active	event	all	{"type":"action","scope":["items.update","items.create"],"collections":["ultrasound_work"]}	418105e9-a468-4422-b81b-6c662cd1a98e	2025-09-02 02:33:32.373+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 41a5a56f-a402-4c2d-af82-734c4c1b4aaf	[id-74]<coordinate.update>[notification.update]	bolt	\N	(เคสเปลี่ยนแพทย์) เมื่อทำการ assign หมอคนใหม่ให้ไปปรับแจ้งเตือนเป็นอ่านแล้ว	active	event	all	{"type":"action","scope":["items.update"],"collections":["coordinate"]}	8cf5fa4d-6f3d-41d6-81fd-a0f2ba93301d	2025-11-12 08:16:25.117+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 9c0642e6-8c23-403f-b833-cc2c7f0c7524	[id-70]<CRONJOB>[doctor_work.update]	bolt	\N	เปลี่ยนสถานะของ doctor_work ที่จบ flow การทำงานแล้วเป็น "สำเร็จ" หรือ "ยกเลิก"	active	schedule	all	{"cron":"0 17 * * *"}	4ca1b1e1-b95b-4461-b63d-f2f8ccbeb3e1	2025-09-11 02:29:49.824+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 95fa6dda-c2a3-43a3-9ff6-dbf26cfb5025	[id-67]<recommend_bx_form.create>[recommend_bx_form.update]	bolt	\N	เมื่อสร้างใบแนะนำเจาะจากหน้าหมอ ให้ไป query ดูว่ามี ultrasound_work ไหม ถ้ามีให้นำมาใส่ในใบแนะนำเจาะ	active	event	all	{"type":"action","scope":["items.create"],"collections":["recommend_bx_form"]}	5cef6beb-e3ce-4311-9698-64448f0104d9	2025-09-05 11:23:36.889+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -14582,6 +14751,7 @@ bed2e574-ce79-4612-8cbc-30b8da6078e7	[id-79]<appointment.update>[coordination.cr
 6174f165-0635-4ca6-9981-7d0453c17458	[id-20]<queue.create>[appointment.update]	create_new_folder	\N	ถ้าสร้างคิว M/BX แล้วจะเปลี่ยนสถานะนัดหมายเป็น รอเรียกคิว	active	event	all	{"type":"action","scope":["items.create"],"collections":["queue"]}	3aae050b-0661-41c4-a52d-7b2af26f0ce4	2024-10-03 02:56:05.245+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e34ea695-536b-4eb7-8fd0-b26bcbdf030f	[id-15]<CRONJOB>[appointment.update, notification.delete]	av_timer	\N	เปลี่ยน status ของนัดหมายที่ไม่มาในเวลาเที่ยงคืน + ลบข้อมูล Notification 	active	schedule	all	{"cron":"50 12 * * *"}	0988be74-3a09-4199-bb29-fd72ed307321	2024-10-03 04:13:35.63+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 a4478d87-09b2-4841-9b79-c6378eaae11d	[id-78]<appointment.create>[nurse_work.create][examination.create]]	bolt	\N	เมื่อสร้างนัดหมาย bx จะเข้า flow นี้	active	event	all	{"type":"action","scope":["items.create"],"collections":["appointment"]}	21cbe656-af1a-4a67-8607-17465d9cdcb9	2025-11-27 03:43:37.115+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+38e52e80-eabb-4db2-8ee3-6de19379ff4f	[id-64]<WORKLIST> Ultrasound_Work Updated	browser_updated	\N	สร้าง Progress ขั้นตอนห้อง Ultrasound	active	event	all	{"type":"action","scope":["items.update","items.create"],"collections":["ultrasound_work"]}	418105e9-a468-4422-b81b-6c662cd1a98e	2025-09-02 02:33:32.373+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7f4f84da-8f9f-4d4d-8e01-f14aec4515e0	[id-83]<nurse_work.update>[doctor_work.create, doctor_work.update]	bolt	\N	สำหรับเคสปรึกษาแพทย์ (ทำหัตการ) ฝั่งพยาบาล/เทค	active	event	all	{"type":"action","scope":["items.update"],"collections":["nurse_work"]}	520cf939-88a5-4971-8442-97c17728a483	2025-12-19 02:53:17.048+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 ce3b63e2-5413-4dc6-9236-b9dcef31efea	[id-85]<nurse_work.create, nurse_work.update>[nurse_work.update]	bolt	\N	stamp เวลาที่ส่งเคส bx มาที่แผนกพยาบาล	active	event	all	{"type":"action","scope":["items.create","items.update"],"collections":["nurse_work"]}	8c75f87e-455c-4ece-b783-6fba6cc9fd2a	2026-01-27 03:27:31.563+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e2c372dc-14d8-4e55-806a-e906e5dd52b3	[id-82]<appointment.update>[appointment.update, queue.update, examination.update, nurse_work.update]	bolt	\N	เมื่อลงเวลานัด => มาเพิ่มเวลานัดที่ nurse_work, เปลี่ยนคิวเป็น"เสร็จสิ้น" + ตัดคิวออกจาก appointment, เพิ่ม exam_date	active	event	all	{"type":"action","scope":["items.update"],"collections":["appointment"]}	cd21d750-3f4a-47c8-9b7d-43df17f29a0b	2025-12-14 17:37:35.349+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -14589,9 +14759,12 @@ e2c372dc-14d8-4e55-806a-e906e5dd52b3	[id-82]<appointment.update>[appointment.upd
 c886e7be-6abc-4501-b5a1-9792bc5e0399	[id-88]<appointment.update>[nurse_work.update]	bolt	\N	อัพเดต nurse_work เมื่อ front ทำการส่งตรวจเคส BX (วันมาเจาะ)	active	event	all	{"type":"action","scope":["items.update"],"collections":["appointment"]}	e8eb4f11-3d95-4862-bf98-ce0f0aa87bfd	2026-03-03 08:56:31.364+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 52bed9fc-4f3a-4b41-9c82-07cea484cb76	[id-05]<ultrasound_work.update>[finance_work.create, finance_work.update, billing.create, billing.update, nurse_work.create]	bolt	\N	เมื่อ ultrasound_work ส่ง status เป็น "ถ่ายสำเร็จ" และ action เป็น "ปล่อยกลับบ้าน" => ทำการคิดค่าบริการที่ billing => ปั้นก้อนข้อมูลที่ finance_work	active	event	all	{"type":"action","scope":["items.update"],"collections":["ultrasound_work"]}	bad0cec5-b238-4e28-85fd-8ad220cf7095	2025-07-06 04:03:56.126+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f68004b6-ccad-4ccb-bea1-0a41a0067056	[id-86]<add birad/mass at appointment create>	bolt	\N	\N	active	event	all	{"type":"action","scope":["items.create"],"collections":["appointment"]}	c8a79719-448b-4716-8769-7d0f30d71817	2026-01-27 04:30:48.198+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+745702ca-86a5-4630-86d5-0c21951b61ce	[id-38]<appointment.update>[patient_info.update, queue.update, patient_result.create]	browser_updated	\N	ส่งตรวจ appointment แล้วอัพเดท PID patient_info และสร้าง patient_result กรณีที่ รับผลตรวจวันนี้ และรับผลแบบ CD	active	event	all	{"type":"action","scope":["items.update"],"collections":["appointment"]}	dad45528-69a1-400b-ade5-c5a85d0de54a	2024-10-03 02:44:06.288+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 9eb9360a-fa14-4b41-87db-345589c2ceb8	[id-81]<finance_work.update>[nurse_work.update]	bolt	\N	เมื่อนัดหมายที่ส่ง confirm bx มาจาก ultrasound จ่ายเงินสำเร็จ จะมาอัพเดท nurse_work ให้เป็นรอเรียกคิว	active	event	all	{"type":"action","scope":["items.update"],"collections":["finance_work"]}	4ab4a5a7-73eb-4a6a-9c38-0bc1a52f8e1c	2025-12-12 02:50:13.722+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 4e6e586f-780c-4bbc-9372-9b43d1994495	[id-87]<nurse_work.create>[examination.create]	bolt	\N	เมื่อทำการสร้าง nurse_work จะ dup exam ตัวล่าสุดแล้วผูกกับ nurse_work ให้ (เคส confirm_bx จากงาน us จะเข้า id-5 แทน)	active	event	all	{"type":"action","scope":["items.create"],"collections":["nurse_work"]}	722166d7-c75a-48a3-8466-278db03c6376	2026-02-19 03:27:52.468+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 080ec58b-e079-4f90-bad3-8e37f134de78	[id-89]<form_consent.update>[form_consent.update]	bolt	\N	ถ้าทำการ delete form_consent ออกจาก appointment => ให้มา mark ที่ข้อมูลด้วยว่าโดนลบ (soft delete)	active	event	all	{"type":"action","scope":["items.update"],"collections":["form_consent"]}	\N	2026-03-13 06:56:58.567+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+ce0d2f42-09c1-4e35-b370-f5db5c3abbbb	[id-90]<finance_work.update>	attach_money	\N	test การสร้าง patient_result หลังการเงิน ดำเนินการชำระ	active	event	all	{"type":"action","scope":["items.update"],"collections":["finance_work"]}	e8368cc8-f59b-49e2-bbae-a916353cd652	2026-07-03 04:20:37.369+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+89be6643-9611-41be-8186-059689a6c8d3	[id-58]<WORKLIST>  Progress Created v.ส่ง id เข้ามา 	bolt	\N	ใส่ชื่อ เจ้าหน้าที่-หมอ เมื่อ Progress ถูกสร้าง (v.ส่ง id เข้ามา )	active	operation	all	{"return":"$last"}	42c14186-5cbb-400c-89b6-f8b451c8e4da	2026-06-29 02:52:19.272+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 \.
 
 
@@ -15196,37 +15369,33 @@ COPY public.directus_notifications (id, "timestamp", status, recipient, sender, 
 --
 
 COPY public.directus_operations (id, name, key, type, position_x, position_y, options, resolve, reject, flow, date_created, user_created) FROM stdin;
-4f1ec4f1-0d64-4064-8fc2-1f337a9473e7	อัพเดทฟิลด์ status, close_cast_time ของ progress ตัวสุดท้าย	status_close_cast_time_progress_utzpf	item-update	21	52	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"collection":"progress","permissions":"$full"}	cc1d6a5c-8466-41cf-ba16-6aac6a095a24	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-19 02:07:50.692+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 d663531c-2a58-4cee-9bcb-c57bfc981dd2	อัพเดทฟิลด์ status, close_cast_time ของ progress ตัวสุดท้าย	item_update_wc7ym	item-update	24	37	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	3628e59f-3a1a-45a8-982e-ea9b8e2ce96c	\N	d3f538b5-8d62-4058-9536-6fb9697e90d8	2024-10-21 08:27:59.789+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-b0b16a52-a467-41ce-bcc8-b2c11f1a2228	สร้างข้อมูล patient_result ที่ฟิลด์ queues คือ id ของ queue ที่ถูก trigger	create_patient_result	item-create	37	1	{"payload":{"queues":["{{$trigger.key}}"]},"collection":"patient_result","permissions":"$full"}	\N	\N	39fa8fb9-ea1b-4962-aeb5-1c92a10e8dde	2024-10-03 02:42:08.974+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 2cf69929-ad17-4355-b5d8-2db8e20483c4	Update Data	item_update_eco6l	item-update	75	36	{"collection":"progress","key":["{{last_no_progress.lastProgressId}}"],"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"permissions":"$full"}	\N	\N	af896f59-cef0-47ab-b0ac-efdb21df529f	2024-10-21 05:18:13.667+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 fe3032b4-4938-4ec3-af26-ba646a72d312	อัพเดท Billing	update_data_billing	item-update	130	18	{"collection":"billing","payload":{"center_income":"{{create_center_income[0]}}"},"key":["{{read_data_billing.id}}"],"permissions":"$full"}	\N	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 15:31:44.99+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 3a688efc-24fb-4ea4-a8fa-9a26b352c281	check_queu_status_3	exec_5h83w	exec	21	37	{"code":"module.exports = async function(data) {\\n    if ({{check_queue_status_1}} == 2) {\\n        return true; \\n    } \\n    throw new Error('สถานะคิวไม่ใช่เสร็จสิ้น'); \\n\\n};\\n"}	0f6de08e-d56c-42d7-861a-925ef0276c81	5844810b-e0b9-41d8-a0b7-194bb088346f	440911df-8ca7-45e3-ad93-9e6587180683	2024-10-18 06:23:25.717+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-79a92916-f129-477a-848d-0aad358718b4	สร้างข้อมูล patient_result ตาม body data ที่ถูกส่งมา	item_create_q6j3i_daplo	item-create	75	19	{"collection":"patient_result","payload":"{{body_create_data}}","permissions":"$full"}	\N	\N	745702ca-86a5-4630-86d5-0c21951b61ce	2024-10-03 02:51:33.575+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 6091baed-f359-4a5b-baab-de5f1f30178c	Delete Data	item_delete_5db28	item-delete	77	51	{"collection":"progress","key":["{{read_data_last_progress.id}}"],"permissions":"$full"}	c7bd34c1-9c17-412b-abfb-f7523dd106e4	\N	e2646ed5-054d-47a0-9237-070f20b2760f	2024-11-22 11:58:35.16+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7a939d1c-dc58-4101-bc63-3b98a97c7439	อัพเดทฟิลด์ status ของ patient_result เป็น ยกเลิกคิว	item_update_ytad4	item-update	23	19	{"collection":"patient_result","key":["{{read_data_patient_result.id}}"],"payload":{"status":"7"},"permissions":"$full"}	\N	\N	143ac6af-1a05-4677-aadb-a581e192e062	2024-10-24 08:04:06.783+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 4819fc81-9648-44b0-915d-acde3354d0ff	สร้างข้อมูล Center Income	create_center_income	item-create	112	18	{"collection":"center_income","emitEvents":true,"permissions":"$full","payload":{"full_name":"{{read_data_patient_info.prefix_th}} {{read_data_patient_info.first_name_th}} {{read_data_patient_info.last_name_th}}","type":"1","service_fee":"2","amount":400,"location":"{{$trigger.payload.location}}","date_time_created":"{{read_data_billing.date_created}}","patient_info":"{{read_data_patient_info.id}}"}}	fe3032b4-4938-4ec3-af26-ba646a72d312	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 15:29:07.681+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b3303afe-e0ee-492f-9bfd-d5ef9589b660	สร้างข้อมูล Coordinate	coordinate_tisat_tgoed	item-create	39	53	{"collection":"coordinate","payload":{"exam":"{{read_data_doctor_work.exam}}","appointment":"{{read_data_examination.appointment}}","status":"2","data_tag":"0","case_tag":"3"},"emitEvents":true,"permissions":"$full"}	\N	\N	cdfc74cd-8e37-4fbd-b333-622e244a8e63	2025-07-14 14:49:12.06+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-a02bca20-ef49-4ed9-9edf-ae8c904d3d4d	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_tsqid	trigger	75	99	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_consult_doctor}}"}	\N	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-06-09 02:00:28.963+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 ef8f31bd-5732-436d-804b-26802e6c68d7	Trigger Flow	trigger_7nxij	trigger	39	64	{"flow":"575163b6-0f4d-4bb0-9c61-ada25321bedc","payload":"{{last_no_progress.lastProgressId}}"}	\N	\N	89677e2f-7d1b-4e9c-8853-2e23650f65ac	2024-10-30 09:45:04.153+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 818ed4f8-2288-4c4e-b789-baf00ac3d029	เช็คว่า file อยู่ใน Folder Referral Form หรือไม่	check_folder_referral_form	exec	8	18	{"code":"module.exports = async function(data) {\\n    if (\\"{{get_file_data.data.data.referral_form[0].directus_files_id.folder}}\\" == \\"fc4d1cc1-491a-45e6-b582-f66179a65ff9\\") {\\n        return true; \\n    } \\n    throw new Error('ไฟล์ไม่ได้อยู่ใน Folder Referral Form'); \\n\\n};\\n"}	fefb7f54-ba54-4759-a002-653fc4873c38	cc42d515-f654-4505-a0ef-d42da5165a42	a9851cbc-1c3d-4e30-b4e4-0a1446166bb6	2024-10-09 06:47:14.641+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 fcbaba78-c0c6-4d1b-b980-2a8d3722a177	อัพเดทสถานะ notification	update_notification	item-update	19	33	{"collection":"notification","permissions":"$full","key":["{{read_data_notification.id}}"],"payload":{"status":"archive"},"emitEvents":true}	\N	\N	8dd34a74-0ce8-4d19-b333-786c90851a77	2025-10-22 06:52:36.575+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 fdf3b17e-b70b-4de2-bc84-8ee938c1b1fd	check_queue_status_1	check_queue_status_1	exec	3	19	{"code":"module.exports = async function(data) {\\n    let queue = {{read_data_queue}};\\n\\t//1 เรียกคิว 2 เสร็จสิ้น\\n    if (queue.status == 1) {\\n        return 1; \\n    } else if (queue.status == 2) {\\n        return 2; \\n    }else if (queue.status == 0) {\\n        return 0; \\n    }\\n    throw new Error('สถานะคิวไม่ใช่เรียกแล้ว หรือเสร็จสิ้น หรือรอเรียกคิว'); \\n\\n};\\n"}	82d0a4ae-60ce-4508-b068-8a1507473545	\N	2770ae3f-8314-4d3f-a4f8-4d58da1ec279	2024-10-07 06:15:51.305+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 91ecb393-f162-43ad-baa5-97817e8a4a35	อ่านข้อมูล patient_result	read_data_patient_result	item-read	19	1	{"collection":"patient_result","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	dda5d30e-3d66-4656-a7f1-90ac18e607f5	\N	2e907bc7-59b0-451c-bf25-8bc2cd332ec8	2024-10-28 04:28:47.841+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 39ab7d44-81c1-42dd-925f-2bc1a2182968	return วัน-เวลาของปัจจุบัน	current_time	exec	37	1	{"code":"module.exports = async function(data) {\\n    return {\\n        currentTime: new Date().toISOString()\\n    };\\n};"}	24df69e2-cd65-45dc-aec7-304a73512487	\N	575163b6-0f4d-4bb0-9c61-ada25321bedc	2024-10-30 08:54:06.906+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-e10e40a3-d832-4875-bbdc-0b88ade461b3	เช็คว่าเป็นคิว R หรือไม่	check_queue_r	exec	19	1	{"code":"module.exports = async function(data) {\\n\\tlet queue = {{$trigger.payload}}\\n\\n    if (queue.queue_type == \\"R\\" ) {\\n        return true;\\n    }\\n\\n    throw new Error('Queue_type not type R');\\n    return false;\\n}"}	b0b16a52-a467-41ce-bcc8-b2c11f1a2228	\N	39fa8fb9-ea1b-4962-aeb5-1c92a10e8dde	2024-10-03 02:42:08.986+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+a02bca20-ef49-4ed9-9edf-ae8c904d3d4d	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_tsqid	trigger	75	99	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_consult_doctor}}"}	\N	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-06-09 02:00:28.963+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 700b7d27-89fd-45ac-b4b2-610f451a3724	check_result_type_1	check_result_type_1	exec	22	18	{"code":"module.exports = async function(data) {\\n    if ({{check_result_type}} == \\"1\\") {\\n        return true; \\n    } \\n    throw new Error('check_result_type ไม่เท่ากับ 1'); \\n\\n};\\n"}	5702e65a-983a-4809-b9b1-9d1b6c7e4f8f	53296737-8c1d-4387-af24-25802eac48fe	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 06:58:51.973+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+8b493d3c-c8b5-43f0-ba9c-88fc57b16a76	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_vozys_drvte_wtvkm_xveqh_znhuf	item-update	39	114	{"permissions":"$full","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"]}	de045926-46dd-4988-a03c-17de022191aa	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 02:08:46.853+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+4f1ec4f1-0d64-4064-8fc2-1f337a9473e7	อัพเดทฟิลด์ status, close_cast_time ของ progress ตัวสุดท้าย	status_close_cast_time_progress_utzpf	item-update	21	52	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"collection":"progress","permissions":"$full"}	cc1d6a5c-8466-41cf-ba16-6aac6a095a24	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-19 02:07:50.692+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+79a92916-f129-477a-848d-0aad358718b4	สร้างข้อมูล patient_result ตาม body data ที่ถูกส่งมา	item_create_q6j3i_daplo	item-create	75	19	{"collection":"patient_result","payload":"{{body_create_data}}","permissions":"$full"}	\N	\N	745702ca-86a5-4630-86d5-0c21951b61ce	2024-10-03 02:51:33.575+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 665a2583-20b3-412b-8334-41445c2548c6	เช็ค result_type	check_result_type	exec	4	18	{"code":"module.exports = async function (data) {\\n  let patientResult = {{$trigger.payload}};\\n\\n  const resultTypes = patientResult.result_type || [];\\n  const queueType = \\"{{read_data_queue.queue_type}}\\";\\n\\n  if(queueType === \\"R\\"){\\n      if (resultTypes.includes(\\"1\\") && resultTypes.includes(\\"2\\")) {\\n        \\treturn \\"3\\";\\n      } else if (resultTypes.includes(\\"1\\")) {\\n        \\treturn \\"1\\";\\n      } else if (resultTypes.includes(\\"2\\")) {\\n        \\treturn \\"2\\";\\n      }\\n      }\\n\\n  throw new Error(\\"patientResult ผิดพลาด หรือ queue_type ไม่เท่ากับ R\\");\\n};\\n"}	700b7d27-89fd-45ac-b4b2-610f451a3724	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 06:58:51.989+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 a31e7db7-ae56-4012-8d80-9c6368a68672	อัพเดทฟิลด์ close_cast_time, status ที่ progress ตัวสุดท้าย	item_update_r68cx	item-update	39	37	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	\N	\N	2e907bc7-59b0-451c-bf25-8bc2cd332ec8	2024-10-28 04:28:47.555+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-b5528219-a2b5-4d03-b87b-1f34d5852353	อ่านข้อมูล patient_info ที่ผูกกับ appointment	read_patient_info_data	item-read	55	1	{"collection":"patient_info","key":["{{read_data_appointment.patient_info}}"],"permissions":"$full"}	696acf1f-f08d-4b68-8bda-1a5736f0b64e	\N	745702ca-86a5-4630-86d5-0c21951b61ce	2024-10-03 02:46:57.655+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-dad45528-69a1-400b-ade5-c5a85d0de54a	อ่านข้อมูล appointment ที่ถูก trigger	read_data_appointment	item-read	19	1	{"collection":"appointment","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	0a889b5a-d657-47c0-be24-e1053ff8c4af	\N	745702ca-86a5-4630-86d5-0c21951b61ce	2024-10-03 02:46:57.728+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c23cbf7f-d3a5-4925-ba2e-f92297cba54f	check_queue_status_2	check_queue_status_2	exec	21	20	{"code":"module.exports = async function(data) {\\n    if ({{check_queue_status_1}} == 1) {\\n        return true; \\n    } \\n    throw new Error('สถานะคิวไม่ใช่เรียกแล้ว'); \\n\\n};\\n"}	142040b7-2959-4b9e-b709-c04ffc3e893f	7277c55a-fc07-484e-8eeb-3c830d7e3ae0	af896f59-cef0-47ab-b0ac-efdb21df529f	2024-10-18 02:52:27.038+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7e017fed-2018-4a4e-9bf1-912a64defe5c	เช็คว่า F14 Report คือ ยกเลิกเคส หรือไม่	check_cancel_case_report_trfwb_gwmre	exec	21	53	{"code":"module.exports = async function(data) {\\n    const F14Report = \\"{{$trigger.payload.F14report}}\\";\\n\\n    //แนะนำ bx\\n    if (F14Report === \\"1\\") {\\n        return true;\\n    }\\n\\n    throw new Error('ไม่ใช่ report แนะนำ bx');\\n    return false;\\n}"}	b3303afe-e0ee-492f-9bfd-d5ef9589b660	\N	cdfc74cd-8e37-4fbd-b333-622e244a8e63	2025-07-14 14:49:12.107+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 194daf62-59a3-4dea-b445-282aaf377b8b	เช็ค triggerFlows และ action ว่าคือ Confirm Bx หรือไม่	trigger_flows_action_confirm_bx	exec	37	1	{"code":"module.exports = async function(data) {\\n    const action = \\"{{$trigger.payload.action}}\\";\\n\\tconst triggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n\\n    if (action === \\"Confirm Bx\\" && triggerFlows !== \\"undefined\\") {\\n        return true;\\n    }\\n    \\n    throw new Error('action ไม่ใช่ Confirm Bx หรือ triggerFlows ไม่มีค่า');\\n}"}	41e41df6-3865-432b-943e-78955e9ce845	\N	8d8b90af-5df9-4ae5-bfc8-aa80a918ad0d	2025-09-05 11:41:19.88+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 0b14fc33-7c1d-4c5f-bdf6-0ca0e6f7cfeb	อัพเดทฟิลด์ is_insert_queue ของ appointment	item_update_xi8ug	item-update	19	17	{"collection":"appointment","key":["{{read_appointment.id}}"],"payload":{"is_insert_queue":true},"permissions":"$full"}	\N	\N	123c9014-d9d2-4a4f-9a93-d59f291e1c24	2024-10-03 03:01:43.316+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b72ff5d2-ced8-4cae-8eb7-b4492bbbab9c	read_data_last_progress	read_data_last_progress	item-read	93	35	{"collection":"progress","key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	a28eb49b-8467-463d-bc2b-8f9b6214d648	\N	5563ef7b-949d-46c7-b3ae-5d7d187b7e72	2024-12-12 03:19:26.808+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 6c8615f6-6e43-4050-ac3d-5e37950acb52	read_data_queue	read_data_queue	item-read	19	1	{"collection":"queue","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	c0a85a54-c48c-42c0-abb4-28ebc3b08db1	\N	2770ae3f-8314-4d3f-a4f8-4d58da1ec279	2024-10-07 06:15:51.466+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-d507371d-5f0d-4825-9dbd-5c1e171e7b95	อัพเดทสถานะ doctor_work ของหมอคนนั้นเป็น "รออ่านผล"	doctor_work	item-update	129	36	{"collection":"doctor_work","payload":{"status":"18"},"key":["{{read_doctor_work_cancel[0].id}}"],"permissions":"$full","emitEvents":true}	\N	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-03-25 10:52:00.444+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 47c03473-f631-487c-a871-2118e0a24849	อ่านข้อมูล progress ตัวสุดท้าย	read_data_last_progress	item-read	25	54	{"key":["{{last_no_progress.lastProgressId}}"],"collection":"progress","permissions":"$full"}	12a7a01f-3d57-4aaf-afd4-cd0c45461ce4	\N	d3f538b5-8d62-4058-9536-6fb9697e90d8	2024-10-22 08:07:20.589+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f21e358d-22b5-4fcb-9cef-a8d05c01a175	Log to Console	log_d8scm	log	59	51	{"message":"ไม่เปลี่ยนเวลา"}	\N	\N	b1e04a8c-e551-468e-b336-820154f3ac1b	2024-10-03 04:31:49.706+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c29aa505-d3bb-4459-8884-8f9115546685	Log to Console	log_to_console	log	37	1	{"message":"{{read_appointment.appointment_datetime}}"}	c5758ad9-6499-406b-9db6-37a71f5450c3	\N	123c9014-d9d2-4a4f-9a93-d59f291e1c24	2024-10-03 03:01:43.387+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15234,11 +15403,13 @@ c29aa505-d3bb-4459-8884-8f9115546685	Log to Console	log_to_console	log	37	1	{"me
 fb953041-e718-4a4a-be55-1a0b67d01d47	อ่านข้อมูล appointment ของ id ที่ส่งเข้ามา	read_appointment	item-read	19	1	{"collection":"appointment","key":["{{$last}}"],"permissions":"$full"}	c29aa505-d3bb-4459-8884-8f9115546685	\N	123c9014-d9d2-4a4f-9a93-d59f291e1c24	2024-10-03 03:01:43.437+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c938824e-39d3-4dd2-9535-d43b113ba34e	เช็คว่าเป็น action create หรือ update	check_trigger	exec	19	1	{"code":"module.exports = async function(data) {\\n\\tconst triggerUpdate = {{$trigger.keys[0]}};\\n\\tlet key = \\"\\";\\n\\n    if (triggerUpdate) {\\n        key = {{$trigger.keys[0]}}\\n    }\\n    else{\\n        key = {{$trigger.key}}\\n    }\\n\\t\\n    return key;\\n}"}	271b965e-46b3-4639-8d61-c0645529791c	\N	a9851cbc-1c3d-4e30-b4e4-0a1446166bb6	2024-10-08 10:09:01.757+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 9f432fa3-09db-4851-bb79-d1499cc7ff42	อัพเดทสถานะ Ultrasound_Work	ultrasound_work	item-update	55	1	{"permissions":"$full","collection":"ultrasound_work"}	\N	\N	d0764ae1-0dd4-43fc-bb30-8ed60868e7b1	2025-07-15 14:52:25.149+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+b5528219-a2b5-4d03-b87b-1f34d5852353	อ่านข้อมูล patient_info ที่ผูกกับ appointment	read_patient_info_data	item-read	55	1	{"collection":"patient_info","key":["{{read_data_appointment.patient_info}}"],"permissions":"$full"}	696acf1f-f08d-4b68-8bda-1a5736f0b64e	\N	745702ca-86a5-4630-86d5-0c21951b61ce	2024-10-03 02:46:57.655+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 64688255-452a-4768-a4a1-f9b3d69ce944	เข้า Trigger Flow Read environment data	read_environment	trigger	19	19	{"flow":"f5ad1f92-3584-40cb-8931-926f1cd88ff1"}	de2e85d8-7511-4b5b-a36a-d91ce587d716	\N	f8348b38-4052-4bed-81f1-f1462291ae17	2025-01-16 10:53:46.881+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+d507371d-5f0d-4825-9dbd-5c1e171e7b95	อัพเดทสถานะ doctor_work ของหมอคนนั้นเป็น "รออ่านผล"	doctor_work	item-update	129	36	{"collection":"doctor_work","payload":{"status":"18"},"key":["{{read_doctor_work_cancel[0].id}}"],"permissions":"$full","emitEvents":true}	\N	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-03-25 10:52:00.444+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 bb616dad-e777-4001-ade1-8ff28de10380	สร้าง doctor_work	create_doctor_work	item-create	55	1	{"collection":"doctor_work","permissions":"$full","emitEvents":true,"payload":{"doctor":"{{read_nurse_work.radiologist}}","appointment":"{{read_nurse_work.appointment}}","nurse_work":"{{$trigger.keys[0]}}","status":"19"}}	\N	\N	7f4f84da-8f9f-4d4d-8e01-f14aec4515e0	2025-12-23 02:51:37.976+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+dad45528-69a1-400b-ade5-c5a85d0de54a	อ่านข้อมูล appointment ที่ถูก trigger	read_data_appointment	item-read	19	1	{"collection":"appointment","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	0a889b5a-d657-47c0-be24-e1053ff8c4af	\N	745702ca-86a5-4630-86d5-0c21951b61ce	2024-10-03 02:46:57.728+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 59a17f21-3642-498a-b3fe-85544288f339	check_queue_status_2	check_queue_status_2	exec	21	19	{"code":"module.exports = async function(data) {\\n    if ({{check_queue_status_1}} == 1) {\\n        return true; \\n    } \\n    throw new Error('สถานะคิวไม่ใช่เรียกแล้ว'); \\n\\n};\\n"}	\N	3a688efc-24fb-4ea4-a8fa-9a26b352c281	440911df-8ca7-45e3-ad93-9e6587180683	2024-10-04 05:40:08.301+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7b3b9c52-342c-4234-8328-fd6d9b2fc231	เข้า Trigger Flow [Progress Created]	trigger_8fgu2	trigger	21	19	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_data_progress}}"}	\N	\N	2722e204-00c5-4b1f-86a8-49b5ffef95ba	2024-10-17 03:42:26.01+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-850fc90c-3363-40ca-ac03-3edf2a1a4118	ลบ Center Income	delete_center_income	item-delete	21	81	{"collection":"center_income","key":["{{read_data_billing.center_income}}"],"permissions":"$full"}	\N	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:36:12.096+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f2b88382-312f-45cc-bc52-20d14fac1a5a	เข้า Trigger Flow เช็คสถานะ Progress ตัวสุดท้าย	trigger_7ktmu_gxbvu	trigger	129	19	{"flow":"308fa33c-b445-49f7-a5de-d732058b85e4","payload":"{{last_no_progress.lastProgressId}}"}	\N	\N	e2646ed5-054d-47a0-9237-070f20b2760f	2024-11-20 02:27:20.41+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 1345e278-0f35-44f0-b55a-4e0b208ef5dd	read_data_worklist	read_data_worklist	item-read	38	1	{"collection":"worklist","key":["{{read_data_queue.worklist[0]}}"],"permissions":"$full"}	ff7ff3f9-3f59-4d4b-b0cb-558400d471b6	\N	5563ef7b-949d-46c7-b3ae-5d7d187b7e72	2024-10-04 03:40:22.731+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 80d9d074-7144-4d6c-83b2-4ce81243b6f5	Trigger Flow	trigger_cifrh	trigger	57	53	{"flow":"575163b6-0f4d-4bb0-9c61-ada25321bedc","payload":"{{last_no_progress.lastProgressId}}"}	\N	\N	af896f59-cef0-47ab-b0ac-efdb21df529f	2024-10-30 09:56:43.371+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15249,18 +15420,17 @@ f2b88382-312f-45cc-bc52-20d14fac1a5a	เข้า Trigger Flow เช็คส�
 1f29fc1a-4dc5-4030-8363-191baa73f9b9	อ่านข้อมูล income ทั้งหมด	read_all_data_center_income	item-read	37	1	{"collection":"center_income","permissions":"$full"}	edc8c116-452e-4650-8bea-100510e807f2	\N	c14d1c54-2b3b-45d6-a1db-43fc6f5d94b6	2025-05-06 08:31:22.054+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 24df69e2-cd65-45dc-aec7-304a73512487	เช็คสถานะของ progress ว่า ไม่ใช่ยกเลิกเรียกคิว ใช่หรือไม่	check_last_progress	exec	5	18	{"code":"module.exports = async function(data) {\\n    if (\\"{{read_data_last_progress.status}}\\" != \\"ยกเลิกเรียกคิว\\") {\\n        return true; \\n    } \\n    throw new Error('สถานะเป็นยกเลิกเรียกคิว'); \\n\\n};\\n"}	434678da-48db-4afa-8394-244b360b606f	\N	575163b6-0f4d-4bb0-9c61-ada25321bedc	2024-10-31 09:49:13.726+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 2b504ff1-1a1a-40b7-af83-299ace8839f6	อัพเดทฟิลด์ end_time ของ worklist ที่ผูกอยู่กับ queue	item_update_t31ny	item-update	39	38	{"payload":{"end_time":"{{current_time.currentTime}}"},"collection":"worklist","key":["{{read_data_queue.worklist[0]}}"],"permissions":"$full"}	\N	\N	2cf897be-be84-42be-b293-aa16e9f8885f	2024-10-22 08:47:38.512+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-aac18154-bb9a-4a0b-9068-51b235e71f58	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_iusor	trigger	94	33	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_send_in_room}}"}	\N	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 11:42:51.459+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-d8088e40-c8e3-40f0-812c-7fa92846329e	อ่านข้อมูล Appointment	read_data_appointment	item-read	21	17	{"collection":"appointment","key":["{{read_data_finance_work.appointment}}"],"permissions":"$full"}	541d3ee3-55dd-468c-9303-16a815b012e2	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:43:38.63+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 3164af1a-52b6-4710-8004-e0b70dad1748	Log to Console	log_fy3bj	log	21	19	{"message":"เปลี่ยนวัน"}	f03903c7-9451-4c4e-bd71-d6b0870f6500	\N	b1e04a8c-e551-468e-b336-820154f3ac1b	2024-10-03 04:31:50.362+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+aac18154-bb9a-4a0b-9068-51b235e71f58	เข้า Trigger Flow Progress Created (v.ส่ง id)	trigger_flow_progress_created_nxndg_iusor	trigger	94	33	{"flow":"89be6643-9611-41be-8186-059689a6c8d3","payload":{"action":"doctor","user":"{{read_data_examination.case_owner_doctor}}","progress":"{{create_progress_send_in_room}}"}}	\N	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 11:42:51.459+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 3163ab61-acbf-417b-84fd-7c66cc831f3d	อ่าน ultrasound ที่ส่งเข้ามา	read_current_ultrasound	item-read	19	1	{"key":"{{$trigger.keys[0]}}","permissions":"$full","collection":"ultrasound","query":{"fields":["id","date_created","exam","state"]}}	e273937b-6760-411f-bbd2-c143eb7e2245	\N	62c45fee-1f13-4c6f-b11b-d156f06626df	2025-09-17 05:20:48.425+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 fb307ad9-cb01-414b-b940-71b0f3ac6692	check_result_type_3	check_result_type_3	exec	22	50	{"code":"module.exports = async function(data) {\\n    if ({{check_result_type}} == \\"3\\") {\\n        return true; \\n    } \\n    throw new Error('check_result_type ไม่เท่ากับ 3'); \\n\\n};\\n"}	e13f209e-8d33-461d-bdd6-9548aad2d7f2	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 06:59:08.009+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 0dcf1930-8eaa-4091-ac22-4c620edb0f10	Create Data	item_create_y9okq	item-create	75	19	{"collection":"progress","payload":{"title":"{{check_information_type.result}}","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Front","worklist":"{{read_data_queue.worklist[0]}}"}}	8408cca3-4a31-4a13-b54e-c1a53c9c2896	\N	2770ae3f-8314-4d3f-a4f8-4d58da1ec279	2024-10-15 05:52:07.935+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8ef45029-862c-434b-9f62-783ac4cd77f4	current_time	current_time	exec	55	1	{"code":"module.exports = async function(data) {\\n    return {\\n        currentTime: new Date().toISOString()\\n    };\\n};"}	e4dcc5e5-8652-48e8-ad70-562e1bbfeb9e	\N	89677e2f-7d1b-4e9c-8853-2e23650f65ac	2024-10-28 03:44:17.676+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 081d083c-e0f7-4041-9b98-84d711fda144	Trigger Flow	trigger_8z0v5_knarm	trigger	95	82	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{item_create_x9ges_gpsse}}"}	1114a78f-56ad-444b-821d-529343eb1175	\N	e2646ed5-054d-47a0-9237-070f20b2760f	2024-10-17 05:23:36.767+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+850fc90c-3363-40ca-ac03-3edf2a1a4118	ลบ Center Income	delete_center_income	item-delete	21	81	{"collection":"center_income","key":["{{read_data_billing.center_income}}"],"permissions":"$full"}	\N	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:36:12.096+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c88e3fee-92ad-4628-bf28-077119a73670	อ่านข้อมูล address	read_data_address	item-read	21	19	{"collection":"address","key":["{{read_data_patient_info.addresses[0]}}"],"permissions":"$full"}	a6fd97a2-37b2-496f-93b9-1529bf9afa81	\N	69f5e99d-d7b5-4afd-94ef-770ec1a60747	2025-05-10 04:40:45.068+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 520cf939-88a5-4971-8442-97c17728a483	เช็คว่าเป็นเคสส่งปรึกษาแพทย์ไหม	check_is_consult	condition	19	1	{"filter":{"$trigger":{"payload":{"status":{"_eq":"6"}}}}}	95dbac9a-fd39-4050-9d43-efdc024069a5	\N	7f4f84da-8f9f-4d4d-8e01-f14aec4515e0	2025-12-23 02:47:34.203+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f76613f2-9542-47ac-9b38-8447db9432a4	อัพเดทฟิลด์ email ต่อท้ายด้วย @thanyarak.or.th	request_i00bi	request	56	8	{"method":"PATCH","body":"{\\n   \\"email\\": \\"{{$trigger.payload.username}}@thanyarak.or.th\\"\\n}","url":"{{read_environment.url}}/users/{{$trigger.key}}","headers":[{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}]}	\N	\N	714ee7c2-de29-48bb-abfb-c64046bff4b7	2024-10-03 08:16:54.682+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-518078a0-98be-47aa-9ab2-863f0990d099	อัพเดท Billing	update_data_billing	item-update	40	49	{"collection":"billing","payload":{"center_income":"{{post_center_income[0]}}"},"key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	\N	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:55:22.755+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 04cd9a21-513b-4ed0-98d8-b35c20250ca7	เช็คว่า user ที่ถูก trigger มี email หรือไม่	exec_7r39d	exec	20	8	{"code":"module.exports = async function(data) {\\n    let user = {{$trigger.payload}};\\n\\n    if (user.email === null || user.email === '' || user.email === undefined) {\\n        return true;\\n    }\\n\\n    throw new Error('Email is not empty or null');\\n    return false;\\n}"}	190a07da-3119-4843-ae71-e821fd7545ab	29d5480b-7b53-492f-b593-fc54f6415224	714ee7c2-de29-48bb-abfb-c64046bff4b7	2024-10-03 08:16:54.742+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 704c4947-bda5-4e31-b78f-f48a4947747d	เข้า Trigger Flow Progress Created	trigger_8z0v5	trigger	93	35	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{item_create_x9ges}}"}	2d93efbe-3044-4dcf-94b2-a1801edf9e88	\N	e2646ed5-054d-47a0-9237-070f20b2760f	2024-10-17 05:23:36.965+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 9b3b1cb7-748a-4b3e-ba59-c27bcd1135fe	แก้ไข exam_date	update_exam_date	item-update	37	1	{"collection":"examination","key":"{{$trigger.key}}","query":null,"payload":{"exam_date":"{{$trigger.payload.exam_date}}"},"permissions":"$full"}	\N	\N	75186f9e-7c67-41c7-a49d-e7073c1f2fe6	2025-01-30 03:29:00.341+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15272,16 +15442,15 @@ f223058c-eac8-4e92-bdcf-dbef9a83906a	อ่านข้อมูล queue ที
 ff7ff3f9-3f59-4d4b-b0cb-558400d471b6	current_time	current_time	exec	56	1	{"code":"module.exports = async function(data) {\\n    return {\\n        currentTime: new Date().toISOString()\\n    };\\n};"}	a9b38de3-3c19-44a0-9f4f-f0f40c89947c	\N	5563ef7b-949d-46c7-b3ae-5d7d187b7e72	2024-10-02 11:38:12.531+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 fefb7f54-ba54-4759-a002-653fc4873c38	Log to Console	log_ztunz	log	26	18	{"message":"ไฟล์อยู่ใน folder referral form แล้วไม่ต้องทำต่อ"}	\N	\N	a9851cbc-1c3d-4e30-b4e4-0a1446166bb6	2024-10-09 06:58:36.172+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 dd646b7c-28de-4c1a-b6b8-d1f0d4f1d0fa	เช็คว่า trigger_flows เป็น "ultrasound_work" หรือไม่ 	check_trigger_flows_ultrasound_work	exec	37	1	{"code":"module.exports = async function(data) {\\n    const triggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n\\n    if (triggerFlows !== \\"ultrasound_work\\") {\\n    \\tthrow new Error('ไม่มี triggerFlows หรือไม่ใช่ ultrasound_work');\\n    }\\n}"}	9f432fa3-09db-4851-bb79-d1499cc7ff42	ab83ee75-50ac-4b9c-8d45-a8412d5cd7c8	d0764ae1-0dd4-43fc-bb30-8ed60868e7b1	2025-07-15 04:02:16.751+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-01a0f9bd-69af-425c-8e63-dc98ecbecd34	เช็คว่าเป็นถ่าย Mam หลัง us หรือไม่	exec_wvr55_crgxd_hbuny	exec	21	68	{"code":"module.exports = async function(data) {\\n   const examData = {{read_data_examination}};\\n    \\n    if (examData.is_mam_after_us_done) {\\n        return true; \\n    } \\n\\n    throw new Error('is_mam_after_us_done เป็น false'); \\n};\\n"}	a09c26fc-c355-4208-834a-7a93f070f553	3988243c-b228-405b-8175-3a64a4931261	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-09-04 09:37:00.461+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-aed4b285-333a-4198-9106-5c630c478f96	อ่านข้อมูล Ultrasound_work	read_data_ultrasound_work	item-read	37	1	{"permissions":"$full","collection":"ultrasound_work","key":["{{$trigger.keys[0]}}"]}	ab7fd238-6580-4a74-81c5-b6e4b2610057	\N	0bdb2833-d4c9-4c47-b433-2c48260d59c2	2025-07-22 03:36:54.862+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 6f530150-558b-45da-a8ad-77af9e4a9511	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_hhgvy_dsgiq	trigger	57	81	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_req_change_doctor}}"}	\N	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 01:53:20.191+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-110791da-7bb4-46c3-9da8-49e92301be5f	อ่านข้อมูล examination ที่ถูก trigger	read_data_examination	item-read	19	18	{"collection":"examination","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	06b08916-3876-4153-b70c-d747ee970b92	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-01-23 02:44:13.838+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+aed4b285-333a-4198-9106-5c630c478f96	อ่านข้อมูล Ultrasound_work	read_data_ultrasound_work	item-read	37	1	{"permissions":"$full","collection":"ultrasound_work","key":["{{$trigger.keys[0]}}"]}	ab7fd238-6580-4a74-81c5-b6e4b2610057	\N	0bdb2833-d4c9-4c47-b433-2c48260d59c2	2025-07-22 03:36:54.862+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 70384f0d-b062-4600-b512-86640e250bb2	current_time	current_time	exec	55	1	{"code":"module.exports = async function(data) {\\n    return {\\n        currentTime: new Date().toISOString()\\n    };\\n};"}	404b3ce4-95de-4340-82cc-0052f568cd11	\N	af896f59-cef0-47ab-b0ac-efdb21df529f	2024-10-18 02:52:27.18+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c713fa83-ba4c-46db-ab91-0922e5db6b89	อัพเดทฟิลด์ pid ของ queue ให้เป็น pid ของ patient_info	item_update_ii029	item-update	55	1	{"collection":"queue","key":["{{$trigger.key}}"],"payload":{"pid":"{{read_data_patient_info.pid}}","patient_category":"{{read_data_patient_info.patient_category}}"},"permissions":"$full"}	\N	\N	df03660a-3cf7-4069-ad4f-0a92fec2ae9e	2024-12-15 16:06:18.668+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 da5c973d-083c-4922-b300-04c1f3d84193	อัพเดทฟิลด์ appointment ของ queue ให้เป็นค่า null	item_update_wd6xd	item-update	55	1	{"collection":"queue","key":["{{$trigger.keys[0]}}"],"payload":{"appointment":null},"permissions":"$full"}	a4e7af8b-7ba1-4472-ba52-b6d30e05413a	\N	f3f4611a-021c-47c0-be3a-e85f03734d53	2024-10-22 10:55:38.612+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 0eac2de1-a249-4972-b2d9-4a2930b0d66d	สร้างข้อมูล Finance_work	create_finance_work_lrezo	item-create	40	34	{"collection":"finance_work","permissions":"$full","payload":{"status":"0","location":"{{$trigger.payload.location}}","queue":"{{read_data_queue.id}}"},"emitEvents":true}	b8cc3209-e92d-4eda-80a7-77ba667071c9	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 15:51:12.106+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 12a7a01f-3d57-4aaf-afd4-cd0c45461ce4	อัพเดทฟิลด์ title, close_cast_time, status ของ progress	item_update_wc7ym_zffaz	item-update	43	54	{"payload":{"title":"{{read_data_last_progress.title}} ({{check_cancel_appointment}})","close_case_time":"{{current_time.currentTime}}","status":"ยกเลิก"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	\N	\N	d3f538b5-8d62-4058-9536-6fb9697e90d8	2024-10-21 08:27:59.711+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-9e154126-47a8-4692-982d-3ffd7ec5d792	เช็คว่า front_note_1 มี รับผลตรวจวันนี้, รับผลเป็น CD หรือไม่	check_front_note_1	exec	39	19	{"code":"module.exports = async function(data) {\\n    let appointment = {{read_data_appointment}};\\n\\n    if (appointment.front_note_1.includes(\\"รับผลตรวจวันนี้\\") || appointment.front_note_1.includes(\\"รับผลเป็น CD\\")) {\\n        return true;\\n    }\\n\\n    throw new Error('ไม่รับผลตรวจวันนี้ หรือ CD');\\n    return false;\\n}"}	09cafffb-679b-4613-a53e-9828069295e5	\N	745702ca-86a5-4630-86d5-0c21951b61ce	2024-10-03 02:51:33.642+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+518078a0-98be-47aa-9ab2-863f0990d099	อัพเดท Billing	update_data_billing	item-update	57	49	{"collection":"billing","payload":{"center_income":"{{post_center_income[0]}}"},"key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	\N	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:55:22.755+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+110791da-7bb4-46c3-9da8-49e92301be5f	อ่านข้อมูล examination ที่ถูก trigger	read_data_examination	item-read	19	18	{"collection":"examination","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	06b08916-3876-4153-b70c-d747ee970b92	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-01-23 02:44:13.838+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 18d43680-4c8a-41a5-9695-5a6b74ee682e	Update Data	item_update_8bxkj	item-update	59	47	{"collection":"progress","key":["{{last_no_progress.lastProgressId}}"],"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"permissions":"$full"}	\N	\N	89677e2f-7d1b-4e9c-8853-2e23650f65ac	2024-10-07 07:07:15.853+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 5702e65a-983a-4809-b9b1-9d1b6c7e4f8f	สร้างข้อมูล Finance_work	create_finance_work	item-create	40	18	{"collection":"finance_work","permissions":"$full","payload":{"status":"0","location":"{{$trigger.payload.location}}","queue":"{{read_data_queue.id}}"},"emitEvents":true}	b207a0dd-8d4a-4025-8169-681f48d0164b	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 09:49:45.167+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 fb7073c7-aa55-44b6-a0d3-512d3546ffd7	อ่านข้อมูล Coordinate	read_data_coordinate	item-read	19	1	{"collection":"coordinate","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	886e65ee-0aaa-4572-b699-114de460905f	\N	baa6bf9a-4a45-475e-9aa9-93d402672662	2025-01-28 13:36:54.099+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15296,6 +15465,7 @@ be13f053-4b9b-401f-af0e-6bc036dfe2f0	Update Data	item_update_zebfa_eybzl	item-up
 2907bc57-8828-4905-98e7-7a3140907267	คืนค่าเวลาเริ่มต้นของวันนี้	get_today_ISOString	exec	19	18	{"code":"module.exports = async function(data) {\\n\\tconst today = new Date ()\\n    today.setUTCHours(0, 0, 0, 0)\\n    \\n\\treturn today.toISOString();\\n}"}	c65f98e1-b9f0-4d5a-a48e-3df83195c86d	\N	62c45fee-1f13-4c6f-b11b-d156f06626df	2025-09-17 07:04:10.232+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f57791c4-b26d-4ff7-bdb6-0fc9398798e2	อ่านข้อมูล Patient Info	read_data_patient_info	item-read	37	1	{"collection":"patient_info","key":["{{read_data_queue.patient_info}}"],"permissions":"$full"}	665a2583-20b3-412b-8334-41445c2548c6	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 10:01:16.708+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e944155e-be74-4b16-855f-20c53ec59321	เช็คว่าสถานะของ progress ตัวสุดท้ายไม่ใช่ ยกเลิก ใช่หรือไม่	check_last_progress	exec	3	38	{"code":"module.exports = async function(data) {\\n    if (\\"{{read_data_last_progress.status}}\\" != \\"ยกเลิก\\") {\\n        return true; \\n    } \\n    throw new Error('สถานะเป็นยกเลิกแล้ว'); \\n\\n};\\n"}	18cf8f04-afa4-421a-a961-8648e3c73ad3	\N	2cf897be-be84-42be-b293-aa16e9f8885f	2024-10-31 09:59:09.054+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+9e154126-47a8-4692-982d-3ffd7ec5d792	เช็คว่า front_note_1 มี รับผลตรวจวันนี้, รับผลเป็น CD หรือไม่	check_front_note_1	exec	39	19	{"code":"module.exports = async function(data) {\\n    let appointment = {{read_data_appointment}};\\n\\n    if (appointment.front_note_1.includes(\\"รับผลตรวจวันนี้\\") || appointment.front_note_1.includes(\\"รับผลเป็น CD\\")) {\\n        return true;\\n    }\\n\\n    throw new Error('ไม่รับผลตรวจวันนี้ หรือ CD');\\n    return false;\\n}"}	09cafffb-679b-4613-a53e-9828069295e5	\N	745702ca-86a5-4630-86d5-0c21951b61ce	2024-10-03 02:51:33.642+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 a4e7af8b-7ba1-4472-ba52-b6d30e05413a	อัพเดทฟิลด์ appointment_status ของ appointment ที่ผูกกับ queue ให้เป็น ยังไม่ถึงเวลานัด/ยังไม่มา	item_update_599l4	item-update	19	17	{"collection":"appointment","key":["{{read_data_queue.appointment}}"],"payload":{"appointment_status":"ยังไม่ถึงเวลานัด/ยังไม่มา"},"permissions":"$full"}	\N	\N	f3f4611a-021c-47c0-be3a-e85f03734d53	2024-10-22 11:02:20.052+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 31bc574c-8fbf-4567-9436-008d23aed035	check_queue_status_1	check_queue_status_1	exec	3	18	{"code":"module.exports = async function(data) {\\n    let queue = {{$trigger.payload}};\\n\\t//1 เรียกคิว 2 เสร็จสิ้น 0 รอเรียกคิว\\n    if (queue.status == 1) {\\n        return \\"1\\"; \\n    } else if (queue.status == 2) {\\n        return \\"2\\"; \\n    } else if (queue.status == 0) {\\n        return \\"0\\"; \\n    }\\n    throw new Error('สถานะคิวผิดพลาด'); \\n\\n};\\n"}	c45f66f6-75f7-4b12-be01-39cdaa820a0f	\N	89677e2f-7d1b-4e9c-8853-2e23650f65ac	2024-10-07 07:07:16.141+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f4e2e70b-9c86-484a-b919-1f5d5b9b9be7	Create Data (รับผล)	item_create_x9ges_gpsse	item-create	77	82	{"collection":"progress","payload":{"title":"รับผล","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Front","worklist":"{{read_data_queue.worklist[0]}}"},"permissions":"$full"}	081d083c-e0f7-4041-9b98-84d711fda144	\N	e2646ed5-054d-47a0-9237-070f20b2760f	2024-10-16 12:06:51.034+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15307,7 +15477,6 @@ d438f5f0-0d3e-4221-bbb3-526c04ac8821	check_queue_status_4	check_queue_status_4	e
 0f6de08e-d56c-42d7-861a-925ef0276c81	Update Data	item_update_dgwrr_scglc	item-update	39	37	{"payload":{"end_time":"{{current_time.currentTime}}"},"collection":"worklist","key":["{{read_data_queue.worklist[0]}}"],"permissions":"$full"}	20ac814a-f7ba-45b5-bd88-d608b90025d5	\N	440911df-8ca7-45e3-ad93-9e6587180683	2024-10-04 05:49:57.774+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8342533d-4da9-4785-89a7-d8c78a25e1c5	อ่าน ultrasound_work	read_ultrasound_works	item-read	19	1	{"permissions":"$full","collection":"ultrasound_work","query":{"filter":{"exam":{"_eq":"{{$trigger.payload.exam}}"}},"fields":["id","status"]}}	74dfa88b-5bb4-4eb3-a942-6ea86b227642	\N	58159f83-f036-41e2-a0cf-1dc28df97b35	2025-10-03 05:56:48.638+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 271b965e-46b3-4639-8d61-c0645529791c	อ่านข้อมูล appointment	read_appointment_updated	item-read	37	1	{"collection":"appointment","key":["{{check_trigger}}"],"permissions":"$full"}	0c7a67f0-99b6-4f48-9777-60ce822cee2d	\N	a9851cbc-1c3d-4e30-b4e4-0a1446166bb6	2024-10-09 03:17:25.251+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-c24d515b-ac1c-4334-94f2-99399e1044ee	หน่วงเวลาเปลี่ยนสถานะ	set_time_out_examination	sleep	37	19	{"milliseconds":10000}	8ac1acd0-96af-4c40-a6ef-30930492c1e4	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2024-12-18 01:57:02.037+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 5eac4762-fda7-406c-b1d5-43f4d3f1b550	อัพเดตสถานะของ ultrasound_work เป็น "ถ่ายสำเร็จ"	update_ultrasound_work	item-update	55	1	{"payload":{"status_trigger_flows":"trigger","action":"ถ่าย Mammogram เพิ่ม","status":"6"},"collection":"ultrasound_work","permissions":"$full","emitEvents":true,"key":"{{read_ultrasound_works[0].id}}"}	\N	\N	58159f83-f036-41e2-a0cf-1dc28df97b35	2025-10-03 05:56:48.441+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 62891df3-458a-4f12-b606-ee553728cf7d	check_agent	check_agent	exec	95	1	{"code":"module.exports = async function(data) {\\n\\tconst agentPrefix = \\"{{read_data_queue.agent_prefix}}\\";\\n\\tconst agentFirstName = \\"{{read_data_queue.agent_first_name}}\\";\\n\\tconst agentLastName = \\"{{read_data_queue.agent_last_name}}\\";\\n\\n\\tif (agentPrefix && agentFirstName && agentLastName) {\\n    \\treturn \\"ตัวแทน\\"; \\n\\t} else {\\n    \\treturn \\"คนไข้\\"; \\n\\t}\\n}"}	d414e8a3-dee0-4698-b5a0-5e009789a74b	\N	440911df-8ca7-45e3-ad93-9e6587180683	2024-10-17 09:43:55.941+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 9b0a5d63-63fc-4800-b0bd-4399266e1bc9	อ่านข้อมูล queue ตาม id ที่ถูกสร้าง	read_data_queue	item-read	19	1	{"collection":"queue","key":["{{$trigger.key}}"],"permissions":"$full"}	19731793-b1f5-4cf3-b739-a49f2857a459	\N	2722e204-00c5-4b1f-86a8-49b5ffef95ba	2024-10-04 03:29:47.267+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15320,9 +15489,9 @@ bfae4a69-b183-45cd-89dc-984e350e0d81	เข้า Trigger Flow Read environment 
 184f36b8-e482-4802-a07e-a376177a8938	read_patient_info	read_patient_info	item-read	57	18	{"collection":"patient_info","query":"{{check_socid_hn}}","permissions":"$full"}	09c227dd-df94-40dc-9ec3-3b733aa49feb	\N	5563ef7b-949d-46c7-b3ae-5d7d187b7e72	2024-10-15 03:05:14.882+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 dde281a5-84bf-4fdd-923e-05ce9c7ff3b8	เข้า Trigger Flow Progress Created	trigger_wt7zu_yczqr	trigger	60	37	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{item_create_bmnq7_ozcsa}}"}	\N	\N	d3f538b5-8d62-4058-9536-6fb9697e90d8	2024-10-22 11:21:38.473+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 073daeec-d1d9-4e16-b648-0f16e1ff40b9	อัพเดทฟิลด์ pid ของ patient_info เป็น id โดยไม่มีตัว K นำหน้า id	item_update_belp9_nwofv	item-update	55	17	{"collection":"patient_info","key":["{{$trigger.key}}"],"payload":{"pid":"{{$trigger.key}}"},"permissions":"$full"}	\N	\N	be3c0650-735d-42be-b1a1-1002802605ae	2024-11-18 14:08:49.039+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+c24d515b-ac1c-4334-94f2-99399e1044ee	หน่วงเวลาเปลี่ยนสถานะ	set_time_out_examination	sleep	37	18	{"milliseconds":10000}	8ac1acd0-96af-4c40-a6ef-30930492c1e4	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2024-12-18 01:57:02.037+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 64750639-bb15-4648-b927-6736ead20576	filter status เฉพาะ "ส่งตรวจ" 	check_appointment_status	condition	19	1	{"filter":{"$trigger":{"payload":{"appointment_status":{"_eq":"ส่งตรวจ"}}}}}	e3ebf72c-ce1f-45e7-bce1-c71733e09cd4	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2024-12-18 01:57:02.098+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 a78b7bd6-c501-4e38-a718-68e634bacd9b	เข้า Trigger Flow Progress Created	trigger_ujepd_puhiv	trigger	154	19	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{item_create_dka9v_jffsq}}"}	\N	\N	4287333e-7c64-4aaa-af5c-8ce884e508b8	2024-10-28 05:40:29.764+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-a2e0a114-647c-4789-a8ba-34f89f9d1407	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_avqgq	trigger	57	83	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_Issue_service_invoice}}"}	\N	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-03-10 06:48:44.504+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8db44af9-56c5-4140-8ea2-02ff28debf0c	สร้าง progress แจ้งชำระเงิน	item_create_dka9v_jffsq	item-create	136	19	{"payload":{"title":"แจ้งชำระเงิน","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Front","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress","permissions":"$full"}	a78b7bd6-c501-4e38-a718-68e634bacd9b	\N	4287333e-7c64-4aaa-af5c-8ce884e508b8	2024-10-28 05:40:29.799+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 2241db89-10b5-4ec8-a858-c6ab5d31d734	read_environment	read_environment	item-read	19	1	{"collection":"environment_data","key":["1"],"permissions":"$full"}	\N	\N	f5ad1f92-3584-40cb-8931-926f1cd88ff1	2024-11-04 10:04:27.02+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 18cf8f04-afa4-421a-a961-8648e3c73ad3	อัพเดทฟิลด์ title, close_case_time, status ของ progress	item_update_lx8et	item-update	21	38	{"payload":{"title":"{{read_data_last_progress.title}} (ยกเลิกคิว)","close_case_time":"{{current_time.currentTime}}","status":"ยกเลิก"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	2b504ff1-1a1a-40b7-af83-299ace8839f6	\N	2cf897be-be84-42be-b293-aa16e9f8885f	2024-10-18 05:55:22.872+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15341,34 +15510,29 @@ d34de265-d94c-44cd-95c1-7a5d6b3b3ae9	อ่านข้อมูล progress ต
 82d0a4ae-60ce-4508-b068-8a1507473545	check_queue_status_2	check_queue_status_2	exec	21	19	{"code":"module.exports = async function(data) {\\n    if ({{check_queue_status_1}} == 1) {\\n        return true; \\n    } \\n    throw new Error('สถานะคิวไม่ใช่เรียกแล้ว'); \\n\\n};\\n"}	e511b6f6-9131-44ec-9100-265b1de52c1d	42fa887c-95dd-4efb-b08b-deaf7797bfc8	2770ae3f-8314-4d3f-a4f8-4d58da1ec279	2024-10-07 06:15:51.228+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c05a5cb8-1abf-4249-8371-6e3990328e49	Trigger Flow	trigger_kcvi5	trigger	112	20	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{item_create_6nq8v}}"}	b48adc12-7dbd-4bb6-bdcd-825a44112892	\N	af896f59-cef0-47ab-b0ac-efdb21df529f	2024-10-21 03:09:13.812+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 142040b7-2959-4b9e-b709-c04ffc3e893f	check_update_queue_status	check_update_queue_status	exec	39	20	{"code":"module.exports = async function(data) {\\n    if ({{$trigger.payload.status}} == 1) {\\n        return true; \\n    } \\n    throw new Error('ไม่มีการอัพเดทสถานะคิว'); \\n\\n};\\n"}	eda6d8d3-0988-4c54-af83-73e5ffa50001	\N	af896f59-cef0-47ab-b0ac-efdb21df529f	2024-10-21 08:36:32.67+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-bd91b682-1cea-46d3-ae81-8d8ecb0f4b79	อ่านข้อมูล queue ของ appointment ที่ถูก trigger	read_data_queue	item-read	3	19	{"collection":"queue","key":["{{$trigger.payload.queue[0].id}}"],"permissions":"$full"}	02554e7d-7c6f-44c7-b910-2fd9a5dfcafa	\N	745702ca-86a5-4630-86d5-0c21951b61ce	2024-10-24 02:45:05.776+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-696acf1f-f08d-4b68-8bda-1a5736f0b64e	อัพเดทฟิลด์ pid ของ patient_info ตาม id	item_update_g8udx	item-update	73	1	{"collection":"patient_info","key":["{{read_patient_info_data.id}}"],"payload":{"pid":"{{read_patient_info_data.id}}"},"permissions":"$full"}	bd91b682-1cea-46d3-ae81-8d8ecb0f4b79	\N	745702ca-86a5-4630-86d5-0c21951b61ce	2024-10-03 02:51:33.705+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 d36d01aa-caf6-4157-8bac-74e222b0e504	Trigger Flow	trigger_avfp0	trigger	39	53	{"flow":"575163b6-0f4d-4bb0-9c61-ada25321bedc","payload":"{{last_no_progress.lastProgressId}}"}	\N	\N	440911df-8ca7-45e3-ad93-9e6587180683	2024-10-30 13:02:09.657+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 5844810b-e0b9-41d8-a0b7-194bb088346f	check_queu_status_4	exec_5h83w_djhcy	exec	21	53	{"code":"module.exports = async function(data) {\\n    if ({{check_queue_status_1}} == 0) {\\n        return true; \\n    } \\n    throw new Error('สถานะคิวไม่ใช่รอเรียกคิว'); \\n\\n};\\n"}	d36d01aa-caf6-4157-8bac-74e222b0e504	\N	440911df-8ca7-45e3-ad93-9e6587180683	2024-10-30 13:02:09.668+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-0a889b5a-d657-47c0-be24-e1053ff8c4af	เช็คสถานะของ appointment ว่าเป็นส่งตรวจ หรือไม่	exec_a46nd	exec	37	1	{"code":"module.exports = async function(data) {\\n    let appointment = {{read_data_appointment}};\\n\\n    if (appointment.appointment_status == \\"ส่งตรวจ\\") {\\n        return true;\\n    }\\n\\n    throw new Error('สถานะไม่ใช่ส่งตรวจ');\\n    return false;\\n}"}	b5528219-a2b5-4d03-b87b-1f34d5852353	\N	745702ca-86a5-4630-86d5-0c21951b61ce	2024-10-03 02:46:57.681+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+bd91b682-1cea-46d3-ae81-8d8ecb0f4b79	อ่านข้อมูล queue ของ appointment ที่ถูก trigger	read_data_queue	item-read	3	19	{"collection":"queue","key":["{{read_data_appointment.queue[0]}}"],"permissions":"$full"}	9e154126-47a8-4692-982d-3ffd7ec5d792	\N	745702ca-86a5-4630-86d5-0c21951b61ce	2024-10-24 02:45:05.776+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 0c17a0b2-9a1b-45b6-b27a-9aa120f079f6	เช็คสถานะ queue ว่าเป็น เรียกคิวแล้ว หรือไม่	check_queue_status	exec	55	1	{"code":"module.exports = async function(data) {\\n    const queue = {{read_data_queue}};\\n\\n    if (queue.status == \\"1\\") {\\n        return true;\\n    }\\n\\n    throw new Error(\\"สถานะคิวไม่ใช่เรียกคิวแล้ว\\");\\n    return false;\\n}"}	2f5ac5b4-9eca-4bb8-b97c-698ceaec3260	2a769286-5086-47b6-856c-34329cb8730e	4287333e-7c64-4aaa-af5c-8ce884e508b8	2024-10-25 10:49:18.471+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 ce036c93-5f84-45ac-8f66-2cbe022a3400	อ่านข้อมูล patient_result ที่ผูกกับ queue	read_data_patient_result	item-read	37	1	{"collection":"patient_result","key":["{{read_data_queue.patient_result}}"],"permissions":"$full"}	6a4aa596-4a9e-4448-bbb3-5b16467f1dd9	\N	143ac6af-1a05-4677-aadb-a581e192e062	2024-10-24 08:04:06.832+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+4c952df6-87e4-4d70-b156-4f3ff6fe6d89	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_abnhh	item-update	21	70	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"collection":"progress","permissions":"$full"}	b49e41df-4f21-476d-9c1a-cc13c63d1ddf	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-06-18 17:26:13.077+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b207a0dd-8d4a-4025-8169-681f48d0164b	สร้างข้อมูล Billing	create_billing	item-create	58	18	{"collection":"billing","emitEvents":true,"permissions":"$full","payload":{"patient":"{{read_data_patient_info.id}}","hn":"{{read_data_patient_info.hn}}","finance_work":"{{create_finance_work[0]}}"}}	5ea6db41-f2cd-40e6-a299-003b049dafc7	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 10:01:16.904+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 9d9b114d-a29f-4ea6-a5d0-448a05f1216e	Trigger Flow	trigger_ok7tc	trigger	39	19	{"flow":"308fa33c-b445-49f7-a5de-d732058b85e4","payload":"{{last_no_progress.lastProgressId}}"}	\N	\N	440911df-8ca7-45e3-ad93-9e6587180683	2024-10-30 13:03:39.206+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 2a769286-5086-47b6-856c-34329cb8730e	อัพเดทฟิลด์ status ของ patient_result ที่ผูกกับ queue เป็น รอเรียกคิว 	item_update_w25me_jgbbz	item-update	73	18	{"collection":"patient_result","key":["{{read_data_queue.patient_result}}"],"payload":{"status":"8"},"permissions":"$full"}	\N	\N	4287333e-7c64-4aaa-af5c-8ce884e508b8	2024-10-25 10:49:18.332+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 20f623ae-f797-4f6c-bf00-c050298dd6e5	เช็คว่า queue มีตัวแทนมารับผล หรือไม่	exec_33vpb	exec	118	21	{"code":"module.exports = async function(data) {\\n    const queue = {{read_data_queue}};\\n\\n    if (queue.agent_first_name) {\\n        return true;\\n    }\\n\\n    throw new Error(\\"ไม่ใช่ตัวแทนมารับผล\\");\\n    return false;\\n}"}	8db44af9-56c5-4140-8ea2-02ff28debf0c	c654b1d0-e22f-4500-a7c5-cfc42a987485	4287333e-7c64-4aaa-af5c-8ce884e508b8	2024-10-28 05:40:29.937+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 6a4aa596-4a9e-4448-bbb3-5b16467f1dd9	เช็คสถานะ queue ว่าเป็น ยกเลิก หรือไม่	check_queue_status	exec	5	19	{"code":"module.exports = async function(data) {\\n    let queue = {{read_data_queue}};\\n\\n    if (queue.status == 3) {\\n        return true; \\n    } \\n    throw new Error('สถานะคิว ไม่ใช่ยกเลิก'); \\n\\n};\\n"}	7a939d1c-dc58-4101-bc63-3b98a97c7439	\N	143ac6af-1a05-4677-aadb-a581e192e062	2024-10-24 08:04:06.794+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 03e28967-cd40-4807-85ab-fa9e321f4de8	check_queue_status_1	check_queue_status_1	exec	1	18	{"code":"module.exports = async function(data) {\\n    let queue = {{read_data_queue}};\\n\\t//1 เรียกคิว 2 เสร็จสิ้น 0 รอเรียกคิว \\n    if (queue.status == 0) {\\n        return \\"0\\"; \\n    } else if (queue.status == 1) {\\n        return \\"1\\"; \\n    } else if (queue.status == 2) {\\n        return \\"2\\"; \\n    } \\n};\\n"}	1f65eef0-0048-4780-bfea-875d0b173010	\N	5563ef7b-949d-46c7-b3ae-5d7d187b7e72	2024-10-02 11:32:57.669+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-02554e7d-7c6f-44c7-b910-2fd9a5dfcafa	อัพเดทฟิลด์ status ของ queue เป็น กำลังดำเนินการ	item_update_sipnp	item-update	21	19	{"collection":"queue","key":["{{read_data_queue.id}}"],"payload":{"status":"4"},"permissions":"$full"}	9e154126-47a8-4692-982d-3ffd7ec5d792	\N	745702ca-86a5-4630-86d5-0c21951b61ce	2024-10-24 02:45:05.763+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f17200a1-843c-41ad-9e79-64b8f0ac125a	current_time	current_time	exec	55	1	{"code":"module.exports = async function(data) {\\n    return {\\n        currentTime: new Date().toISOString()\\n    };\\n};"}	f8ed4e09-1a5a-4f4b-add4-f1f40105ae83	\N	2770ae3f-8314-4d3f-a4f8-4d58da1ec279	2024-10-15 05:41:44.424+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-4c952df6-87e4-4d70-b156-4f3ff6fe6d89	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_abnhh	item-update	21	70	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"collection":"progress","permissions":"$full"}	b49e41df-4f21-476d-9c1a-cc13c63d1ddf	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-06-18 17:26:13.077+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8da0cf4e-e146-4704-b6bf-b79321122883	เช็คสถานะตัวสุดท้ายของ progress ว่าไม่ใช่ ยกเลิกเรียกคิวหรือ ไม่	check_data_progress	exec	37	1	{"code":"module.exports = async function(data) {\\n    if (\\"{{read_data_last_progress.status}}\\" != \\"ยกเลิกเรียกคิว\\") {\\n        return true; \\n    } \\n    throw new Error('Progress ตัวสุดท้ายเป็น ยกเลิกเรียกคิว'); \\n\\n};\\n"}	4b580fd8-65cb-4618-9cc7-6c35aae41d09	\N	308fa33c-b445-49f7-a5de-d732058b85e4	2024-10-30 12:18:21.055+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 a9cec322-400d-4515-b0bf-18f0aae29d62	อ่านข้อมูล progress ตัวสุดท้าย	read_data_last_progress	item-read	19	1	{"collection":"progress","key":["{{$last}}"],"permissions":"$full"}	8da0cf4e-e146-4704-b6bf-b79321122883	\N	308fa33c-b445-49f7-a5de-d732058b85e4	2024-10-30 12:18:21.107+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 318742c6-3dd8-490b-a5a5-f2e208602021	อ่าน ultrasound_work ของวันนี้	read_current_ultrasound_work	item-read	19	36	{"permissions":"$full","collection":"ultrasound_work","query":{"filter":{"_and":[{"date_created":{"_gte":"{{get_today_ISOString}}"}},{"exam":{"patient":{"_eq":"{{read_own_examination.patient}}"}}}]},"fields":["id"]}}	1b7fe772-ac3d-4ff7-a86c-8b8ea0cfd41c	\N	62c45fee-1f13-4c6f-b11b-d156f06626df	2025-09-17 07:04:10.105+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-79a6c551-2bc4-46b3-9ec1-8b083d40f5a6	อัพเดทฟิลด์ officer ของ progress โดยใช้ข้อมูลของ user ที่ query มา	item_update_40rou	item-update	21	19	{"collection":"progress","payload":{"officer":"{{query_user.data.data.first_name}} {{query_user.data.data.last_name}}"},"key":["{{read_data_progress.id}}"],"permissions":"$full"}	\N	\N	91f7c920-9249-42c7-9215-cf7a2a4eb971	2024-10-16 05:00:48.825+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e3ebf72c-ce1f-45e7-bce1-c71733e09cd4	อ่านค่า record ของ appointment 	read_appointment	item-read	37	1	{"collection":"appointment","query":{"filter":{"id":{"_eq":"{{$trigger.keys[0]}}"}}},"permissions":"$full"}	f100f991-e1e1-4da3-a149-ee5902d40e54	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2024-12-18 01:57:01.953+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+02554e7d-7c6f-44c7-b910-2fd9a5dfcafa	อัพเดทฟิลด์ status ของ queue เป็น กำลังดำเนินการ	item_update_sipnp	item-update	91	1	{"collection":"queue","key":["{{read_data_queue.id}}"],"payload":{"status":"4"},"permissions":"$full"}	\N	\N	745702ca-86a5-4630-86d5-0c21951b61ce	2024-10-24 02:45:05.763+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f31e0e98-ee3b-4afa-8323-2fa3bc4dcb29	อ่าน appointment => หา patient_id	read_appointment	item-read	37	1	{"permissions":"$full","collection":"appointment","key":"{{$trigger.payload.appointment}}","query":{"fields":["patient_info"]}}	33144962-94a0-4cde-b911-056801de5816	\N	4e6e586f-780c-4bbc-9372-9b43d1994495	2026-02-19 03:41:47.783+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-d36bd7a2-0608-4b7b-9ec6-078047461882	query ข้อมูลของ user โดยใช้ id ที่อยู่ใน progress	query_user	request	3	19	{"url":"{{read_environment.url}}/users/{{read_data_progress.user_created}}","body":"{}","headers":[{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}]}	79a6c551-2bc4-46b3-9ec1-8b083d40f5a6	\N	91f7c920-9249-42c7-9215-cf7a2a4eb971	2024-10-16 05:00:48.843+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-de851b09-f1bc-42ec-a013-ad4ea51e6396	อ่านข้อมูล progress ของ id ที่ถูกส่งมา	read_data_progress	item-read	19	1	{"collection":"progress","key":["{{$last}}"],"permissions":"$full"}	45fef03d-a498-4b3e-b1a6-b343dfb69654	\N	91f7c920-9249-42c7-9215-cf7a2a4eb971	2024-10-16 05:00:48.915+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+79a6c551-2bc4-46b3-9ec1-8b083d40f5a6	อัพเดทฟิลด์ officer ของ progress โดยใช้ข้อมูลของ user ที่ query มา	item_update_40rou	item-update	39	19	{"collection":"progress","payload":{"officer":"{{query_user.data.data.first_name}} {{query_user.data.data.last_name}}"},"key":["{{read_data_progress.id}}"],"permissions":"$full"}	\N	\N	91f7c920-9249-42c7-9215-cf7a2a4eb971	2024-10-16 05:00:48.825+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8a1c6a8f-4841-4286-8dda-d0d896868237	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg	trigger	57	54	{"payload":"{{create_progress_send_doctor}}","flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971"}	\N	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-03-08 15:48:23.458+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 ad049129-e809-420a-9959-016e0049f74d	read_data_worklist	read_data_worklist	item-read	37	1	{"collection":"worklist","key":["{{read_data_queue.worklist[0]}}"],"query":{"sort":"-progress"},"permissions":"$full"}	6d2a0697-efbb-4d1a-8c4f-3472caed6db6	\N	440911df-8ca7-45e3-ad93-9e6587180683	2024-10-04 05:38:08.019+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 49e61863-885a-4038-ae87-68630e5f0e8d	อ่านข้อมูล queue ที่ถูก trigger	read_data_queue	item-read	19	1	{"collection":"queue","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	ce036c93-5f84-45ac-8f66-2cbe022a3400	\N	143ac6af-1a05-4677-aadb-a581e192e062	2024-10-24 08:04:06.865+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-09cafffb-679b-4613-a53e-9828069295e5	return body ของ data เพื่อนำไป create ต่อ	body_create_data	exec	57	19	{"code":"module.exports = async function(data) {\\nconst frontNote1 = {{$trigger.payload.front_note_1}};\\nlet resultType = [];\\n\\nif (frontNote1 && frontNote1.includes(\\"รับผลเป็น CD\\")) {\\n    resultType.push(\\"2\\");\\n} if (frontNote1 && frontNote1.includes(\\"รับผลตรวจวันนี้\\")) {\\n    resultType.push(\\"1\\");\\n}\\n\\nconst dataToCreate = {\\n    status: 0,\\n    appointments: [\\n        {\\n            appointment_id: \\"{{$trigger.keys[0]}}\\"\\n        }\\n    ],\\n    queues: [\\n        \\"{{read_data_appointment.queue[0]}}\\"\\n    ],\\n    result_type: resultType\\n};\\n\\nreturn dataToCreate;\\n\\n}"}	79a92916-f129-477a-848d-0aad358718b4	\N	745702ca-86a5-4630-86d5-0c21951b61ce	2024-10-03 02:51:33.59+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 52651e33-2cee-4e1a-a490-4020c0a3f568	เช็คว่า file อยู่ใน Folder Result Request Form หรือไม่	check_folder_result_request_form	exec	8	19	{"code":"module.exports = async function(data) {\\n    if (\\"{{get_file_data.data.data.result_request_form[0].directus_files_id.folder}}\\" == \\"76feb963-dee8-4439-96bb-60c411916792\\") {\\n        return true; \\n    } \\n    throw new Error('ไฟล์ไม่ได้อยู่ใน Folder Result Request Form'); \\n\\n};\\n"}	\N	02cebba9-d89c-4d59-929b-bfbff576d540	d8536126-0a00-4f76-a891-f14d2651c938	2024-10-09 07:18:02.069+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 190a07da-3119-4843-ae71-e821fd7545ab	เข้า Trigger Flow Read environment data	read_environment	trigger	38	8	{"flow":"f5ad1f92-3584-40cb-8931-926f1cd88ff1"}	f76613f2-9542-47ac-9b38-8447db9432a4	\N	714ee7c2-de29-48bb-abfb-c64046bff4b7	2024-11-05 02:14:29.823+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 da298584-fdab-4a51-a782-8708f01692c5	อ่านข้อมูล Billing	read_data_billing	item-read	20	1	{"collection":"billing","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	99147fd7-7423-40c5-8374-354430fe211b	\N	836b85ad-418d-47b0-8d41-547021433cc7	2025-05-09 06:41:46.456+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15381,10 +15545,12 @@ a712a779-0732-449b-9c73-09d683fb2639	check_queue_status_3	check_queue_status_3	e
 cc42d515-f654-4505-a0ef-d42da5165a42	ย้ายไฟล์ไปที่ folder Referral form	request_62g7q	request	26	34	{"method":"PATCH","url":"{{read_environment.url}}/files/{{get_file_data.data.data.referral_form[0].directus_files_id.id}}","body":"{\\n     \\"folder\\": \\"fc4d1cc1-491a-45e6-b582-f66179a65ff9\\"\\n}","headers":[{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}]}	\N	\N	a9851cbc-1c3d-4e30-b4e4-0a1446166bb6	2024-10-09 06:54:17.602+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 0c7a67f0-99b6-4f48-9777-60ce822cee2d	เข้า Trigger Flow Read environment data	read_environment	trigger	55	1	{"flow":"f5ad1f92-3584-40cb-8931-926f1cd88ff1"}	1cb214ce-ee14-4934-8da7-08db3f281dd2	\N	a9851cbc-1c3d-4e30-b4e4-0a1446166bb6	2024-11-05 02:07:36.151+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 30d36054-8b51-42fb-8666-fd41defdcf99	อ่านค่า ultrasound_work ตัวล่าสุด	read_current_ultrasound_work	item-read	37	1	{"key":"{{$trigger.keys[0]}}","query":{"fields":["exam.id, exam.appointment, exam.case_owner_doctor","exam.pacs_sync_infos.modality, exam.pacs_sync_infos.is_mark_del, exam.pacs_sync_infos.end_time","doctor_work","location"]},"permissions":"$full","collection":"ultrasound_work"}	4e50f4f4-2557-4a1e-892e-03e772f9d6a5	\N	b44bbffe-cbe8-4363-86b3-5c5841fd2e0c	2025-09-05 08:52:33.935+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-1d2de90c-6e4d-40ca-8389-edfa02a45233	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_hhgvy_dsgiq_jewcc_euxpw	trigger	75	114	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_doctor_reads_results}}"}	\N	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 02:15:54.431+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+1d2de90c-6e4d-40ca-8389-edfa02a45233	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_hhgvy_dsgiq_jewcc_euxpw	trigger	75	114	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_doctor_reads_results}}"}	eb673619-c46f-42e9-8d07-908482611878	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 02:15:54.431+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+d36bd7a2-0608-4b7b-9ec6-078047461882	query ข้อมูลของ user โดยใช้ id ที่อยู่ใน progress	query_user	request	21	19	{"url":"{{read_environment.url}}/users/{{read_data_progress.user_created}}","body":"{}","headers":[{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}]}	79a6c551-2bc4-46b3-9ec1-8b083d40f5a6	\N	91f7c920-9249-42c7-9215-cf7a2a4eb971	2024-10-16 05:00:48.843+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+de851b09-f1bc-42ec-a013-ad4ea51e6396	อ่านข้อมูล progress ของ id ที่ถูกส่งมา	read_data_progress	item-read	19	1	{"collection":"progress","key":["{{$last}}"],"permissions":"$full"}	062ac778-e47c-486a-82ab-1312b495b58e	\N	91f7c920-9249-42c7-9215-cf7a2a4eb971	2024-10-16 05:00:48.915+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+42c14186-5cbb-400c-89b6-f8b451c8e4da	อ่านข้อมูล progress ของ id ที่ถูกส่งมา	read_data_progress	item-read	19	1	{"permissions":"$full","collection":"progress","key":["{{$trigger.progress[0]}}"]}	98f28f2d-f0ed-4443-a5de-cc6ae3a6e408	\N	89be6643-9611-41be-8186-059689a6c8d3	2026-06-29 03:00:38.958+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7b0984ee-138f-4aa5-9c65-e173b9c5b7cb	อ่าน exam ที่ผูกอยู่กับ ultrasound นี้	read_own_examination	item-read	55	1	{"permissions":"$full","collection":"examination","key":"{{read_current_ultrasound.exam}}","query":{"fields":["patient"]}}	2907bc57-8828-4905-98e7-7a3140907267	\N	62c45fee-1f13-4c6f-b11b-d156f06626df	2025-09-17 06:56:44.682+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 a2959af4-e0ea-4aab-b8dd-89a01d953da3	อ่านข้อมูล environment	read_environment	trigger	21	19	{"flow":"f5ad1f92-3584-40cb-8931-926f1cd88ff1"}	515ba19f-a8ee-413e-b70f-288b360c64f2	\N	5b6e538c-4ccb-4ce0-b266-b48257d08bf6	2025-07-17 03:08:07.586+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-45fef03d-a498-4b3e-b1a6-b343dfb69654	เข้า Trigger Flow Read environment data	read_environment	trigger	37	1	{"flow":"f5ad1f92-3584-40cb-8931-926f1cd88ff1"}	d36bd7a2-0608-4b7b-9ec6-078047461882	\N	91f7c920-9249-42c7-9215-cf7a2a4eb971	2024-11-05 02:09:30.24+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c01ea2d0-ac85-430e-aa19-0a0e848f4371	เก็บค่าเวลา ณ ปัจจุบัน	get_timestamp	exec	18	18	{"code":"module.exports = async function(data) {\\n\\tconst now = new Date();\\n    \\n\\treturn now.toISOString();\\n}"}	d0aed853-9e61-4baf-8926-c3c91df65dbd	\N	74c5ff61-80ae-49e8-a670-1e23e42a78be	2025-01-31 07:28:57.392+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 12648482-abe6-4f99-a763-473016f42414	อ่านข้อมูล Ultrasound_Work	read_data_ultrasound_work	item-read	19	1	{"permissions":"$full","collection":"ultrasound_work","key":["{{$trigger.keys[0]}}"]}	5b042759-8849-45ec-bf1c-5185520d1f64	\N	8dd34a74-0ce8-4d19-b333-786c90851a77	2025-06-25 02:41:50.003+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 29749c4d-a5ff-49e0-8d9f-989de46f0cc5	check_socid_hn	check_socid_hn	exec	38	18	{"code":"module.exports = async function(data, { services, exceptions } = {}) {\\n  // เข้าถึง payload จาก trigger\\n  const citizen_id = \\"{{read_data_queue.citizen_id}}\\";\\n  const hn = \\"{{read_data_queue.hn}}\\";\\n\\n  // สร้างอาเรย์สำหรับเก็บฟิลเตอร์\\n  let filters = [];\\n\\n  // ตรวจสอบว่า citizen_id ไม่เป็นค่าว่าง\\n  if (citizen_id && citizen_id !== \\"\\") {\\n    filters.push({\\n      \\"soc_id\\": {\\n        \\"_eq\\": citizen_id,\\n        \\"_neq\\": \\"\\"\\n      }\\n    });\\n  }\\n\\n  // ตรวจสอบว่า hn ไม่เป็นค่าว่าง\\n  if (hn && hn !== \\"\\") {\\n    filters.push({\\n      \\"hn\\": {\\n        \\"_eq\\": hn,\\n        \\"_neq\\": \\"\\"\\n      }\\n    });\\n  }\\n\\n  // ถ้าไม่มีฟิลเตอร์ใด ๆ แสดงว่าทั้งสองค่าเป็นค่าว่าง\\n  if (filters.length === 0) {\\n    if (exceptions) {\\n      // โยนข้อผิดพลาดเพื่อหยุดการทำงานของ Flow\\n      throw new exceptions.Forbidden(\\"กรุณาระบุ citizen_id หรือ hn อย่างน้อยหนึ่งค่า\\");\\n    } else {\\n      // ถ้าไม่มี exceptions ให้โยนข้อผิดพลาดทั่วไป\\n      throw new Error(\\"กรุณาระบุ citizen_id หรือ hn อย่างน้อยหนึ่งค่า\\");\\n    }\\n  }\\n\\n  // รวมฟิลเตอร์ด้วยตัวดำเนินการ _or\\n  const queryFilter = {\\n    \\"filter\\": {\\n      \\"_or\\": filters\\n    }\\n  };\\n\\n  // ส่ง queryFilter กลับไปเพื่อใช้ในขั้นตอนถัดไป\\n  return queryFilter;\\n};\\n"}	184f36b8-e482-4802-a07e-a376177a8938	\N	5563ef7b-949d-46c7-b3ae-5d7d187b7e72	2024-10-15 03:05:14.915+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15394,16 +15560,15 @@ dcd027ff-23db-411b-9580-8711230d5dc9	check_last_progress (รับผล)	exec_
 d414e8a3-dee0-4698-b5a0-5e009789a74b	last_no_progress	last_no_progress	exec	113	1	{"code":"module.exports = async function(data) {\\n    const progressArray = {{read_data_worklist.progress}};\\n\\n    // เช็คว่า progress array มีค่าหรือไม่ และมีข้อมูลอยู่\\n    if (progressArray && progressArray.length > 0) {\\n        // จัดเรียง progress ตามไอดีจากน้อยไปมาก\\n        const sortedProgressArray = progressArray.sort((a, b) => a - b);\\n\\n        // ดึง progress ID ตัวสุดท้ายหลังจากจัดเรียง\\n        const lastProgressId = sortedProgressArray[sortedProgressArray.length - 1];\\n\\n        return {\\n            lastProgressId: lastProgressId\\n        };\\n    } else {\\n        return {\\n            message: 'No progress data found'\\n        };\\n    }\\n};\\n"}	b5d95e32-7633-4e47-beaa-c88bdba34352	\N	440911df-8ca7-45e3-ad93-9e6587180683	2024-10-16 07:45:14.249+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 9126213b-0c52-4dc0-8c91-67167d29d35b	read_data_queue	read_data_queue	item-read	19	1	{"collection":"queue","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	ad049129-e809-420a-9959-016e0049f74d	\N	440911df-8ca7-45e3-ad93-9e6587180683	2024-10-04 05:34:02.012+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 66145e90-13a8-45e7-b237-ca0c811671bd	อ่านข้อมูล patient_result ที่ฟิลด์ result_request_form	get_file_data	request	55	1	{"url":"{{read_environment.url}}/items/patient_result/{{$trigger.keys[0]}}?fields=result_request_form.*.*","headers":[{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}]}	52651e33-2cee-4e1a-a490-4020c0a3f568	\N	d8536126-0a00-4f76-a891-f14d2651c938	2024-10-09 07:18:02.171+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-d3d569a5-5c42-4aa7-89f9-14cd7176625b	สร้าง Coordinate ที่ F14 แบบ "รอปรึกษาแพทย์"	item_create_g5kpn_nbqmp	item-create	57	53	{"collection":"coordinate","payload":{"exam":"{{$trigger.keys[0]}}","appointment":"{{read_data_examination.appointment}}","status":"8","data_tag":"1","location":"{{$trigger.payload.location}}"},"emitEvents":true,"permissions":"$full"}	\N	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-03-18 07:37:47.365+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 4fec126c-b884-4a26-ae6b-d22c33c621b3	แสดงข้อมูลก่อนหน้า	print_last_data	log	85	19	{"message":"{{$last}}"}	\N	\N	f8348b38-4052-4bed-81f1-f1462291ae17	2025-01-16 04:52:17.369+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 98980d81-f462-42be-a800-6e3fc96d3bd9	อ่านข้อมูล notification	read_data_notification	item-read	3	19	{"permissions":"$full","collection":"notification","query":{"filter":{"doctor_work":{"_eq":"{{read_data_ultrasound_work.doctor_work}}"}}}}	a2959af4-e0ea-4aab-b8dd-89a01d953da3	\N	5b6e538c-4ccb-4ce0-b266-b48257d08bf6	2025-07-17 03:08:07.614+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 bfbe4e79-6ee7-4fac-b40b-7e0af7366e98	อ่านข้อมูล Ultrasound_Work	read_data_ultrasound_work	item-read	19	1	{"permissions":"$full","collection":"ultrasound_work","key":["{{$trigger.keys[0]}}"]}	8a4decb4-5288-4845-878c-10381a0a2c87	\N	5b6e538c-4ccb-4ce0-b266-b48257d08bf6	2025-07-17 03:08:07.755+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 0e6a079a-e95c-4db9-a7c3-50961dd20271	check_queue_status_4	exec_4xqbk_ixukv	exec	39	53	{"code":"module.exports = async function(data) {\\n    if ({{check_queue_status_1}} == 0) {\\n        return true; \\n    } \\n    throw new Error('สถานะคิวไม่ใช่รอเรียกคิว'); \\n\\n};\\n"}	80d9d074-7144-4d6c-83b2-4ce81243b6f5	\N	af896f59-cef0-47ab-b0ac-efdb21df529f	2024-10-28 02:51:54.51+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 1a9b9703-bbc4-4453-b58d-bf7d19a4ef29	เข้า Trigger Flow Progress Created	trigger_ujepd	trigger	154	39	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{item_create_dka9v}}"}	\N	\N	4287333e-7c64-4aaa-af5c-8ce884e508b8	2024-10-28 05:00:06.746+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-05e337ad-4cd9-46f0-984b-42a84d8fb54f	สร้างข้อมูล center_income (CD)	center_income_cd	item-create	22	37	{"collection":"center_income","emitEvents":true,"payload":{"first_name":"{{read_data_patient_info.first_name_th}}","last_name":"{{read_data_patient_info.last_name_th}}","full_name":"{{read_data_patient_info.prefix_th}} {{read_data_patient_info.first_name_th}} {{read_data_patient_info.last_name_th}}","type":"2","service_fee":"1","amount":100,"location":"{{read_data_finance_work.location}}","date_time_created":"{{read_data_billing.date_created}}","patient_info":"{{read_data_patient_info.id}}","address":"{{read_data_address.address}} {{read_data_address.sub_district}} {{read_data_address.district}} {{read_data_address.province}} {{read_data_address.zipcode}}"},"permissions":"$full"}	402b78e1-95cf-4a1f-95d9-e83366111013	\N	69f5e99d-d7b5-4afd-94ef-770ec1a60747	2025-04-22 05:58:23.164+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+d3d569a5-5c42-4aa7-89f9-14cd7176625b	สร้าง Coordinate ที่ F14 แบบ "รอปรึกษาแพทย์"	item_create_g5kpn_nbqmp	item-create	57	53	{"collection":"coordinate","payload":{"exam":"{{$trigger.keys[0]}}","appointment":"{{read_data_examination.appointment}}","status":"8","data_tag":"1","location":"{{$trigger.payload.location}}"},"emitEvents":true,"permissions":"$full"}	\N	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-03-18 07:37:47.365+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+45fef03d-a498-4b3e-b1a6-b343dfb69654	เข้า Trigger Flow Read environment data	read_environment	trigger	3	19	{"flow":"f5ad1f92-3584-40cb-8931-926f1cd88ff1"}	d36bd7a2-0608-4b7b-9ec6-078047461882	\N	91f7c920-9249-42c7-9215-cf7a2a4eb971	2024-11-05 02:09:30.24+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 61e4a1b2-1b1a-4685-9040-9c8f6ee36418	check_queue_status_2	exec_syxed_wbnqh_lspdy_cudat	exec	38	35	{"code":"module.exports = async function(data) {\\n    if ({{check_queue_status_1}} == 2) {\\n        return true; \\n    } \\n    throw new Error('สถานะคิวไม่ใช่เสร็จสิ้น'); \\n\\n};\\n"}	6b9f131e-0ffa-4894-a175-40266c578741	a712a779-0732-449b-9c73-09d683fb2639	5563ef7b-949d-46c7-b3ae-5d7d187b7e72	2024-10-17 04:10:37.617+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 4b028a2a-9b84-459d-8d2b-bc5994197b4b	Trigger Flow	trigger_i78q4	trigger	75	18	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{item_create_pcosq}}"}	\N	\N	89677e2f-7d1b-4e9c-8853-2e23650f65ac	2024-10-28 04:02:16.902+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-45ebc37b-73ea-46a4-8423-d8e6c48aa3ec	อ่านข้อมูล examination	read_data_examination	item-read	19	1	{"collection":"examination","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	e791e830-2e9c-45d6-adc5-f1cc5d018aa2	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-18 16:05:50.351+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 cc84065d-dcc5-4493-91ce-850595298d71	Log to Console	log_nn2nk	log	59	35	{"message":"เปลี่ยนเวลา"}	8e57b166-498a-4ca3-a116-2f68277620a4	\N	b1e04a8c-e551-468e-b336-820154f3ac1b	2024-10-03 04:31:49.795+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 1114a78f-56ad-444b-821d-529343eb1175	Trigger Flow	trigger_lyc7v	trigger	113	82	{"flow":"308fa33c-b445-49f7-a5de-d732058b85e4","payload":"{{last_no_progress.lastProgressId}}"}	\N	\N	e2646ed5-054d-47a0-9237-070f20b2760f	2024-10-30 14:32:55.338+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 9a9479d5-8d41-4314-9c08-d40c05ecf667	Trigger Flow	trigger_dj3kw	trigger	112	18	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{item_create_jtmlb}}"}	14940bc8-ffa3-41a9-b273-7a471bef9d45	\N	5563ef7b-949d-46c7-b3ae-5d7d187b7e72	2024-10-17 03:34:47.046+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15419,6 +15584,7 @@ e7e97331-fdee-4b2e-8629-89313585573b	อ่านข้อมูลจาก pac
 55e01ae5-451b-4ccb-9575-1e258b1645fa	Update Data	item_update_821bs	item-update	22	19	{"collection":"queue","key":["{{read_data_queue.id}}"],"payload":{"status":"4"},"permissions":"$full"}	\N	\N	3d941e73-445e-466c-b537-c1fa1d85d7fd	2024-10-28 03:22:56.216+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 14940bc8-ffa3-41a9-b273-7a471bef9d45	Trigger Flow	trigger_dakfn	trigger	130	18	{"flow":"308fa33c-b445-49f7-a5de-d732058b85e4","payload":"{{last_no_progress.lastProgressId}}"}	\N	\N	5563ef7b-949d-46c7-b3ae-5d7d187b7e72	2024-10-30 12:19:25.45+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8ae6b53f-45ac-4b18-a052-d0a18b5471fd	read_data_queue	read_data_queue	item-read	4	19	{"collection":"queue","key":["{{read_data_patient_result.queues[0]}}"],"permissions":"$full"}	55e01ae5-451b-4ccb-9575-1e258b1645fa	\N	3d941e73-445e-466c-b537-c1fa1d85d7fd	2024-10-28 03:22:56.224+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+45ebc37b-73ea-46a4-8423-d8e6c48aa3ec	อ่านข้อมูล examination	read_data_examination	item-read	19	1	{"collection":"examination","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	e791e830-2e9c-45d6-adc5-f1cc5d018aa2	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-18 16:05:50.351+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 eabc22bb-d1a1-4854-b26f-8ab18a7f458f	check_patient_result_status	exec_fq585	exec	37	1	{"code":"module.exports = async function(data) {\\n    let patientResult = {{read_data_patient_result}};\\n\\n\\t// 4= เสร็จสิ้น\\n    if (patientResult.status != \\"4\\") {\\n        return true;\\n    }\\n\\n    throw new Error('สถานะรับเป็นเสร็จสิ้น');\\n    return false;\\n}"}	8ae6b53f-45ac-4b18-a052-d0a18b5471fd	\N	3d941e73-445e-466c-b537-c1fa1d85d7fd	2024-10-28 03:22:56.27+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 3a6e5e87-5b75-4df3-82f9-b2b11fe7c877	check_queue_status_1	check_queue_status_1	exec	3	19	{"code":"module.exports = async function(data) {\\n    let queue = {{$trigger.payload}};\\n\\t//1 เรียกคิว 2 เสร็จสิ้น\\n    if (queue.status == 1) {\\n        return 1; \\n    } else if (queue.status == 2) {\\n        return 2; \\n    }else if (queue.status == 0) {\\n        return 0; \\n    }\\n    throw new Error('สถานะคิวไม่ใช่เรียกแล้ว หรือเสร็จสิ้น รอเรียกคิว'); \\n\\n};\\n"}	59a17f21-3642-498a-b3fe-85544288f339	\N	440911df-8ca7-45e3-ad93-9e6587180683	2024-10-04 05:39:10.118+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 36f3dc5e-7242-4941-9359-550a0ef6a2a4	เช็คว่าเป็นคิวประเภท R และสถานะไม่เป็น เสร็จสิ้น และที่ฟิลด์ patient_result ไม่เป็นค่าว่าง ใช่หรือไม่	exec_md2dh	exec	37	1	{"code":"module.exports = async function(data) {\\n    const queue = {{read_data_queue}};\\n\\n    if (queue.queue_type == \\"R\\" && queue.status != \\"2\\" && (queue.patient_result !== null || \\n                                    queue.patient_result !== '' || \\n                                    queue.patient_result !== undefined)) {\\n        return true;\\n    }\\n\\n    throw new Error('Patient Result is empty or null or queue_type != R');\\n    return false;\\n}"}	0c17a0b2-9a1b-45b6-b27a-9aa120f079f6	\N	4287333e-7c64-4aaa-af5c-8ce884e508b8	2024-10-03 04:11:34.138+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15429,30 +15595,30 @@ c0a85a54-c48c-42c0-abb4-28ebc3b08db1	read_data_worklist	read_data_worklist	item-
 65c2eeeb-4b8c-4e91-aab8-9411cac478e6	Create Data	item_create_pcosq	item-create	57	18	{"collection":"progress","payload":{"title":"{{check_service_type_title}}","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Front","worklist":"{{read_data_queue.worklist[0]}}"}}	4b028a2a-9b84-459d-8d2b-bc5994197b4b	\N	89677e2f-7d1b-4e9c-8853-2e23650f65ac	2024-10-28 04:02:16.925+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e4e813bb-1a0f-4df8-9577-3ca4f48fa9f0	read_data_patient_result	read_data_patient_result	item-read	19	1	{"collection":"patient_result","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	eabc22bb-d1a1-4854-b26f-8ab18a7f458f	\N	3d941e73-445e-466c-b537-c1fa1d85d7fd	2024-10-28 03:18:00.171+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8ccaffe4-ac01-43bf-bab4-2f5427f4272c	เช็คว่ามีการเปลี่ยนวันหรือไม่	check_date_changed	exec	3	19	{"code":"module.exports = async function(data) {\\n\\tlet isChanged = {{sort_second_last_data.dateChanged}};\\n\\n    if (isChanged === true) {\\n        return true;\\n    }\\n\\t\\n    throw new Error('not change date time');\\n    return false;\\n}"}	3164af1a-52b6-4710-8004-e0b70dad1748	e085f651-7f3a-4c87-b4d1-e1cb80be3ee5	b1e04a8c-e551-468e-b336-820154f3ac1b	2024-10-03 04:31:50.419+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-516809cc-e440-4e54-86b9-d3c1f133a2c3	อ่านข้อมูล queue	read_data_queue	item-read	19	1	{"collection":"queue","key":["{{$trigger.payload.queues[0]}}"],"permissions":"$full"}	f57791c4-b26d-4ff7-bdb6-0fc9398798e2	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 08:14:03.79+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 543bedb4-2ca2-4709-a36b-9abbdbf3e7ed	อ่านข้อมูล Finance_work	read_data_finance_work	item-read	3	17	{"collection":"finance_work","key":["{{read_data_billing.finance_work}}"],"permissions":"$full"}	d8088e40-c8e3-40f0-812c-7fa92846329e	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:43:38.722+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+516809cc-e440-4e54-86b9-d3c1f133a2c3	อ่านข้อมูล queue	read_data_queue	item-read	19	1	{"collection":"queue","key":["{{$trigger.payload.queues[0]}}"],"permissions":"$full"}	f57791c4-b26d-4ff7-bdb6-0fc9398798e2	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 08:14:03.79+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 99a9bab8-367d-4e18-aa46-ab6235dfa247	Trigger Flow	trigger_dj3kw_wafed	trigger	95	71	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{item_create_jtmlb_mburm}}"}	\N	\N	5563ef7b-949d-46c7-b3ae-5d7d187b7e72	2024-10-22 03:19:10.067+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-7b30897e-3435-416d-b15a-7d6b38727b22	อ่านข้อมูล queue	read_data_queue	item-read	3	18	{"collection":"queue","key":["{{read_data_appointment.queue[0]}}"],"permissions":"$full"}	92b2ec9b-8d17-4230-a3ff-6f2df5b33f31	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-18 16:05:50.198+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7215494a-611a-4297-b245-a002192a0db7	ล้างข้อมูลหมอใน coordinate	item_update_o0jz9_kmwcu	item-update	37	35	{"collection":"coordinate","key":["{{$trigger.keys[0]}}"],"payload":{"doctor":null},"emitEvents":true,"permissions":"$full"}	\N	\N	baa6bf9a-4a45-475e-9aa9-93d402672662	2025-02-03 16:46:19.982+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b48adc12-7dbd-4bb6-bdcd-825a44112892	Trigger Flow	trigger_7ozpf	trigger	130	20	{"flow":"308fa33c-b445-49f7-a5de-d732058b85e4","payload":"{{last_no_progress.lastProgressId}}"}	\N	\N	af896f59-cef0-47ab-b0ac-efdb21df529f	2024-10-30 14:37:42.027+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 9a3d5c8c-46d2-42b6-9b7e-364f7142f618	เช็คว่าเปลี่ยน time_slot ของนัดหมาย หรือไม่	check_time_slot_changed	exec	41	36	{"code":"module.exports = async function(data) {\\n\\tlet isChanged = {{sort_second_last_data.timeSlotChanged}};\\n\\n    if (isChanged === true) {\\n        return true;\\n    }\\n\\t\\n    throw new Error('not change time slot');\\n    return false;\\n}"}	cc84065d-dcc5-4493-91ce-850595298d71	f21e358d-22b5-4fcb-9cef-a8d05c01a175	b1e04a8c-e551-468e-b336-820154f3ac1b	2024-10-03 04:31:49.838+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f118e0ab-f4ae-4864-be5c-d0871cd38a64	อัพเดทข้อมูล Billing	billing	item-update	39	19	{"collection":"billing","key":["{{read_data_billing.id}}"],"payload":{"paid_amount":"{{read_data_billing.total}}"},"permissions":"$full"}	\N	\N	836b85ad-418d-47b0-8d41-547021433cc7	2025-06-13 05:03:06.418+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+7b30897e-3435-416d-b15a-7d6b38727b22	อ่านข้อมูล queue	read_data_queue	item-read	3	18	{"collection":"queue","key":["{{read_data_appointment.queue[0]}}"],"permissions":"$full"}	92b2ec9b-8d17-4230-a3ff-6f2df5b33f31	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-18 16:05:50.198+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 5affe057-4f53-483e-878f-192329ba8d7e	อ่านข้อมูล patient_info ที่ถูก trigger	read_patient_data	item-read	19	1	{"collection":"patient_info","key":["{{$trigger.key}}"],"permissions":"$full"}	adb772fe-f637-4352-92dd-049bec15969f	\N	be3c0650-735d-42be-b1a1-1002802605ae	2024-11-18 13:52:20.437+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 028e9b83-924b-43e7-920a-20c289284b2b	ลบ queue id ที่ผูกกับ appointment 	item_delete_5hfd8	item-delete	129	19	{"collection":"queue","key":["{{read_data_appointment.queue[0]}}"],"permissions":"$full"}	\N	\N	b1e04a8c-e551-468e-b336-820154f3ac1b	2024-10-03 04:31:49.967+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 61badf5a-dd15-47c7-b249-f7e00ceb487e	อ่านข้อมูล Recommend_bx_form	read_data_recommend_bx_form	item-read	19	1	{"permissions":"$full","collection":"recommend_bx_form","key":["{{$trigger.key}}"]}	dd646b7c-28de-4c1a-b6b8-d1f0d4f1d0fa	\N	d0764ae1-0dd4-43fc-bb30-8ed60868e7b1	2025-07-16 03:52:49.958+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 88cd3f5c-8397-49b7-8dbf-ebc45be5a116	เช็คว่า appointment มีคิว หรือไม่	check_queue	exec	111	19	{"code":"module.exports = async function(data) {\\n    const queue = {{read_data_appointment.queue[0]}};\\n\\n    if (queue) {\\n        console.log(\\"มีคิว\\");\\n        return true;\\n    }\\n\\t\\n    throw new Error('ไม่มีคิว');\\n    return false;\\n}\\n"}	028e9b83-924b-43e7-920a-20c289284b2b	\N	b1e04a8c-e551-468e-b336-820154f3ac1b	2024-10-03 04:31:50.013+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 eec9d453-8492-423d-876d-73f2ca4d9345	check_queue_e	check_queue_e	exec	91	1	{"code":"module.exports = async function(data) {\\n    let queue = {{read_data_queue}};\\n\\n    if (queue.queue_type == \\"E\\") {\\n        return true;\\n    }\\n\\n    throw new Error('queue_type not E');\\n    return false;\\n}"}	31bc574c-8fbf-4567-9436-008d23aed035	\N	89677e2f-7d1b-4e9c-8853-2e23650f65ac	2024-10-07 07:07:16.175+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-b0b3f313-248e-4d04-b1e6-49302deba6ad	อ่านข้อมูล worklist	read_data_worklist	item-read	39	17	{"permissions":"$full","collection":"worklist","key":["{{read_data_queue.worklist[0]}}"]}	34421518-f22e-4093-b515-f226e33972bf	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 02:37:58.803+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 74dfa88b-5bb4-4eb3-a942-6ea86b227642	เช็ค ultrasound_work ว่าอยู่ในระหว่างกำลังดำเนินการไหม	check_is_ultrasound_work_in_progress	exec	37	1	{"code":"module.exports = async function(data) {\\n\\tconst ultrasound_work = {{read_ultrasound_works[0]}}\\n\\t\\n    // \\"6\\" = ถ่ายสำเร็จ\\n    if(!ultrasound_work || ultrasound_work.status === \\"6\\") {\\n    \\tthrow new Error('ไม่ใช่เคสที่กำลังถ่าย US อยู่')\\n    }\\n}"}	5eac4762-fda7-406c-b1d5-43f4d3f1b550	\N	58159f83-f036-41e2-a0cf-1dc28df97b35	2025-10-03 05:56:48.451+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 09c227dd-df94-40dc-9ec3-3b733aa49feb	check_patient_info	check_patient_info	exec	75	18	{"code":"module.exports = async function(data) {\\n\\tconst readData = {{read_patient_info}};\\n\\n    if (Array.isArray(readData) && readData.length > 0) {\\n        return 'สร้างนัดหมาย';\\n    }\\n\\n    return 'ลงทะเบียนผู้มาตรวจและสร้างนัดหมาย';\\n}\\n"}	b72ff5d2-ced8-4cae-8eb7-b4492bbbab9c	\N	5563ef7b-949d-46c7-b3ae-5d7d187b7e72	2024-10-15 03:05:14.847+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 835e71ec-5fcf-434a-83cd-fd0f94485fdd	Trigger Flow	trigger_d8gz9	trigger	111	19	{"flow":"308fa33c-b445-49f7-a5de-d732058b85e4","payload":"{{last_no_progress.lastProgressId}}"}	\N	\N	2770ae3f-8314-4d3f-a4f8-4d58da1ec279	2024-10-30 12:19:55.092+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-b8e3a46f-b8bc-4b63-866b-aaaf0e5b218d	สร้าง Coordinate แบบ "รอทำ US"	create_coordinate_us	item-create	111	18	{"collection":"coordinate","payload":{"exam":"{{$trigger.keys[0]}}","appointment":"{{read_data_examination.appointment}}","status":"10","data_tag":"1","location":"{{$trigger.payload.location}}"},"emitEvents":true,"permissions":"$full"}	\N	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-06-10 10:32:20.494+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-05976409-0ba8-4e6a-bea6-415468ba0c1d	อ่านข้อมูล appointment	read_data_appointment	item-read	3	17	{"permissions":"$full","collection":"appointment","key":["{{read_data_ultrasound_work.appointment}}"]}	c2af3dfb-6550-414f-b337-13ec7113eb30	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 02:37:58.93+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 df94a8e5-92f4-4f31-93bb-240e94944fee	อัพเดตจำนวนภาพใน  pacs_sync_info	update_num_of_mam	item-update	55	1	{"collection":"pacs_sync_info","emitEvents":true,"key":"{{$trigger.payload.pacs_id}}","payload":"{{create_payload}}","permissions":"$full"}	\N	\N	3d94c102-f959-4758-bf95-58c7f165f1d3	2025-02-24 11:58:18.67+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c7bd34c1-9c17-412b-abfb-f7523dd106e4	Update Data (รับผล)	item_update_ioh1x_gbymr	item-update	95	51	{"collection":"progress","key":["{{last_no_progress.secondLastProgressId}}"],"payload":{"title":"รับผล","status":"รอดำเนินการ","department":"Front","close_case_time":null,"worklist":"{{read_data_queue.worklist[0]}}"},"permissions":"$full"}	\N	\N	e2646ed5-054d-47a0-9237-070f20b2760f	2024-11-18 06:16:01.888+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 3fcba7bc-ebb2-4198-9de5-f80b3ff8d901	read_data_worklist	read_data_worklist	item-read	37	1	{"collection":"worklist","key":["{{read_data_queue.worklist[0]}}"],"permissions":"$full"}	8ef45029-862c-434b-9f62-783ac4cd77f4	\N	89677e2f-7d1b-4e9c-8853-2e23650f65ac	2024-10-07 07:07:16.209+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 d2e21476-b33e-4977-b9c6-da7150734d18	ปั้นวันที่	formatted_date_and_time	exec	85	1	{"code":"module.exports = async function(data) {\\n    const test = data;\\n    const pacs = {{read_pacs_sync_info}};\\n\\tconst date = new Date(pacs.date_created);\\n    const year = date.getFullYear()+543;\\n\\tconst month = (date.getMonth()+1).toString().padStart(2,\\"0\\");\\n\\tconst day = date.getDate().toString().padStart(2,\\"0\\");\\n\\tconst hour = date.getHours().toString().padStart(2,\\"0\\");\\n\\tconst minute = date.getMinutes().toString().padStart(2,\\"0\\");\\n\\tconst second = date.getSeconds().toString().padStart(2,\\"0\\");\\n    \\n    \\n\\treturn {date:year+month+day, time:hour+minute+second };\\n}"}	\N	\N	f8348b38-4052-4bed-81f1-f1462291ae17	2025-01-16 08:13:57.602+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-f5a42e53-4f80-48c8-8ff5-8e084ff671df	เช็คว่า exam เป็นสถานะ ยกเลิก หรือไม่	exec_hb7dh_wcqdy	exec	37	36	{"code":"module.exports = async function(data) {\\n    const examStatus = \\"{{$trigger.payload.status}}\\";\\n\\n    //ยกเลิก\\n    if (examStatus === \\"7\\") {\\n        return true;\\n    }\\n\\n    throw new Error('ไม่ใช่สถานะ ยกเลิก');\\n    return false;\\n}"}	a7280461-38fb-4321-8f14-373c9fa6616b	543b9a72-5768-4bc0-8136-8bb385434488	e472714e-dd02-4bfc-8038-133053a0a457	2025-02-17 01:27:31.154+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+b8e3a46f-b8bc-4b63-866b-aaaf0e5b218d	สร้าง Coordinate แบบ "รอทำ US"	create_coordinate_us	item-create	111	18	{"collection":"coordinate","payload":{"exam":"{{$trigger.keys[0]}}","appointment":"{{read_data_examination.appointment}}","status":"10","data_tag":"1","location":"{{$trigger.payload.location}}"},"emitEvents":true,"permissions":"$full"}	\N	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-06-10 10:32:20.494+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+92b2ec9b-8d17-4230-a3ff-6f2df5b33f31	อ่านข้อมูล worklist 	read_data_worklist	item-read	21	18	{"collection":"worklist","key":["{{read_data_queue.worklist[0]}}"],"permissions":"$full"}	1261d3f6-5b50-4b38-8f1b-4bfd17f41f3d	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-18 16:05:50.119+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+fef52545-fee4-4246-9a7d-648199312db2	เข้า Trigger Flow Progress Created (v.ส่ง id)	trigger_flow_progress_created_nxndg_iusor_nwggp	trigger	75	49	{"flow":"89be6643-9611-41be-8186-059689a6c8d3","payload":{"action":"doctor","user":"{{read_data_examination.case_owner_doctor}}","progress":"{{create_progress_start_us}}"}}	\N	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2026-06-29 11:25:50.571+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+b0b3f313-248e-4d04-b1e6-49302deba6ad	อ่านข้อมูล worklist	read_data_worklist	item-read	39	17	{"permissions":"$full","collection":"worklist","key":["{{read_data_queue.worklist[0]}}"]}	34421518-f22e-4093-b515-f226e33972bf	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 02:37:58.803+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 3fe19f05-4dc5-4691-9831-1e4c9d2e7476	อัพเดทฟิลด์ status ของ patient_result ที่ผูกกับ queue เป็น เรียกคิวแล้ว	item_update_w25me	item-update	91	1	{"collection":"patient_result","key":["{{read_data_queue.patient_result}}"],"payload":{"status":"6"},"permissions":"$full"}	e1e9982f-da5b-4b35-b28d-12f34cdf4495	\N	4287333e-7c64-4aaa-af5c-8ce884e508b8	2024-10-03 04:11:34.084+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c65f98e1-b9f0-4d5a-a48e-3df83195c86d	อ่าน exam 10 ครั้งล่าสุดที่ sign to pacs ของคนไข้คนนี้	read_last_10_examination	item-read	37	18	{"permissions":"$full","collection":"examination","key":null,"query":{"filter":{"_and":[{"patient":{"_eq":"{{read_own_examination.patient}}"}},{"us":{"state":{"_eq":"3"}}},{"date_created":{"_lt":"{{get_today_ISOString}}"}}]},"limit":10,"sort":"-date_created","fields":["id","us"]}}	728f0f98-c077-448a-944b-9740b0018744	\N	62c45fee-1f13-4c6f-b11b-d156f06626df	2025-09-17 06:56:44.669+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 2f5ac5b4-9eca-4bb8-b97c-698ceaec3260	อ่านข้อมูล patient_result ที่ผูกอยู่กับ queue	read_data_patient_result	item-read	73	1	{"collection":"patient_result","key":["{{read_data_queue.patient_result}}"],"permissions":"$full"}	3fe19f05-4dc5-4691-9831-1e4c9d2e7476	\N	4287333e-7c64-4aaa-af5c-8ce884e508b8	2024-10-03 04:11:34.099+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15462,18 +15628,18 @@ c65f98e1-b9f0-4d5a-a48e-3df83195c86d	อ่าน exam 10 ครั้งล่�
 f03903c7-9451-4c4e-bd71-d6b0870f6500	เข้า Trigger Flow Postpone the appointment	trigger_5075x	trigger	39	19	{"flow":"123c9014-d9d2-4a4f-9a93-d59f291e1c24","payload":"{{$trigger.keys[0]}}"}	603b6342-11df-4c37-8d12-30c19c2e293d	\N	b1e04a8c-e551-468e-b336-820154f3ac1b	2024-11-05 07:25:20.099+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 fe2dc5a8-554d-40f9-9b68-273ebae1e8bf	อ่านข้อมูล examination 	read_data_examination	item-read	37	1	{"collection":"examination","key":["{{read_data_doctor_work.exam}}"],"permissions":"$full"}	1630c621-d1c2-4595-b70c-b0489e6d0f74	\N	cdfc74cd-8e37-4fbd-b333-622e244a8e63	2025-02-04 11:47:17.658+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8307f441-16ff-495a-81ee-e7d5afb325df	สร้าง payload สำหรับ update ข้อมูล	create_payload	exec	37	1	{"code":"module.exports = async function(data) {\\n    const payload = {};\\n    const num_of_mam = {{$trigger.payload.num_of_mam}};\\n\\tconst num_of_spot = {{$trigger.payload.num_of_spot}};\\n\\tconst num_of_implant = {{$trigger.payload.num_of_implant}};\\n\\tif(num_of_mam) {\\n        payload.num_of_mam = num_of_mam\\n    };\\n\\tif(num_of_spot) {\\n        payload.num_of_spot = num_of_spot\\n    };\\n\\tif(num_of_implant) {\\n        payload.num_of_implant = num_of_implant\\n    }\\n\\t\\n\\n\\treturn payload;\\n}"}	df94a8e5-92f4-4f31-93bb-240e94944fee	\N	3d94c102-f959-4758-bf95-58c7f165f1d3	2025-06-18 08:49:33.414+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-d680693d-2b49-4c5a-a485-95bbfa1d89e5	สร้าง progress รอปรึกษาแพทย์	create_progress_consult_doctor	item-create	57	99	{"payload":{"title":"รอปรึกษาแพทย์","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"แพทย์","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	a02bca20-ef49-4ed9-9edf-ae8c904d3d4d	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-06-09 02:00:28.995+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 26427818-9803-4b32-95bd-d8eff369406a	Trigger Flow	trigger_b6hz7	trigger	113	66	{"flow":"308fa33c-b445-49f7-a5de-d732058b85e4","payload":"{{last_no_progress.lastProgressId}}"}	\N	\N	e2646ed5-054d-47a0-9237-070f20b2760f	2024-11-19 01:50:36.829+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 80c766e4-f3db-445a-8e43-c6f15195bbdc	Trigger Flow	trigger_8z0v5_tixtc	trigger	95	66	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{item_create_x9ges_wsabv}}"}	26427818-9803-4b32-95bd-d8eff369406a	\N	e2646ed5-054d-47a0-9237-070f20b2760f	2024-11-19 01:50:36.863+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-d4a08706-1932-4d2a-8534-ebeb21edbbd1	Trigger Flow	trigger_f3b7x	trigger	93	53	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_save_receipt}}"}	\N	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 09:59:45.683+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 adb772fe-f637-4352-92dd-049bec15969f	เช็คว่า created_by_queue_type เป็น K หรือไม่	exec_6loc4	exec	37	1	{"code":"module.exports = async function(data) {\\n    let patient = {{read_patient_data}};\\n\\n    if (patient.created_by_queue_type == \\"K\\") {\\n        return true;\\n    }\\n\\n    throw new Error('ไม่ได้ถูกสร้างโดยคิว K');\\n    return false;\\n}"}	b33449be-4252-4309-b5be-259728890060	073daeec-d1d9-4e16-b648-0f16e1ff40b9	be3c0650-735d-42be-b1a1-1002802605ae	2024-11-18 14:04:18.15+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 6a790e36-727d-42fc-ac2c-6e4773cd134a	อ่านข้อมูล Queue	read_data_queue	item-read	21	53	{"collection":"queue","key":["{{read_data_appointment.queue[0]}}"],"permissions":"$full"}	68578121-e432-4a13-a584-ad31e1bc0cdc	\N	836b85ad-418d-47b0-8d41-547021433cc7	2025-05-11 04:09:39.743+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-8ac1acd0-96af-4c40-a6ef-30930492c1e4	อ่านค่า record ที่พึ่งสร้างไป	find_created_examination	item-read	55	19	{"query":{"filter":{"appointment":{"_eq":"{{$trigger.keys[0]}}"}},"sort":"-date_created"},"collection":"examination","permissions":"$full"}	dc023ea6-3d7b-4fd7-baf7-2d342f748348	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2024-12-19 03:17:42.515+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b16b54a4-fd7f-44ad-8c15-eb0d210127b7	อ่านข้อมูล Coordinate	read_data_coordinate	item-read	19	1	{"collection":"coordinate","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	419b1bd0-140a-4e20-bac2-584b353ac34a	\N	32de3302-0f95-4186-81e2-955100e34997	2025-02-06 16:30:04.41+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+f5a42e53-4f80-48c8-8ff5-8e084ff671df	เช็คว่า exam เป็นสถานะ ยกเลิก หรือไม่	exec_hb7dh_wcqdy	exec	37	36	{"code":"module.exports = async function(data) {\\n    const examStatus = \\"{{$trigger.payload.status}}\\";\\n\\n    //ยกเลิก\\n    if (examStatus === \\"7\\") {\\n        return true;\\n    }\\n\\n    throw new Error('ไม่ใช่สถานะ ยกเลิก');\\n    return false;\\n}"}	a7280461-38fb-4321-8f14-373c9fa6616b	543b9a72-5768-4bc0-8136-8bb385434488	e472714e-dd02-4bfc-8038-133053a0a457	2025-02-17 01:27:31.154+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+d4a08706-1932-4d2a-8534-ebeb21edbbd1	Trigger Flow	trigger_f3b7x	trigger	93	53	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_save_receipt}}"}	\N	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 09:59:45.683+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+d680693d-2b49-4c5a-a485-95bbfa1d89e5	สร้าง progress รอปรึกษาแพทย์	create_progress_consult_doctor	item-create	57	99	{"payload":{"title":"รอปรึกษาแพทย์","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"แพทย์","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	a02bca20-ef49-4ed9-9edf-ae8c904d3d4d	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-06-09 02:00:28.995+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+8ac1acd0-96af-4c40-a6ef-30930492c1e4	อ่านค่า record ที่พึ่งสร้างไป	find_created_examination	item-read	55	18	{"query":{"filter":{"appointment":{"_eq":"{{$trigger.keys[0]}}"}},"sort":"-date_created"},"collection":"examination","permissions":"$full"}	dc023ea6-3d7b-4fd7-baf7-2d342f748348	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2024-12-19 03:17:42.515+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e145b84c-4403-416f-a7f4-eb91c0be5980	อ่านข้อมูล doctor_work	read_data_doctor_work	item-read	55	17	{"permissions":"$full","collection":"doctor_work","key":[],"query":{"filter":{"exam":{"_eq":"{{read_data_recommend_bx_form.examination}}"}}}}	4724eab2-403d-4a8e-aa39-c59808a0838e	\N	d0764ae1-0dd4-43fc-bb30-8ed60868e7b1	2025-07-16 03:55:39.368+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 ee0fcad1-0d08-4ef5-9c8f-a93389b2e8c0	Update Data	item_update_lqzdq	item-update	19	52	{"collection":"examination","payload":{"case_owner_doctor":"{{read_data_coordinate.doctor}}"},"key":["{{read_data_coordinate.exam}}"],"permissions":"$full"}	\N	\N	baa6bf9a-4a45-475e-9aa9-93d402672662	2025-02-06 08:54:23.933+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c45d3878-609e-42e0-9dd3-9474ad26c17e	เข้า Trigger Flow Progress Created	trigger_8z0v5_dhjcd	trigger	111	19	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{item_create_x9ges_rxput}}"}	f2b88382-312f-45cc-bc52-20d14fac1a5a	\N	e2646ed5-054d-47a0-9237-070f20b2760f	2024-11-20 02:25:57.768+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-13d6161f-737f-41df-8f21-16876fd9f5ff	อ่านข้อมูล appointment	read_data_appointment	item-read	3	19	{"collection":"appointment","key":["{{read_data_billing.appointment}}"],"permissions":"$full"}	da83e3bc-6ba1-4960-b31d-29b343ca41f6	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 09:59:46.084+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 752941d2-0719-4cbc-8f35-f3d79e31ab9e	เปลี่ยน status ของ exam เป็น "ส่งต่อแพทย์"	update_exam_status_refer_med	item-update	97	35	{"key":"{{$trigger.keys[0]}}","emitEvents":true,"payload":{"status_trigger_flows":"trigger","status":"ส่งต่อแพทย์","location":"{{$trigger.payload.location}}","is_ultrasound":"{{$trigger.payload.is_ultrasound}}"},"collection":"examination","permissions":"$full"}	\N	\N	74c5ff61-80ae-49e8-a670-1e23e42a78be	2025-04-21 07:20:38.083+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 1b7fe772-ac3d-4ff7-a86c-8b8ea0cfd41c	อัพเดต last_signed_to_pacs ของ ultrasound_work ของวันนี้	update_today_ultrasound_work	item-update	37	36	{"collection":"ultrasound_work","permissions":"$full","emitEvents":true,"key":"{{read_current_ultrasound_work[0].id}}","payload":{"last_signed_to_pacs":"{{read_current_ultrasound.exam}}"}}	\N	\N	62c45fee-1f13-4c6f-b11b-d156f06626df	2025-09-17 07:45:29.89+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 39f8a264-f903-4b6e-9bf6-a55944886f78	อัพเดทสถานะ doctor_work	doctor_work	item-update	91	17	{"collection":"doctor_work","permissions":"$full","key":["{{read_data_doctor_work[0].id}}"],"payload":{"status":"9","status_trigger_flows":"trigger"},"emitEvents":true}	\N	\N	d0764ae1-0dd4-43fc-bb30-8ed60868e7b1	2025-07-16 03:57:02.452+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15481,35 +15647,33 @@ c45d3878-609e-42e0-9dd3-9474ad26c17e	เข้า Trigger Flow Progress Created	
 4e1acf48-f6cd-4556-86e0-34ef4d0e2fb4	check_status_patient_result (รอชำระเงิน)	check_status_patient_result	exec	39	19	{"code":"module.exports = async function(data) {\\n    let patientResult = {{read_data_patient_result}};\\n\\t//2 รอชำระเงิน\\n    if (patientResult.status == 2) {\\n        return true; \\n    } \\n\\n    throw new Error('สถานะคิวไม่ใช่รอชำระเงิน'); \\n\\n};\\n"}	1f81adf9-8311-481d-b8f7-b8d83ff5dcd7	533d4c1e-9034-4109-8f81-2b2227a12d1e	e2646ed5-054d-47a0-9237-070f20b2760f	2024-10-16 11:39:20.574+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 baa79662-0543-4504-b26f-63aaf1f11ad0	สร้าง progress จัดส่งผลตรวจ	item_create_rz6s8	item-create	39	19	{"collection":"progress","payload":{"title":"เจ้าหน้าที่ Front จัดส่งผลตรวจ","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Front","worklist":"{{read_data_queue.worklist[0]}}"}}	\N	\N	2e907bc7-59b0-451c-bf25-8bc2cd332ec8	2024-10-28 04:28:47.603+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b16e6226-a2ad-4a0f-87cb-aa826413f181	นำข้อมูลจาก revision 2 ตัวสุดท้าย มาเทียบกัน	sort_second_last_data	exec	55	1	{"code":"module.exports = async function(data) {\\n  try {\\n    // ดึงข้อมูลจาก response\\n    const data2 = {{request_revisions_appointment.data.data}};\\n\\n    // ตรวจสอบและกรองข้อมูล null ออก\\n    const validData = data2.filter(item => item && item.data && item.data.date_updated);\\n\\n    // ตรวจสอบว่ามีข้อมูลเพียงพอที่จะนำมาเปรียบเทียบหรือไม่\\n    if (validData.length < 2) {\\n      throw new Error(\\"Not enough valid data for comparison.\\");\\n    }\\n\\n    // เรียงลำดับข้อมูลตาม date_updated จากเก่าไปใหม่\\n    const sortedData = validData.sort((a, b) => new Date(a.data.date_updated) - new Date(b.data.date_updated));\\n\\n    // ดึงสองข้อมูลสุดท้าย\\n    const secondLast = sortedData[sortedData.length - 2];\\n    const last = sortedData[sortedData.length - 1];\\n\\n    // ฟังก์ชั่นสำหรับแยกวันที่\\n    const getDateOnly = (dateTime) => dateTime.split('T')[0];\\n\\n    // แยกวันที่จาก datetime\\n    const lastDate = getDateOnly(last.data.appointment_datetime);\\n    const secondLastDate = getDateOnly(secondLast.data.appointment_datetime);\\n\\n    // ตรวจสอบการเปลี่ยนแปลงวันที่\\n    const dateChanged = lastDate !== secondLastDate;\\n\\n    // ตรวจสอบการเปลี่ยนแปลง time_slot\\n    const lastTimeSlot = last.data.time_slot;\\n    const secondLastTimeSlot = secondLast.data.time_slot;\\n    const timeSlotChanged = lastTimeSlot !== secondLastTimeSlot;\\n\\n    // ส่งข้อมูลไปยัง Flow ถัดไป\\n    return {\\n      secondLast,\\n      last,\\n      dateChanged,\\n      timeSlotChanged\\n    };\\n  } catch (error) {\\n    console.error(\\"Error in script:\\", error);\\n    throw error; // ส่งต่อข้อผิดพลาดไปยัง Flow\\n  }\\n};"}	8ccaffe4-ac01-43bf-bab4-2f5427f4272c	\N	b1e04a8c-e551-468e-b336-820154f3ac1b	2024-10-03 04:31:50.547+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-dc023ea6-3d7b-4fd7-baf7-2d342f748348	เปลี่ยนสถานะเป็น "รอเรียกคิว"	update_status	item-update	19	35	{"collection":"examination","query":null,"payload":{"status":"0"},"emitEvents":true,"key":["{{find_created_examination[0].id}}"],"permissions":"$full"}	\N	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2024-12-19 03:17:42.501+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 da1dc4dc-26b2-4113-a24c-5d6c04381386	check_service_type_title	check_service_type_title	exec	39	18	{"code":"module.exports = async function(data) {\\n    if (\\"{{read_data_queue.service_type}}\\" == \\"สร้าง ID ผู้ป่วยใหม่\\") {\\n        return \\"สร้างข้อมูลผู้มาตรวจ\\"; \\n    } \\n    else {\\n        return \\"เจ้าหน้าที่ Front ถ่ายเพิ่ม\\"; \\n    } \\n};\\n"}	65c2eeeb-4b8c-4e91-aab8-9411cac478e6	\N	89677e2f-7d1b-4e9c-8853-2e23650f65ac	2024-10-28 03:58:11.327+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c45f66f6-75f7-4b12-be01-39cdaa820a0f	check_queue_status_2	check_queue_status_2	exec	21	18	{"code":"module.exports = async function(data) {\\n    if ({{check_queue_status_1}} == \\"1\\") {\\n        return true; \\n    } \\n    throw new Error('สถานะคิวไม่ใช่เรียกแล้ว'); \\n\\n};\\n"}	da1dc4dc-26b2-4113-a24c-5d6c04381386	021cd600-e57b-4d74-8ac9-62e50618e7b6	89677e2f-7d1b-4e9c-8853-2e23650f65ac	2024-10-07 07:07:16.108+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 4e50f4f4-2557-4a1e-892e-03e772f9d6a5	เช็คว่าเคยทำ mam มาแล้วหรือยัง	check_is_mam_done	exec	19	18	{"code":"module.exports = async function(data) {\\n\\tconst currentUltrasoundWork = {{read_current_ultrasound_work}}\\n\\tconst mamPacsSyncInfos = currentUltrasoundWork?.exam?.pacs_sync_infos?.filter(\\n        ({ modality, is_mark_del, end_time }) => modality===\\"MG\\" && !is_mark_del && end_time\\n    ) ?? []\\n    \\n    if(mamPacsSyncInfos?.length === 0) {\\n    \\tthrow new Error('เคสนี้ไม่เคยทำ mam')\\n    }\\n\\n}"}	53c6b9fc-8fa0-4fe2-9c48-cf20151e25d3	665df4b0-a862-47e5-8ef9-37fc04f90fcb	b44bbffe-cbe8-4363-86b3-5c5841fd2e0c	2025-09-05 09:18:10.266+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 793171dc-269b-4d2b-a931-c20c057bf1ac	อ่านข้อมูล billing	read_data_billing	item-read	94	18	{"permissions":"$full","collection":"billing","key":["{{create_billing[0]}}"]}	4819fc81-9648-44b0-915d-acde3354d0ff	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 15:29:07.757+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-5d09baa0-00c2-4362-9e31-2173a3ee1dd0	เช็คว่า Progress ตัวสุดท้ายไม่ใช่ ถ่าย Mam เพิ่ม	exec_wvr55_crgxd_hbuny_rtbvh	exec	40	84	{"code":"module.exports = async function(data) {\\n   const lastProgress = {{read_data_last_progress}};\\n    \\n    if (lastProgress.title !== \\"ถ่าย Mammogram เพิ่ม\\") {\\n        return true; \\n    } \\n\\n    throw new Error('lastProgress เป็นคือ ถ่าย Mammogram เพิ่ม'); \\n};\\n"}	08041e42-7564-472d-9b09-b7157ec6106c	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-09-15 10:27:10.276+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+13d6161f-737f-41df-8f21-16876fd9f5ff	อ่านข้อมูล appointment	read_data_appointment	item-read	3	19	{"collection":"appointment","key":["{{read_data_billing.appointment}}"],"permissions":"$full"}	da83e3bc-6ba1-4960-b31d-29b343ca41f6	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 09:59:46.084+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+dc023ea6-3d7b-4fd7-baf7-2d342f748348	เปลี่ยนสถานะเป็น "รอเรียกคิว"	update_status	item-update	19	35	{"collection":"examination","query":null,"payload":{"status":"0"},"emitEvents":true,"key":["{{find_created_examination[0].id}}"],"permissions":"$full"}	\N	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2024-12-19 03:17:42.501+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7a51392d-35b0-485b-92db-8f027177fdb1	check_queue_status_1	check_queue_status_1	exec	3	20	{"code":"module.exports = async function(data) {\\n    let queue = {{read_data_queue}};\\n\\t//1 เรียกคิว 2 เสร็จสิ้น 0 รอเรียกคิว 4 กำลังดำเนินการ\\n    if (queue.status == 0) {\\n        return \\"0\\"; \\n    } else if (queue.status == 1) {\\n        return \\"1\\"; \\n    } else if (queue.status == 2) {\\n        return \\"2\\"; \\n    } else if (queue.status == 4) {\\n        return \\"4\\"; \\n    } \\n};\\n"}	c23cbf7f-d3a5-4925-ba2e-f92297cba54f	\N	af896f59-cef0-47ab-b0ac-efdb21df529f	2024-10-18 02:52:27.051+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-92b2ec9b-8d17-4230-a3ff-6f2df5b33f31	อ่านข้อมูล worklist 	read_data_worklist	item-read	21	18	{"collection":"worklist","key":["{{read_data_queue.worklist[0]}}"],"permissions":"$full"}	1261d3f6-5b50-4b38-8f1b-4bfd17f41f3d	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-18 16:05:50.119+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-543b9a72-5768-4bc0-8136-8bb385434488	เช็คว่า exam เป็นสถานะ รอปรึกษาแพทย์ หรือไม่	exec_hb7dh_oxfvj	exec	37	53	{"code":"module.exports = async function(data) {\\n    const examStatus = \\"{{$trigger.payload.status}}\\";\\n\\n    //รอปรึกษาแพทย์\\n    if (examStatus === \\"2\\") {\\n        return true;\\n    }\\n\\n    throw new Error('ไม่ใช่สถานะ รอปรึกษาแพทย์');\\n    return false;\\n}"}	d3d569a5-5c42-4aa7-89f9-14cd7176625b	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-03-18 07:37:47.373+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 767d7834-fffc-4b11-b4cf-18b742d9822e	เช็คว่า status เป็นกรณี "ถ่ายเพิ่ม" หรือไม่	check_status_return_for_spot	exec	61	19	{"code":"module.exports = async function(data) {\\nconst status = \\"{{$trigger.payload.status}}\\";\\n\\nconst acceptedStatuses = [\\n  \\"10\\", // ก่อน US\\n  \\"17\\"  // หลัง US\\n];\\n    \\n    if(!acceptedStatuses.includes(status)) { \\n        throw new Error('ไม่ใช่สถานะ รับเคส');\\n    }\\n\\n\\n}"}	2bbf21f3-1b5e-4c97-b06e-4f70a57dc69b	c4d1e9e6-00b5-4b0d-bb49-24e67c13aa55	74c5ff61-80ae-49e8-a670-1e23e42a78be	2025-04-29 12:19:07.599+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 ab83ee75-50ac-4b9c-8d45-a8412d5cd7c8	เช็คว่า trigger_flows เป็น "doctor_work" หรือไม่ 	check_trigger_flows_doctor_work	exec	37	17	{"code":"module.exports = async function(data) {\\n    const triggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n\\n    if (triggerFlows !== \\"doctor_work\\") {\\n\\t\\tthrow new Error('ไม่มี triggerFlows หรือไม่ใช่ doctor_work');\\n    } \\n\\n}"}	e145b84c-4403-416f-a7f4-eb91c0be5980	\N	d0764ae1-0dd4-43fc-bb30-8ed60868e7b1	2025-07-16 03:18:56.236+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 34f70b23-33c3-471f-8eab-c4c61ec795f7	read_data_queue	read_data_queue	item-read	19	1	{"key":["{{$trigger.keys[0]}}"],"collection":"queue","permissions":"$full"}	98c31b14-25f5-4a58-95ba-a254822010ea	\N	af896f59-cef0-47ab-b0ac-efdb21df529f	2024-10-02 10:14:21.139+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-4fbf58c0-e83b-4b23-8f00-e0c4bc6666bd	สร้าง progress ถ่าย Mammogram เพิ่ม	create_progress_mammogram	item-create	57	131	{"collection":"progress","payload":{"title":"ถ่าย Mammogram เพิ่ม","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Tech","worklist":"{{read_data_queue.worklist[0]}}"}}	6a1b9973-475f-4556-90a5-b6d1e2dbb287	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-04 04:31:35.619+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 45be11ee-ee4d-4e1c-8a73-b7db9881699a	ดึงค่า is_front_noti ที่เป็น boolean ออกมา	get_front_noti_boolean	exec	56	1	{"code":"module.exports = async function(data) {\\n    const is_front_noti = {{$trigger.payload.is_front_noti}}\\n\\t\\n\\treturn Boolean({{$trigger.payload.is_front_noti}});\\n}"}	4ecccd5b-b89e-4eed-8b48-bdfe2d61c88d	\N	4c95d232-9f2a-49cd-8d54-da7d96c85f9e	2025-09-02 02:51:13.992+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7b5c1c90-56d0-4740-93d6-9fe58388afaa	stamp เวลา end_time	update_end_time	item-update	61	35	{"collection":"pacs_sync_info","key":"{{$trigger.payload.pacs_id}}","payload":{"end_time":"{{get_timestamp}}"},"emitEvents":true,"permissions":"$full"}	027be0a4-d764-415b-91a8-5a08902a7a46	\N	74c5ff61-80ae-49e8-a670-1e23e42a78be	2025-01-31 07:28:57.599+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-83ef9e30-dd7d-49c3-9adc-04c19541aa94	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_nvvgg	trigger	75	67	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_send_us}}"}	\N	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-09-01 10:00:30.844+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-9bb7ee61-6361-4ed5-ac90-39ce139bd07d	สร้าง progress แพทย์ส่ง US	create_progress_send_us	item-create	57	67	{"payload":{"title":"แพทย์ส่ง US","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"แพทย์","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	83ef9e30-dd7d-49c3-9adc-04c19541aa94	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-09-01 10:00:30.91+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-7c93ad07-a673-454f-bbc5-f389a6619918	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_ttvvk	trigger	57	52	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_send_mam}}"}	\N	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-19 02:07:50.64+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 00e7fd28-5270-445a-9556-8b126d0c2409	อ่านข้อมูล Patient Info	read_data_patient_info	item-read	3	53	{"collection":"patient_info","key":["{{read_data_appointment.patient_info}}"],"permissions":"$full"}	6a790e36-727d-42fc-ac2c-6e4773cd134a	\N	836b85ad-418d-47b0-8d41-547021433cc7	2025-05-11 04:09:39.751+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-37c847ac-8392-440e-911f-92a69edd3949	อ่านข้อมูล doctor_work ที่ผูกกับ exam นี้	read_doctor_work	item-read	93	1	{"collection":"doctor_work","key":[],"permissions":"$full","query":{"filter":{"exam":{"_eq":"{{read_data_examination.id}}"}}}}	6f0c124f-40f2-4f4d-adb1-531485414b89	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-08-26 11:23:09.586+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 859d1d47-31d0-4aba-8a6e-5d710aa67567	อ่านข้อมูล appointment	read_data_appointment	item-read	38	36	{"collection":"appointment","key":["{{read_data_finance_work.appointment}}"],"permissions":"$full"}	00e7fd28-5270-445a-9556-8b126d0c2409	\N	836b85ad-418d-47b0-8d41-547021433cc7	2025-05-11 04:09:39.782+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+543b9a72-5768-4bc0-8136-8bb385434488	เช็คว่า exam เป็นสถานะ รอปรึกษาแพทย์ หรือไม่	exec_hb7dh_oxfvj	exec	37	53	{"code":"module.exports = async function(data) {\\n    const examStatus = \\"{{$trigger.payload.status}}\\";\\n\\n    //รอปรึกษาแพทย์\\n    if (examStatus === \\"2\\") {\\n        return true;\\n    }\\n\\n    throw new Error('ไม่ใช่สถานะ รอปรึกษาแพทย์');\\n    return false;\\n}"}	d3d569a5-5c42-4aa7-89f9-14cd7176625b	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-03-18 07:37:47.373+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 437e4482-53fd-49b7-b2fd-16977e148cec	Operation คิดเงิน	calculate_price	pricing-operation	21	85	{"billingData":"{{read_data_billing}}","examCost":"{{read_data_examination_cost}}","pacsSyncData":"{{read_data_pacs_sync_info}}","appointmentData":"{{read_data_appointment}}","discountExam":"{{read_data_discount}}"}	af53aa9e-c4a7-464e-9dd7-4f6022a42df7	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2026-01-05 02:12:28.669+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-2448046c-41e6-4179-bfa1-0adf218e40ae	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_vozys	item-update	39	51	{"collection":"progress","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	0d34d7fe-a28d-4c8b-9716-9ebfce149b34	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-09-02 02:53:05.007+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+37c847ac-8392-440e-911f-92a69edd3949	อ่านข้อมูล doctor_work ที่ผูกกับ exam นี้	read_doctor_work	item-read	93	1	{"collection":"doctor_work","key":[],"permissions":"$full","query":{"filter":{"exam":{"_eq":"{{read_data_examination.id}}"}}}}	6f0c124f-40f2-4f4d-adb1-531485414b89	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-08-26 11:23:09.586+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+7e787b4c-cf0b-43db-b03a-636e9590bb3a	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_vozys_vmcqi	item-update	58	33	{"permissions":"$full","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"]}	1ba3594a-94eb-40fd-bb49-dab4bca02584	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 11:40:12.015+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+83ef9e30-dd7d-49c3-9adc-04c19541aa94	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_nvvgg	trigger	75	67	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_send_us}}"}	13f5e1dc-2b60-400f-a62d-e746fef930fa	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-09-01 10:00:30.844+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+5d09baa0-00c2-4362-9e31-2173a3ee1dd0	เช็คว่า Progress ตัวสุดท้ายไม่ใช่ ถ่าย Mam เพิ่ม	exec_wvr55_crgxd_hbuny_rtbvh	exec	40	84	{"code":"module.exports = async function(data) {\\n   const lastProgress = {{read_data_last_progress}};\\n    \\n    if (lastProgress.title !== \\"ถ่าย Mammogram เพิ่ม\\") {\\n        return true; \\n    } \\n\\n    throw new Error('lastProgress เป็นคือ ถ่าย Mammogram เพิ่ม'); \\n};\\n"}	08041e42-7564-472d-9b09-b7157ec6106c	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-09-15 10:27:10.276+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+7c93ad07-a673-454f-bbc5-f389a6619918	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_ttvvk	trigger	57	52	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_send_mam}}"}	f409b9e0-544b-43f6-8fc3-94b8e29d19e8	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-19 02:07:50.64+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+9bb7ee61-6361-4ed5-ac90-39ce139bd07d	สร้าง progress แพทย์ส่ง US	create_progress_send_us	item-create	57	67	{"payload":{"title":"แพทย์ส่ง US","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"แพทย์","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	83ef9e30-dd7d-49c3-9adc-04c19541aa94	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-09-01 10:00:30.91+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 0685840b-b346-49a7-b2e0-526891aedfe9	อ่านข้อมูล pacs_sync_info	read_data_pacs_sync_info	item-read	57	52	{"collection":"pacs_sync_info","key":[],"query":{"filter":{"exam":{"_eq":"{{read_data_coordinate.exam}}"}}},"permissions":"$full"}	4ef11054-b899-47a7-8472-120fac6902bf	\N	32de3302-0f95-4186-81e2-955100e34997	2025-02-19 08:15:04.779+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 728f0f98-c077-448a-944b-9740b0018744	เช็คว่า exam ที่ผูกกับ ultrasound นี้เป็นตัวล่าสุดไหม	check_is_lastest_exam	exec	55	18	{"code":"module.exports = async function(data) {\\n\\tconst lastTenExam =  {{read_last_10_examination}};\\n\\tconst currentExamId = {{read_current_ultrasound.exam}};\\n\\n\\tif (lastTenExam.findIndex(({ id }) => id === currentExamId) !== 0) {\\n        throw new Error('ไม่ใช่ exam ตัวล่าสุดที่ sign to pacs')\\n    }\\n}"}	318742c6-3dd8-490b-a5a5-f2e208602021	\N	62c45fee-1f13-4c6f-b11b-d156f06626df	2025-09-17 07:36:37.885+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 139f0871-c81b-4e8b-8dc5-de5c0dbed4fc	Create Data	item_create_6nq8v	item-create	94	20	{"collection":"progress","payload":{"title":"เจ้าหน้าที่ Front ส่งตรวจ","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Front","worklist":"{{read_data_queue.worklist[0]}}"}}	c05a5cb8-1abf-4249-8371-6e3990328e49	\N	af896f59-cef0-47ab-b0ac-efdb21df529f	2024-10-21 03:09:13.828+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 3ae6685f-b135-4460-8054-e80ea3be05db	เช็ค status ของ exam ว่าเป็น "ปิดเคส" ไหม	check_exam_status	exec	19	1	{"code":"module.exports = async function(data) {\\nconst status = \\"{{$trigger.payload.status}}\\";\\n\\nconst acceptedStatuses = [\\n    \\"ส่ง MAM - ปิดเคส\\", // เคสถ่าย mam ปกติ\\n  \\t\\"15\\", // เคสถ่ายเพิ่ม\\n \\t\\"16\\", // เคสปรึกษาแพทย์\\n    \\"20\\" // เคสถ่ายหลัง us\\n];\\n    \\n    if(!acceptedStatuses.includes(status)) {\\n      throw new Error('ไม่ใช่สถานะ ปิดเคส');\\n    }\\n\\n}"}	e10cfe20-5c83-4f56-9630-580c94ee0194	\N	a6078515-a2aa-435a-9862-4abe646ae8cc	2025-02-25 11:44:45.947+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 3c3de676-89a4-4e41-ba37-5b5068f9f5fe	อ่านข้อมูล worklist 	read_data_worklist	item-read	39	19	{"collection":"worklist","key":["{{read_data_queue.worklist[0]}}"],"permissions":"$full"}	09320da1-f955-41ca-95b6-5f0451e5dfe9	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 09:59:45.973+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-44673fa4-f7f7-46fe-a1be-37d391070357	สร้าง progress เจ้าหน้าที่ Front(F14) ยกเลิกเคส	create_progress_cancel_case	item-create	39	86	{"payload":{"title":"ยกเลิกเคส","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Front(F14)","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	6e433783-7898-422a-8f0d-c5306643b483	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-06-18 17:26:12.715+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 4ecccd5b-b89e-4eed-8b48-bdfe2d61c88d	Create Data	item_create_mtxlo	item-create	75	1	{"collection":"notification","payload":{"user_id":"{{$trigger.payload.recipient}}","status":"{{$trigger.payload.status}}","notification":"{{$trigger.key}}","doctor_work":"{{$trigger.payload.doctor_work}}","is_front_noti":"{{get_front_noti_boolean}}"},"permissions":"$full","emitEvents":true}	\N	\N	4c95d232-9f2a-49cd-8d54-da7d96c85f9e	2025-06-30 05:05:51.146+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8cf5fa4d-6f3d-41d6-81fd-a0f2ba93301d	เช็คว่าเป็นการ assign หมอของเคสเปลี่ยนแพทย์หรือไม่	check_status_of_doctor_change	exec	19	1	{"code":"module.exports = async function(data) {\\n    if (\\n      \\"{{$trigger.payload.status_trigger_flows}}\\" === \\"undefined\\" ||\\n      \\"{{$trigger.payload.status}}\\" !== \\"11\\" ||\\n      \\"{{$trigger.payload.doctor_change}}\\" !== \\"true\\"\\n    ) {\\n      throw new Error(\\"ไม่ใช้การ assign หมอของเคสเปลี่ยนแพทย์\\");\\n    }\\n}"}	faea10cd-aa69-4d33-b770-0f224f3f77d6	\N	41a5a56f-a402-4c2d-af82-734c4c1b4aaf	2025-11-12 16:55:50.366+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 eda6d8d3-0988-4c54-af83-73e5ffa50001	อ่านข้อมูล progress ตัวสุดท้าย	read_data_last_progress	item-read	58	20	{"collection":"progress","query":null,"key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	93eabd18-1557-44ae-925a-8fe09f5e768f	\N	af896f59-cef0-47ab-b0ac-efdb21df529f	2025-02-18 11:53:09.144+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15519,7 +15683,9 @@ e696e574-540e-4c80-927d-5170023272d7	เช็คว่ามี doctor_work_id 
 886e65ee-0aaa-4572-b699-114de460905f	เช็คว่ามี triggerFlows หรือไม่	trigger_flows	exec	37	1	{"code":"module.exports = async function(data) {\\n    const triggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n\\n    if (triggerFlows !== \\"undefined\\") {\\n        return true;\\n    }\\n\\n    throw new Error('ไม่มี triggerFlows');\\n    return false;\\n}"}	037668f4-9ddd-44ad-ad81-a8c0a2ccade4	\N	baa6bf9a-4a45-475e-9aa9-93d402672662	2025-04-04 11:14:49.687+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 faea10cd-aa69-4d33-b770-0f224f3f77d6	อ่านค่า coordinate นี้	read_current_coordinate	item-read	37	1	{"permissions":"$full","collection":"coordinate","key":"{{$trigger.keys[0]}}","query":{"fields":["id","appointment"]}}	91d4e2ee-5c31-41ea-a878-3766d2783f3e	\N	41a5a56f-a402-4c2d-af82-734c4c1b4aaf	2025-11-12 16:55:50.332+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 bd02abb4-e11e-4df9-b665-1428055dedd6	update สเตตัสของ doctor_work 	update_doctor_work_status	item-update	37	1	{"collection":"doctor_work","emitEvents":true,"key":"{{$trigger.payload.doctor_work_id}}","payload":{"status":"4"},"permissions":"$full"}	\N	\N	f0c44979-cbe9-4484-a056-eb1181338f22	2025-04-17 09:17:48.241+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+44673fa4-f7f7-46fe-a1be-37d391070357	สร้าง progress เจ้าหน้าที่ Front(F14) ยกเลิกเคส	create_progress_cancel_case	item-create	39	86	{"payload":{"title":"ยกเลิกเคส","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Front(F14)","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	6e433783-7898-422a-8f0d-c5306643b483	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-06-18 17:26:12.715+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 50e1145c-a14f-4f3a-9990-8e7b8fc7741a	อัพเดท finance_work	finance_work	item-update	3	52	{"collection":"finance_work","payload":{"billing":"{{create_billing[0]}}"},"key":["{{create_finance_work[0]}}"],"permissions":"$full"}	a483747f-7f49-4516-9c8d-2ef073721d9b	\N	32de3302-0f95-4186-81e2-955100e34997	2025-02-19 05:15:25.507+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+2448046c-41e6-4179-bfa1-0adf218e40ae	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_vozys	item-update	39	51	{"collection":"progress","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	0d34d7fe-a28d-4c8b-9716-9ebfce149b34	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-09-02 02:53:05.007+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 bcb8d3d6-e9a0-46d9-8408-6686e02496ad	อัพเดท สถานะ exam เป็น ยกเลิก	update_exam_data	item-update	71	37	{"collection":"examination","payload":{"status":"9"},"key":["{{read_data_examination.id}}"],"permissions":"$full"}	\N	\N	cdfc74cd-8e37-4fbd-b333-622e244a8e63	2025-03-18 11:41:35.027+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 249a53b5-908e-4a9b-80bb-88949a8328cf	check_last_progress (เลขใบเสร็จ)	check_last_progress_mkxbk_zjwzh	exec	59	51	{"code":"module.exports = async function(data) {\\n\\tlet lastReceipt = \\"{{$trigger.payload.receipt_number_copy_cd}}\\";\\n\\n    if (!lastReceipt || lastReceipt == \\"undefined\\") {\\n\\t\\treturn true;\\n\\t}\\n\\n    throw new Error('lastReceipt not null {{$trigger.payload.receipt_number_copy_cd}}'); \\n};\\n"}	6091baed-f359-4a5b-baab-de5f1f30178c	2412672f-add5-4692-9b30-9c1405b12f72	e2646ed5-054d-47a0-9237-070f20b2760f	2024-11-18 07:51:34.137+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 01d41964-be52-45c9-9629-ebcc03f21ada	เช็ค status ของ exam ว่าเป็น "ส่ง MAM - รอเรียกคิว" ไหม	check_exam_status	condition	19	1	{"filter":{"$trigger":{"payload":{"status":{"_eq":"ส่ง MAM - รอเรียกคิว"}}}}}	8307f441-16ff-495a-81ee-e7d5afb325df	\N	3d94c102-f959-4758-bf95-58c7f165f1d3	2025-02-24 11:55:07.388+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15528,7 +15694,6 @@ bcb8d3d6-e9a0-46d9-8408-6686e02496ad	อัพเดท สถานะ exam เ
 93eabd18-1557-44ae-925a-8fe09f5e768f	เช็คว่า progress ตัวสุดท้ายไม่ใช่ เจ้าหน้าที่ Front ส่งตรวจ	check_last_progress	exec	76	20	{"code":"module.exports = async function(data) {\\n    let titleProgress = \\"{{read_data_last_progress.title}}\\";\\n\\n    if (titleProgress != \\"เจ้าหน้าที่ Front ส่งตรวจ\\") {\\n        return true;\\n    }\\n\\n    throw new Error('progress ตัวสุดท้ายคือ เจ้าหน้าที่ Front ส่งตรวจ');\\n    return false;\\n}"}	139f0871-c81b-4e8b-8dc5-de5c0dbed4fc	\N	af896f59-cef0-47ab-b0ac-efdb21df529f	2025-02-18 11:53:09.807+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e645f01b-1344-463d-8e4b-10aee51adfd9	check_last_progress (ชำระเงิน)	check_last_progress_mkxbk	exec	41	51	{"code":"module.exports = async function(data) {\\n\\tlet lastProgressTitle = \\"{{read_data_last_progress.title}}\\"; \\n    let queueAgentCitizen = \\"{{read_data_queue.agent_citizen_id}}\\";\\n\\n    if (lastProgressTitle == \\"ชำระเงิน\\" && !queueAgentCitizen) {\\n\\t\\t    return true;\\n\\t}\\n\\n    throw new Error('Progress title ตัวสุดท้ายไม่ใช่ชำระเงิน'); \\n\\n};\\n"}	249a53b5-908e-4a9b-80bb-88949a8328cf	dcd027ff-23db-411b-9580-8711230d5dc9	e2646ed5-054d-47a0-9237-070f20b2760f	2024-11-18 06:16:01.929+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 99147fd7-7423-40c5-8374-354430fe211b	อ่านข้อมูล Finance_work	read_data_finance_work	item-read	38	1	{"collection":"finance_work","key":["{{read_data_billing.finance_work}}"],"permissions":"$full"}	cdb013c5-3a24-4a6e-8b72-e4bc9e48deb6	\N	836b85ad-418d-47b0-8d41-547021433cc7	2025-05-09 06:41:46.384+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-68f48c30-c81d-43a1-a183-e7100e34d095	return ค่าวัน-เวลาของตอนนี้	current_time	exec	37	1	{"code":"module.exports = async function(data) {\\n    return {\\n        currentTime: new Date().toISOString()\\n    };\\n};"}	13d6161f-737f-41df-8f21-16876fd9f5ff	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 09:59:46.133+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8c2a0d86-2285-41e6-aee6-204c451f778c	เช็คว่าเป็น create หรือ update	create_update	exec	37	1	{"code":"module.exports = async function(data) {\\n    if (\\"{{$trigger.event}}\\" == \\"notifications.create\\") {\\n        return true; \\n    } \\n    throw new Error('ไม่ใช่การสร้าง notification'); \\n\\n};\\n"}	45be11ee-ee4d-4e1c-8a73-b7db9881699a	29c9ffdf-2716-41bb-b111-770cc88e458b	4c95d232-9f2a-49cd-8d54-da7d96c85f9e	2025-06-30 11:16:01.724+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 d61ba106-f516-48de-a02a-04ea535174a4	return ค่า array ของ ID ทั้งหมดจาก notifications	map_ids_notifications	exec	3	70	{"code":"module.exports = async function(data) {\\n  const notifications = {{read_data_notification}};\\n\\n  // Extracting the IDs\\n  const ids = notifications.map(noti => noti.notification);\\n\\n  // Function to process IDs (e.g., logging or further processing)\\n  function processIds(...ids) {\\n    console.log(...ids); // This will log each ID as a separate argument\\n    return ids; // or do other operations with the separate IDs\\n  }\\n\\n  return processIds(...ids); // Spread the IDs into separate arguments\\n}\\n"}	d71d902c-f182-4ec8-98dd-1c7498a403dd	\N	55b25593-7665-4f37-83f5-9e691af6b979	2025-07-31 11:25:26.87+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 540e7a6c-d228-410d-8f79-dc4a91325a68	สร้างข้อมูล Center Income	create_center_income_uocsm_cqimw	item-create	112	50	{"collection":"center_income","emitEvents":true,"permissions":"$full","payload":{"full_name":"{{read_data_patient_info.prefix_th}} {{read_data_patient_info.first_name_th}} {{read_data_patient_info.last_name_th}}","type":"1","service_fee":"1","amount":100,"location":"{{$trigger.payload.location}}","date_time_created":"{{read_data_billing_fvdqr.date_created}}","patient_info":"{{read_data_patient_info.id}}"}}	e2142efc-251d-4b1a-a934-2f8b3d1afb30	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 15:47:21.57+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15536,99 +15701,86 @@ d61ba106-f516-48de-a02a-04ea535174a4	return ค่า array ของ ID ทั�
 7ed20ba4-a505-428d-8fc5-dbc5b22d7875	สร้างข้อมูล Coordinate	coordinate	item-create	39	20	{"collection":"coordinate","payload":{"exam":"{{read_data_doctor_work.exam}}","appointment":"{{read_data_examination.appointment}}","status":"2","data_tag":"0","case_tag":"0","reason":"{{$trigger.payload.reason}}","detail":"{{$trigger.payload.detail}}","location":"{{$trigger.payload.location}}"},"emitEvents":true,"permissions":"$full"}	\N	\N	cdfc74cd-8e37-4fbd-b333-622e244a8e63	2025-02-04 11:47:17.645+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 34a54a3d-c779-4928-a141-00d0bd44d311	เช็คว่า status เป็นกรณี "ถ่ายเพิ่ม" หรือไม่	check_status_recieve_for_spot	exec	61	1	{"code":"module.exports = async function(data) {\\nconst status = \\"{{$trigger.payload.status}}\\";\\n\\nconst acceptedStatuses = [\\n  \\"11\\", // spot ก่อน us\\n  \\"18\\"  // spot หลัง us\\n];\\n    \\n    if(acceptedStatuses.includes(status)) {\\n        return true\\n    } else {\\n        throw new Error('ไม่ใช่สถานะ รับเคส');\\n    return false\\n    }\\n\\n\\n}"}	12e2b43a-c1d8-4caf-84a4-6525553c1e86	fe4147c7-62f4-42dc-8bb3-e8d898655970	74c5ff61-80ae-49e8-a670-1e23e42a78be	2025-04-29 11:49:08.443+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 4ef11054-b899-47a7-8472-120fac6902bf	อ่านข้อมูล billing	read_data_billing	item-read	3	69	{"collection":"billing","key":["{{create_billing[0]}}"],"permissions":"$full"}	393135d7-b716-4e2b-b56d-513d304dcca4	\N	32de3302-0f95-4186-81e2-955100e34997	2025-02-19 08:15:04.703+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+68f48c30-c81d-43a1-a183-e7100e34d095	return ค่าวัน-เวลาของตอนนี้	current_time	exec	37	1	{"code":"module.exports = async function(data) {\\n    return {\\n        currentTime: new Date().toISOString()\\n    };\\n};"}	13d6161f-737f-41df-8f21-16876fd9f5ff	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 09:59:46.133+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 edc8c116-452e-4650-8bea-100510e807f2	คิดเลขใบเสร็จ	gen_receipt_number	exec	4	19	{"code":"module.exports = async function (data) {\\n  const allItems = {{read_all_data_center_income}} || [];\\n  const currentItem = {{read_data_center_income}};\\n  if (!currentItem || !currentItem.date_created) return {};\\n\\n  const currentDate = new Date(currentItem.date_created);\\n  const buddhistYear = currentDate.getFullYear() + 543;\\n  const month = String(currentDate.getMonth() + 1).padStart(2, \\"0\\");\\n  const year = currentDate.getFullYear();\\n  const monthIndex = currentDate.getMonth();\\n\\n  const filteredItems = allItems.filter((item) => {\\n    const itemDate = new Date(item.date_created);\\n    return (\\n      itemDate.getFullYear() === year &&\\n      itemDate.getMonth() === monthIndex &&\\n      item.receipt_number?.startsWith(`${buddhistYear}/${month}`)\\n    );\\n  });\\n\\n  const maxNumber = filteredItems.reduce((max, item) => {\\n    const match = item.receipt_number?.match(/-(\\\\d+)$/);\\n    const num = match ? parseInt(match[1], 10) : 0;\\n    return Math.max(max, num);\\n  }, 0);\\n\\n  const nextNumber = String(maxNumber + 1).padStart(6, \\"0\\");\\n  const receipt_number = `${buddhistYear}/${month}-${nextNumber}`;\\n\\n  return {\\n    receipt_number,\\n  };\\n};\\n"}	3d6774bd-b1c7-4046-be66-7e2300af6d08	\N	c14d1c54-2b3b-45d6-a1db-43fc6f5d94b6	2025-05-05 15:12:39.602+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e5125879-3f3a-4d0b-96f8-dc76a5187002	อ่านข้อมูล Center income	read_data_center_income	item-read	19	1	{"collection":"center_income","key":["{{$trigger.key}}"],"permissions":"$full"}	1f29fc1a-4dc5-4030-8363-191baa73f9b9	\N	c14d1c54-2b3b-45d6-a1db-43fc6f5d94b6	2025-05-05 15:02:13.561+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 2bbf21f3-1b5e-4c97-b06e-4f70a57dc69b	ลบเวลา spot_called_time	remove_spot_called_time	item-update	79	19	{"collection":"pacs_sync_info","key":"{{$trigger.payload.pacs_id}}","payload":{"spot_called_time":null},"emitEvents":true,"permissions":"$full"}	\N	\N	74c5ff61-80ae-49e8-a670-1e23e42a78be	2025-04-29 12:19:49.447+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 37861d8b-26d6-4dec-b64a-6a256596db34	check_patient_info	check_patient_info	exec	19	1	{"code":"module.exports = async function(data) {\\n\\tlet queue = {{$trigger.payload}}\\n\\n    if (queue.patient_info) {\\n        return true;\\n    }\\n\\n    throw new Error('Queue not have patient_info');\\n    return false;\\n}"}	46d2e5bb-a790-4335-bd13-a43837e6d80a	\N	df03660a-3cf7-4069-ad4f-0a92fec2ae9e	2024-12-15 16:06:18.735+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 a483747f-7f49-4516-9c8d-2ef073721d9b	อ่านข้อมูล exam_cost	read_data_examination_cost	item-read	21	52	{"collection":"exam_costs","permissions":"$full"}	efd05623-3596-450e-8cb1-0e983f4c6e6d	\N	32de3302-0f95-4186-81e2-955100e34997	2025-02-19 08:15:04.806+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-75aae28f-d234-477b-9e9d-6b5d1560ca27	เช็คว่า progress ตัวสุดท้ายไม่ใช่แพทย์ส่ง US	exec_9j8jk_kduen	exec	21	67	{"code":"module.exports = async function(data) {\\n\\tlet lastProgressTitle = \\"{{read_data_last_progress.title}}\\"; \\n    if (lastProgressTitle != \\"แพทย์ส่ง US\\") {\\n        return true; \\n    } \\n\\n    throw new Error('Progress title ตัวสุดท้ายคือแพทย์ส่ง US'); \\n\\n};\\n"}	ce79afdb-237d-4889-9f12-12b84b9fa9ee	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-09-01 10:00:30.98+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 5e6d7c12-f3fe-4f83-a053-35c37c7e7783	อ่านข้อมูล notification	read_data_notification	item-read	21	37	{"permissions":"$full","query":{"filter":{"doctor_work":{"_eq":"{{read_data_ultrasound_work.doctor_work}}"}}},"collection":"notification"}	11608282-1f33-4af5-9388-618c17f5f411	\N	55b25593-7665-4f37-83f5-9e691af6b979	2025-07-31 11:25:27.075+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 ea0ba221-8ff0-4e62-a667-ac5d4209eefb	อ่านค่า recommend_bx_form ทั้งหมดของเดือนนี้	read_recommend_bx_form	item-read	37	1	{"permissions":"$full","collection":"recommend_bx_form","query":{"filter":{"date_created":{"_gte":"{{get_date_range.from}}","_lte":"{{get_date_range.to}}"}}}}	62918153-63fc-4ec4-8ddd-54aae1c7f801	\N	784933e7-b375-4551-954b-ab894d350f6c	2025-09-02 10:32:43.83+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 027be0a4-d764-415b-91a8-5a08902a7a46	หน่วงเวลาเปลี่ยน status (ให้ผู้ใช้งานดูข้อมูลก่อนปิด dialog)	delay_status_change	sleep	79	35	{"milliseconds":1000}	752941d2-0719-4cbc-8f35-f3d79e31ab9e	\N	74c5ff61-80ae-49e8-a670-1e23e42a78be	2025-04-21 07:20:38.093+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-402b78e1-95cf-4a1f-95d9-e83366111013	อัพเดทข้อมูล billing 	billing	item-update	40	37	{"collection":"billing","key":["{{$trigger.key}}"],"payload":{"center_income":"{{center_income_cd[0]}}"},"permissions":"$full"}	\N	\N	69f5e99d-d7b5-4afd-94ef-770ec1a60747	2025-05-09 04:46:50.201+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 53f5f969-727e-4ac5-b7a4-f95f66cab980	ส่ง id และ status (ใหม่) ออกมา	get_doctor_work_data	exec	55	1	{"code":"module.exports = async function(data) {\\n\\tconst targetDoctorWork = {{read_doctor_work[0]}};\\n    let newStatus;\\n    switch(targetDoctorWork.status){\\n        case \\"4\\": newStatus = \\"0\\";\\n            break;\\n    }\\n    \\n\\treturn {\\n        id:targetDoctorWork.id, \\n        status:newStatus\\n    };\\n}"}	2217a3bb-a397-4365-98d7-479c940ea216	\N	7ab7b1a9-793a-47ac-9092-675603a60a54	2025-05-07 08:08:11.596+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-5948cb2e-9cd8-470f-8263-6e02274d4741	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_hhgvy_dsgiq_jewcc	trigger	75	98	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_issue_an_invoice}}"}	\N	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 02:10:37.939+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 686f8f72-f5e5-423d-9a8c-c29f7d8132fc	เช็คว่า progress ตัวสุดท้ายไม่ใช่ เจ้าหน้าที่บันทึกเลขที่ใบเสร็จ	exec_5epwde	exec	57	53	{"code":"module.exports = async function(data) {\\n    let titleProgress = \\"{{read_data_last_progress.title}}\\";\\n\\n    if (titleProgress != \\"เจ้าหน้าที่บันทึกเลขที่ใบเสร็จ\\") {\\n        return true;\\n    }\\n\\n    throw new Error('progress ตัวสุดท้ายคือ เจ้าหน้าที่บันทึกเลขที่ใบเสร็จ');\\n    return false;\\n}"}	c76bb48f-7f93-4e14-9e87-b0f25209a16e	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 12:11:12.746+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f866a263-627a-462d-a551-59c369f5e614	อ่านข้อมูล exam	read_data_exam	item-read	39	19	{"key":["{{read_data_coordinate.exam}}"],"collection":"examination","permissions":"$full"}	02ead41e-146d-4ff7-8fcb-86ba2df9a952	\N	32de3302-0f95-4186-81e2-955100e34997	2025-02-19 05:26:44.025+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 37f35e00-2f2e-4d22-94de-3155585a2dd0	อ่านข้อมูล Doctor_Work	read_data_doctor_work	item-read	58	1	{"permissions":"$full","collection":"doctor_work","key":["{{read_data_ultrasound_work.doctor_work}}"]}	\N	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-07-09 03:29:26.106+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+75aae28f-d234-477b-9e9d-6b5d1560ca27	เช็คว่า progress ตัวสุดท้ายไม่ใช่แพทย์ส่ง US	exec_9j8jk_kduen	exec	21	67	{"code":"module.exports = async function(data) {\\n\\tlet lastProgressTitle = \\"{{read_data_last_progress.title}}\\"; \\n    if (lastProgressTitle != \\"แพทย์ส่ง US\\") {\\n        return true; \\n    } \\n\\n    throw new Error('Progress title ตัวสุดท้ายคือแพทย์ส่ง US'); \\n\\n};\\n"}	ce79afdb-237d-4889-9f12-12b84b9fa9ee	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-09-01 10:00:30.98+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+402b78e1-95cf-4a1f-95d9-e83366111013	อัพเดทข้อมูล billing 	billing	item-update	40	37	{"collection":"billing","key":["{{$trigger.key}}"],"payload":{"center_income":"{{center_income_cd[0]}}"},"permissions":"$full"}	\N	\N	69f5e99d-d7b5-4afd-94ef-770ec1a60747	2025-05-09 04:46:50.201+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c4efc049-c7af-483a-8461-3dd682af83fc	เช็คว่า status เป็นกรณี "คืนเคส" หรือไม่	check_status_return	exec	41	18	{"code":"module.exports = async function(data) {\\nconst status = \\"{{$trigger.payload.status}}\\";\\n\\nconst acceptedStatuses = [\\n  \\"ส่ง MAM - รอเรียกคิว\\",\\n  \\"10\\", // ถ่ายเพิ่มก่อน US - รอเรียกคิว\\n  \\"3\\" // แพทย์ตอบกลับ - รอเรียกคิว\\n];\\n\\n    if(acceptedStatuses.includes(status)) {\\n        return true\\n    } else {\\n        throw new Error('ไม่ใช่สถานะ คืนเคส');\\n    return false\\n    }\\n}"}	767d7834-fffc-4b11-b4cf-18b742d9822e	23a61051-137a-4bdc-85de-ac1da8bda431	74c5ff61-80ae-49e8-a670-1e23e42a78be	2025-04-22 12:49:25.412+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f0b5cbf3-18c5-4990-afd6-56bbe1e029e7	สร้างข้อมูล Coordinate	coordinate_tisat	item-create	53	37	{"collection":"coordinate","payload":{"exam":"{{read_data_doctor_work.exam}}","appointment":"{{read_data_examination.appointment}}","status":"2","data_tag":"0","case_tag":"4","reason":"{{$trigger.payload.reason}}","detail":"{{$trigger.payload.detail}}","location":"{{$trigger.payload.location}}"},"emitEvents":true,"permissions":"$full"}	bcb8d3d6-e9a0-46d9-8408-6686e02496ad	\N	cdfc74cd-8e37-4fbd-b333-622e244a8e63	2025-03-18 08:30:47.158+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8b5dacae-859b-4aa5-aa08-623eacefbf16	เช็คว่า F14 Report คือ ยกเลิกเคส หรือไม่	check_cancel_case_report	exec	37	37	{"code":"module.exports = async function(data) {\\n    const F14Reason = \\"{{$trigger.payload.reason}}\\";\\n    let status = \\"null\\";\\n\\n    //ยกเลิกเคส\\n    if(F14Reason === \\"1\\"){\\n        status = 5;\\n    }\\n    else if(F14Reason === \\"2\\"){\\n        status = 6;\\n    }\\n\\n    return {\\n        status: status\\n    };\\n\\n}"}	\N	\N	cdfc74cd-8e37-4fbd-b333-622e244a8e63	2025-03-18 08:30:47.213+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 3923b8b9-3860-4286-8265-a3fc896f6817	เช็คว่าเป็น case timestamp ไหม	case_timestamp_validation	condition	19	1	{"filter":{"$trigger":{"payload":{"timestamp":{"_eq":true}}}}}	c01ea2d0-ac85-430e-aa19-0a0e848f4371	\N	74c5ff61-80ae-49e8-a670-1e23e42a78be	2025-04-22 03:28:22.265+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 a1636f97-46e6-4846-8479-c705c8c21a87	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_buerl	item-update	21	69	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	\N	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-06-18 17:21:39.243+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+bfc3dd87-a97d-41b4-a2b1-0fce6637f8b0	สร้าง Coordinate แบบ "รอหมอรับเคส"	create_coordinate	item-create	75	18	{"collection":"coordinate","payload":{"exam":"{{$trigger.keys[0]}}","appointment":"{{read_data_examination.appointment}}","status":"0","data_tag":"1","location":"{{$trigger.payload.location}}"},"emitEvents":true,"permissions":"$full"}	\N	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-08-26 12:50:02.6+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e1d35ce7-202a-41f9-b0cc-2ccb3bc781f5	อ่านข้อมูล exam_cost	read_data_examination_cost	item-read	39	51	{"permissions":"$full","collection":"exam_costs"}	8fbf5f92-9d76-4a9a-85f1-ea1ef70f81b5	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-07-06 04:21:38.13+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-379b1df9-9555-4bdd-a28b-8fec7a6db122	อ่านข้อมูล billing	read_data_billing	item-read	3	37	{"collection":"billing","key":["{{$trigger.key}}"],"permissions":"$full"}	05e337ad-4cd9-46f0-984b-42a84d8fb54f	\N	69f5e99d-d7b5-4afd-94ef-770ec1a60747	2025-05-09 04:58:35.544+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-6e433783-7898-422a-8f0d-c5306643b483	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_ruefc_dogyw	trigger	57	86	{"payload":"{{create_progress_cancel_case}}","flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971"}	\N	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-06-18 17:26:12.705+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-7e8f842b-841a-4aed-be2e-ec36f9460167	อ่านข้อมูล patient_info	read_data_patient_info	item-read	3	19	{"collection":"patient_info","key":["{{read_data_appointment.patient_info}}"],"permissions":"$full"}	c88e3fee-92ad-4628-bf28-077119a73670	\N	69f5e99d-d7b5-4afd-94ef-770ec1a60747	2025-04-22 06:48:42.721+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-7af05002-f036-4097-9460-1f18015ada72	เช็คว่ามี statusTriggerFlows หรือไม่	status_trigger_flows_gysgm	exec	3	69	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    const receipt_no = \\"{{read_data_billing.receipt_no}}\\";\\n    \\n    //บันทึกผล\\n    if (statusTriggerFlows === \\"trigger\\" && receipt_no != \\"null\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows'); \\n\\n};\\n"}	a1636f97-46e6-4846-8479-c705c8c21a87	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-06-18 17:21:39.254+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-b25a6b65-9978-431d-8c74-b1d5ece2f45f	อ่านข้อมูล worklist 	read_data_worklist	item-read	39	18	{"collection":"worklist","key":["{{read_data_queue.worklist[0]}}"],"permissions":"$full"}	0b57264f-7820-47a0-9b5f-21c6a1b68d9b	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-02-26 10:48:49.129+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 2217a3bb-a397-4365-98d7-479c940ea216	เปลี่ยน status ของ doctor_wok เป็น "รออ่านผล"	update_doctor_work_status	item-update	19	19	{"collection":"doctor_work","key":"{{get_doctor_work_data.id}}","payload":{"status":"{{check_exam_status.doctor_work_status}}"},"emitEvents":true,"permissions":"$full"}	\N	\N	7ab7b1a9-793a-47ac-9092-675603a60a54	2025-05-07 08:09:33.645+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 3d6774bd-b1c7-4046-be66-7e2300af6d08	อัพเดทเลขใบเสร็จ center_income	center_income	item-update	22	19	{"collection":"center_income","key":["{{read_data_center_income.id}}"],"payload":{"receipt_number":"{{gen_receipt_number.receipt_number}}","status":0},"permissions":"$full"}	\N	\N	c14d1c54-2b3b-45d6-a1db-43fc6f5d94b6	2025-05-05 15:15:19.379+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 1630c621-d1c2-4595-b70c-b0489e6d0f74	เช็คว่ามี triggerFlows หรือไม่	exec_6rlzp	exec	3	20	{"code":"module.exports = async function(data) {\\n    const triggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n\\n    if (triggerFlows !== \\"undefined\\") {\\n        return true;\\n    }\\n\\n    throw new Error('ไม่มี triggerFlows');\\n    return false;\\n}"}	c5a36c4d-9311-4ec3-85ec-d91722f6e7c5	\N	cdfc74cd-8e37-4fbd-b333-622e244a8e63	2025-03-19 12:34:21.001+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-bfc3dd87-a97d-41b4-a2b1-0fce6637f8b0	สร้าง Coordinate แบบ "รอหมอรับเคส"	create_coordinate	item-create	75	18	{"collection":"coordinate","payload":{"exam":"{{$trigger.keys[0]}}","appointment":"{{read_data_examination.appointment}}","status":"0","data_tag":"1","location":"{{$trigger.payload.location}}"},"emitEvents":true,"permissions":"$full"}	\N	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-08-26 12:50:02.6+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 393135d7-b716-4e2b-b56d-513d304dcca4	อ่านข้อมูล financa_work	read_data_finance_work	item-read	21	69	{"collection":"finance_work","key":["{{create_finance_work[0]}}"],"permissions":"$full"}	b13bf21c-4138-4770-8076-a67561fe6036	\N	32de3302-0f95-4186-81e2-955100e34997	2025-04-20 14:23:45.669+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+7af05002-f036-4097-9460-1f18015ada72	เช็คว่ามี statusTriggerFlows หรือไม่	status_trigger_flows_gysgm	exec	3	69	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    const receipt_no = \\"{{read_data_billing.receipt_no}}\\";\\n    \\n    //บันทึกผล\\n    if (statusTriggerFlows === \\"trigger\\" && receipt_no != \\"null\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows'); \\n\\n};\\n"}	a1636f97-46e6-4846-8479-c705c8c21a87	06d3eb40-94e1-4bf0-8471-9e203d3ec8a1	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-06-18 17:21:39.254+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+7e8f842b-841a-4aed-be2e-ec36f9460167	อ่านข้อมูล patient_info	read_data_patient_info	item-read	3	19	{"collection":"patient_info","key":["{{read_data_appointment.patient_info}}"],"permissions":"$full"}	c88e3fee-92ad-4628-bf28-077119a73670	\N	69f5e99d-d7b5-4afd-94ef-770ec1a60747	2025-04-22 06:48:42.721+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+b25a6b65-9978-431d-8c74-b1d5ece2f45f	อ่านข้อมูล worklist 	read_data_worklist	item-read	3	35	{"collection":"worklist","key":["{{read_data_queue.worklist[0]}}"],"permissions":"$full"}	0b57264f-7820-47a0-9b5f-21c6a1b68d9b	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-02-26 10:48:49.129+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+379b1df9-9555-4bdd-a28b-8fec7a6db122	อ่านข้อมูล billing	read_data_billing	item-read	3	37	{"collection":"billing","key":["{{$trigger.key}}"],"permissions":"$full"}	05e337ad-4cd9-46f0-984b-42a84d8fb54f	\N	69f5e99d-d7b5-4afd-94ef-770ec1a60747	2025-05-09 04:58:35.544+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 d0aed853-9e61-4baf-8926-c3c91df65dbd	เช็คว่า status เป็นกรณี "รับเคส" หรือไม่	check_status_recieve	exec	41	1	{"code":"module.exports = async function(data) {\\nconst status = \\"{{$trigger.payload.status}}\\";\\n\\nconst acceptedStatuses = [\\n  \\"ส่ง MAM - รับเคส\\",\\n  \\"11\\", // spot ก่อน us\\n  \\"13\\", // ปรึกษาแพทย์\\n  \\"18\\"  // spot หลัง us\\n];\\n    \\n    if(!acceptedStatuses.includes(status)) {\\n        throw new Error('ไม่ใช่สถานะ รับเคส');\\n    }\\n\\n\\n}"}	34a54a3d-c779-4928-a141-00d0bd44d311	c4efc049-c7af-483a-8461-3dd682af83fc	74c5ff61-80ae-49e8-a670-1e23e42a78be	2025-04-22 12:32:32.752+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-5ff9bad1-cd77-4ef9-ba77-70e5a9bdfe20	อ่านข้อมูล queue	read_data_queue	item-read	21	18	{"collection":"queue","key":["{{read_data_appointment.queue[0]}}"],"permissions":"$full"}	b25a6b65-9978-431d-8c74-b1d5ece2f45f	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-02-26 10:48:49.183+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-a7280461-38fb-4321-8f14-373c9fa6616b	สร้าง Coordinate ที่ F14 แบบ "ปล่อยเคสกลับบ้าน"	item_create_g5kpn_jguac	item-create	57	36	{"collection":"coordinate","payload":{"exam":"{{$trigger.keys[0]}}","appointment":"{{read_data_examination.appointment}}","status":"2","data_tag":"0","case_tag":"4","reason":"{{$trigger.payload.cancel_reason}}","detail":"{{$trigger.payload.cancel_detail}}","location":"{{$trigger.payload.location}}"},"emitEvents":true,"permissions":"$full"}	4ce4a61e-af81-449a-ba5c-cd43f43d0ffc	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-02-17 01:27:31.123+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 53c6b9fc-8fa0-4fe2-9c48-cf20151e25d3	อัพเดต doctor_work เป็น "ยกเลิก US"	doctor_work_us	item-update	37	18	{"emitEvents":true,"collection":"doctor_work","permissions":"$full","payload":{"status":"15"},"key":"{{read_current_ultrasound_work.doctor_work}}"}	\N	\N	b44bbffe-cbe8-4363-86b3-5c5841fd2e0c	2025-09-05 09:48:12.907+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 ad84c292-4e63-42b9-ac3b-f915619ca041	อ่านข้อมูล Exam	read_data_exam	item-read	4	20	{"permissions":"$full","collection":"examination","key":["{{read_data_coordinate.exam}}"]}	6387008f-b0e0-4639-b1e2-6c97c00e1ac9	\N	b8f2bdb4-070f-41a0-afc6-f5363c254fdc	2025-07-23 04:20:01.612+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 6387008f-b0e0-4639-b1e2-6c97c00e1ac9	อัพเดทข้อมูล exam ล้าง report	item_update_exam	item-update	22	20	{"payload":{"examination_general":[],"mam":[],"mammogram_cal":[],"mammogram_mass":[],"us":[],"ultrasound_mass":[],"ultrasound_cyst":[]},"collection":"examination","permissions":"$full","key":["{{read_data_exam.id}}"]}	\N	\N	b8f2bdb4-070f-41a0-afc6-f5363c254fdc	2025-07-23 04:21:03.708+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-08041e42-7564-472d-9b09-b7157ec6106c	อัพเดทฟิลด์ status, close_cast_time ของ progress ตัวสุดท้าย	status_close_cast_time_progress_utzpf_gxpll	item-update	58	84	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"collection":"progress","permissions":"$full"}	3ca604a4-0492-4b3f-8b5a-b18b3a63b40e	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-24 01:59:00.259+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-ad564ea8-1d44-494a-b088-c5b0a8ceb0f0	อ่านข้อมูล Coordinate	read_data_coordinate	item-read	37	1	{"permissions":"$full","collection":"coordinate","key":["{{$trigger.keys[0]}}"]}	ad84c292-4e63-42b9-ac3b-f915619ca041	\N	b8f2bdb4-070f-41a0-afc6-f5363c254fdc	2025-07-23 04:20:01.645+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 9544eb4f-2af7-4fa6-918b-ab0a4b868203	เช็คว่ามี triggerFlows หรือไม่	exec_hb7dh_dyrqj	exec	19	1	{"code":"module.exports = async function(data) {\\n    const triggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n\\n    if (triggerFlows !== \\"undefined\\") {\\n        return true;\\n    }\\n\\n    throw new Error('ไม่มี triggerFlows');\\n    return false;\\n}"}	110791da-7bb4-46c3-9da8-49e92301be5f	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-03-19 12:33:20.272+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+ad564ea8-1d44-494a-b088-c5b0a8ceb0f0	อ่านข้อมูล Coordinate	read_data_coordinate	item-read	37	1	{"permissions":"$full","collection":"coordinate","key":["{{$trigger.keys[0]}}"]}	ad84c292-4e63-42b9-ac3b-f915619ca041	\N	b8f2bdb4-070f-41a0-afc6-f5363c254fdc	2025-07-23 04:20:01.645+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 37c4e88f-a4d8-4c2f-bdad-28a788940f76	เช็คว่ามี triggerFlows และ action หรือไม่	trigger_flows_action	exec	19	1	{"code":"module.exports = async function(data) {\\n    const status_trigger_flows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n\\tconst action = \\"{{$trigger.payload.action}}\\";\\n\\n    if (status_trigger_flows === \\"undefined\\" || action === \\"undefined\\") {\\n        throw new Error('ไม่มี action หรือ triggerFlows ไม่มีค่า');\\n    }\\n}"}	ad564ea8-1d44-494a-b088-c5b0a8ceb0f0	\N	b8f2bdb4-070f-41a0-afc6-f5363c254fdc	2025-07-23 04:20:01.708+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-abffb104-2300-44bf-a38c-db99044a3ee7	เช็คว่ามี statusTriggerFlows หรือไม่	status_trigger_flows	exec	3	53	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    const receipt_no = \\"{{read_data_billing.receipt_no}}\\";\\n    \\n    //บันทึกผล\\n    if (statusTriggerFlows === \\"trigger\\" && receipt_no == \\"null\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows'); \\n\\n};\\n"}	838f0829-3341-40ef-89f7-d6983445ea0a	7af05002-f036-4097-9460-1f18015ada72	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 09:59:45.857+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-c210995d-6697-4e7b-be3d-dda8c386e122	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_ruefc	trigger	57	70	{"payload":"{{create_progress_consult}}","flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971"}	\N	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-06-18 17:26:12.938+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-1fbd7ea3-06be-412f-9ad8-e38ca83bf398	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_wdxhi_ddqqx	item-update	21	115	{"collection":"progress","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	\N	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-10-08 10:22:31.638+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e8d7b44f-16c8-4da2-8531-3f0446971793	อัพเดท finance_work	finance_work	item-update	21	51	{"collection":"finance_work","permissions":"$full","payload":{"billing":"{{create_billing[0]}}"},"key":["{{create_finance_work[0]}}"]}	e1d35ce7-202a-41f9-b0cc-2ccb3bc781f5	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-07-06 04:21:38.202+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+a7280461-38fb-4321-8f14-373c9fa6616b	สร้าง Coordinate ที่ F14 แบบ "ปล่อยเคสกลับบ้าน"	item_create_g5kpn_jguac	item-create	57	36	{"collection":"coordinate","payload":{"exam":"{{$trigger.keys[0]}}","appointment":"{{read_data_examination.appointment}}","status":"2","data_tag":"0","case_tag":"4","reason":"{{$trigger.payload.cancel_reason}}","detail":"{{$trigger.payload.cancel_detail}}","location":"{{$trigger.payload.location}}"},"emitEvents":true,"permissions":"$full"}	4ce4a61e-af81-449a-ba5c-cd43f43d0ffc	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-02-17 01:27:31.123+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+c210995d-6697-4e7b-be3d-dda8c386e122	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_ruefc	trigger	57	70	{"payload":"{{create_progress_consult}}","flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971"}	\N	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-06-18 17:26:12.938+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+5ff9bad1-cd77-4ef9-ba77-70e5a9bdfe20	อ่านข้อมูล queue	read_data_queue	item-read	37	18	{"collection":"queue","key":["{{read_data_appointment.queue[0]}}"],"permissions":"$full"}	b25a6b65-9978-431d-8c74-b1d5ece2f45f	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-02-26 10:48:49.183+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 efd05623-3596-450e-8cb1-0e983f4c6e6d	อ่านข้อมูล discount	read_data_discount	item-read	39	52	{"collection":"billing_discount","permissions":"$full"}	0685840b-b346-49a7-b2e0-526891aedfe9	\N	32de3302-0f95-4186-81e2-955100e34997	2025-04-20 13:45:21.213+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+abffb104-2300-44bf-a38c-db99044a3ee7	เช็คว่ามี statusTriggerFlows หรือไม่	status_trigger_flows	exec	3	53	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    const receipt_no = \\"{{read_data_billing.receipt_no}}\\";\\n    \\n    //บันทึกผล\\n    if (statusTriggerFlows === \\"trigger\\" && receipt_no == \\"null\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows'); \\n\\n};\\n"}	838f0829-3341-40ef-89f7-d6983445ea0a	7af05002-f036-4097-9460-1f18015ada72	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 09:59:45.857+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+08041e42-7564-472d-9b09-b7157ec6106c	อัพเดทฟิลด์ status, close_cast_time ของ progress ตัวสุดท้าย	status_close_cast_time_progress_utzpf_gxpll	item-update	58	84	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"collection":"progress","permissions":"$full"}	3ca604a4-0492-4b3f-8b5a-b18b3a63b40e	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-24 01:59:00.259+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+1fbd7ea3-06be-412f-9ad8-e38ca83bf398	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_wdxhi_ddqqx	item-update	21	115	{"collection":"progress","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	\N	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-10-08 10:22:31.638+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e273937b-6760-411f-bbd2-c143eb7e2245	เช็คว่าเป็น ultrasound เก่า + สถานะเป็น sign to pacs หรือไม่	check_prevoius_ultrasound	exec	37	1	{"code":"module.exports = async function(data) {\\n\\tconst today = new Date()\\n    const ultrasound = {{read_current_ultrasound}}\\n\\tconst ultrasound_date = new Date(ultrasound?.date_created)\\n    \\n\\tif (\\n  \\t\\t(today.getUTCFullYear() === ultrasound_date.getUTCFullYear() &&\\n    \\ttoday.getUTCMonth() === ultrasound_date.getUTCMonth() &&\\n    \\ttoday.getUTCDate() === ultrasound_date.getUTCDate()) ||\\n  \\t\\tultrasound.state !== \\"3\\"\\n\\t) {\\n \\t\\t throw new Error(\\"ข้อมูลไม่ตรงตามเงื่อนไข\\");\\n\\t}\\n}"}	7b0984ee-138f-4aa5-9c65-e173b9c5b7cb	\N	62c45fee-1f13-4c6f-b11b-d156f06626df	2025-09-17 05:20:48.406+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 3bbcff28-3c07-4b89-9b93-739c1837be74	return ค่า id ของ progress ตัวสุดท้าย จากข้อมูล worklist ที่ถูกอ่านมาก่อนหน้านี้	last_no_progress	exec	39	19	{"code":"module.exports = async function(data) {\\n    const progressArray = {{read_data_worklist.progress}};\\n\\n    // เช็คว่า progress array มีค่าหรือไม่ และมีข้อมูลอยู่\\n    if (progressArray && progressArray.length > 0) {\\n        // จัดเรียง progress ตามไอดีจากน้อยไปมาก\\n        const sortedProgressArray = progressArray.sort((a, b) => a - b);\\n\\n        // ดึง progress ID ตัวสุดท้ายหลังจากจัดเรียง\\n        const lastProgressId = sortedProgressArray[sortedProgressArray.length - 1];\\n\\n        return {\\n            lastProgressId: lastProgressId\\n        };\\n    } else {\\n        return {\\n            message: 'No progress data found'\\n        };\\n    }\\n};"}	2241d73b-e784-43ee-b570-2516f746c131	\N	d3f538b5-8d62-4058-9536-6fb9697e90d8	2024-10-21 08:27:59.857+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-26b2bc43-cf77-465b-b60a-c0a09bfaa4e4	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg	trigger	75	51	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_send_doctor}}"}	\N	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-03-08 15:29:14.76+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-0d34d7fe-a28d-4c8b-9716-9ebfce149b34	สร้าง progress แพทย์วินิจฉัย	create_progress_send_doctor	item-create	57	51	{"payload":{"title":"แพทย์วินิจฉัย","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"แพทย์","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	26b2bc43-cf77-465b-b60a-c0a09bfaa4e4	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-03-08 15:29:14.773+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 665df4b0-a862-47e5-8ef9-37fc04f90fcb	อัพเดต doctor_work เป็น "F14/ยกเลิก"	doctor_work_f14	item-update	19	35	{"key":"{{read_current_ultrasound_work.doctor_work}}","permissions":"$full","payload":{"status":"2"},"collection":"doctor_work"}	7f0dfae3-5bdd-46ac-a883-6769d15551f5	\N	b44bbffe-cbe8-4363-86b3-5c5841fd2e0c	2025-09-05 09:50:32.084+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 97338b24-54d7-4fef-881a-8d780de91d58	อัพเดทข้อมูล exam ล้าง report	update_data_exam_yqjwb	item-update	21	36	{"collection":"examination","permissions":"$full","key":["{{read_data_ultrasound_work.exam}}"],"payload":{"examination_general":[],"mam":[],"mammogram_cal":[],"mammogram_mass":[],"us":[],"ultrasound_mass":[],"ultrasound_cyst":[]},"emitEvents":true}	\N	\N	0bdb2833-d4c9-4c47-b433-2c48260d59c2	2025-07-23 03:53:40.445+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f525e20d-4eaa-4f9e-b0fa-e4e0effa5a59	อ่านข้อมูล billing	read_data_billing_gjlsn	item-read	94	34	{"permissions":"$full","collection":"billing","key":["{{create_billing_dghvh[0]}}"]}	47d7d849-2a2d-4d10-beb9-b3f2db4a6626	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 15:51:11.915+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-9bc1a1b4-05b6-456c-939e-e82fd04522ce	อ่านข้อมูล Billing	read_data_billing	item-read	37	1	{"collection":"billing","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	543bedb4-2ca2-4709-a36b-9abbdbf3e7ed	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:36:12.485+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-25b5633c-f960-4dce-9686-862e96b1f0b3	เช็ค CopyCd Change	copy_cd_change	exec	19	1	{"code":"module.exports = async function(data) {\\n    const copyCdChange = \\"{{$trigger.payload.copy_cd}}\\";\\n    \\n    if (copyCdChange != \\"undefined\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี copyCdChange'); \\n\\n};\\n"}	9bc1a1b4-05b6-456c-939e-e82fd04522ce	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:36:12.426+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 fe4147c7-62f4-42dc-8bb3-e8d898655970	ลงเวลาเป็น called_time	stamp_called_time	item-update	97	1	{"collection":"pacs_sync_info","key":"{{$trigger.payload.pacs_id}}","payload":{"called_time":"{{get_timestamp}}"},"emitEvents":true,"permissions":"$full"}	\N	\N	74c5ff61-80ae-49e8-a670-1e23e42a78be	2025-04-22 05:07:52.652+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 54dbe423-a960-4bab-8716-e176a93d6511	อัพเดทข้อมูล Ultrasound_Work ให้ตัด Relation เตียง + staff ออก	update_ultrasound_work_relation	item-update	55	1	{"permissions":"$full","collection":"ultrasound_work","payload":{"case_owner_ultrasound":null,"bed":null},"key":["{{$trigger.keys[0]}}"]}	\N	\N	8dd34a74-0ce8-4d19-b333-786c90851a77	2025-06-25 02:41:49.987+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c4d1e9e6-00b5-4b0d-bb49-24e67c13aa55	ลบเวลา called_time	remove_called_time	item-update	97	19	{"collection":"pacs_sync_info","key":"{{$trigger.payload.pacs_id}}","payload":{"called_time":null},"emitEvents":true,"permissions":"$full"}	\N	\N	74c5ff61-80ae-49e8-a670-1e23e42a78be	2025-04-22 05:07:52.504+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-8dc73caf-5382-4dcc-9695-7c54332d85de	อ่านข้อมูล progress ตัวสุดท้าย	read_data_last_progress	item-read	39	53	{"collection":"progress","key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	686f8f72-f5e5-423d-9a8c-c29f7d8132fc	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 12:11:12.144+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 ce05d8e9-4bee-4e32-8943-796db1c94a09	Create Data (ชำระเงิน)	item_create_x9ges_rxput	item-create	93	19	{"collection":"progress","payload":{"title":"ชำระเงิน","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Cashier","worklist":"{{read_data_queue.worklist[0]}}"},"permissions":"$full"}	c45d3878-609e-42e0-9dd3-9474ad26c17e	\N	e2646ed5-054d-47a0-9237-070f20b2760f	2024-11-20 02:25:57.796+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 78ce84fd-5660-461d-9113-2eb266c2ae80	เช็คสถานะว่าเป็นยกเลิกไหม	check_status_cancel	exec	19	1	{"code":"module.exports = async function(data) {\\n\\tif(\\"{{$trigger.payload.status}}\\" !== \\"8\\") {\\n    \\tthrow new Error('ไม่ใช่เคสยกเลิก')\\n    }\\n}"}	30d36054-8b51-42fb-8666-fd41defdcf99	\N	b44bbffe-cbe8-4363-86b3-5c5841fd2e0c	2025-09-05 08:19:09.6+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 533d4c1e-9034-4109-8f81-2b2227a12d1e	check_status_patient_result (กำลังออกผล)	check_status_patient_result_1	exec	23	51	{"code":"module.exports = async function(data) {\\n    let patientResult = {{read_data_patient_result}};\\n\\t//1 กำลังอออกผล\\n    if (patientResult.status == 1) {\\n        return true; \\n    } \\n\\n    throw new Error('สถานะไม่ใช่กำลังออกผล'); \\n\\n};\\n"}	e645f01b-1344-463d-8e4b-10aee51adfd9	\N	e2646ed5-054d-47a0-9237-070f20b2760f	2024-10-16 12:06:51.07+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 2d93efbe-3044-4dcf-94b2-a1801edf9e88	เข้า Trigger Flow เช็คสถานะ Progress ตัวสุดท้าย	trigger_7ktmu	trigger	111	35	{"flow":"308fa33c-b445-49f7-a5de-d732058b85e4","payload":"{{last_no_progress.lastProgressId}}"}	\N	\N	e2646ed5-054d-47a0-9237-070f20b2760f	2024-10-30 14:32:02.348+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 1335a958-bc05-4407-bbd4-ae35d213bb28	เช็คว่าเป็นเคสเปลี่ยนแพทย์ไหม	check_doctor_change	exec	19	1	{"code":"module.exports = async function(data) {\\n    if (\\n      \\"{{$trigger.payload.status_trigger_flows}}\\" === \\"undefined\\" ||\\n      \\"{{$trigger.payload.status}}\\" !== \\"1\\"\\n    ) {\\n      throw new Error(\\"ไม่ใช่เคสเปลี่ยนแพทย์\\");\\n    }\\n}"}	0ae8c334-4e7c-4733-b1b2-17928ea3774f	\N	84da7d5b-50b0-4660-a4af-485543cf73f7	2025-11-13 03:03:19.587+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-b6e11f73-e864-42e5-9904-37e6ce51aa7b	เช็คว่า data ที่มาจาก read_us_pacs_sync_infos มี length > 0 ไหม	check_us_pacs_sync_infos_length	exec	93	36	{"code":"module.exports = async function(data) {\\n\\tconst usPacs = {{read_us_pacs_sync_infos}}\\n\\n\\tif(Array.isArray(usPacs) && usPacs.length === 0) {\\n    \\tthrow new Error('ไม่พบการทำ ultrasound ของเคสนี้')\\n    }\\n}"}	a726a6d2-5fc9-4e27-b5bf-315170076e05	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-09-29 02:41:23.329+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+9bc1a1b4-05b6-456c-939e-e82fd04522ce	อ่านข้อมูล Billing	read_data_billing	item-read	37	1	{"collection":"billing","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	543bedb4-2ca2-4709-a36b-9abbdbf3e7ed	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:36:12.485+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+26b2bc43-cf77-465b-b60a-c0a09bfaa4e4	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg	trigger	75	51	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_send_doctor}}"}	65770f72-5947-405a-b08f-8779e76f95c6	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-03-08 15:29:14.76+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+25b5633c-f960-4dce-9686-862e96b1f0b3	เช็ค CopyCd Change	copy_cd_change	exec	19	1	{"code":"module.exports = async function(data) {\\n    const copyCdChange = \\"{{$trigger.payload.copy_cd}}\\";\\n    \\n    if (copyCdChange != \\"undefined\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี copyCdChange'); \\n\\n};\\n"}	9bc1a1b4-05b6-456c-939e-e82fd04522ce	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:36:12.426+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+a0e1c010-08d5-47ea-941b-2c36ba2a0d84	เช็คว่ามี statusTriggerFlows และ statusExam เป็น กำลังสัมภาษณ์ หรือไม่	exec_bzhbo	exec	3	35	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const statusExam = \\"{{$trigger.payload.status}}\\";\\n    \\n    //กำลังสัมภาษณ์\\n    if (statusTriggerFlows !== \\"undefined\\" && statusExam === \\"1\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ statusExam ไม่เท่ากับ 1'); \\n\\n};\\n"}	293d3eb0-fe12-499b-a2c1-87c34eb25257	e149a194-30b0-44a0-a570-fd23f0664ddf	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-18 16:05:50.007+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8f2a3c87-1377-4d95-a75f-548349f88d48	Create Data (ชำระเงิน)	item_create_x9ges	item-create	75	35	{"collection":"progress","payload":{"title":"ชำระเงิน","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Cashier","worklist":"{{read_data_queue.worklist[0]}}"},"permissions":"$full"}	704c4947-bda5-4e31-b78f-f48a4947747d	\N	e2646ed5-054d-47a0-9237-070f20b2760f	2024-10-16 11:39:20.517+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 dbcd4000-2aab-4ecf-a67f-e82ea393195d	อ่านข้อมูล progress ตัวสุดท้าย	read_data_last_progress	item-read	21	19	{"collection":"progress","key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	4e1acf48-f6cd-4556-86e0-34ef4d0e2fb4	\N	e2646ed5-054d-47a0-9237-070f20b2760f	2024-11-18 02:53:04.119+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7a31b941-a8da-48cf-833a-49d4a2cc9509	อ่านข้อมูล doctor_work	read_data_doctor_work	item-read	39	19	{"permissions":"$full","collection":"doctor_work","key":["{{read_data_ultrasound_work.doctor_work}}"]}	44b110c3-7b58-4300-a511-c9fe3d4e8cd4	\N	0bdb2833-d4c9-4c47-b433-2c48260d59c2	2025-07-22 04:27:11.573+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 ab7fd238-6580-4a74-81c5-b6e4b2610057	อ่านข้อมูล exam	read_data_exam	item-read	3	19	{"permissions":"$full","collection":"examination","key":["{{read_data_ultrasound_work.exam}}"]}	cb35e5cb-4cab-4ac7-a7d2-9080373a58b6	\N	0bdb2833-d4c9-4c47-b433-2c48260d59c2	2025-07-22 04:24:48.018+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+5b042759-8849-45ec-bf1c-5185520d1f64	เช็ค Triggerflows และสถานะ us_work ว่าเป็น รอดำเนินการ ใช่หรือไม่	exec_o3yma	exec	37	1	{"code":"module.exports = async function(data) {\\n\\t// รอดำเนินการ\\n    const ultrasoundStatus = \\"{{$trigger.payload.status}}\\";\\n\\tconst triggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const acceptanceStatus = [\\n        \\"0\\", // คืนคิว\\n        \\"7\\" // ขอเปลี่ยนเตียง\\n    ]\\n\\n    if ([\\"0\\",\\"7\\"].includes(ultrasoundStatus) && triggerFlows !== \\"undefined\\") {\\n        return true;\\n    }\\n\\n    throw new Error('สถานะไม่ใช่ รอดำเนินการ หรือ  triggerFlows ไม่มีค่า');\\n    return false;\\n}"}	54dbe423-a960-4bab-8716-e176a93d6511	7767f57f-572b-4354-84ad-608eccd69933	8dd34a74-0ce8-4d19-b333-786c90851a77	2025-06-25 02:53:37.627+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+209ef837-dda3-4c9f-8428-ef9cc6d682b8	เพิ่ม ultrasound_work ลงไป	edit_ultrasound_work	item-update	19	18	{"key":"{{$trigger.key}}","permissions":"$full","collection":"recommend_bx_form","emitEvents":true,"payload":{"ultrasound_work":"{{read_ultrasound_work[0].id}}"}}	\N	\N	95fa6dda-c2a3-43a3-9ff6-dbf26cfb5025	2025-09-05 11:40:22.97+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+aa2ce143-e25a-4e07-aea4-569df9111064	return ค่าวัน-เวลาของตอนนี้	current_time	exec	37	1	{"code":"module.exports = async function(data) {\\n    return {\\n        currentTime: new Date().toISOString()\\n    };\\n};"}	69b45fa0-9c5f-48f9-a106-39c3ae282202	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-02-26 10:48:49.265+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+a306d93d-e0e8-4492-b4ee-5edaec3e4ac6	เช็คว่ามี statusTriggerFlows และ status เป็น ขอเปลี่ยนแพทย์ หรือไม่	status_trigger_flows_status_xqxfz_xzbdf_xylgt	exec	3	81	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //ขอเปลี่ยนแพทย์\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"9\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 9'); \\n\\n};\\n"}	90636ef6-44fb-42e6-b4d9-a4c1832c9aab	c35e0bb8-bcdc-4067-92c2-fec71bd6c0a3	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 05:11:34.148+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+defc8da9-0ae5-4e5a-9657-6a1e0c6970b0	เช็คว่ามี statusTriggerFlows และ status เป็น รับเคส (US) หรือไม่	exec_qg6x7_joxdn	exec	3	67	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //รับเคส(US)\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"11\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 11'); \\n\\n};\\n"}	75aae28f-d234-477b-9e9d-6b5d1560ca27	3a4d3f4d-0fc0-45f2-a61a-96c98199710b	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-09-01 10:00:31.878+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 1180fb3f-c3f8-43c8-87c7-9239e0d554c2	อ่านข้อมูล Appointment 	read_data_appointment	item-read	37	1	{"collection":"appointment","key":["{{read_data_finance_work.appointment}}"],"permissions":"$full"}	7e8f842b-841a-4aed-be2e-ec36f9460167	\N	69f5e99d-d7b5-4afd-94ef-770ec1a60747	2025-04-22 05:51:56.034+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 2c3943e1-d069-4f7a-81ce-997b257a1947	อ่านข้อมูล Finance_Work	read_data_finance_work	item-read	19	1	{"collection":"finance_work","key":["{{$trigger.payload.finance_work}}"],"permissions":"$full"}	1180fb3f-c3f8-43c8-87c7-9239e0d554c2	\N	69f5e99d-d7b5-4afd-94ef-770ec1a60747	2025-04-22 05:51:56.044+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-5b042759-8849-45ec-bf1c-5185520d1f64	เช็ค Triggerflows และสถานะ us_work ว่าเป็น รอดำเนินการ ใช่หรือไม่	exec_o3yma	exec	37	1	{"code":"module.exports = async function(data) {\\n\\t// รอดำเนินการ\\n    const ultrasoundStatus = \\"{{$trigger.payload.status}}\\";\\n\\tconst triggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const acceptanceStatus = [\\n        \\"0\\", // คืนคิว\\n        \\"7\\" // ขอเปลี่ยนเตียง\\n    ]\\n\\n    if ([\\"0\\",\\"7\\"].includes(ultrasoundStatus) && triggerFlows !== \\"undefined\\") {\\n        return true;\\n    }\\n\\n    throw new Error('สถานะไม่ใช่ รอดำเนินการ หรือ  triggerFlows ไม่มีค่า');\\n    return false;\\n}"}	54dbe423-a960-4bab-8716-e176a93d6511	7767f57f-572b-4354-84ad-608eccd69933	8dd34a74-0ce8-4d19-b333-786c90851a77	2025-06-25 02:53:37.627+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-a0e1c010-08d5-47ea-941b-2c36ba2a0d84	เช็คว่ามี statusTriggerFlows และ statusExam เป็น กำลังสัมภาษณ์ หรือไม่	exec_bzhbo	exec	3	35	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const statusExam = \\"{{$trigger.payload.status}}\\";\\n    \\n    //กำลังสัมภาษณ์\\n    if (statusTriggerFlows !== \\"undefined\\" && statusExam === \\"1\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ statusExam ไม่เท่ากับ 1'); \\n\\n};\\n"}	293d3eb0-fe12-499b-a2c1-87c34eb25257	e149a194-30b0-44a0-a570-fd23f0664ddf	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-18 16:05:50.007+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-8271f639-cbfb-4902-b3a9-8fe17357924b	สร้าง progress แจ้งชำระเงิน	create_progress_send_doctor	item-create	39	54	{"payload":{"title":"เจ้าหน้าที่ Front(F14) แจ้งให้ไปชำระเงิน","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Front(F14)","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	8a1c6a8f-4841-4286-8dda-d0d896868237	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-03-08 15:48:23.471+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-209ef837-dda3-4c9f-8428-ef9cc6d682b8	เพิ่ม ultrasound_work ลงไป	edit_ultrasound_work	item-update	19	18	{"key":"{{$trigger.key}}","permissions":"$full","collection":"recommend_bx_form","emitEvents":true,"payload":{"ultrasound_work":"{{read_ultrasound_work[0].id}}"}}	\N	\N	95fa6dda-c2a3-43a3-9ff6-dbf26cfb5025	2025-09-05 11:40:22.97+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-a726a6d2-5fc9-4e27-b5bf-315170076e05	อ่านข้อมูล doctor_work ที่ผูกกับ exam นี้	read_doctor_work_cancel	item-read	111	36	{"collection":"doctor_work","key":[],"permissions":"$full","query":{"filter":{"exam":{"_eq":"{{read_data_examination.id}}"}}}}	d507371d-5f0d-4825-9dbd-5c1e171e7b95	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-09-29 02:41:23.245+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-aa77d1a9-5803-4a1d-af68-59f08434ef2f	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_vozys	item-update	21	49	{"permissions":"$full","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"]}	189b2fc0-9b13-4b35-a8ad-b233f808e4a0	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 04:50:04.881+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-4ce4a61e-af81-449a-ba5c-cd43f43d0ffc	อ่าน pacs_sync_infos ว่ามีการถ่าย us ไปแล้วหรือยัง	read_us_pacs_sync_infos	item-read	75	36	{"permissions":"$full","collection":"pacs_sync_info","query":{"filter":{"_and":[{"end_time":{"_neq":null}},{"is_mark_del":{"_eq":false}},{"modality":{"_eq":"US"}},{"exam":{"_eq":"{{read_data_examination.id}}"}}]}}}	b6e11f73-e864-42e5-9904-37e6ce51aa7b	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-09-29 02:41:23.367+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-c80ec306-91ce-4c7d-a50a-d739013ac9a9	เช็คว่าเคสนี้มีหมอรับเคสไปแล้วหรือยัง	exec_87597	exec	75	1	{"code":"module.exports = async function(data) {\\n    const exam = {{read_data_examination}};\\n\\n    if (exam.case_owner_doctor) {\\n        return true;\\n    }\\n\\n    throw new Error('exam นี้ยังไม่มีหมอ');\\n    return false;\\n}"}	37c847ac-8392-440e-911f-92a69edd3949	e92e6855-1a2a-4fec-a587-f95abd2f7c11	e472714e-dd02-4bfc-8038-133053a0a457	2025-03-24 10:12:58.106+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-defc8da9-0ae5-4e5a-9657-6a1e0c6970b0	เช็คว่ามี statusTriggerFlows และ status เป็น รับเคส (US) หรือไม่	exec_qg6x7_joxdn	exec	3	67	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //รับเคส(US)\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"11\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 11'); \\n\\n};\\n"}	75aae28f-d234-477b-9e9d-6b5d1560ca27	3a4d3f4d-0fc0-45f2-a61a-96c98199710b	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-09-01 10:00:31.878+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-aa2ce143-e25a-4e07-aea4-569df9111064	return ค่าวัน-เวลาของตอนนี้	current_time	exec	37	1	{"code":"module.exports = async function(data) {\\n    return {\\n        currentTime: new Date().toISOString()\\n    };\\n};"}	69b45fa0-9c5f-48f9-a106-39c3ae282202	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-02-26 10:48:49.265+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-ece3c6a2-3fb2-4fa2-a6a0-b4d099831021	อ่านข้อมูล coordinate	read_data_coordinate	item-read	19	1	{"collection":"coordinate","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	aa2ce143-e25a-4e07-aea4-569df9111064	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-02-26 10:48:49.35+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 6acb9c06-c33d-4381-bc53-5a9f9465485e	อัพเดทข้อมูล Finance Work	finance_work_kxjfh	item-update	76	50	{"payload":{"billing":"{{create_billing_biujg[0]}}"},"collection":"finance_work","permissions":"$full","key":["{{create_finance_work_jaxrc[0]}}"]}	95fe8024-a998-4933-8f66-df633e78ca30	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 15:47:21.739+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-1ba3594a-94eb-40fd-bb49-dab4bca02584	สร้าง progress เจ้าหน้าที่ US ส่งเคสเข้าห้อง	create_progress_send_in_room	item-create	76	33	{"collection":"progress","payload":{"title":"เจ้าหน้าที่ US ส่งเคสเข้าห้อง","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"US (Center)","worklist":"{{read_data_queue.worklist[0]}}"}}	aac18154-bb9a-4a0b-9068-51b235e71f58	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 11:42:04.512+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 954a2a4e-5236-47e5-b54e-9161cf4a0491	สร้างข้อมูล Billing	create_billing_biujg	item-create	58	50	{"collection":"billing","emitEvents":true,"permissions":"$full","payload":{"patient":"{{read_data_patient_info.id}}","hn":"{{read_data_patient_info.hn}}","finance_work":"{{create_finance_work_jaxrc[0]}}"}}	6acb9c06-c33d-4381-bc53-5a9f9465485e	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 15:47:21.799+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e13f209e-8d33-461d-bdd6-9548aad2d7f2	สร้างข้อมูล Finance_work	create_finance_work_jaxrc	item-create	40	50	{"collection":"finance_work","permissions":"$full","payload":{"status":"0","location":"{{$trigger.payload.location}}","queue":"{{read_data_queue.id}}"},"emitEvents":true}	954a2a4e-5236-47e5-b54e-9161cf4a0491	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 15:47:21.854+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-a6fd97a2-37b2-496f-93b9-1529bf9afa81	เช็ค appointment ว่ารับผล copy_cd ไหม	check_copy_cd	exec	39	19	{"code":"module.exports = async function(data) {\\n    const appointment = {{read_data_appointment}};\\n\\n    if (Array.isArray(appointment.front_note_1) &&\\n        appointment.front_note_1.includes(\\"รับผลเป็น CD\\")) {\\n    return true;\\n  }\\n\\n    throw new Error('ไม่รับผล CD');\\n    return false;\\n}"}	379b1df9-9555-4bdd-a28b-8fec7a6db122	\N	69f5e99d-d7b5-4afd-94ef-770ec1a60747	2025-04-22 05:57:50.676+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 d9d63157-7f39-401c-ab60-21bf0dc7c7dd	อ่านข้อมูล Doctor_Work	read_data_doctor_work	item-read	37	17	{"permissions":"$full","collection":"doctor_work","key":["{{read_data_ultrasound_work.doctor_work}}"]}	88f838b4-22d7-4f8d-968e-191f82f68d68	\N	8dd34a74-0ce8-4d19-b333-786c90851a77	2025-07-04 07:08:39.479+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7f5369ee-836c-45c1-866c-30cbc9d82f2c	อัพเดต noti ให้เป็นอ่านแล้ว	update_notification_read	item-update	37	1	{"collection":"notification","permissions":"$full","emitEvents":true,"payload":{"status":"read"},"query":{"filter":{"_and":[{"subject":{"_eq":"ส่งทำ Ultrasound"}},{"to_dept":{"_eq":"แพทย์"}},{"appointment":{"_eq":"{{$trigger.payload.appointment}}"}},{"status":{"_eq":"inbox"}}]}}}	\N	\N	7898839c-500d-4f0e-b2b9-e792ad96579d	2025-11-13 03:51:56.983+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 88f838b4-22d7-4f8d-968e-191f82f68d68	อ่านข้อมูล Notification	read_data_notification	item-read	55	17	{"collection":"notification","key":["{{read_data_doctor_work.notification[0]}}"]}	fcbaba78-c0c6-4d1b-b980-2a8d3722a177	\N	8dd34a74-0ce8-4d19-b333-786c90851a77	2025-07-04 07:10:46.039+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-63c4303a-3998-43f8-9820-dbcf009bd10e	เช็คว่า progress ตัวสุดท้ายไม่ใช่แพทย์วินิจฉัย	exec_9j8jk	exec	21	51	{"code":"module.exports = async function(data) {\\n\\tlet lastProgressTitle = \\"{{read_data_last_progress.title}}\\"; \\n    if (lastProgressTitle != \\"แพทย์วินิจฉัย\\") {\\n        return true; \\n    } \\n\\n    throw new Error('Progress title ตัวสุดท้ายคือแพทย์วินิจฉัย'); \\n\\n};\\n"}	2448046c-41e6-4179-bfa1-0adf218e40ae	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-05-26 12:53:30.803+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c1d46765-2a91-4f98-a146-1e34421cf023	อ่านค่า ultrasound_work ที่เกี่ยวข้อง	read_ultrasound_work	item-read	37	1	{"permissions":"$full","query":{"filter":{"exam":{"_eq":"{{$trigger.payload.examination}}"}}},"collection":"ultrasound_work"}	47c671ed-b692-4e7f-9b1e-0672be9d1b63	\N	95fa6dda-c2a3-43a3-9ff6-dbf26cfb5025	2025-09-05 11:40:23.071+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-23fd6bfb-d9db-4666-959a-31892dceacba	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_vozys_drvte	item-update	21	65	{"permissions":"$full","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"]}	a9c41096-0580-43c7-a774-6e08ffb0bf8f	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 04:59:59.481+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8871e694-ea81-4260-9f5c-3797abf5e725	อ่านข้อมูล worklist 	read_data_worklist	item-read	39	19	{"collection":"worklist","key":["{{read_data_queue.worklist[0]}}"],"permissions":"$full"}	8ed16748-d00d-4ae6-a9fb-80d8a9bf2a50	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-02-27 02:23:09.958+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7f0dfae3-5bdd-46ac-a883-6769d15551f5	สร้าง coordinate ที่ F14 แบบ "ปล่อยเคสกลับบ้าน"	create_coordinate_f14	item-create	37	35	{"collection":"coordinate","permissions":"$full","emitEvents":true,"payload":{"exam":"{{read_current_ultrasound_work.exam.id}}","appointment":"{{read_current_ultrasound_work.exam.appointment}}","doctor":"{{read_current_ultrasound_work.exam.case_owner_doctor}}","doctor_work":"{{read_current_ultrasound_work.doctor_work}}","status":"2","data_tag":"0","case_tag":"4","reason":"{{$trigger.payload.cancel_reason}}","detail":"{{$trigger.payload.cancel_detail}}","location":"{{read_current_ultrasound_work.location}}"}}	\N	\N	b44bbffe-cbe8-4363-86b3-5c5841fd2e0c	2025-09-05 10:18:57.118+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 649d04cb-ab4e-4367-a225-2e5236b00570	หน่วงเวลา 3 นาที	delay_3_min	sleep	37	19	{"milliseconds":180000}	648d5b6d-c271-4e51-b02e-1fdf5450b60f	\N	a6078515-a2aa-435a-9862-4abe646ae8cc	2025-07-24 11:02:25.468+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15636,25 +15788,23 @@ c1d46765-2a91-4f98-a146-1e34421cf023	อ่านค่า ultrasound_work ท�
 6e5af4a9-da57-4c4c-ad7c-656d547c447e	เช็คว่าเป็นเคสเปลี่ยนแพทย์ไหม	check_doctor_change	exec	19	1	{"code":"module.exports = async function(data) {\\n    if (\\n      \\"{{$trigger.payload.status_trigger_flows}}\\" === \\"undefined\\" ||\\n      \\"{{$trigger.payload.doctor_change}}\\" !== \\"true\\"\\n    ) {\\n      throw new Error(\\"ไม่ใช่เคสเปลี่ยนแพทย์\\");\\n    }\\n}"}	7f5369ee-836c-45c1-866c-30cbc9d82f2c	\N	7898839c-500d-4f0e-b2b9-e792ad96579d	2025-11-13 03:51:57.012+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 62918153-63fc-4ec4-8ddd-54aae1c7f801	ส่งค่าหมายเลขแบบฟอร์มออกมา	get_form_number	exec	55	1	{"code":"module.exports = async function(data) {\\n\\tconst now = new Date();\\n    const thisMounth = String(now.getMonth() + 1).padStart(2, \\"0\\");\\n    const thisYear = now.getFullYear() + 543;\\n    const order = String({{read_recommend_bx_form}}.length).padStart(6, \\"0\\");\\n    \\n\\treturn `${thisYear}/${thisMounth}-${order}`;\\n}"}	b6e61aa7-982a-4458-9146-04b7f7eaa65b	\N	784933e7-b375-4551-954b-ab894d350f6c	2025-09-02 10:52:50.266+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 4586e6a8-c2bd-44a1-b732-39fbe63e6140	อ่านข้อมูล progress ตัวสุดท้ายที่ถูกส่งเข้ามา	read_data_last_progress	item-read	19	1	{"key":["{{$last}}"],"collection":"progress","permissions":"$full"}	39ab7d44-81c1-42dd-925f-2bc1a2182968	\N	575163b6-0f4d-4bb0-9c61-ada25321bedc	2024-10-30 08:42:59.462+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+63c4303a-3998-43f8-9820-dbcf009bd10e	เช็คว่า progress ตัวสุดท้ายไม่ใช่แพทย์วินิจฉัย	exec_9j8jk	exec	21	51	{"code":"module.exports = async function(data) {\\n\\tlet lastProgressTitle = \\"{{read_data_last_progress.title}}\\"; \\n    if (lastProgressTitle != \\"แพทย์วินิจฉัย\\") {\\n        return true; \\n    } \\n\\n    throw new Error('Progress title ตัวสุดท้ายคือแพทย์วินิจฉัย'); \\n\\n};\\n"}	2448046c-41e6-4179-bfa1-0adf218e40ae	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-05-26 12:53:30.803+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+ece3c6a2-3fb2-4fa2-a6a0-b4d099831021	อ่านข้อมูล coordinate	read_data_coordinate	item-read	19	1	{"collection":"coordinate","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	aa2ce143-e25a-4e07-aea4-569df9111064	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-02-26 10:48:49.35+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+a6fd97a2-37b2-496f-93b9-1529bf9afa81	เช็ค appointment ว่ารับผล copy_cd ไหม	check_copy_cd	exec	39	19	{"code":"module.exports = async function(data) {\\n    const appointment = {{read_data_appointment}};\\n\\n    if (Array.isArray(appointment.front_note_1) &&\\n        appointment.front_note_1.includes(\\"รับผลเป็น CD\\")) {\\n    return true;\\n  }\\n\\n    throw new Error('ไม่รับผล CD');\\n    return false;\\n}"}	379b1df9-9555-4bdd-a28b-8fec7a6db122	\N	69f5e99d-d7b5-4afd-94ef-770ec1a60747	2025-04-22 05:57:50.676+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+c76bb48f-7f93-4e14-9e87-b0f25209a16e	สร้าง progress บันทึกเลขใบเสร็จ	create_progress_save_receipt	item-create	75	53	{"payload":{"title":"เจ้าหน้าที่บันทึกเลขที่ใบเสร็จ","admission_time":"{{current_time.currentTime}}","close_case_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"การเงิน","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	d4a08706-1932-4d2a-8534-ebeb21edbbd1	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 09:59:45.692+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 12bd5b62-6366-4cce-a39d-5b9a13b991f4	สร้างข้อมูล Center Income	create_center_income_uocsm	item-create	112	67	{"collection":"center_income","emitEvents":true,"permissions":"$full","payload":{"full_name":"{{read_data_patient_info.prefix_th}} {{read_data_patient_info.first_name_th}} {{read_data_patient_info.last_name_th}}","type":"1","service_fee":"2","amount":400,"location":"{{$trigger.payload.location}}","date_time_created":"{{read_data_billing_fvdqr.date_created}}","patient_info":"{{read_data_patient_info.id}}"}}	\N	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 15:47:21.525+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e2142efc-251d-4b1a-a934-2f8b3d1afb30	อัพเดท Billing	update_data_billing_skoqq	item-update	130	50	{"collection":"billing","payload":{"center_income":"{{create_center_income_uocsm_cqimw[0]}}"},"key":["{{read_data_billing_fvdqr.id}}"],"permissions":"$full"}	12bd5b62-6366-4cce-a39d-5b9a13b991f4	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 15:47:21.534+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 95fe8024-a998-4933-8f66-df633e78ca30	อ่านข้อมูล billing	read_data_billing_fvdqr	item-read	94	50	{"permissions":"$full","collection":"billing","key":["{{create_billing_biujg[0]}}"]}	540e7a6c-d228-410d-8f79-dc4a91325a68	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 15:47:21.67+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 a56e55c9-8864-462d-9215-48591b672ac3	อัพเดท Billing	update_data_billing_ouusm	item-update	130	34	{"collection":"billing","payload":{"center_income":"{{create_center_income_rcxfk[0]}}"},"key":["{{read_data_billing_gjlsn.id}}"],"permissions":"$full"}	\N	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 15:51:11.793+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-f8acc5fa-4af4-4279-affa-14b23c36dbf2	Check DELETE	check_delete	exec	3	81	{"code":"module.exports = async function(data) {\\n    const copyCdChange = \\"{{$trigger.payload.copy_cd}}\\";\\n    \\n    if (copyCdChange === \\"DELETE\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่ใช่ DELETE'); \\n\\n};\\n"}	850fc90c-3363-40ca-ac03-3edf2a1a4118	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:36:12.105+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-d9658cd6-34d5-4b54-bc26-49ddbe187184	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_vozys_drvte_wtvkm_xveqh_znhuf_elruv	item-update	39	131	{"permissions":"$full","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"]}	4fbf58c0-e83b-4b23-8f00-e0c4bc6666bd	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-04 04:31:35.692+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-a5087141-4e7b-4d8e-9a8d-8e70fa7b40df	แก้ไข Center Income	patch_center_income	item-update	21	65	{"collection":"center_income","key":["{{read_data_billing.center_income}}"],"payload":{"amount":"{{$trigger.payload.e_price}}"},"permissions":"$full"}	\N	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:36:12.146+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-87bee657-35e9-43fa-83c8-bb4e2a09eb31	Check PATCH	check_patch	exec	3	65	{"code":"module.exports = async function(data) {\\n    const copyCdChange = \\"{{$trigger.payload.copy_cd}}\\";\\n    \\n    if (copyCdChange === \\"PATCH\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่ใช่ PATCH'); \\n\\n};\\n"}	a5087141-4e7b-4d8e-9a8d-8e70fa7b40df	f8acc5fa-4af4-4279-affa-14b23c36dbf2	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:36:12.208+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-097fe629-0442-4516-af79-01c84fa7dd72	สร้าง Center Income	post_center_income	item-create	21	49	{"collection":"center_income","payload":{"full_name":"{{read_data_patient_info.prefix_th}} {{read_data_patient_info.first_name_th}} {{read_data_patient_info.last_name_th}}","type":"1","service_fee":"1","amount":"{{$trigger.payload.e_price}}","location":"{{read_data_finance_work.location}}","date_time_created":"{{read_data_billing.date_created}}","patient_info":"{{read_data_patient_info.id}}"},"emitEvents":true,"permissions":"$full"}	518078a0-98be-47aa-9ab2-863f0990d099	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:36:12.289+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-f3cd0901-e20c-42bb-b4f3-c59e113b04d8	Check POST	check_post	exec	3	49	{"code":"module.exports = async function(data) {\\n    const copyCdChange = \\"{{$trigger.payload.copy_cd}}\\";\\n    \\n    if (copyCdChange === \\"POST\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่ใช่ POST'); \\n\\n};\\n"}	097fe629-0442-4516-af79-01c84fa7dd72	87bee657-35e9-43fa-83c8-bb4e2a09eb31	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:36:12.356+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-541d3ee3-55dd-468c-9303-16a815b012e2	อ่านข้อมูล Patient_info	read_data_patient_info	item-read	39	17	{"collection":"patient_info","key":["{{read_data_appointment.patient_info}}"],"permissions":"$full"}	f3cd0901-e20c-42bb-b4f3-c59e113b04d8	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:43:38.612+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-c76bb48f-7f93-4e14-9e87-b0f25209a16e	สร้าง progress บันทึกเลขใบเสร็จ	create_progress_save_receipt	item-create	75	53	{"payload":{"title":"เจ้าหน้าที่บันทึกเลขที่ใบเสร็จ","admission_time":"{{current_time.currentTime}}","close_case_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"การเงิน","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	d4a08706-1932-4d2a-8534-ebeb21edbbd1	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 09:59:45.692+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 4724eab2-403d-4a8e-aa39-c59808a0838e	สร้างข้อมูล Coordinate	create_coordinate	item-create	73	17	{"collection":"coordinate","permissions":"$full","emitEvents":true,"payload":{"exam":"{{read_data_doctor_work[0].exam}}","appointment":"{{read_data_doctor_work[0].appointment}}","status":"2","data_tag":"0","case_tag":"3","location":"{{$trigger.payload.location}}"}}	39f8a264-f903-4b6e-9bf6-a55944886f78	\N	d0764ae1-0dd4-43fc-bb30-8ed60868e7b1	2025-07-15 14:56:28.619+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-b921e43f-39fb-4dfb-b5f1-03f4c1a2b1a3	อ่านข้อมูล progress ตัวสุดท้าย	read_data_last_progress	item-read	21	34	{"collection":"progress","key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	99299cc4-f98c-4950-b194-6b14b8e1788e	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-05-26 12:53:30.206+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 648d5b6d-c271-4e51-b02e-1fdf5450b60f	อัพเดต is_mam_after_us_done ใน  pacs_sync_info	update_is_mam_after_us_done	item-update	56	19	{"collection":"pacs_sync_info","emitEvents":true,"key":"{{$trigger.payload.pacs_id}}","payload":{"is_mam_after_us_done":"{{check_is_mam_after_us_done}}"},"permissions":"$full"}	\N	\N	a6078515-a2aa-435a-9862-4abe646ae8cc	2025-07-24 11:02:25.451+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 65bb8d9a-e19e-44f3-8ddb-d04082ec27fc	เข้า Trigger Flow ของ read_environment data	read_environment	trigger	40	44	{"flow":"f5ad1f92-3584-40cb-8931-926f1cd88ff1"}	1ead5467-a819-4f93-bcc1-de37c73b7290	\N	8dd34a74-0ce8-4d19-b333-786c90851a77	2025-07-04 08:14:16.135+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 47d7d849-2a2d-4d10-beb9-b3f2db4a6626	สร้างข้อมูล Center Income	create_center_income_rcxfk	item-create	112	34	{"collection":"center_income","emitEvents":true,"permissions":"$full","payload":{"full_name":"{{read_data_patient_info.prefix_th}} {{read_data_patient_info.first_name_th}} {{read_data_patient_info.last_name_th}}","type":"1","service_fee":"1","amount":100,"location":"{{$trigger.payload.location}}","date_time_created":"{{read_data_billing_gjlsn.date_created}}","patient_info":"{{read_data_patient_info.id}}"}}	a56e55c9-8864-462d-9215-48591b672ac3	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 15:51:11.851+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7e36d0ca-df51-4fa8-9d79-060a433ca44f	อัพเดทข้อมูล Finance Work	finance_work_fjblj	item-update	76	34	{"payload":{"billing":"{{create_billing_dghvh[0]}}"},"collection":"finance_work","permissions":"$full","key":["{{create_finance_work_lrezo[0]}}"]}	f525e20d-4eaa-4f9e-b0fa-e4e0effa5a59	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 15:51:11.978+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b8cc3209-e92d-4eda-80a7-77ba667071c9	สร้างข้อมูล Billing	create_billing_dghvh	item-create	58	34	{"collection":"billing","emitEvents":true,"permissions":"$full","payload":{"patient":"{{read_data_patient_info.id}}","hn":"{{read_data_patient_info.hn}}","finance_work":"{{create_finance_work_lrezo[0]}}"}}	7e36d0ca-df51-4fa8-9d79-060a433ca44f	\N	96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	2025-05-20 15:51:12.043+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+b921e43f-39fb-4dfb-b5f1-03f4c1a2b1a3	อ่านข้อมูล progress ตัวสุดท้าย	read_data_last_progress	item-read	38	34	{"collection":"progress","key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	99299cc4-f98c-4950-b194-6b14b8e1788e	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-05-26 12:53:30.206+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+f8acc5fa-4af4-4279-affa-14b23c36dbf2	Check DELETE	check_delete	exec	3	81	{"code":"module.exports = async function(data) {\\n    const copyCdChange = \\"{{$trigger.payload.copy_cd}}\\";\\n    \\n    if (copyCdChange === \\"DELETE\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่ใช่ DELETE'); \\n\\n};\\n"}	850fc90c-3363-40ca-ac03-3edf2a1a4118	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:36:12.105+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+541d3ee3-55dd-468c-9303-16a815b012e2	อ่านข้อมูล Patient_info	read_data_patient_info	item-read	39	17	{"collection":"patient_info","key":["{{read_data_appointment.patient_info}}"],"permissions":"$full"}	f3cd0901-e20c-42bb-b4f3-c59e113b04d8	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:43:38.612+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 18186e5b-aec7-46b5-bb18-a0226cfbb62e	return ค่า id ตัวสุดท้ายของ progress	last_no_progress	exec	3	19	{"code":"module.exports = async function(data) {\\n    const progressArray = {{read_data_worklist.progress}};\\n\\n    // เช็คว่า progress array มีค่าหรือไม่ และมีข้อมูลอยู่\\n    if (progressArray && progressArray.length > 0) {\\n        // จัดเรียง progress ตามไอดีจากน้อยไปมาก\\n        const sortedProgressArray = progressArray.sort((a, b) => a - b);\\n\\n        // ดึง progress ID ตัวสุดท้ายหลังจากจัดเรียง\\n        const lastProgressId = sortedProgressArray[sortedProgressArray.length - 1];\\n        \\n        const secondLastProgressId = sortedProgressArray.length > 1 \\n            ? sortedProgressArray[sortedProgressArray.length - 2] \\n            : null; \\n\\n        return {\\n            lastProgressId: lastProgressId,\\n            secondLastProgressId: secondLastProgressId\\n        };\\n    } else {\\n        return {\\n            message: 'No progress data found'\\n        };\\n    }\\n};\\n"}	dbcd4000-2aab-4ecf-a67f-e82ea393195d	\N	e2646ed5-054d-47a0-9237-070f20b2760f	2024-10-16 11:39:20.606+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 82ef2c5b-32d0-472f-bf70-a29e9e0e2291	return ค่าวัน-เวลาของตอนนี้	current_time	exec	91	1	{"code":"module.exports = async function(data) {\\n    return {\\n        currentTime: new Date().toISOString()\\n    };\\n};"}	18186e5b-aec7-46b5-bb18-a0226cfbb62e	\N	e2646ed5-054d-47a0-9237-070f20b2760f	2024-10-16 11:39:20.68+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 5971225b-7962-49af-b5a3-5ef7b8ea4206	เช็คสถานะของ queue ว่าเป็น ยกเลิก ใช่หรือไม่	check_queue_status	exec	21	20	{"code":"module.exports = async function(data) {\\n    let queue = {{read_data_queue}};\\n\\n    if (queue.status == 3) {\\n        return true; \\n    } \\n    throw new Error('สถานะคิว ไม่ใช่ยกเลิก'); \\n\\n};\\n"}	d34de265-d94c-44cd-95c1-7a5d6b3b3ae9	\N	2cf897be-be84-42be-b293-aa16e9f8885f	2024-10-18 05:55:22.918+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15664,26 +15814,27 @@ b8cc3209-e92d-4eda-80a7-77ba667071c9	สร้างข้อมูล Billing	c
 b6e61aa7-982a-4458-9146-04b7f7eaa65b	เพิ่มเลขที่ใบแนะนำเจาะลงใน recommend_bx_form	update_recommend_bx_form_number	item-update	19	19	{"collection":"recommend_bx_form","permissions":"$full","key":"{{$trigger.key}}","payload":{"number":"{{get_form_number}}"}}	\N	\N	784933e7-b375-4551-954b-ab894d350f6c	2025-09-02 10:56:08.463+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 0a762c3f-45d6-4454-b139-72735f102e45	อ่านข้อมูล Ultrasound_work	read_data_ultrasound_work	item-read	19	1	{"permissions":"$full","collection":"ultrasound_work","key":["{{$trigger.keys[0]}}"]}	194daf62-59a3-4dea-b445-282aaf377b8b	\N	8d8b90af-5df9-4ae5-bfc8-aa80a918ad0d	2025-09-05 11:41:19.964+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 9a383f7d-ea12-4b89-8648-ea32fb053f3e	อ่านข้อมูล Ultrasound_work	read_data_ultrasound_work	item-read	19	1	{"permissions":"$full","collection":"ultrasound_work","key":["{{$trigger.keys[0]}}"]}	742cc2f8-c972-45e7-8c70-fcaf24f13a99	\N	55b25593-7665-4f37-83f5-9e691af6b979	2025-07-25 10:00:40.349+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-09320da1-f955-41ca-95b6-5f0451e5dfe9	return ค่า id ของ progress ตัวสุดท้าย จากข้อมูล worklist ที่ถูกอ่านมาก่อนหน้านี้	last_no_progress	exec	3	36	{"code":"module.exports = async function(data) {\\n    const progressArray = {{read_data_worklist.progress}};\\n\\n    // เช็คว่า progress array มีค่าหรือไม่ และมีข้อมูลอยู่\\n    if (progressArray && progressArray.length > 0) {\\n        // จัดเรียง progress ตามไอดีจากน้อยไปมาก\\n        const sortedProgressArray = progressArray.sort((a, b) => a - b);\\n\\n        // ดึง progress ID ตัวสุดท้ายหลังจากจัดเรียง\\n        const lastProgressId = sortedProgressArray[sortedProgressArray.length - 1];\\n\\n        return {\\n            lastProgressId: lastProgressId\\n        };\\n    } else {\\n        return {\\n            message: 'No progress data found'\\n        };\\n    }\\n};"}	abffb104-2300-44bf-a38c-db99044a3ee7	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 09:59:45.919+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-15da3db4-92d0-4915-97bf-6d3aa45a62c5	filter หา center income ที่เป็น copy cd	filter_center_income_copy_cd	request	21	33	{"url":"https://dev.bis-backoffice.bytebetter.io/items/center_income","headers":[{"header":"Content-Type","value":"application/json"},{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}],"body":"{\\n  \\"filter\\": {\\n    \\"id\\": {\\n      \\"_in\\": {{read_data_billing.data.center_incomes}}\\n    },\\n    \\"type\\": {\\n      \\"_eq\\": 1\\n    },\\n    \\"service_fee\\": {\\n      \\"_eq\\": 1\\n    }\\n  },\\n  \\"fields\\": [\\"id\\"]\\n}\\n"}	\N	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-26 02:22:40.142+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-2cf6c3c7-5473-40db-918b-20026a2d8ba7	เข้า Trigger Flow Read environment data	read_environment	trigger	3	33	{"flow":"f5ad1f92-3584-40cb-8931-926f1cd88ff1"}	15da3db4-92d0-4915-97bf-6d3aa45a62c5	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-26 02:22:40.203+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+bad0cec5-b238-4e28-85fd-8ad220cf7095	อ่านข้อมูล Ultrasound_Work	read_data_ultrasound_work	item-read	19	1	{"permissions":"$full","collection":"ultrasound_work","key":["{{$trigger.keys[0]}}"]}	bdbadc5d-6cbb-4d76-af20-5cd041f543bb	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-07-06 04:04:45.183+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+9c34d5cb-4e86-4576-bc98-15ada08dbeef	เช็ค action officer	check_officer	exec	3	36	{"code":"module.exports = async function(data) {\\n    const action = \\"{{$trigger.action}}\\";\\n\\n    if (action === \\"officer\\") {\\n        return true; \\n    }\\n\\n    throw new Error('action ไม่ใช่ officer'); \\n}"}	2731ac71-d478-4144-9bb4-8e955f3f08c5	22d78396-c087-4c64-9bf7-4d9056374427	89be6643-9611-41be-8186-059689a6c8d3	2026-06-29 03:23:38.658+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+1e00b341-3245-4cf3-9158-2cb01ced0b25	อ่านข้อมูล progress ตัวสุดท้าย	read_data_last_progress	item-read	21	33	{"permissions":"$full","collection":"progress","key":["{{last_no_progress.lastProgressId}}"]}	f12acf50-5b99-46ff-9fdf-26502dbfa19a	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 04:32:17.607+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 da83e3bc-6ba1-4960-b31d-29b343ca41f6	อ่านข้อมูล queue	read_data_queue	item-read	21	19	{"collection":"queue","key":["{{read_data_appointment.queue[0]}}"],"permissions":"$full"}	3c3de676-89a4-4e41-ba37-5b5068f9f5fe	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 09:59:46.029+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 4d496a40-ae72-4fc8-b79e-ae42b35f5bfd	อ่านข้อมูล billing	read_data_billing	item-read	19	1	{"collection":"billing","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	68f48c30-c81d-43a1-a183-e7100e34d095	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 09:59:46.18+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-bad0cec5-b238-4e28-85fd-8ad220cf7095	อ่านข้อมูล Ultrasound_Work	read_data_ultrasound_work	item-read	19	1	{"permissions":"$full","collection":"ultrasound_work","key":["{{$trigger.keys[0]}}"]}	bdbadc5d-6cbb-4d76-af20-5cd041f543bb	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-07-06 04:04:45.183+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+15da3db4-92d0-4915-97bf-6d3aa45a62c5	filter หา center income ที่เป็น copy cd	filter_center_income_copy_cd	request	21	33	{"url":"https://dev.bis-backoffice.bytebetter.io/items/center_income","headers":[{"header":"Content-Type","value":"application/json"},{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}],"body":"{\\n  \\"filter\\": {\\n    \\"id\\": {\\n      \\"_in\\": {{read_data_billing.data.center_incomes}}\\n    },\\n    \\"type\\": {\\n      \\"_eq\\": 1\\n    },\\n    \\"service_fee\\": {\\n      \\"_eq\\": 1\\n    }\\n  },\\n  \\"fields\\": [\\"id\\"]\\n}\\n"}	\N	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-26 02:22:40.142+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+2cf6c3c7-5473-40db-918b-20026a2d8ba7	เข้า Trigger Flow Read environment data	read_environment	trigger	3	33	{"flow":"f5ad1f92-3584-40cb-8931-926f1cd88ff1"}	15da3db4-92d0-4915-97bf-6d3aa45a62c5	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-26 02:22:40.203+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 6d169668-7aa9-41f6-adf5-98ee8c3f896e	return id ของ progress ตัวสุดท้าย	last_no_progress	exec	73	1	{"code":"module.exports = async function(data) {\\n    const progressArray = {{read_data_worklist.progress}};\\n\\n    // เช็คว่า progress array มีค่าหรือไม่ และมีข้อมูลอยู่\\n    if (progressArray && progressArray.length > 0) {\\n        // จัดเรียง progress ตามไอดีจากน้อยไปมาก\\n        const sortedProgressArray = progressArray.sort((a, b) => a - b);\\n\\n        // ดึง progress ID ตัวสุดท้ายหลังจากจัดเรียง\\n        const lastProgressId = sortedProgressArray[sortedProgressArray.length - 1];\\n\\n        return {\\n            lastProgressId: lastProgressId\\n        };\\n    } else {\\n        return {\\n            message: 'No progress data found'\\n        };\\n    }\\n};"}	17b4d5f1-639e-4108-b79b-336097ca100a	\N	2e907bc7-59b0-451c-bf25-8bc2cd332ec8	2024-10-28 04:28:47.73+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-3755a54d-74a8-45db-8c11-364bb0948e3c	เช็คว่าเป็นเคสส่งทำ ultrasound หรือไม่	check_is_us	exec	57	1	{"code":"module.exports = async function(data) {\\n    const isUltrasound = {{$trigger.payload.is_ultrasound}};\\n\\n    if (!isUltrasound) {\\n       throw new Error('ไม่ใช่เคส ultrasound');\\n    }\\n\\n}"}	c80ec306-91ce-4c7d-a50a-d739013ac9a9	b54c528e-42c7-4f7f-a3aa-f8d8f6b335f0	e472714e-dd02-4bfc-8038-133053a0a457	2025-06-10 10:10:41.938+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 dda5d30e-3d66-4656-a7f1-90ac18e607f5	อ่านข้อมูล queue ที่ผูกอยู่กับ patient_result	read_data_queue	item-read	37	1	{"collection":"queue","key":["{{read_data_patient_result.queues[0]}}"],"permissions":"$full"}	80286859-0ab8-4912-800e-bd34353f2af6	\N	2e907bc7-59b0-451c-bf25-8bc2cd332ec8	2024-10-28 04:28:47.807+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 742cc2f8-c972-45e7-8c70-fcaf24f13a99	เช็คว่ามี triggerFlows และ status ว่าเป็น ขอเปลี่ยนแพทย์ ใช่หรือไม่	exec_3f9bu	exec	37	1	{"code":"module.exports = async function(data) {\\n    const status_trigger_flows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n\\tconst status = \\"{{read_data_ultrasound_work.status}}\\";\\n\\n    //ขอเปลี่ยนแพทย์\\n    if (status_trigger_flows === \\"undefined\\" || status !== \\"9\\") {\\n        throw new Error('status ไม่ใช่ ขอเปลี่ยนแพทย์ หรือ triggerFlows ไม่มีค่า');\\n    }\\n}"}	382cae8e-eb2a-4d2b-9dcd-31285fb4a690	\N	55b25593-7665-4f37-83f5-9e691af6b979	2025-07-25 10:00:40.323+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c5a36c4d-9311-4ec3-85ec-d91722f6e7c5	เช็คว่า F14 Report คือ ปล่อยเคส หรือไม่	exec_758kk_uzkbh	exec	21	20	{"code":"module.exports = async function(data) {\\n    const F14Report = \\"{{$trigger.payload.F14report}}\\";\\n\\n    //ปล่อยเคส\\n    if (F14Report === \\"0\\") {\\n        return true;\\n    }\\n\\n    throw new Error('ไม่ใช่ report เคสปล่อยกลับบ้าน');\\n    return false;\\n}"}	7ed20ba4-a505-428d-8fc5-dbc5b22d7875	17985bc1-e566-49c1-ad4e-d63077ce9769	cdfc74cd-8e37-4fbd-b333-622e244a8e63	2025-03-18 08:30:47.33+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-cc1d6a5c-8466-41cf-ba16-6aac6a095a24	สร้าง progress ผู้มาตรวจถ่าย Mammogram	create_progress_send_mam	item-create	39	52	{"payload":{"title":"ผู้มาตรวจถ่าย Mammogram","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Tech","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	7c93ad07-a673-454f-bbc5-f389a6619918	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-19 02:07:50.652+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-cc9f080a-8264-4672-8d43-d5949d3cbf13	เช็คว่า exam เป็นสถานะ ส่งต่อแพทย์ หรือไม่	exec_hb7dh	exec	38	1	{"code":"module.exports = async function(data) {\\n    const examStatus = \\"{{$trigger.payload.status}}\\";\\n\\n    if (examStatus === \\"ส่งต่อแพทย์\\") {\\n        return true;\\n    }\\n\\n    throw new Error('ไม่ใช่สถานะ ส่งต่อแพทย์');\\n    return false;\\n}"}	3755a54d-74a8-45db-8c11-364bb0948e3c	f5a42e53-4f80-48c8-8ff5-8e084ff671df	e472714e-dd02-4bfc-8038-133053a0a457	2025-01-23 02:23:25.798+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+4faa0d8b-c341-4b29-8570-4524d9732cce	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_abnhh_oudqv_senmx	item-update	21	103	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"collection":"progress","permissions":"$full"}	f5a61cb0-fe30-440a-9f4d-30fe0fdbb1f7	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-09-12 02:32:58.548+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 6aa00178-227d-4a04-a9e4-8a1cdea3c1de	อัพเดต noti ให้เป็นอ่านแล้ว	update_notification_read	item-update	55	1	{"query":{"filter":{"_and":[{"subject":{"_eq":"ส่งทำ Ultrasound"}},{"to_dept":{"_eq":"US"}},{"appointment":{"_eq":"{{read_current_ultrasound_work.appointment}}"}},{"status":{"_eq":"inbox"}}]}},"payload":{"status":"read"},"emitEvents":true,"permissions":"$full","collection":"notification"}	\N	\N	84da7d5b-50b0-4660-a4af-485543cf73f7	2025-11-13 03:03:19.572+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 61e3b98c-e518-49a0-9600-e48cc3091635	เช็คสถานะ patient_result ว่าเป็น จัดส่งแล้ว หรือไม่	check_status_send_snacy	exec	21	37	{"code":"module.exports = async function(data) {\\n    let patientResult = {{read_data_patient_result}};\\n\\n    if (patientResult.status == \\"5\\") {\\n        return true;\\n    }\\n\\n    throw new Error('สถานะไม่ใช่จัดส่งแล้ว');\\n    return false;\\n}"}	a31e7db7-ae56-4012-8d80-9c6368a68672	\N	2e907bc7-59b0-451c-bf25-8bc2cd332ec8	2024-10-28 04:28:47.565+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-90636ef6-44fb-42e6-b4d9-a4c1832c9aab	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_vozys_drvte_wtvkm	item-update	21	81	{"permissions":"$full","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"]}	f767d8b7-aa3f-47d9-b10e-9036d8b5be36	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 01:53:20.27+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-e23c300e-c0ee-4a50-aaed-441c7026ab32	check_last_examination_is_not_null	check_last_examination_is_not_null	exec	39	52	{"code":"module.exports = async function(data) {\\n\\t const lastExam = {{read_last_examination[0]}};\\n\\n\\treturn !!lastExam;\\n}"}	c237e2b8-08d0-4232-8844-692f55dfa02b	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2024-12-18 02:17:48.963+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-ce79afdb-237d-4889-9f12-12b84b9fa9ee	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym	item-update	39	67	{"collection":"progress","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	9bb7ee61-6361-4ed5-ac90-39ce139bd07d	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-09-02 02:51:52.359+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 0ae8c334-4e7c-4733-b1b2-17928ea3774f	อ่าน ultrasound_work	read_current_ultrasound_work	item-read	37	1	{"permissions":"$full","collection":"ultrasound_work","key":"{{$trigger.keys[0]}}"}	6aa00178-227d-4a04-a9e4-8a1cdea3c1de	\N	84da7d5b-50b0-4660-a4af-485543cf73f7	2025-11-13 05:18:35.219+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 47c671ed-b692-4e7f-9b1e-0672be9d1b63	เช็คว่ามี ultrasound_work ไหม	check_ultrasound_work	exec	55	1	{"code":"module.exports = async function(data) {\\n    const ultrasound_works = {{read_ultrasound_work}} ?? []\\n\\n\\tif(ultrasound_works.length === 0) {\\n    \\tthrow new Error('เคสนี้ไม่มี ultrasound_work')\\n    }\\n\\n\\treturn ultrasound_works[0]\\n}"}	209ef837-dda3-4c9f-8428-ef9cc6d682b8	\N	95fa6dda-c2a3-43a3-9ff6-dbf26cfb5025	2025-09-05 11:40:22.98+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+ce79afdb-237d-4889-9f12-12b84b9fa9ee	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym	item-update	39	67	{"collection":"progress","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	9bb7ee61-6361-4ed5-ac90-39ce139bd07d	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-09-02 02:51:52.359+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+3755a54d-74a8-45db-8c11-364bb0948e3c	เช็คว่าเป็นเคสส่งทำ ultrasound หรือไม่	check_is_us	exec	57	1	{"code":"module.exports = async function(data) {\\n    const isUltrasound = {{$trigger.payload.is_ultrasound}};\\n\\n    if (!isUltrasound) {\\n       throw new Error('ไม่ใช่เคส ultrasound');\\n    }\\n\\n}"}	c80ec306-91ce-4c7d-a50a-d739013ac9a9	b54c528e-42c7-4f7f-a3aa-f8d8f6b335f0	e472714e-dd02-4bfc-8038-133053a0a457	2025-06-10 10:10:41.938+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+96d74505-3f96-4643-bea6-3f04bff32ba0	เข้า Trigger Flow Progress Created (v.ส่ง id)	trigger_flow_progress_created_nxndg_ruefc_dogyw_rmugs_eltht	trigger	74	103	{"payload":{"action":"doctor","user":"{{read_data_examination.case_owner_doctor}}","progress":"{{create_progress_mammogram}}"},"flow":"89be6643-9611-41be-8186-059689a6c8d3"}	\N	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2026-06-29 11:31:23.643+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+90636ef6-44fb-42e6-b4d9-a4c1832c9aab	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_vozys_drvte_wtvkm	item-update	21	81	{"permissions":"$full","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"]}	f767d8b7-aa3f-47d9-b10e-9036d8b5be36	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 01:53:20.27+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+e23c300e-c0ee-4a50-aaed-441c7026ab32	check_last_examination_is_not_null	check_last_examination_is_not_null	exec	39	52	{"code":"module.exports = async function(data) {\\n\\t const lastExam = {{read_last_examination[0]}};\\n\\n\\treturn !!lastExam;\\n}"}	c237e2b8-08d0-4232-8844-692f55dfa02b	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2024-12-18 02:17:48.963+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 abc2ef17-79cb-4527-bdf2-a03ba18fc93f	อัพเดทข้อมูล notification	notification_update_thqop	request	3	35	{"method":"PATCH","url":"{{read_environment.url}}/items/notification","body":"{\\n    \\"keys\\": {{map_ids_notification}},\\n    \\"data\\": {\\n        \\"status\\": \\"archive\\",\\n        \\"doctor_work\\": null\\n    }\\n}","headers":[{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}]}	\N	\N	5b6e538c-4ccb-4ce0-b266-b48257d08bf6	2025-07-17 03:08:07.283+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 80286859-0ab8-4912-800e-bd34353f2af6	อ่านข้อมูล worklist ที่ผูกอยู่กับ queue 	read_data_worklist	item-read	55	1	{"collection":"worklist","key":["{{read_data_queue.worklist[0]}}"],"permissions":"$full"}	6d169668-7aa9-41f6-adf5-98ee8c3f896e	\N	2e907bc7-59b0-451c-bf25-8bc2cd332ec8	2024-10-28 04:28:47.764+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 3628e59f-3a1a-45a8-982e-ea9b8e2ce96c	สร้าง progress ส่งต่อเคส	item_create_bmnq7_ozcsa	item-create	42	37	{"collection":"progress","payload":{"title":"ผู้มาตรวจรอคิวสัมภาษณ์","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Tech","worklist":"{{read_data_queue.worklist[0]}}"}}	dde281a5-84bf-4fdd-923e-05ce9c7ff3b8	\N	d3f538b5-8d62-4058-9536-6fb9697e90d8	2024-10-22 11:21:19.786+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15692,13 +15843,13 @@ dcc6ecad-947b-41da-b7ef-dbd1ff9f8d69	เช็คสถานะ appointment ว
 09a14f22-5260-410b-8d92-f58dcc2abe34	อัพเดทข้อมูล Coordinate	coordinate	item-update	3	37	{"collection":"coordinate","payload":{"status":"12","data_tag":"1","detail":"{{read_data_ultrasound_work.note_us}}","doctor":"{{read_data_doctor_work.doctor}}","doctor_work":"{{read_data_doctor_work.id}}"},"key":["{{read_data_coordinate[0].id}}"],"permissions":"$full","emitEvents":true}	5e6d7c12-f3fe-4f83-a053-35c37c7e7783	\N	55b25593-7665-4f37-83f5-9e691af6b979	2025-07-30 03:14:33.457+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 db84d91a-9199-4bba-a8c8-3f0d95f887a8	ลบเวลาเริ่มใน pacs_sync_info ที่เกี่ยวข้องทั้งหมด	delete_all_pacs_sync_info_start_time	item-update	55	1	{"query":{"filter":{"_and":[{"modality":{"_eq":"US"}},{"is_mark_del":{"_eq":false}},{"exam":{"_eq":"{{read_current_ultrasound_work.exam}}"}}]}},"emitEvents":true,"collection":"pacs_sync_info","payload":{"start_time":null}}	\N	\N	9fefa146-297d-4afd-b1d6-0710f75a25c8	2025-11-21 02:34:20.615+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f02e6194-90b6-41b7-9d05-b1b0c56c7a73	อ่าน ultrasound_work	read_current_ultrasound_work	item-read	37	1	{"permissions":"$full","collection":"ultrasound_work","key":"{{$trigger.keys[0]}}"}	db84d91a-9199-4bba-a8c8-3f0d95f887a8	\N	9fefa146-297d-4afd-b1d6-0710f75a25c8	2025-11-21 02:26:07.023+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-ff73d529-bcd2-47dc-89a5-b0207e5dc91e	สร้าง progress เจ้าหน้าออกใบเรียกเก็บค่าบริการ	create_progress_issue_an_invoice	item-create	57	98	{"collection":"progress","payload":{"title":"เจ้าหน้าออกใบเรียกเก็บค่าบริการ","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"การเงิน","worklist":"{{read_data_queue.worklist[0]}}"}}	5948cb2e-9cd8-470f-8263-6e02274d4741	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 02:10:37.99+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+bc6b8896-d250-474f-9739-2c14e44166ef	เช็คว่ามี statusTriggerFlows และสถานะเป็น ทำ Mammogram หรือไม่	status_trigger_flows_status_signtopacs_ferrt_zpbkc_rhxej	exec	3	103	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //ทำ Mammogram หรือ ทำ mam หลัง us\\n    if ((status === \\"4\\" || status === \\"12\\") && statusTriggerFlows !== \\"undefined\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่ใช่ ทำ Mammogram'); \\n\\n};\\n"}	4faa0d8b-c341-4b29-8570-4524d9732cce	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-09-12 02:32:58.626+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 54194ca9-bc82-4954-a334-fc5a31dc52ef	เช็คว่าสถานะ Coordinat ถูกอัพเดทเป็น รับเคสแล้ว ใช่หรือไม่	check_status_coordinate	exec	19	18	{"code":"module.exports = async function(data) {\\n    let payload = {{$trigger.payload}};\\n\\tconst acceptanceStatuses = [\\"1\\",\\"9\\",\\"11\\"]\\n\\n\\t// \\"1\\" = รับเคสแล้ว\\n\\t// \\"9\\" = รับเคสแล้ว(ปรึกษาแพทย์)\\n\\t// \\"11\\" = รับเคสแล้ว (US)\\n    // \\"12\\" = เปลี่ยนแพทย์ US\\n    if (acceptanceStatuses.includes(payload.status) && payload.status) {\\n        return true;\\n    }else if (payload.status == 12 && payload.action !== \\"คืนเคส\\") {\\n        return true;\\n    }\\n\\n    throw new Error('coordinate ไม่ใช่สถานะ รับเคสแล้ว');\\n    return false;\\n}"}	e4322816-86bb-49a7-aa93-300cf7e10ee0	f9865b18-2aa1-40ee-85ac-17e423dfe7dd	baa6bf9a-4a45-475e-9aa9-93d402672662	2025-01-28 13:33:02.085+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-df2d66cc-9523-43dd-9b11-8ce4ebde585e	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_abnhh_oudqv	item-update	21	86	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"collection":"progress","permissions":"$full"}	44673fa4-f7f7-46fe-a1be-37d391070357	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-06-18 17:26:12.747+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-1a9c5c91-9c11-4904-8cce-8b42f14d3364	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_ttvvk_frisb	trigger	94	84	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_send_doctor}}"}	\N	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-24 01:59:00.185+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-09e2281e-acde-47e9-9784-89a58af6d670	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_vozys_drvte_wtvkm_xveqh	item-update	39	98	{"permissions":"$full","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"]}	ff73d529-bcd2-47dc-89a5-b0207e5dc91e	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 02:08:46.793+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+6e433783-7898-422a-8f0d-c5306643b483	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_ruefc_dogyw	trigger	57	86	{"payload":"{{create_progress_cancel_case}}","flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971"}	\N	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-06-18 17:26:12.705+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 382cae8e-eb2a-4d2b-9dcd-31285fb4a690	อ่านข้อมูล Doctor_work	read_data_doctor_work	item-read	3	19	{"permissions":"$full","collection":"doctor_work","key":["{{read_data_ultrasound_work.doctor_work}}"]}	21336352-4333-4015-bd6b-5cdeb3b298d1	\N	55b25593-7665-4f37-83f5-9e691af6b979	2025-07-29 04:12:55.153+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 98c31b14-25f5-4a58-95ba-a254822010ea	read_data_worklist	read_data_worklist	item-read	37	1	{"collection":"worklist","key":["{{read_data_queue.worklist[0]}}"],"permissions":"$full"}	70384f0d-b062-4600-b512-86640e250bb2	\N	af896f59-cef0-47ab-b0ac-efdb21df529f	2024-10-02 10:18:06.701+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+1a9c5c91-9c11-4904-8cce-8b42f14d3364	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_ttvvk_frisb	trigger	94	84	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_send_doctor}}"}	\N	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-24 01:59:00.185+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+df2d66cc-9523-43dd-9b11-8ce4ebde585e	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_abnhh_oudqv	item-update	21	86	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"collection":"progress","permissions":"$full"}	44673fa4-f7f7-46fe-a1be-37d391070357	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-06-18 17:26:12.747+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 13d37aff-8aee-448d-bfc4-63761444ba84	อ่านข้อมูล queue ของ appointment ที่อ่านมาก่อนหน้านี้	read_data_queue	item-read	3	19	{"collection":"queue","key":["{{read_data_appointment.queue[0]}}"],"permissions":"$full"}	e75dc90c-08ed-4d04-afc6-cb09e38d03bd	\N	d3f538b5-8d62-4058-9536-6fb9697e90d8	2024-10-21 08:27:59.916+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 00d43bb2-6e3f-4340-a071-5ecd2e288d84	check_queue_m	check_queue_m	exec	91	1	{"code":"module.exports = async function(data) {\\n    let queue = {{read_data_queue}};\\n\\n    if (queue.queue_type == \\"M\\") {\\n        return true;\\n    }\\n\\n    throw new Error('queue_type not M');\\n    return false;\\n}"}	7a51392d-35b0-485b-92db-8f027177fdb1	\N	af896f59-cef0-47ab-b0ac-efdb21df529f	2024-10-18 02:52:27.108+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 5cef6beb-e3ce-4311-9698-64448f0104d9	เช็คว่ามี ultrasound_work ส่งมาไหม	has_ultrasound_work	exec	19	1	{"code":"module.exports = async function(data) {\\n    if(\\"{{$trigger.payload.ultrasound_work}}\\" !== \\"undefined\\") {\\n    \\tthrow new Error('ไม่ใช่เคสจากหน้าหมอ')\\n    }\\n}"}	c1d46765-2a91-4f98-a146-1e34421cf023	\N	95fa6dda-c2a3-43a3-9ff6-dbf26cfb5025	2025-09-05 11:29:18.379+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15710,34 +15861,34 @@ c10c1486-f31f-4c37-a478-7231340e35b5	อ่านข้อมูล Coordinate	r
 e511b6f6-9131-44ec-9100-265b1de52c1d	check_information_type	check_information_type	exec	57	19	{"code":"module.exports = async function(data) {\\n    const informationType = \\"{{read_data_queue.information_type}}\\";\\n    let result;\\n\\n    if (informationType === 'คนทั่วไป') {\\n        result = 'คนทั่วไปติดต่อสอบถาม';\\n    } else if (informationType === 'ผู้มาตรวจ') {\\n        result = 'ผู้มาตรวจติดต่อสอบถาม';\\n    } else {\\n        result = 'ไม่ตรงกับเงื่อนไขที่กำหนด';\\n    }\\n\\n    return {\\n        result\\n    };\\n}\\n"}	0dcf1930-8eaa-4091-ac22-4c620edb0f10	\N	2770ae3f-8314-4d3f-a4f8-4d58da1ec279	2024-10-16 06:07:36.038+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 a7612dcc-1ccb-4cff-addd-a7386682d468	update status และล้าง doctor_work ออก	update_status	item-update	56	18	{"payload":{"status":"{{$trigger.payload.status}}","doctor_work":null},"collection":"notification","permissions":"$full","emitEvents":true,"key":["{{read_data_notification[0].id}}"]}	\N	\N	4c95d232-9f2a-49cd-8d54-da7d96c85f9e	2025-06-30 11:13:03.877+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 9da8aec5-9cf5-44d5-924b-d180391029d2	check_queue_s	check_queue_s	exec	91	1	{"code":"module.exports = async function(data) {\\n    let queue = {{read_data_queue}};\\n\\n    if (queue.queue_type == \\"S\\") {\\n        return true;\\n    }\\n\\n    throw new Error('queue_type not S');\\n    return false;\\n}"}	fdf3b17e-b70b-4de2-bc84-8ee938c1b1fd	\N	2770ae3f-8314-4d3f-a4f8-4d58da1ec279	2024-10-07 06:15:51.347+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-3bef5176-57c7-438c-95f5-94b6e6157d0e	อ่านข้อมูล queue	read_data_queue	item-read	21	19	{"collection":"queue","key":["{{read_data_appointment.queue[0]}}"],"permissions":"$full"}	8871e694-ea81-4260-9f5c-3797abf5e725	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-02-27 02:23:10.022+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-f12acf50-5b99-46ff-9fdf-26502dbfa19a	เช็คว่าเป็น create หรือ update	create_update	exec	40	33	{"code":"module.exports = async function(data) {\\n    if (\\"{{$trigger.event}}\\" == \\"ultrasound_work.items.create\\") {\\n        return true; \\n    } \\n    throw new Error('ไม่ใช่การสร้าง ultrasound_work'); \\n\\n};\\n"}	7e787b4c-cf0b-43db-b03a-636e9590bb3a	6d693638-dc88-4a29-8368-84a41da39091	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 11:36:44.063+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+b49e41df-4f21-476d-9c1a-cc13c63d1ddf	สร้าง progress เจ้าหน้าที่ Front(F14) ให้คำแนะนำ	create_progress_consult	item-create	39	70	{"payload":{"title":"เจ้าหน้าที่ Front(F14) ให้คำแนะนำ","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Front(F14)","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	c210995d-6697-4e7b-be3d-dda8c386e122	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-06-18 17:26:13.005+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+277135a6-a366-4017-8ca0-5a509b9692a1	อัพเดทฟิลด์ doctor ของ progress	item_update_doctor	item-update	21	52	{"collection":"progress","permissions":"$full","payload":{"doctor":"{{query_user.data.data.first_name}} {{query_user.data.data.last_name}}"},"key":["{{read_data_progress.id}}"]}	\N	\N	89be6643-9611-41be-8186-059689a6c8d3	2026-06-29 03:23:38.326+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+22d78396-c087-4c64-9bf7-4d9056374427	เช็ค action doctor	check_doctor	exec	3	52	{"code":"module.exports = async function(data) {\\n    const action = \\"{{$trigger.action}}\\";\\n\\n    if (action === \\"doctor\\") {\\n        return true; \\n    }\\n\\n    throw new Error('action ไม่ใช่ doctor'); \\n}"}	277135a6-a366-4017-8ca0-5a509b9692a1	\N	89be6643-9611-41be-8186-059689a6c8d3	2026-06-29 03:23:38.353+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+ff06a3b9-939f-4b4c-be8b-de419b41e81c	เช็คว่ามี statusTriggerFlows และ สถานะเป็น F14/แนะนำ Bx || F14/ปล่อยกลับบ้าน หรือไม่	status_trigger_flows_status_signtopacs_ferrt	exec	3	70	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //9 = F14/แนะนำ Bx 3 = F14/ปล่อยกลับบ้าน\\n    if ((status === \\"9\\" || status === \\"3\\")&& statusTriggerFlows !== \\"undefined\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่ใช่ F14/แนะนำ Bx || F14/ปล่อยกลับบ้าน'); \\n};\\n"}	4c952df6-87e4-4d70-b156-4f3ff6fe6d89	c8a677e3-5147-4fbc-b034-135fc70f518f	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-06-18 17:26:13.138+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 ef0b9191-7acd-4125-a026-aab20927b81d	อัพเดทเวลาถ่ายเพิ่ม	item_update_cuya6	item-update	37	17	{"collection":"pacs_sync_info","permissions":"$full","emitEvents":true,"key":[],"payload":"{{check_pacs_sync_info_us}}"}	\N	\N	f41fb7e9-e20d-405f-955d-3e03d7bf74a3	2025-07-08 06:46:17.75+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 0fa988ab-3f45-446e-aa17-1ffaba583b41	เช็ค Triggerflows และสถานะ us_work ว่าเป็น เริ่มถ่าย ใช่หรือไม่	exec_7u3kb	exec	19	1	{"code":"module.exports = async function(data) {\\n\\t// เริ่มถ่าย\\n    const ultrasoundStatus = {{$trigger.payload.status}};\\n\\tconst triggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n\\n    if (ultrasoundStatus == \\"4\\" && triggerFlows !== \\"undefined\\") {\\n        return true;\\n    }\\n\\n    throw new Error('สถานะไม่ใช่ เริ่มถ่าย หรือ  triggerFlows ไม่มีค่า');\\n    return false;\\n}"}	b0682e18-4238-41dd-8f50-cb749206d544	\N	f41fb7e9-e20d-405f-955d-3e03d7bf74a3	2025-07-08 06:19:36.424+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-2681240f-3d6c-4cea-a323-6343c645e8a2	เช็คว่ามี statusTriggerFlows และ action เป็น แพทย์อ่านผลเพิ่ม หรือไม่	status_trigger_flows_status_xqxfz_xzbdf_xylgt_tnhsk_lrplf_zjewr	exec	22	114	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const action = \\"{{$trigger.payload.action}}\\";\\n    \\n    if (statusTriggerFlows === \\"trigger\\" && action === \\"แพทย์อ่านผลเพิ่ม\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ แพทย์อ่านผลเพิ่ม'); \\n\\n};\\n"}	8b493d3c-c8b5-43f0-ba9c-88fc57b16a76	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 02:08:46.931+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-e149a194-30b0-44a0-a570-fd23f0664ddf	เช็คว่า status เป็นค่า ส่ง MAM - รอเรียกคิว ใช่หรือไม่	exec_wvr55	exec	3	52	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const statusExam = \\"{{$trigger.payload.status}}\\";\\n    \\n    //ส่ง MAM - รอเรียกคิว\\n    if (statusExam === \\"ส่ง MAM - รอเรียกคิว\\") {\\n        return true; \\n    } \\n\\n    throw new Error('statusExam ไม่เท่ากับ ส่ง MAM - รอเรียกคิว'); \\n\\n};\\n"}	4f1ec4f1-0d64-4064-8fc2-1f337a9473e7	5867ad24-bd9a-4a36-a436-891813f842d9	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-19 01:40:18.55+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+3bef5176-57c7-438c-95f5-94b6e6157d0e	อ่านข้อมูล queue	read_data_queue	item-read	21	19	{"collection":"queue","key":["{{read_data_appointment.queue[0]}}"],"permissions":"$full"}	8871e694-ea81-4260-9f5c-3797abf5e725	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-02-27 02:23:10.022+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8a4decb4-5288-4845-878c-10381a0a2c87	เช็ค triggerFlows และ action ว่ามีค่าหรือไม่	trigger_flows_action	exec	37	1	{"code":"module.exports = async function(data) {\\n    const action = \\"{{$trigger.payload.action}}\\";\\n\\tconst triggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n\\n    if (action === \\"undefined\\" || triggerFlows === \\"undefined\\") {\\n        throw new Error('ไม่มี action หรือ triggerFlows ไม่มีค่า');\\n    }\\n}"}	98980d81-f462-42be-a800-6e3fc96d3bd9	\N	5b6e538c-4ccb-4ce0-b266-b48257d08bf6	2025-07-17 03:08:07.691+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 21336352-4333-4015-bd6b-5cdeb3b298d1	return ค่าของวันนี้	current_day	exec	21	19	{"code":"module.exports = async function(data) {\\n  const now = new Date();\\n\\n  // เวลาเริ่มต้นของวันนี้ (00:00:00.000)\\n  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);\\n\\n  // เวลา 23:59:59.999 ของวันนี้ (สิ้นสุดวัน)\\n  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);\\n\\n  return {\\n    today_start: startOfToday.toISOString(),\\n    today_end: endOfToday.toISOString()\\n  };\\n};\\n"}	c10c1486-f31f-4c37-a478-7231340e35b5	\N	55b25593-7665-4f37-83f5-9e691af6b979	2025-07-31 04:12:38.446+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c9dd914f-a0d9-4c9a-a33b-db422176f8e0	อ่านข้อมูล Pacs_Sync_info	read_data_pacs_sync_info	item-read	55	1	{"permissions":"$full","collection":"pacs_sync_info","query":{"filter":{"exam":{"_eq":"{{read_data_ultrasound_work.exam}}"}}}}	c41dd34f-b59d-4571-82e8-8c04a7d7de83	\N	f41fb7e9-e20d-405f-955d-3e03d7bf74a3	2025-07-08 06:21:43.023+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-083d26f5-d4f1-437a-a6f7-30fc9f91b456	เช็คว่ามี statusTriggerFlows และ action เป็น ปล่อยกลับบ้าน, Confirm Bx หรือไม่	status_trigger_flows_status_xqxfz_xzbdf_xylgt_tnhsk_lrplf	exec	21	98	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const action = \\"{{$trigger.payload.action}}\\";\\n    \\n    if (statusTriggerFlows === \\"trigger\\" && action === \\"ปล่อยกลับบ้าน\\" || action === \\"Confirm Bx\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ ปล่อยกลับบ้าน หรือ Confirm Bx'); \\n\\n};\\n"}	09e2281e-acde-47e9-9784-89a58af6d670	2681240f-3d6c-4cea-a323-6343c645e8a2	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 02:08:47.009+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-69b45fa0-9c5f-48f9-a106-39c3ae282202	อ่านข้อมูล appointment	read_data_appointment	item-read	3	18	{"collection":"appointment","key":["{{read_data_coordinate.appointment}}"],"permissions":"$full"}	5ff9bad1-cd77-4ef9-ba77-70e5a9bdfe20	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-02-26 10:48:49.238+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+8271f639-cbfb-4902-b3a9-8fe17357924b	สร้าง progress แจ้งชำระเงิน	create_progress_send_doctor	item-create	39	54	{"payload":{"title":"เจ้าหน้าที่ Front(F14) แจ้งให้ไปชำระเงิน","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Front(F14)","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	8a1c6a8f-4841-4286-8dda-d0d896868237	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-03-08 15:48:23.471+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b0682e18-4238-41dd-8f50-cb749206d544	อ่านข้อมูล Ultrasound_Work	read_data_ultrasound_work	item-read	37	1	{"permissions":"$full","collection":"ultrasound_work","key":["{{$trigger.keys[0]}}"]}	c9dd914f-a0d9-4c9a-a33b-db422176f8e0	\N	f41fb7e9-e20d-405f-955d-3e03d7bf74a3	2025-07-08 06:21:43.033+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-0b57264f-7820-47a0-9b5f-21c6a1b68d9b	return ค่า id ของ progress ตัวสุดท้าย จากข้อมูล worklist ที่ถูกอ่านมาก่อนหน้านี้	last_no_progress	exec	3	34	{"code":"module.exports = async function(data) {\\n    const progressArray = {{read_data_worklist.progress}};\\n\\n    // เช็คว่า progress array มีค่าหรือไม่ และมีข้อมูลอยู่\\n    if (progressArray && progressArray.length > 0) {\\n        // จัดเรียง progress ตามไอดีจากน้อยไปมาก\\n        const sortedProgressArray = progressArray.sort((a, b) => a - b);\\n\\n        // ดึง progress ID ตัวสุดท้ายหลังจากจัดเรียง\\n        const lastProgressId = sortedProgressArray[sortedProgressArray.length - 1];\\n\\n        return {\\n            lastProgressId: lastProgressId\\n        };\\n    } else {\\n        return {\\n            message: 'No progress data found'\\n        };\\n    }\\n};"}	b921e43f-39fb-4dfb-b5f1-03f4c1a2b1a3	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-02-26 10:48:49.07+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+b9550ac5-7ec8-412d-8836-0dad8ef58c79	เช็คว่ามี statusTriggerFlows และ status เป็น รอSigntopacs หรือไม่	status_trigger_flows_status_signtopacs	exec	3	54	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //รับเคส\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"1\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 1'); \\n\\n};\\n"}	3b0aba87-5b6f-4e22-9240-8e18db95bccc	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-03-08 15:48:23.567+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f9e05871-9549-4fd8-b879-9c0bbbf41665	อ่านข้อมูล pacs_sync_info	read_data_pacs_sync_info	item-read	21	68	{"permissions":"$full","collection":"pacs_sync_info","query":{"filter":{"exam":{"_eq":"{{read_data_ultrasound_work.exam}}"}}}}	8a8e99d3-f47a-461b-a2f5-28069795c100	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-07-06 04:21:38.03+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+69b45fa0-9c5f-48f9-a106-39c3ae282202	อ่านข้อมูล appointment	read_data_appointment	item-read	3	18	{"collection":"appointment","key":["{{read_data_coordinate.appointment}}"],"permissions":"$full"}	92d73fb2-cb8e-49d9-b69d-c9cfda1be346	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-02-26 10:48:49.238+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 781dd8e5-109b-4eef-b37c-1387ed408406	return id ของ progress ตัวสุดท้าย	last_no_progress	exec	55	1	{"code":"module.exports = async function(data) {\\n    const progressArray = {{read_data_worklist.progress}};\\n\\n    // เช็คว่า progress array มีค่าหรือไม่ และมีข้อมูลอยู่\\n    if (progressArray && progressArray.length > 0) {\\n        // จัดเรียง progress ตามไอดีจากน้อยไปมาก\\n        const sortedProgressArray = progressArray.sort((a, b) => a - b);\\n\\n        // ดึง progress ID ตัวสุดท้ายหลังจากจัดเรียง\\n        const lastProgressId = sortedProgressArray[sortedProgressArray.length - 1];\\n\\n        return {\\n            lastProgressId: lastProgressId\\n        };\\n    } else {\\n        return {\\n            message: 'No progress data found'\\n        };\\n    }\\n};"}	37089f4f-86f7-4565-9952-a9eb5ea38651	\N	2cf897be-be84-42be-b293-aa16e9f8885f	2024-10-18 06:01:01.658+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 9bac2d89-e960-4aad-ab39-a41b926e9aca	อ่านข้อมูล queue ที่ถูก trigger	read_data_queue	item-read	19	1	{"collection":"queue","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	29b22aee-3c8e-4f10-9305-37d858f8cea3	\N	2cf897be-be84-42be-b293-aa16e9f8885f	2024-10-17 11:03:29.424+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+01a0f9bd-69af-425c-8e63-dc98ecbecd34	เช็คว่าเป็นถ่าย Mam หลัง us หรือไม่	exec_wvr55_crgxd_hbuny	exec	21	68	{"code":"module.exports = async function(data) {\\n   const examData = {{read_data_examination}};\\n    \\n    if (examData.is_mam_after_us_done) {\\n        return true; \\n    } \\n\\n    throw new Error('is_mam_after_us_done เป็น false'); \\n};\\n"}	a09c26fc-c355-4208-834a-7a93f070f553	3988243c-b228-405b-8175-3a64a4931261	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-09-04 09:37:00.461+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e8935944-6534-41f1-a15c-15a42517f7ed	สร้าง ultrasound_work ใหม่	create_ultrasound_work	item-create	129	1	{"collection":"ultrasound_work","permissions":"$full","emitEvents":true,"payload":{"exam":"{{read_data_examination.id}}","appointment":"{{read_data_examination.appointment}}","doctor_work":"{{read_doctor_work[0].id}}","doctor_change":"{{read_doctor_work[0].doctor_change}}","location":"{{read_data_examination.location}}"}}	\N	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-08-26 11:19:13.667+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-590b68b7-8cc1-4e66-917f-63ba77dfa9a2	เข้า Trigger Flow Progress Created	trigger_flow_progress_created	trigger	57	35	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_interview}}"}	\N	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-18 16:19:40.77+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-6da9584b-85d8-4130-9756-0f9d0fddfd0e	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg	trigger	57	49	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_start_us}}"}	\N	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 04:50:04.859+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c41dd34f-b59d-4571-82e8-8c04a7d7de83	หา pacs_sync_info ของ US	check_pacs_sync_info_us	exec	19	17	{"code":"module.exports = async function (data) {\\n  const pacsData = {{read_data_pacs_sync_info}} ?? [];\\n\\n  const target = pacsData.filter(\\n    (item) => item.modality === \\"US\\" && \\n      item.is_mark_del === false &&\\n      !item.start_time\\n  );\\n\\n  if (target.length === 0) {\\n  \\tthrow new Error('ไม่พบ pacs_sync_info ของ us')\\n  };\\n\\n  return target.map(({ id }) => ({\\n  \\t  id,\\n      start_time: new Date().toISOString()\\n    })\\n  )\\n};"}	ef0b9191-7acd-4125-a026-aab20927b81d	\N	f41fb7e9-e20d-405f-955d-3e03d7bf74a3	2025-07-08 06:34:48.778+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-6f0c124f-40f2-4f4d-adb1-531485414b89	อัพเดทสถานะ doctor_work ของหมอคนนั้นเป็น "ส่ง us แล้ว"	update_doctor_work_sent_us	item-update	111	1	{"collection":"doctor_work","payload":{"status":"8"},"key":["{{read_doctor_work[0].id}}"],"permissions":"$full"}	e8935944-6534-41f1-a15c-15a42517f7ed	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-08-26 11:19:13.691+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-de807d21-4ef0-45af-b0a2-c486d8cfbed3	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_hhgvy_dsgiq_jewcc_euxpw_dyofv_dlxlc	trigger	92	147	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_cancel_us}}"}	\N	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-16 02:53:32.156+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+f409b9e0-544b-43f6-8fc3-94b8e29d19e8	เข้า Trigger Flow Progress Created (v.ส่ง id)	trigger_flow_progress_created_v_id_nnlog	trigger	74	52	{"flow":"89be6643-9611-41be-8186-059689a6c8d3","payload":{"action":"doctor","user":"{{read_data_examination.case_owner_doctor}}","progress":"{{create_progress_send_mam}}"}}	\N	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2026-06-29 11:33:03.467+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e10cfe20-5c83-4f56-9630-580c94ee0194	เช็ค confirm จำนวนรูป	return_confirm_pic_values	exec	37	1	{"code":"module.exports = async function(data) {\\n\\tlet confirm_num_of_mam = 0;\\n    let confirm_num_of_spot = 0;\\n    let confirm_num_of_implant = 0;\\n    \\n    if({{$trigger.payload.confirm_num_of_mam}} !== undefined) {\\n        confirm_num_of_mam = {{$trigger.payload.confirm_num_of_mam}}\\n    }\\n\\n\\tif({{$trigger.payload.confirm_num_of_spot}} !== undefined) {\\n        confirm_num_of_spot = {{$trigger.payload.confirm_num_of_spot}}\\n    }\\n    \\n    if({{$trigger.payload.confirm_num_of_implant}} !== undefined) {\\n        confirm_num_of_implant = {{$trigger.payload.confirm_num_of_implant}}\\n    }\\n    \\n\\treturn {\\n        confirm_num_of_mam,\\n        confirm_num_of_spot,\\n        confirm_num_of_implant,\\n    };\\n}"}	2160b79a-b00f-4a2e-bbce-aa218100fc4f	\N	a6078515-a2aa-435a-9862-4abe646ae8cc	2025-04-30 02:22:14.325+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 6ea1cabe-973f-489c-abe7-d106b2e002ef	เช็คว่าสถานะเกี่ยวข้องกับการส่งไปหาแพทย์หรือไม่	check_exam_status	exec	19	1	{"code":"module.exports = async function(data) {\\n    const examStatus = \\"{{$trigger.payload.status}}\\";\\n\\tconst acceptedStatus = [\\n        \\"15\\", // ถ่ายเพิ่มก่อน US (ปิดเคส)\\n        \\"16\\", // ปรึกษาแพทย์ (ปิดเคส)\\n        \\"20\\" // ถ่ายเพิ่มหลัง US (ปิดเคส)\\n    ]\\n\\n    if (!acceptedStatus.includes(examStatus)) {\\n        throw new Error('ไม่ใช่สถานะ ส่งต่อแพทย์');\\n    }\\n    \\n    let doctor_work_status;\\n    switch(examStatus) {\\n        case \\"15\\":\\n            doctor_work_status = \\"6\\" // รออ่านผล/MAM เพิ่ม\\n            break;\\n        case \\"16\\": \\n            doctor_work_status = \\"0\\" // รออ่านผล\\n            break;\\n        case \\"20\\":\\n            doctor_work_status = \\"12\\" // รออ่านผล/MAM เพิ่ม (หลัง US)\\n            break;\\n    }\\n    \\n    return {doctor_work_status}\\n}"}	7c870612-af16-44b0-8824-fab06d638b5d	\N	7ab7b1a9-793a-47ac-9092-675603a60a54	2025-05-07 05:04:55.902+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 42f2a014-5485-4557-822e-c39ea232fa82	อัพเดทข้อมูล notification	notification_update_thqop	request	21	53	{"method":"PATCH","url":"{{read_environment.url}}/items/notification","headers":[{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}],"body":"{\\n    \\"keys\\": {{map_ids_notification}},\\n    \\"data\\": {\\n        \\"status\\": \\"archive\\",\\n        \\"doctor_work\\": null\\n    }\\n}"}	ea26567e-aaba-46ce-91f1-40a42849bebf	\N	55b25593-7665-4f37-83f5-9e691af6b979	2025-07-31 11:25:26.718+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-8b493d3c-c8b5-43f0-ba9c-88fc57b16a76	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_vozys_drvte_wtvkm_xveqh_znhuf	item-update	39	114	{"permissions":"$full","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"]}	de045926-46dd-4988-a03c-17de022191aa	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 02:08:46.853+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+de807d21-4ef0-45af-b0a2-c486d8cfbed3	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_hhgvy_dsgiq_jewcc_euxpw_dyofv_dlxlc	trigger	92	132	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_cancel_us}}"}	\N	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-16 02:53:32.156+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 4ff132d2-f3d9-4e1b-bb4d-c1851837948c	สร้าง Coordinate ที่ F14 แบบ "ปล่อยเคสกลับบ้าน"	create_coordinate	item-create	37	1	{"collection":"coordinate","permissions":"$full","emitEvents":true,"payload":{"appointment":"{{$trigger.keys[0]}}","status":"2","data_tag":"0","case_tag":"4","reason":"{{$trigger.payload.cancel_reason}}","detail":"{{$trigger.payload.cancel_detail}}","location":"{{$trigger.payload.location}}"}}	\N	\N	bed2e574-ce79-4612-8cbc-30b8da6078e7	2025-12-10 04:28:44.841+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-e44a872a-4d27-4716-a5a3-38f0b016852e	เช็คว่ามี statusTriggerFlows และ action เป็น ถ่าย Mammogram เพิ่ม หรือไม่	status_trigger_flows_status_xqxfz_xzbdf_xylgt_tnhsk_lrplf_zjewr_pmbcs	exec	22	131	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const action = \\"{{$trigger.payload.action}}\\";\\n    \\n    if (statusTriggerFlows === \\"trigger\\" && action === \\"ถ่าย Mammogram เพิ่ม\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ ถ่าย Mammogram เพิ่ม'); \\n\\n};\\n"}	d9658cd6-34d5-4b54-bc26-49ddbe187184	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-04 04:29:33.055+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+2731ac71-d478-4144-9bb4-8e955f3f08c5	อัพเดทฟิลด์ officer ของ progress	item_update_officer	item-update	21	36	{"collection":"progress","permissions":"$full","payload":{"officer":"{{query_user.data.data.first_name}} {{query_user.data.data.last_name}}"},"key":["{{read_data_progress.id}}"]}	\N	\N	89be6643-9611-41be-8186-059689a6c8d3	2026-06-29 03:23:38.514+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+3ca604a4-0492-4b3f-8b5a-b18b3a63b40e	สร้าง progress แพทย์รับเคสแล้ว	create_progress_send_doctor	item-create	76	84	{"payload":{"title":"แพทย์รับเคสแล้ว","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"แพทย์","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	1a9c5c91-9c11-4904-8cce-8b42f14d3364	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-24 01:59:00.195+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 fe01278e-edce-4f6d-8e35-c88fd019c4b7	อัพเดทฟิลด์ is_change_time_slot, is_insert_queue, appointment_status, queue ของ appointment ที่ถูก trigger	item_update_zvv0l_mmjoc	item-update	93	19	{"collection":"appointment","payload":{"is_change_time_slot":false,"is_insert_queue":false,"appointment_status":"ยังไม่ถึงเวลานัด/ยังไม่มา","queue":[]},"key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	88cd3f5c-8397-49b7-8dbf-ebc45be5a116	\N	b1e04a8c-e551-468e-b336-820154f3ac1b	2024-10-03 04:31:50.061+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 1f65eef0-0048-4780-bfea-875d0b173010	check_queue_status_2	exec_syxed_wbnqh_lspdy	exec	19	18	{"code":"module.exports = async function(data) {\\n    if ({{check_queue_status_1}} == 1) {\\n        return true; \\n    } \\n    throw new Error('สถานะคิวไม่ใช่เรียกแล้ว'); \\n\\n};\\n"}	29749c4d-a5ff-49e0-8d9f-989de46f0cc5	61e4a1b2-1b1a-4685-9040-9c8f6ee36418	5563ef7b-949d-46c7-b3ae-5d7d187b7e72	2024-10-02 11:59:30.973+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 d45119b7-0d47-4bff-a007-e3568b0544a6	check_queue_k	exec_syxed	exec	92	1	{"code":"module.exports = async function(data) {\\n    let queue = {{read_data_queue}};\\n\\n    if (queue.queue_type == \\"K\\") {\\n        return true;\\n    }\\n\\n    throw new Error('queue_type not K');\\n    return false;\\n}"}	03e28967-cd40-4807-85ab-fa9e321f4de8	\N	5563ef7b-949d-46c7-b3ae-5d7d187b7e72	2024-10-02 11:28:58.136+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15747,135 +15898,127 @@ a9b38de3-3c19-44a0-9f4f-f0f40c89947c	last_no_progress	last_no_progress	exec	74	1
 93c548a5-e656-477e-abb0-ed878de9f79b	Update Data	item_update_qnbbc	item-update	57	36	{"payload":{"end_time":"{{current_time.currentTime}}"},"collection":"worklist","key":["{{read_data_queue.worklist[0]}}"],"permissions":"$full"}	2cf69929-ad17-4355-b5d8-2db8e20483c4	\N	af896f59-cef0-47ab-b0ac-efdb21df529f	2024-10-21 05:18:13.68+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 404b3ce4-95de-4340-82cc-0052f568cd11	last_no_progress	last_no_progress	exec	73	1	{"code":"module.exports = async function(data) {\\n    const progressArray = {{read_data_worklist.progress}};\\n\\n    // เช็คว่า progress array มีค่าหรือไม่ และมีข้อมูลอยู่\\n    if (progressArray && progressArray.length > 0) {\\n        // จัดเรียง progress ตามไอดีจากน้อยไปมาก\\n        const sortedProgressArray = progressArray.sort((a, b) => a - b);\\n\\n        // ดึง progress ID ตัวสุดท้ายหลังจากจัดเรียง\\n        const lastProgressId = sortedProgressArray[sortedProgressArray.length - 1];\\n\\n        return {\\n            lastProgressId: lastProgressId\\n        };\\n    } else {\\n        return {\\n            message: 'No progress data found'\\n        };\\n    }\\n};"}	00d43bb2-6e3f-4340-a071-5ecd2e288d84	\N	af896f59-cef0-47ab-b0ac-efdb21df529f	2024-10-18 02:52:27.142+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f8ed4e09-1a5a-4f4b-add4-f1f40105ae83	last_no_progress	last_no_progress	exec	73	1	{"code":"module.exports = async function(data) {\\n    const progressArray = {{read_data_worklist.progress}};\\n\\n    // เช็คว่า progress array มีค่าหรือไม่ และมีข้อมูลอยู่\\n    if (progressArray && progressArray.length > 0) {\\n        // จัดเรียง progress ตามไอดีจากน้อยไปมาก\\n        const sortedProgressArray = progressArray.sort((a, b) => a - b);\\n\\n        // ดึง progress ID ตัวสุดท้ายหลังจากจัดเรียง\\n        const lastProgressId = sortedProgressArray[sortedProgressArray.length - 1];\\n\\n        return {\\n            lastProgressId: lastProgressId\\n        };\\n    } else {\\n        return {\\n            message: 'No progress data found'\\n        };\\n    }\\n};\\n"}	9da8aec5-9cf5-44d5-924b-d180391029d2	\N	2770ae3f-8314-4d3f-a4f8-4d58da1ec279	2024-10-15 05:47:05.362+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-93b82c03-d4b0-4d1a-8bea-cb47532b3dba	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg	item-update	21	83	{"collection":"progress","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	690634d8-2f25-4db8-8455-1ec6c9d302c6	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-03-10 06:48:44.632+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+cc1d6a5c-8466-41cf-ba16-6aac6a095a24	สร้าง progress ผู้มาตรวจถ่าย Mammogram	create_progress_send_mam	item-create	39	52	{"payload":{"title":"ผู้มาตรวจถ่าย Mammogram","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Tech","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	7c93ad07-a673-454f-bbc5-f389a6619918	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-19 02:07:50.652+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7bfea05c-5bad-4136-b0a8-124c5dd5349a	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_wdxhi	item-update	39	99	{"collection":"progress","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	d680693d-2b49-4c5a-a485-95bbfa1d89e5	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-09-02 02:59:19.503+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-3ca604a4-0492-4b3f-8b5a-b18b3a63b40e	สร้าง progress แพทย์รับเคสแล้ว	create_progress_send_doctor	item-create	76	84	{"payload":{"title":"แพทย์รับเคสแล้ว","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"แพทย์","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	1a9c5c91-9c11-4904-8cce-8b42f14d3364	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-24 01:59:00.195+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-6e7db230-f050-478a-8825-d792086e59ae	return ค่าวัน-เวลาของตอนนี้	current_time	exec	49	1	{"code":"module.exports = async function(data) {\\n    return {\\n        currentTime: new Date().toISOString()\\n    };\\n};"}	05976409-0ba8-4e6a-bea6-415468ba0c1d	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 02:37:58.958+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-4b3e80ef-7763-45bc-a400-c5772b121e87	เช็คว่ามี statusTriggerFlows และ status เป็น แจ้งแอดมินแล้ว หรือไม่	exec_qg6x7_xhzcd_tistu	exec	3	115	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //แจ้งแอดมินแล้ว\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"7\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 7'); \\n\\n};\\n"}	1fbd7ea3-06be-412f-9ad8-e38ca83bf398	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-10-08 10:22:31.744+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-69c72dc9-ee2f-46a7-b635-ed4e514a3b24	เช็คว่า progress ตัวสุดท้ายไม่ใช่ รอปรึกษาแพทย์	exec_9j8jk_expqo	exec	21	99	{"code":"module.exports = async function(data) {\\n\\tlet lastProgressTitle = \\"{{read_data_last_progress.title}}\\"; \\n    if (lastProgressTitle != \\"รอปรึกษาแพทย์\\") {\\n        return true; \\n    } \\n\\n    throw new Error('Progress title ตัวสุดท้ายคือรอปรึกษาแพทย์'); \\n\\n};\\n"}	7bfea05c-5bad-4136-b0a8-124c5dd5349a	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-06-09 02:00:29.04+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 d71d902c-f182-4ec8-98dd-1c7498a403dd	อัพเดทข้อมูล notifications	notifications_update	request	21	70	{"method":"PATCH","url":"{{read_environment.url}}/notifications","headers":[{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}],"body":"{\\n    \\"keys\\": {{map_ids_notifications}},\\n    \\"data\\": {\\n        \\"status\\": \\"archive\\",\\n        \\"stop\\": true\\n    }\\n}"}	\N	\N	55b25593-7665-4f37-83f5-9e691af6b979	2025-07-31 11:25:26.767+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-5378ec6f-e65b-492c-a442-71ad7ebac5ee	เช็คว่ามี statusTriggerFlows และ status เป็น รับเคสแล้ว(ปรึกษาแพทย์) หรือไม่	exec_qg6x7_xhzcd	exec	3	99	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //รับเคสแล้ว(ปรึกษาแพทย์)\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"9\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 9'); \\n\\n};\\n"}	69c72dc9-ee2f-46a7-b635-ed4e514a3b24	4b3e80ef-7763-45bc-a400-c5772b121e87	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-06-09 02:00:29.282+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-016ec2ca-e989-459a-b466-cb3e4f185b66	เช็คว่า appointment_datetime ไม่ใช่วันนี้ ใช่หรือไม่	check_today	exec	75	19	{"code":"module.exports = async function(data) {\\n    // ดึงวันที่ปัจจุบัน\\n    const today = new Date().toISOString().split('T')[0];\\n\\n    // ดึงข้อมูล inputDate จาก data ที่ส่งเข้ามาใน Flow\\n    const inputDate = data.read_data_appointment.appointment_datetime;\\n\\n    if (!inputDate) {\\n        throw new Error(\\"inputDate ไม่ถูกต้องหรือไม่ได้รับการส่งเข้ามา\\");\\n    }\\n\\n    // ตรวจสอบว่าตรงกับวันนี้หรือไม่\\n    const formattedInputDate = new Date(inputDate).toISOString().split('T')[0];\\n\\n    if (today !== formattedInputDate) {\\n        console.log(\\"ไม่ใช่วันนี้ ไปต่อ\\");\\n        return true;\\n    } \\n\\t\\n    throw new Error('วันนี้ ไม่ไปต่อ');\\n    return false;\\n}\\n"}	fe01278e-edce-4f6d-8e35-c88fd019c4b7	\N	b1e04a8c-e551-468e-b336-820154f3ac1b	2024-10-03 04:31:50.12+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-690634d8-2f25-4db8-8455-1ec6c9d302c6	สร้าง progress เจ้าหน้าออกใบเรียกเก็บค่าบริการ	create_progress_Issue_service_invoice	item-create	39	83	{"payload":{"title":"เจ้าหน้าออกใบเรียกเก็บค่าบริการ","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"การเงิน","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	a2e0a114-647c-4789-a8ba-34f89f9d1407	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-03-10 06:48:44.519+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-515ba19f-a8ee-413e-b70f-288b360c64f2	return ค่า array ของ ID ทั้งหมดจาก notification	map_ids_notification	exec	39	19	{"code":"module.exports = async function(data) {\\n  const notification = {{read_data_notification}};\\n\\n  // Extracting the IDs\\n  const ids = notification.filter(noti => !noti.is_front_noti).map(noti => noti.id);\\n\\n  // Function to process IDs (e.g., logging or further processing)\\n  function processIds(...ids) {\\n    console.log(...ids); // This will log each ID as a separate argument\\n    return ids; // or do other operations with the separate IDs\\n  }\\n\\n  return processIds(...ids); // Spread the IDs into separate arguments\\n}\\n"}	abc2ef17-79cb-4527-bdf2-a03ba18fc93f	\N	5b6e538c-4ccb-4ce0-b266-b48257d08bf6	2025-07-17 03:08:07.298+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-e791e830-2e9c-45d6-adc5-f1cc5d018aa2	return ค่าวัน-เวลาของตอนนี้	current_time	exec	37	1	{"code":"module.exports = async function(data) {\\n    return {\\n        currentTime: new Date().toISOString()\\n    };\\n};"}	dfca3d1b-083a-4388-a626-e23540fd5f90	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-18 16:05:50.303+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+e149a194-30b0-44a0-a570-fd23f0664ddf	เช็คว่า status เป็นค่า ส่ง MAM - รอเรียกคิว ใช่หรือไม่	exec_wvr55	exec	3	52	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const statusExam = \\"{{$trigger.payload.status}}\\";\\n    \\n    //ส่ง MAM - รอเรียกคิว\\n    if (statusExam === \\"ส่ง MAM - รอเรียกคิว\\") {\\n        return true; \\n    } \\n\\n    throw new Error('statusExam ไม่เท่ากับ ส่ง MAM - รอเรียกคิว'); \\n\\n};\\n"}	4f1ec4f1-0d64-4064-8fc2-1f337a9473e7	5867ad24-bd9a-4a36-a436-891813f842d9	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-19 01:40:18.55+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c35e0bb8-bcdc-4067-92c2-fec71bd6c0a3	เช็คว่ามี statusTriggerFlows และ status เป็น ถ่ายสำเร็จ หรือไม่	status_trigger_flows_status_xqxfz_xzbdf_xylgt_tnhsk	exec	3	98	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //ถ่ายสำเร็จ\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"6\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 6'); \\n\\n};\\n"}	083d26f5-d4f1-437a-a6f7-30fc9f91b456	d309a5ad-d197-4bba-bcc8-e74267537d80	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 01:53:20.337+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+016ec2ca-e989-459a-b466-cb3e4f185b66	เช็คว่า appointment_datetime ไม่ใช่วันนี้ ใช่หรือไม่	check_today	exec	75	19	{"code":"module.exports = async function(data) {\\n    // ดึงวันที่ปัจจุบัน\\n    const today = new Date().toISOString().split('T')[0];\\n\\n    // ดึงข้อมูล inputDate จาก data ที่ส่งเข้ามาใน Flow\\n    const inputDate = data.read_data_appointment.appointment_datetime;\\n\\n    if (!inputDate) {\\n        throw new Error(\\"inputDate ไม่ถูกต้องหรือไม่ได้รับการส่งเข้ามา\\");\\n    }\\n\\n    // ตรวจสอบว่าตรงกับวันนี้หรือไม่\\n    const formattedInputDate = new Date(inputDate).toISOString().split('T')[0];\\n\\n    if (today !== formattedInputDate) {\\n        console.log(\\"ไม่ใช่วันนี้ ไปต่อ\\");\\n        return true;\\n    } \\n\\t\\n    throw new Error('วันนี้ ไม่ไปต่อ');\\n    return false;\\n}\\n"}	fe01278e-edce-4f6d-8e35-c88fd019c4b7	\N	b1e04a8c-e551-468e-b336-820154f3ac1b	2024-10-03 04:31:50.12+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+515ba19f-a8ee-413e-b70f-288b360c64f2	return ค่า array ของ ID ทั้งหมดจาก notification	map_ids_notification	exec	39	19	{"code":"module.exports = async function(data) {\\n  const notification = {{read_data_notification}};\\n\\n  // Extracting the IDs\\n  const ids = notification.filter(noti => !noti.is_front_noti).map(noti => noti.id);\\n\\n  // Function to process IDs (e.g., logging or further processing)\\n  function processIds(...ids) {\\n    console.log(...ids); // This will log each ID as a separate argument\\n    return ids; // or do other operations with the separate IDs\\n  }\\n\\n  return processIds(...ids); // Spread the IDs into separate arguments\\n}\\n"}	abc2ef17-79cb-4527-bdf2-a03ba18fc93f	\N	5b6e538c-4ccb-4ce0-b266-b48257d08bf6	2025-07-17 03:08:07.298+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 33317b1a-d05b-4470-b3a4-d2069395b97a	เปลี่ยน has_recommend_bx_form เป็น true	has_recommend_bx_form_true	item-update	19	1	{"collection":"examination","permissions":"$full","key":"{{$trigger.payload.examination}}","payload":{"has_recommend_bx_form":true}}	\N	\N	69b706c1-8a99-4ff9-9f97-eeb7c9244b7f	2025-08-28 10:57:14.352+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-d309a5ad-d197-4bba-bcc8-e74267537d80	เช็คว่ามี statusTriggerFlows และ status เป็น ยกเลิก หรือไม่	status_trigger_flows_status_xqxfz_xzbdf_xylgt_tnhsk_llqcs	exec	3	147	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //ยกเลิก\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"8\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 8'); \\n\\n};\\n"}	623ed232-ba3d-4707-ac3e-90e6a5a6959e	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-08 14:54:08.048+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+4b3e80ef-7763-45bc-a400-c5772b121e87	เช็คว่ามี statusTriggerFlows และ status เป็น แจ้งแอดมินแล้ว หรือไม่	exec_qg6x7_xhzcd_tistu	exec	3	115	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //แจ้งแอดมินแล้ว\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"7\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 7'); \\n\\n};\\n"}	1fbd7ea3-06be-412f-9ad8-e38ca83bf398	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-10-08 10:22:31.744+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 1b3e6c1f-1e69-4cd0-bc3a-ccd4ff8f9bab	อ่านค่าเวลาต้น+สิ้นเดือนปัจจุบัน	get_date_range	exec	19	1	{"code":"module.exports = async function(data) {\\n    const now = new Date()\\n    \\n\\tconst startOfMonth = (date) => \\n    \\tnew Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0);\\n    \\n    const endOfMonth = (date) => \\n    \\tnew Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);\\n    \\n\\treturn {\\n        from:startOfMonth(now).toISOString(),\\n        to: endOfMonth(now).toISOString(),\\n    };\\n}"}	ea0ba221-8ff0-4e62-a667-ac5d4209eefb	\N	784933e7-b375-4551-954b-ab894d350f6c	2025-09-02 10:29:06.398+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 de045926-46dd-4988-a03c-17de022191aa	สร้าง progress แพทย์อ่านผลเพิ่มเติม	create_progress_doctor_reads_results	item-create	57	114	{"collection":"progress","payload":{"title":"แพทย์อ่านผลเพิ่มเติม","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"แพทย์","worklist":"{{read_data_queue.worklist[0]}}"}}	1d2de90c-6e4d-40ca-8389-edfa02a45233	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 02:15:54.486+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-a306d93d-e0e8-4492-b4ee-5edaec3e4ac6	เช็คว่ามี statusTriggerFlows และ status เป็น ขอเปลี่ยนแพทย์ หรือไม่	status_trigger_flows_status_xqxfz_xzbdf_xylgt	exec	3	81	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //ขอเปลี่ยนแพทย์\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"9\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 9'); \\n\\n};\\n"}	90636ef6-44fb-42e6-b4d9-a4c1832c9aab	c35e0bb8-bcdc-4067-92c2-fec71bd6c0a3	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 05:11:34.148+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-7e787b4c-cf0b-43db-b03a-636e9590bb3a	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_vozys_vmcqi	item-update	58	33	{"permissions":"$full","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"]}	1ba3594a-94eb-40fd-bb49-dab4bca02584	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 11:40:12.015+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-06b08916-3876-4153-b70c-d747ee970b92	อ่านข้อมูล coordinate	read_data_coordinate	item-read	37	19	{"collection":"coordinate","key":[],"permissions":"$full","query":{"filter":{"_and":[{"exam":{"_eq":"{{$trigger.keys[0]}}"}},{"appointment":{"_eq":"{{read_data_examination.appointment}}"}}]}}}	cc9f080a-8264-4672-8d43-d5949d3cbf13	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-09-10 03:36:32.062+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-34421518-f22e-4093-b515-f226e33972bf	return ค่า id ของ progress ตัวสุดท้าย จากข้อมูล worklist ที่ถูกอ่านมาก่อนหน้านี้	last_no_progress	exec	3	33	{"code":"module.exports = async function(data) {\\n    const progressArray = {{read_data_worklist.progress}};\\n\\n    // เช็คว่า progress array มีค่าหรือไม่ และมีข้อมูลอยู่\\n    if (progressArray && progressArray.length > 0) {\\n        // จัดเรียง progress ตามไอดีจากน้อยไปมาก\\n        const sortedProgressArray = progressArray.sort((a, b) => a - b);\\n\\n        // ดึง progress ID ตัวสุดท้ายหลังจากจัดเรียง\\n        const lastProgressId = sortedProgressArray[sortedProgressArray.length - 1];\\n\\n        return {\\n            lastProgressId: lastProgressId\\n        };\\n    } else {\\n        return {\\n            message: 'No progress data found'\\n        };\\n    }\\n};"}	1e00b341-3245-4cf3-9158-2cb01ced0b25	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 02:37:58.791+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-961c0a9f-0190-43b8-98a4-e7d5bb470e61	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_hhgvy	trigger	57	65	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_req_change_bed}}"}	\N	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 05:01:35.704+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f767d8b7-aa3f-47d9-b10e-9036d8b5be36	สร้าง progress ขอเปลี่ยนแพทย์	create_progress_req_change_doctor	item-create	39	81	{"collection":"progress","payload":{"title":"ขอเปลี่ยนแพทย์","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Front(F.14)","worklist":"{{read_data_queue.worklist[0]}}"}}	6f530150-558b-45da-a8ad-77af9e4a9511	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 01:53:20.202+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+06b08916-3876-4153-b70c-d747ee970b92	อ่านข้อมูล coordinate	read_data_coordinate	item-read	37	19	{"collection":"coordinate","key":[],"permissions":"$full","query":{"filter":{"_and":[{"exam":{"_eq":"{{$trigger.keys[0]}}"}},{"appointment":{"_eq":"{{read_data_examination.appointment}}"}}]}}}	cc9f080a-8264-4672-8d43-d5949d3cbf13	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-09-10 03:36:32.062+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+961c0a9f-0190-43b8-98a4-e7d5bb470e61	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_hhgvy	trigger	57	65	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_req_change_bed}}"}	\N	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 05:01:35.704+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 a09c26fc-c355-4208-834a-7a93f070f553	อัพเดทฟิลด์ status, close_cast_time ของ progress ตัวสุดท้าย	status_close_cast_time_progress_utzpf_gxpll_urskn	item-update	39	68	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"collection":"progress","permissions":"$full"}	bb60e92f-c206-4d90-b223-026e9a47c34b	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-09-04 09:37:00.069+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-b54c528e-42c7-4f7f-a3aa-f8d8f6b335f0	เช็คว่าเคสนี้ยังไม่เคยสร้าง Coordinate ใช่หรือไม่	exec_87597_jfegj_fykuh	exec	57	18	{"code":"module.exports = async function (data) {\\n  const coordinateList = {{read_data_coordinate}};\\n\\n  if (coordinateList.length === 0) {\\n    return true;\\n  }\\n\\n  throw new Error(\\"เคสนี้ เคยสร้าง Coordinate ไปแล้ว\\");\\n};\\n"}	bfc3dd87-a97d-41b4-a2b1-0fce6637f8b0	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-09-10 03:42:33.149+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-c2af3dfb-6550-414f-b337-13ec7113eb30	อ่านข้อมูล queue	read_data_queue	item-read	21	17	{"permissions":"$full","collection":"queue","key":["{{read_data_appointment.queue[0]}}"]}	b0b3f313-248e-4d04-b1e6-49302deba6ad	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 02:37:58.841+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+590b68b7-8cc1-4e66-917f-63ba77dfa9a2	เข้า Trigger Flow Progress Created (v.ส่ง id)	trigger_flow_progress_created_v_id	trigger	57	35	{"flow":"89be6643-9611-41be-8186-059689a6c8d3","payload":{"action":"officer","user":"{{read_data_examination.case_owner_tech}}","progress":"{{create_progress_interview}}"}}	\N	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-18 16:19:40.77+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+e791e830-2e9c-45d6-adc5-f1cc5d018aa2	return ค่าวัน-เวลาของตอนนี้	current_time	exec	37	1	{"code":"module.exports = async function(data) {\\n    return {\\n        currentTime: new Date().toISOString()\\n    };\\n};"}	dfca3d1b-083a-4388-a626-e23540fd5f90	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-18 16:05:50.303+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+d309a5ad-d197-4bba-bcc8-e74267537d80	เช็คว่ามี statusTriggerFlows และ status เป็น ยกเลิก หรือไม่	status_trigger_flows_status_xqxfz_xzbdf_xylgt_tnhsk_llqcs	exec	3	132	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //ยกเลิก\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"8\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 8'); \\n\\n};\\n"}	623ed232-ba3d-4707-ac3e-90e6a5a6959e	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-08 14:54:08.048+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+f5a61cb0-fe30-440a-9f4d-30fe0fdbb1f7	สร้าง progress ถ่าย Mammogram เพิ่ม	create_progress_mammogram	item-create	39	103	{"payload":{"title":"ถ่าย Mammogram เพิ่ม","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Tech","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	1e3d6ce9-6c68-4ba3-b976-baedbcf033ad	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-09-12 02:34:09.893+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 bb60e92f-c206-4d90-b223-026e9a47c34b	สร้าง progress แพทย์วินิจฉัย	create_progress_doctor_dx	item-create	57	68	{"payload":{"title":"แพทย์วินิจฉัย","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"แพทย์","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	4e485d5f-dfff-4c60-a19c-d8ec12425270	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-09-04 09:37:00.057+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-6a1b9973-475f-4556-90a5-b6d1e2dbb287	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_hhgvy_dsgiq_jewcc_euxpw_dyofv	trigger	75	131	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_mammogram}}"}	\N	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-04 04:31:35.564+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-e92e6855-1a2a-4fec-a587-f95abd2f7c11	เช็คว่าเคสนี้ยังไม่เคยสร้าง Coordinate ใช่หรือไม่	exec_87597_jfegj	exec	93	18	{"code":"module.exports = async function (data) {\\n  const coordinateList = {{read_data_coordinate}};\\n\\n  if (coordinateList.length === 0) {\\n    return true;\\n  }\\n\\n  throw new Error(\\"เคสนี้ เคยสร้าง Coordinate ไปแล้ว\\");\\n};\\n"}	b8e3a46f-b8bc-4b63-866b-aaaf0e5b218d	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-09-10 03:40:12.923+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 3a4d3f4d-0fc0-45f2-a61a-96c98199710b	เช็คว่ามี statusTriggerFlows และ status เป็น เสร็จสิ้น หรือไม่	exec_qg6x7_foceb	exec	3	83	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //เสร็จสิ้น\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"4\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 4'); \\n\\n};\\n"}	93b82c03-d4b0-4d1a-8bea-cb47532b3dba	5378ec6f-e65b-492c-a442-71ad7ebac5ee	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-03-10 06:22:33.721+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+99299cc4-f98c-4950-b194-6b14b8e1788e	เช็คว่ามี statusTriggerFlows และ status เป็น รับเคส หรือไม่	exec_qg6x7	exec	3	51	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //รับเคส\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"1\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 1'); \\n\\n};\\n"}	63c4303a-3998-43f8-9820-dbcf009bd10e	defc8da9-0ae5-4e5a-9657-6a1e0c6970b0	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-03-08 15:29:14.846+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f0224a21-ca59-42cb-9a49-9f12c52ff130	อ่าน examination ทั้งหมดของ patient ouh	read_all_examination	item-read	37	1	{"permissions":"$full","collection":"examination","query":{"filter":{"patient":{"_eq":"{{read_current_examination.patient}}"}},"sort":"-date_created","fields":["id"]}}	48f72ef2-fe49-41ee-bff1-27b2a4937247	\N	934f9b7b-6974-4d18-abde-8b6aee1307f9	2025-09-10 07:00:34.967+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 60355115-8ff8-49e7-8545-4216b86b8e66	อ่านข้อมูล exam เพื่อดึง patient_info	read_current_examination	item-read	19	1	{"permissions":"$full","collection":"examination","key":"{{$trigger.payload.exam}}"}	f0224a21-ca59-42cb-9a49-9f12c52ff130	\N	934f9b7b-6974-4d18-abde-8b6aee1307f9	2025-09-10 07:00:34.983+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-1e00b341-3245-4cf3-9158-2cb01ced0b25	อ่านข้อมูล progress ตัวสุดท้าย	read_data_last_progress	item-read	21	33	{"permissions":"$full","collection":"progress","key":["{{last_no_progress.lastProgressId}}"]}	f12acf50-5b99-46ff-9fdf-26502dbfa19a	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 04:32:17.607+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+1e3d6ce9-6c68-4ba3-b976-baedbcf033ad	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_ruefc_dogyw_rmugs	trigger	57	103	{"payload":"{{create_progress_mammogram}}","flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971"}	96d74505-3f96-4643-bea6-3f04bff32ba0	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-09-12 02:34:09.874+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 3b37f37d-94da-4eb1-bc79-bdd37a06a9be	นำค่า exam จาก ultrasound ตัวล่าสุด ไปอัพเดตใน last_signed_to_pacs	update_last_signed_to_pacs	item-update	37	19	{"emitEvents":true,"collection":"ultrasound_work","permissions":"$full","key":"{{$trigger.key}}","payload":{"last_signed_to_pacs":"{{read_all_ultrasound[0].exam}}"}}	\N	\N	934f9b7b-6974-4d18-abde-8b6aee1307f9	2025-09-10 08:14:43.575+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-99299cc4-f98c-4950-b194-6b14b8e1788e	เช็คว่ามี statusTriggerFlows และ status เป็น รับเคส หรือไม่	exec_qg6x7	exec	3	51	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //รับเคส\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"1\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 1'); \\n\\n};\\n"}	63c4303a-3998-43f8-9820-dbcf009bd10e	defc8da9-0ae5-4e5a-9657-6a1e0c6970b0	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-03-08 15:29:14.846+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-623ed232-ba3d-4707-ac3e-90e6a5a6959e	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_vozys_drvte_wtvkm_xveqh_znhuf_elruv_iphod	item-update	21	147	{"permissions":"$full","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"]}	882cb9c2-ac2c-4a21-a790-5359d163ae78	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-08 15:04:41.09+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-1e3d6ce9-6c68-4ba3-b976-baedbcf033ad	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg_ruefc_dogyw_rmugs	trigger	57	103	{"payload":"{{create_progress_mammogram}}","flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971"}	\N	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-09-12 02:34:09.874+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-f5a61cb0-fe30-440a-9f4d-30fe0fdbb1f7	สร้าง progress ถ่าย Mammogram เพิ่ม	create_progress_mammogram	item-create	39	103	{"payload":{"title":"ถ่าย Mammogram เพิ่ม","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Tech","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	1e3d6ce9-6c68-4ba3-b976-baedbcf033ad	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-09-12 02:34:09.893+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-838f0829-3341-40ef-89f7-d6983445ea0a	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress	item-update	21	53	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	8dc73caf-5382-4dcc-9695-7c54332d85de	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 09:59:45.798+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 24ae1511-7a3b-4ffa-9eb4-b306b3ad2085	อัพเดต status ของ doctor_work ใหม่	update_doctor_work_status	item-update	55	1	{"collection":"doctor_work","permissions":"$full","payload":"{{get_payload}}"}	\N	\N	9c0642e6-8c23-403f-b833-cc2c7f0c7524	2025-09-11 06:33:19.761+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-58e5ec36-c069-4cb6-ad84-2b306cd76507	สร้าง progress ถ่าย ยกเลิกทำ US	create_progress_cancel_us	item-create	75	147	{"collection":"progress","payload":{"title":"ยกเลิกทำ US","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"{{check_mammogram.department}}","worklist":"{{read_data_queue.worklist[0]}}"}}	de807d21-4ef0-45af-b0a2-c486d8cfbed3	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-08 15:04:41.005+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 48f72ef2-fe49-41ee-bff1-27b2a4937247	เช็ค + return array ของ exam.id ออกมา	get_examinations_id	exec	55	1	{"code":"module.exports = async function(data) {\\n\\tconst examinationArray = {{read_all_examination}}\\n    if(!Array.isArray(examinationArray) || examinationArray.length === 0) {\\n    \\tthrow new Error('ไม่พบ examination')\\n    }\\n\\n\\treturn examinationArray.map(({id})=>id);\\n}"}	1627869e-b77a-4b13-a172-af92c3b92b02	\N	934f9b7b-6974-4d18-abde-8b6aee1307f9	2025-09-10 07:47:42.104+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+58e5ec36-c069-4cb6-ad84-2b306cd76507	สร้าง progress ถ่าย ยกเลิกทำ US	create_progress_cancel_us	item-create	75	132	{"collection":"progress","payload":{"title":"ยกเลิกทำ US","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"{{check_mammogram.department}}","worklist":"{{read_data_queue.worklist[0]}}"}}	de807d21-4ef0-45af-b0a2-c486d8cfbed3	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-08 15:04:41.005+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+623ed232-ba3d-4707-ac3e-90e6a5a6959e	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_vozys_drvte_wtvkm_xveqh_znhuf_elruv_iphod	item-update	22	132	{"permissions":"$full","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"]}	882cb9c2-ac2c-4a21-a790-5359d163ae78	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-08 15:04:41.09+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+eb673619-c46f-42e9-8d07-908482611878	เข้า Trigger Flow Progress Created (v.ส่ง id)	trigger_flow_progress_created_nxndg_iusor_nwggp_irqhk	trigger	93	114	{"flow":"89be6643-9611-41be-8186-059689a6c8d3","payload":{"action":"doctor","user":"{{read_data_examination.case_owner_doctor}}","progress":"{{create_progress_doctor_reads_results}}"}}	\N	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2026-06-29 11:35:57.836+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+838f0829-3341-40ef-89f7-d6983445ea0a	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress	item-update	21	53	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	8dc73caf-5382-4dcc-9695-7c54332d85de	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 09:59:45.798+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 44c5f0e1-ba3c-4263-9207-178a470d126f	สร้าง payload โดยแยก case ตาม status 	get_payload	exec	37	1	{"code":"module.exports = async function(data) {\\n\\tconst completeDoctorWork = {{read_completed_doctor_work}}\\n\\n\\tif(!Array.isArray(completeDoctorWork) || completeDoctorWork.length === 0) {\\n    \\tthrow new Error('ไม่พบข้อมูลที่ต้องการอัพเดต')\\n    }\\n\\t\\n\\tconst getNewStatue = (status) => {\\n    \\tswitch(status) {\\n            case \\"2\\": return \\"17\\";\\n            case \\"10\\": return \\"16\\";   \\n        }\\n    }\\n\\n\\treturn completeDoctorWork.map(({ id, status: oldStatus }) => ({\\n        id,\\n        status: getNewStatue(oldStatus)\\n    }));\\n}"}	24ae1511-7a3b-4ffa-9eb4-b306b3ad2085	\N	9c0642e6-8c23-403f-b833-cc2c7f0c7524	2025-09-11 06:33:19.782+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 4ca1b1e1-b95b-4461-b63d-f2f8ccbeb3e1	อ่านค่า doctor_work ทั้งหมดที่มี status เป็น "F14/ยกเลิก" และ "จ่ายเงินแล้ว"	read_completed_doctor_work	item-read	19	1	{"query":{"filter":{"_or":[{"status":{"_eq":"2"}},{"status":{"_eq":"10"}}]}},"collection":"doctor_work","permissions":"$full"}	44c5f0e1-ba3c-4263-9207-178a470d126f	\N	9c0642e6-8c23-403f-b833-cc2c7f0c7524	2025-09-11 06:33:19.814+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 a28eb49b-8467-463d-bc2b-8f9b6214d648	check_last_progress	check_last_progress	exec	111	35	{"code":"module.exports = async function(data) {\\n\\tconst lastProgress = {{read_data_last_progress}};\\n\\n    if (lastProgress.title !== \\"ลงทะเบียนผู้มาตรวจและสร้างนัดหมาย\\") {\\n        return true;\\n    }\\n\\n    throw new Error(\\"title คือลงทะเบียนผู้มาตรวจและสร้างนัดหมาย\\");\\n    return false;\\n}\\n"}	6308e3ba-cef8-422c-b67c-f3136b3ca23e	\N	5563ef7b-949d-46c7-b3ae-5d7d187b7e72	2024-12-12 03:19:26.781+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 1627869e-b77a-4b13-a172-af92c3b92b02	อ่านค่า ultrasound ทั้งหมด ของ patient คนนี้	read_all_ultrasound	item-read	19	19	{"collection":"ultrasound","query":{"filter":{"_and":[{"exam":{"_in":"{{get_examinations_id}}"}},{"state":{"_eq":"3"}}]},"sort":"-date_created","fields":["exam"]},"permissions":"$full"}	3b37f37d-94da-4eb1-bc79-bdd37a06a9be	\N	934f9b7b-6974-4d18-abde-8b6aee1307f9	2025-09-10 07:47:42.095+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-b49e41df-4f21-476d-9c1a-cc13c63d1ddf	สร้าง progress เจ้าหน้าที่ Front(F14) ให้คำแนะนำ	create_progress_consult	item-create	39	70	{"payload":{"title":"เจ้าหน้าที่ Front(F14) ให้คำแนะนำ","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Front(F14)","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	c210995d-6697-4e7b-be3d-dda8c386e122	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-06-18 17:26:13.005+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 2ae8d69d-b5f0-4062-86a6-4181c0a0d3fc	อัพเดต examination เป็น "spot หลัง us"	update_exam_spot_after_us	item-update	19	33	{"collection":"examination","permissions":"$full","emitEvents":true,"key":"{{$trigger.payload.exam}}","payload":{"status":"17","doctor_comment":"{{$trigger.payload.doctor_comment}}","doctor_comment_detail":"{{$trigger.payload.doctor_comment_detail}}"}}	7bfac020-f52d-4b2e-95c8-f12c842c4ec7	\N	53cf63fc-e9d9-4345-8133-658d24c9fda3	2025-10-02 17:21:12.436+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7926f747-6417-421c-b81e-ad7cd01a4d72	เช็คว่าทำ us มาแล้วหรือยัง	check_is_us_done	exec	55	17	{"code":"module.exports = async function(data) {\\n\\tif(!{{process_pacs_sync_infos.isUsDone}}) {\\n    \\tthrow new Error('เคสนี้ยังไม่ได้ทำ Us')\\n    }\\n}"}	2ae8d69d-b5f0-4062-86a6-4181c0a0d3fc	7ee67adf-edd1-45db-8f5c-997b1204a38e	53cf63fc-e9d9-4345-8133-658d24c9fda3	2025-10-02 17:21:12.655+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-ff06a3b9-939f-4b4c-be8b-de419b41e81c	เช็คว่ามี statusTriggerFlows และ สถานะเป็น F14/แนะนำ Bx || F14/ปล่อยกลับบ้าน หรือไม่	status_trigger_flows_status_signtopacs_ferrt	exec	3	70	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //9 = F14/แนะนำ Bx 3 = F14/ปล่อยกลับบ้าน\\n    if ((status === \\"9\\" || status === \\"3\\")&& statusTriggerFlows !== \\"undefined\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่ใช่ F14/แนะนำ Bx || F14/ปล่อยกลับบ้าน'); \\n};\\n"}	4c952df6-87e4-4d70-b156-4f3ff6fe6d89	c8a677e3-5147-4fbc-b034-135fc70f518f	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-06-18 17:26:13.138+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-4e6528da-8c02-4865-9d91-6d91afe28911	อ่านข้อมูล appointment	read_data_appointment	item-read	3	19	{"collection":"appointment","key":["{{read_data_finance_work.appointment}}"],"permissions":"$full"}	3bef5176-57c7-438c-95f5-94b6e6157d0e	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-02-27 02:23:10.079+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e4dcc5e5-8652-48e8-ad70-562e1bbfeb9e	last_no_progress	last_no_progress	exec	73	1	{"code":"module.exports = async function(data) {\\n    const progressArray = {{read_data_worklist.progress}};\\n\\n    // เช็คว่า progress array มีค่าหรือไม่ และมีข้อมูลอยู่\\n    if (progressArray && progressArray.length > 0) {\\n        // จัดเรียง progress ตามไอดีจากน้อยไปมาก\\n        const sortedProgressArray = progressArray.sort((a, b) => a - b);\\n\\n        // ดึง progress ID ตัวสุดท้ายหลังจากจัดเรียง\\n        const lastProgressId = sortedProgressArray[sortedProgressArray.length - 1];\\n\\n        return {\\n            lastProgressId: lastProgressId\\n        };\\n    } else {\\n        return {\\n            message: 'No progress data found'\\n        };\\n    }\\n};"}	eec9d453-8492-423d-876d-73f2ca4d9345	\N	89677e2f-7d1b-4e9c-8853-2e23650f65ac	2024-10-28 03:44:44.985+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 1daa21e5-3b4f-4d94-999f-a1599fb83a81	เช็คสถานะ patient_result ว่าเป็น รอจัดส่ง หรือไม่	check_status_send	exec	21	19	{"code":"module.exports = async function(data) {\\n    let patientResult = {{read_data_patient_result}};\\n\\n    if (patientResult.status == \\"3\\") {\\n        return true;\\n    }\\n\\n    throw new Error('สถานะไม่ใช่รอจัดส่ง');\\n    return false;\\n}"}	baa79662-0543-4504-b26f-63aaf1f11ad0	61e3b98c-e518-49a0-9600-e48cc3091635	2e907bc7-59b0-451c-bf25-8bc2cd332ec8	2024-10-28 04:28:47.642+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-4faa0d8b-c341-4b29-8570-4524d9732cce	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_abnhh_oudqv_senmx	item-update	21	103	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"collection":"progress","permissions":"$full"}	f5a61cb0-fe30-440a-9f4d-30fe0fdbb1f7	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-09-12 02:32:58.548+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-bc6b8896-d250-474f-9739-2c14e44166ef	เช็คว่ามี statusTriggerFlows และสถานะเป็น ทำ Mammogram หรือไม่	status_trigger_flows_status_signtopacs_ferrt_zpbkc_rhxej	exec	3	103	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //ทำ Mammogram หรือ ทำ mam หลัง us\\n    if ((status === \\"4\\" || status === \\"12\\") && statusTriggerFlows !== \\"undefined\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่ใช่ ทำ Mammogram'); \\n\\n};\\n"}	4faa0d8b-c341-4b29-8570-4524d9732cce	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-09-12 02:32:58.626+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+4e6528da-8c02-4865-9d91-6d91afe28911	อ่านข้อมูล appointment	read_data_appointment	item-read	3	19	{"collection":"appointment","key":["{{read_data_finance_work.appointment}}"],"permissions":"$full"}	3bef5176-57c7-438c-95f5-94b6e6157d0e	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-02-27 02:23:10.079+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+8ca7f653-b1b1-4b75-ab83-20e902d3718c	return ค่าวัน-เวลาของตอนนี้	current_time	exec	37	1	{"code":"module.exports = async function(data) {\\n    return {\\n        currentTime: new Date().toISOString()\\n    };\\n};"}	4e6528da-8c02-4865-9d91-6d91afe28911	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-02-27 02:23:10.185+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b597abd0-fc07-4f3c-9ca7-9b7588ff2c5e	return ค่า array ของ ID ทั้งหมดจาก notifications	map_ids_notifications	exec	18	50	{"code":"module.exports = async function(data) {\\n  const notifications = {{read_data_notification}};\\n\\n  // Extracting the IDs\\n  const ids = notifications.filter(noti => !noti.is_front_noti).map(noti => noti.notification);\\n\\n  // Function to process IDs (e.g., logging or further processing)\\n  function processIds(...ids) {\\n    console.log(...ids); // This will log each ID as a separate argument\\n    return ids; // or do other operations with the separate IDs\\n  }\\n\\n  return processIds(...ids); // Spread the IDs into separate arguments\\n}\\n"}	3e774713-7aae-442a-9f89-49eec553fcf2	\N	5b6e538c-4ccb-4ce0-b266-b48257d08bf6	2025-07-17 03:08:07.435+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b7e0b4f2-9a16-474f-8736-68414837ceea	ปรับ status เป็น "แพทย์ตอบกลับ - รอเรียกคิว"	update_status_consult	item-update	55	1	{"collection":"examination","permissions":"$full","emitEvents":true,"key":"{{$trigger.payload.exam}}","payload":{"status":"3","doctor_comment":"{{$trigger.payload.doctor_comment}}","doctor_comment_detail":"{{$trigger.payload.doctor_comment_detail}}"}}	\N	\N	53cf63fc-e9d9-4345-8133-658d24c9fda3	2025-10-02 16:47:30.167+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c1e7dcb2-0125-4c82-b544-85bcd78b8c5e	วิเคราะห์ pacs_sync_infos ว่าเคยทำ MAM/US หรือยัง	process_pacs_sync_infos	exec	37	17	{"code":"module.exports = async function(data) {\\n\\tconst pacsSyncInfos = {{read_pacs_sync_infos}}\\n\\tconst isMamDone = pacsSyncInfos.some(({ modality, end_time }) =>\\n\\t\\tmodality === \\"MG\\" && end_time !== null\\n\\t)\\n    const isUsDone = pacsSyncInfos.some(({ modality, end_time }) =>\\n\\t\\tmodality === \\"US\\" && end_time !== null\\n\\t)\\n\\t\\n    \\n    return { isMamDone, isUsDone }\\n}"}	7926f747-6417-421c-b81e-ad7cd01a4d72	\N	53cf63fc-e9d9-4345-8133-658d24c9fda3	2025-10-02 16:47:30.304+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 bc8dcb73-bce5-4d31-9996-138ead0a7c31	เช็คว่าเป็นเคสปรึกษาแพทย์ไหม	check_is_doctor_consult	exec	37	1	{"code":"module.exports = async function(data) {\\n\\tconst exam = {{read_examination}}\\n\\t\\n\\tif (exam.status !== \\"2\\") {\\n        throw new Error('ไม่ใช่เคสปรึกษาแพทย์')\\n    }\\n}"}	b7e0b4f2-9a16-474f-8736-68414837ceea	b3f15ab6-200f-4ac5-a4f0-e00b6d17a6b3	53cf63fc-e9d9-4345-8133-658d24c9fda3	2025-10-02 16:47:30.431+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 2c04badc-ab9e-41e5-8962-aa34cbf0935a	เช็ค doctor_id และ status_trigger_flows มีค่าหรือไม่	exec_ltda8	exec	19	1	{"code":"module.exports = async function(data) {\\n    const status_trigger_flows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n\\tconst doctor_id = \\"{{$trigger.payload.doctor_id}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n\\n    if (status_trigger_flows !== \\"undefined\\" && doctor_id !== \\"undefined\\" && status === \\"9\\") {\\n        return;\\n    }\\n    \\n    throw new Error('ไม่มี doctor_id หรือ triggerFlows ไม่มีค่า');\\n}"}	aed4b285-333a-4198-9106-5c630c478f96	\N	0bdb2833-d4c9-4c47-b433-2c48260d59c2	2025-07-22 04:05:29.889+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b3f15ab6-200f-4ac5-a4f0-e00b6d17a6b3	อ่าน pacs_sync_infos	read_pacs_sync_infos	item-read	19	17	{"permissions":"$full","collection":"pacs_sync_info","query":{"filter":{"_and":[{"exam":{"_eq":"{{$trigger.payload.exam}}"}},{"is_mark_del":{"_eq":false}}]}}}	c1e7dcb2-0125-4c82-b544-85bcd78b8c5e	\N	53cf63fc-e9d9-4345-8133-658d24c9fda3	2025-10-02 11:16:41.509+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-189b2fc0-9b13-4b35-a8ad-b233f808e4a0	สร้าง progress ผู้มาตรวจทำ US (เตียง ?)	create_progress_start_us	item-create	39	49	{"collection":"progress","payload":{"title":"ผู้มาตรวจทำ US (เตียง {{read_data_ultrasound_work.bed}})","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"US (ห้อง US)","worklist":"{{read_data_queue.worklist[0]}}"}}	6da9584b-85d8-4130-9756-0f9d0fddfd0e	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 04:50:04.869+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-8ca7f653-b1b1-4b75-ab83-20e902d3718c	return ค่าวัน-เวลาของตอนนี้	current_time	exec	37	1	{"code":"module.exports = async function(data) {\\n    return {\\n        currentTime: new Date().toISOString()\\n    };\\n};"}	4e6528da-8c02-4865-9d91-6d91afe28911	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-02-27 02:23:10.185+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 cf3ebc88-3620-4778-81ce-6b499fcbd81e	อ่านข้อมูล doctor_work	read_data_finance_work	item-read	19	1	{"collection":"doctor_work","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	8ca7f653-b1b1-4b75-ab83-20e902d3718c	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-02-27 02:23:10.233+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-a9c41096-0580-43c7-a774-6e08ffb0bf8f	สร้าง progress ขอเปลี่ยนเตียง	create_progress_req_change_bed	item-create	39	65	{"collection":"progress","payload":{"title":"ขอเปลี่ยนเตียง","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"US (Center)","worklist":"{{read_data_queue.worklist[0]}}"}}	961c0a9f-0190-43b8-98a4-e7d5bb470e61	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 04:59:59.457+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-b9550ac5-7ec8-412d-8836-0dad8ef58c79	เช็คว่ามี statusTriggerFlows และ status เป็น รอSigntopacs หรือไม่	status_trigger_flows_status_signtopacs	exec	3	54	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //รับเคส\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"1\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 1'); \\n\\n};\\n"}	3b0aba87-5b6f-4e22-9240-8e18db95bccc	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-03-08 15:48:23.567+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-3b0aba87-5b6f-4e22-9240-8e18db95bccc	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress	item-update	21	54	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"collection":"progress","permissions":"$full"}	8271f639-cbfb-4902-b3a9-8fe17357924b	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-03-08 15:48:23.501+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 d8e37811-57f8-4617-82c8-e950ecc45be7	อ่าน examination	read_examination	item-read	19	1	{"permissions":"$full","collection":"examination","key":"{{$trigger.payload.exam}}","query":{"fields":["status"]}}	bc8dcb73-bce5-4d31-9996-138ead0a7c31	\N	53cf63fc-e9d9-4345-8133-658d24c9fda3	2025-10-02 16:37:57.713+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+3b0aba87-5b6f-4e22-9240-8e18db95bccc	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress	item-update	21	54	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"collection":"progress","permissions":"$full"}	8271f639-cbfb-4902-b3a9-8fe17357924b	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-03-08 15:48:23.501+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+ff73d529-bcd2-47dc-89a5-b0207e5dc91e	สร้าง progress เจ้าหน้าออกใบเรียกเก็บค่าบริการ	create_progress_issue_an_invoice	item-create	57	98	{"collection":"progress","payload":{"title":"เจ้าหน้าออกใบเรียกเก็บค่าบริการ","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"การเงิน","worklist":"{{read_data_queue.worklist[0]}}"}}	\N	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 02:10:37.99+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+09e2281e-acde-47e9-9784-89a58af6d670	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_vozys_drvte_wtvkm_xveqh	item-update	39	98	{"permissions":"$full","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"]}	ff73d529-bcd2-47dc-89a5-b0207e5dc91e	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 02:08:46.793+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+4e485d5f-dfff-4c60-a19c-d8ec12425270	เข้า Trigger Flow Progress Created (v.ส่ง id)	trigger_flow_progress_created_ttvvk_frisb_fimne	trigger	75	68	{"flow":"89be6643-9611-41be-8186-059689a6c8d3","payload":{"action":"doctor","user":"{{read_data_examination.case_owner_doctor}}","progress":"{{create_progress_doctor_dx}}"}}	\N	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-09-04 09:37:00.045+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 4b04350f-a32a-4547-a314-e0da694df9b8	สร้าง progress สัมภาษณ์	create_progress_interview	item-create	39	35	{"payload":{"title":"เจ้าหน้าที่ Tech สัมภาษณ์","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"Tech","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	590b68b7-8cc1-4e66-917f-63ba77dfa9a2	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-18 16:19:40.779+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-4e485d5f-dfff-4c60-a19c-d8ec12425270	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_ttvvk_frisb_fimne	trigger	75	68	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_doctor_dx}}"}	\N	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-09-04 09:37:00.045+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-5867ad24-bd9a-4a36-a436-891813f842d9	เช็คว่า status เป็นค่า ส่งต่อแพทย์ ใช่หรือไม่	exec_wvr55_crgxd	exec	3	68	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const statusExam = \\"{{$trigger.payload.status}}\\";\\n    \\n    if (statusExam === \\"ส่งต่อแพทย์\\" && statusTriggerFlows !== \\"undefined\\") {\\n        return true; \\n    } \\n\\n    throw new Error('statusExam ไม่เท่ากับ ส่งต่อแพทย์'); \\n\\n};\\n"}	01a0f9bd-69af-425c-8e63-dc98ecbecd34	727c0ffd-9a67-40ba-bc8e-f7a902b53989	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-24 01:59:00.287+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-3988243c-b228-405b-8175-3a64a4931261	อ่านข้อมูล Progress ตัวสุดท้าย	read_data_last_progress	item-read	22	84	{"key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full","collection":"progress"}	5d09baa0-00c2-4362-9e31-2173a3ee1dd0	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-09-15 10:27:10.352+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+2681240f-3d6c-4cea-a323-6343c645e8a2	เช็คว่ามี statusTriggerFlows และ action เป็น แพทย์อ่านผลเพิ่ม หรือไม่	status_trigger_flows_status_xqxfz_xzbdf_xylgt_tnhsk_lrplf_zjewr	exec	22	114	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const action = \\"{{$trigger.payload.action}}\\";\\n    \\n    if (statusTriggerFlows === \\"trigger\\" && action === \\"แพทย์อ่านผลเพิ่ม\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ แพทย์อ่านผลเพิ่ม'); \\n\\n};\\n"}	8b493d3c-c8b5-43f0-ba9c-88fc57b16a76	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 02:08:46.931+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 727c0ffd-9a67-40ba-bc8e-f7a902b53989	เช็คว่า status เป็นค่า รอปรึกษาแพทย์ ใช่หรือไม่	exec_wvr55_crgxd_fxefa	exec	4	100	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const statusExam = \\"{{$trigger.payload.status}}\\";\\n    \\n    //รอปรึกษาแพทย์\\n    if (statusExam === \\"2\\" && statusTriggerFlows !== \\"undefined\\") {\\n        return true; \\n    } \\n\\n    throw new Error('statusExam ไม่เท่ากับ รอปรึกษาแพทย์'); \\n\\n};\\n"}	157f568a-644d-42d0-97ea-5603d4944a50	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-09-12 03:19:44.643+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-f1e1420d-c68a-4328-9787-bebbe8f3c0d7	อ่านข้อมูล ultrasound_work	read_data_ultrasound_work	item-read	33	1	{"permissions":"$full","collection":"ultrasound_work","key":["{{check_event.key}}"]}	6e7db230-f050-478a-8825-d792086e59ae	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 02:37:59.057+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-418105e9-a468-4422-b81b-6c662cd1a98e	เช็คว่าเป็น create หรือ update	check_event	exec	17	1	{"code":"module.exports = async function (data) {\\n  const event = \\"{{$trigger.event}}\\";\\n  let key = \\"\\";\\n\\n  if (event === \\"ultrasound_work.items.create\\") {\\n    key = \\"{{$trigger.key}}\\";\\n  } else {\\n    key = \\"{{$trigger.keys[0]}}\\";\\n  }\\n\\n  return { key };\\n};\\n"}	f1e1420d-c68a-4328-9787-bebbe8f3c0d7	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 03:18:01.408+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7767f57f-572b-4354-84ad-608eccd69933	เช็ค Triggerflows และสถานะ us_work ว่าเป็น ถ่ายสำเร็จ ใช่หรือไม่	exec_o3yma_qvlxa	exec	19	17	{"code":"module.exports = async function(data) {\\n\\t// ถ่ายสำเร็จ\\n    const ultrasoundStatus = {{$trigger.payload.status}};\\n\\tconst triggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n\\n    if (ultrasoundStatus == \\"6\\" && triggerFlows !== \\"undefined\\") {\\n        return true;\\n    }\\n\\n    throw new Error('สถานะไม่ใช่ ถ่ายสำเร็จ หรือ  triggerFlows ไม่มีค่า');\\n    return false;\\n}"}	d9d63157-7f39-401c-ab60-21bf0dc7c7dd	\N	8dd34a74-0ce8-4d19-b333-786c90851a77	2025-07-04 07:08:39.521+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 1ead5467-a819-4f93-bcc1-de37c73b7290	ไปอัพเดต notifications ให้เป็น "achieve"	update_notification_achieve	request	58	44	{"method":"PATCH","url":"{{read_environment.url}}/notifications/{{read_data_notification.notification}}","headers":[{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}],"body":"{\\n       \\"status\\": \\"archive\\"\\n}"}	\N	\N	8dd34a74-0ce8-4d19-b333-786c90851a77	2025-07-04 08:14:16.066+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 11608282-1f33-4af5-9388-618c17f5f411	อ่านข้อมูล environment	read_environment	trigger	39	37	{"flow":"f5ad1f92-3584-40cb-8931-926f1cd88ff1"}	eeadcddb-cad4-4d9a-b045-eadd1bcdba51	\N	55b25593-7665-4f37-83f5-9e691af6b979	2025-07-31 11:25:26.989+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 36bbf4da-28bd-4ec2-aad9-29dbfbc33b67	อ่านข้อมูล queue	read_data_queue	item-read	57	53	{"permissions":"$full","collection":"queue","key":["{{read_data_appointment.queue[0]}}"]}	\N	\N	55b25593-7665-4f37-83f5-9e691af6b979	2025-10-24 10:50:11.917+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-e5369359-c3d9-4782-bba9-acb12207d06b	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_ttvvk_frisb_wlurm	trigger	58	100	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_send_doctor_jldjl}}"}	\N	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-09-12 03:26:25.703+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-882cb9c2-ac2c-4a21-a790-5359d163ae78	อ่านข้อมูล pacs_sync_info	read_data_pacs_sync_info	item-read	39	147	{"query":{"filter":{"exam":{"_eq":"{{read_data_ultrasound_work.exam}}"}}},"permissions":"$full","collection":"pacs_sync_info"}	f90d0acb-70d4-4bf1-9825-0abc5fac855c	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-09 04:18:08.056+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-b543351e-66d2-42bf-b9ba-8e1108a64000	เช็คว่ามี statusTriggerFlows และ status เป็น ขอเปลี่ยนเตียง หรือไม่	status_trigger_flows_status_xqxfz_xzbdf	exec	3	65	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //ขอเปลี่ยนเตียง\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"7\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 7'); \\n\\n};\\n"}	23fd6bfb-d9db-4666-959a-31892dceacba	a306d93d-e0e8-4492-b4ee-5edaec3e4ac6	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 04:59:59.563+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-6d693638-dc88-4a29-8368-84a41da39091	เช็คว่ามี statusTriggerFlows และ status เป็น รอเรียกคิว หรือไม่	status_trigger_flows_status_xqxfz	exec	3	49	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //รอเรียกคิว\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"1\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 1'); \\n\\n};\\n"}	aa77d1a9-5803-4a1d-af68-59f08434ef2f	b543351e-66d2-42bf-b9ba-8e1108a64000	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 04:32:17.616+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c8a677e3-5147-4fbc-b034-135fc70f518f	เช็คว่ามี statusTriggerFlows และสถานะเป็น F14/ยกเลิก หรือไม่	status_trigger_flows_status_signtopacs_ferrt_zpbkc	exec	3	86	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //F14/ยกเลิก\\n    if (status === \\"2\\" && statusTriggerFlows !== \\"undefined\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่ใช่ F14/ยกเลิก'); \\n\\n};\\n"}	df2d66cc-9523-43dd-9b11-8ce4ebde585e	bc6b8896-d250-474f-9739-2c14e44166ef	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-06-18 17:26:12.835+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+e5369359-c3d9-4782-bba9-acb12207d06b	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_ttvvk_frisb_wlurm	trigger	58	100	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_send_doctor_jldjl}}"}	\N	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-09-12 03:26:25.703+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b2b5659b-e0a3-4fa0-bc49-dbcbc441e14f	สร้าง progress แพทย์รับเคสแล้ว	create_progress_send_doctor_jldjl	item-create	40	100	{"payload":{"title":"แพทย์รับเคสแล้ว","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"แพทย์","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	e5369359-c3d9-4782-bba9-acb12207d06b	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-09-12 03:26:25.815+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-157f568a-644d-42d0-97ea-5603d4944a50	อัพเดทฟิลด์ status, close_cast_time ของ progress ตัวสุดท้าย	status_close_cast_time_progress_utzpf_gxpll_wzfyr	item-update	22	100	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"collection":"progress","permissions":"$full"}	b2b5659b-e0a3-4fa0-bc49-dbcbc441e14f	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-09-12 03:26:25.943+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-f90d0acb-70d4-4bf1-9825-0abc5fac855c	เช็คว่ามี Mammogram หรือไม่ แล้ว return แผนกออกไป	check_mammogram	exec	57	147	{"code":"module.exports = async function (data) {\\n  let department = \\"Front(F.14)\\";\\n  const pacsSyncData = {{read_data_pacs_sync_info}} || [];\\n\\n  pacsSyncData.forEach((item) => {\\n    if (\\n      item.modality === \\"MG\\" &&\\n      item.is_mark_del === false &&\\n      item.end_time\\n    ) {\\n      department = \\"แพทย์\\";\\n    }\\n  });\\n\\n  return { department };\\n};\\n"}	58e5ec36-c069-4cb6-ad84-2b306cd76507	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-08 15:04:41.063+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+3988243c-b228-405b-8175-3a64a4931261	อ่านข้อมูล Progress ตัวสุดท้าย	read_data_last_progress	item-read	22	84	{"key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full","collection":"progress"}	5d09baa0-00c2-4362-9e31-2173a3ee1dd0	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-09-15 10:27:10.352+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+882cb9c2-ac2c-4a21-a790-5359d163ae78	อ่านข้อมูล pacs_sync_info	read_data_pacs_sync_info	item-read	39	132	{"query":{"filter":{"exam":{"_eq":"{{read_data_ultrasound_work.exam}}"}}},"permissions":"$full","collection":"pacs_sync_info"}	f90d0acb-70d4-4bf1-9825-0abc5fac855c	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-09 04:18:08.056+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+083d26f5-d4f1-437a-a6f7-30fc9f91b456	เช็คว่ามี statusTriggerFlows และ action เป็น ปล่อยกลับบ้าน, Confirm Bx หรือไม่	status_trigger_flows_status_xqxfz_xzbdf_xylgt_tnhsk_lrplf	exec	21	98	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const action = \\"{{$trigger.payload.action}}\\";\\n    \\n    if (statusTriggerFlows === \\"trigger\\" && action === \\"ปล่อยกลับบ้าน\\" || action === \\"Confirm Bx\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ ปล่อยกลับบ้าน หรือ Confirm Bx'); \\n\\n};\\n"}	09e2281e-acde-47e9-9784-89a58af6d670	2681240f-3d6c-4cea-a323-6343c645e8a2	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 02:08:47.009+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+a9c41096-0580-43c7-a774-6e08ffb0bf8f	สร้าง progress ขอเปลี่ยนเตียง	create_progress_req_change_bed	item-create	39	65	{"collection":"progress","payload":{"title":"ขอเปลี่ยนเตียง","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"US (Center)","worklist":"{{read_data_queue.worklist[0]}}"}}	961c0a9f-0190-43b8-98a4-e7d5bb470e61	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 04:59:59.457+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+b543351e-66d2-42bf-b9ba-8e1108a64000	เช็คว่ามี statusTriggerFlows และ status เป็น ขอเปลี่ยนเตียง หรือไม่	status_trigger_flows_status_xqxfz_xzbdf	exec	3	65	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //ขอเปลี่ยนเตียง\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"7\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 7'); \\n\\n};\\n"}	23fd6bfb-d9db-4666-959a-31892dceacba	a306d93d-e0e8-4492-b4ee-5edaec3e4ac6	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 04:59:59.563+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+5867ad24-bd9a-4a36-a436-891813f842d9	เช็คว่า status เป็นค่า ส่งต่อแพทย์ ใช่หรือไม่	exec_wvr55_crgxd	exec	3	68	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const statusExam = \\"{{$trigger.payload.status}}\\";\\n    \\n    if (statusExam === \\"ส่งต่อแพทย์\\" && statusTriggerFlows !== \\"undefined\\") {\\n        return true; \\n    } \\n\\n    throw new Error('statusExam ไม่เท่ากับ ส่งต่อแพทย์'); \\n\\n};\\n"}	01a0f9bd-69af-425c-8e63-dc98ecbecd34	727c0ffd-9a67-40ba-bc8e-f7a902b53989	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-24 01:59:00.287+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+8ed16748-d00d-4ae6-a9fb-80d8a9bf2a50	return ค่า id ของ progress ตัวสุดท้าย จากข้อมูล worklist ที่ถูกอ่านมาก่อนหน้านี้	last_no_progress	exec	3	36	{"code":"module.exports = async function(data) {\\n    const progressArray = {{read_data_worklist.progress}};\\n\\n    // เช็คว่า progress array มีค่าหรือไม่ และมีข้อมูลอยู่\\n    if (progressArray && progressArray.length > 0) {\\n        // จัดเรียง progress ตามไอดีจากน้อยไปมาก\\n        const sortedProgressArray = progressArray.sort((a, b) => a - b);\\n\\n        // ดึง progress ID ตัวสุดท้ายหลังจากจัดเรียง\\n        const lastProgressId = sortedProgressArray[sortedProgressArray.length - 1];\\n\\n        return {\\n            lastProgressId: lastProgressId\\n        };\\n    } else {\\n        return {\\n            message: 'No progress data found'\\n        };\\n    }\\n};"}	ff06a3b9-939f-4b4c-be8b-de419b41e81c	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-02-27 02:23:09.946+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 eeadcddb-cad4-4d9a-b045-eadd1bcdba51	return ค่า array ของ ID ทั้งหมดจาก notification	map_ids_notification	exec	3	53	{"code":"module.exports = async function(data) {\\n  const notification = {{read_data_notification}};\\n\\n  // Extracting the IDs\\n  const ids = notification.map(noti => noti.id);\\n\\n  // Function to process IDs (e.g., logging or further processing)\\n  function processIds(...ids) {\\n    console.log(...ids); // This will log each ID as a separate argument\\n    return ids; // or do other operations with the separate IDs\\n  }\\n\\n  return processIds(...ids); // Spread the IDs into separate arguments\\n}\\n"}	42f2a014-5485-4557-822e-c39ea232fa82	\N	55b25593-7665-4f37-83f5-9e691af6b979	2025-07-31 11:25:26.732+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7ee67adf-edd1-45db-8f5c-997b1204a38e	อัพเดต examination เป็น "spot ก่อน us"	update_exam_spot_before_us_by_doctor	item-update	19	49	{"collection":"examination","permissions":"$full","emitEvents":true,"key":"{{$trigger.payload.exam}}","payload":{"status":"10","doctor_comment":"{{$trigger.payload.doctor_comment}}","doctor_comment_detail":"{{$trigger.payload.doctor_comment_detail}}"}}	26f270f2-9862-4e41-81d6-1c43f7856778	\N	53cf63fc-e9d9-4345-8133-658d24c9fda3	2025-10-02 17:30:32.379+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7bfac020-f52d-4b2e-95c8-f12c842c4ec7	อัพเดต status ของ doctor_work (เคสหลัง US)	update_doctor_work_status_after_us	item-update	37	33	{"collection":"doctor_work","emitEvents":true,"key":"{{$trigger.payload.doctor_work}}","payload":{"status":"12","status_trigger_flows":"trigger"},"permissions":"$full"}	\N	\N	53cf63fc-e9d9-4345-8133-658d24c9fda3	2025-10-03 05:41:17.852+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-8ed16748-d00d-4ae6-a9fb-80d8a9bf2a50	return ค่า id ของ progress ตัวสุดท้าย จากข้อมูล worklist ที่ถูกอ่านมาก่อนหน้านี้	last_no_progress	exec	3	36	{"code":"module.exports = async function(data) {\\n    const progressArray = {{read_data_worklist.progress}};\\n\\n    // เช็คว่า progress array มีค่าหรือไม่ และมีข้อมูลอยู่\\n    if (progressArray && progressArray.length > 0) {\\n        // จัดเรียง progress ตามไอดีจากน้อยไปมาก\\n        const sortedProgressArray = progressArray.sort((a, b) => a - b);\\n\\n        // ดึง progress ID ตัวสุดท้ายหลังจากจัดเรียง\\n        const lastProgressId = sortedProgressArray[sortedProgressArray.length - 1];\\n\\n        return {\\n            lastProgressId: lastProgressId\\n        };\\n    } else {\\n        return {\\n            message: 'No progress data found'\\n        };\\n    }\\n};"}	ff06a3b9-939f-4b4c-be8b-de419b41e81c	\N	7f07d6c2-0785-4b82-b2ba-4003555b0576	2025-02-27 02:23:09.946+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 ea26567e-aaba-46ce-91f1-40a42849bebf	สร้าง notification ที่เจ้าหน้าที่ F14	notification_f14	item-create	57	70	{"permissions":"$full","collection":"notification","emitEvents":true,"payload":{"status":"inbox","is_f14_noti":true,"from_dept":"US","to_dept":"F14","subject":"ขอเปลี่ยนแพทย์","appointment":"{{read_data_ultrasound_work.appointment}}","message":"{{$trigger.payload.note_us}}"}}	\N	\N	55b25593-7665-4f37-83f5-9e691af6b979	2025-10-24 10:50:11.881+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 26f270f2-9862-4e41-81d6-1c43f7856778	อัพเดต status ของ doctor_work (เคสก่อน US)	update_doctor_work_status_before_us	item-update	37	49	{"collection":"doctor_work","emitEvents":true,"key":"{{$trigger.payload.doctor_work}}","payload":{"status":"4","status_trigger_flows":"trigger"},"permissions":"$full"}	\N	\N	53cf63fc-e9d9-4345-8133-658d24c9fda3	2025-10-03 05:41:18.185+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 21eb35c4-b207-44dc-a4df-86f7447bcf15	ปั้นข้อความแจ้งเตือน	message_notification	exec	39	70	{"code":"module.exports = async function(data) {\\n  // อ่านข้อมูลจาก read_data_queue\\n  const queue = {{read_data_queue}};\\n\\n  // ดึงค่าที่ต้องใช้\\n  const number = queue.number || \\"\\";\\n  const firstNameTh = queue.first_name_th?.trim();\\n  const lastNameTh = queue.last_name_th?.trim();\\n  const firstNameEn = queue.first_name_en?.trim();\\n  const lastNameEn = queue.last_name_en?.trim();\\n\\n  // ถ้ามีชื่อไทยให้ใช้ชื่อไทย ถ้าไม่มีให้ใช้ชื่ออังกฤษแทน\\n  let fullName = \\"\\";\\n\\n  if (firstNameTh && lastNameTh) {\\n    fullName = `${firstNameTh} ${lastNameTh}`;\\n  } else if (firstNameEn && lastNameEn) {\\n    fullName = `${firstNameEn} ${lastNameEn}`;\\n  }\\n\\n  // ปั้น string สุดท้าย\\n  const displayString = `${number} ${fullName}`.trim();\\n\\n  // ส่งกลับให้ Flow ตัวถัดไปใช้\\n  return {\\n    display_string: displayString\\n  };\\n}\\n"}	\N	\N	55b25593-7665-4f37-83f5-9e691af6b979	2025-10-24 10:55:29.54+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+157f568a-644d-42d0-97ea-5603d4944a50	อัพเดทฟิลด์ status, close_cast_time ของ progress ตัวสุดท้าย	status_close_cast_time_progress_utzpf_gxpll_wzfyr	item-update	22	100	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"collection":"progress","permissions":"$full"}	b2b5659b-e0a3-4fa0-bc49-dbcbc441e14f	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-09-12 03:26:25.943+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+6d693638-dc88-4a29-8368-84a41da39091	เช็คว่ามี statusTriggerFlows และ status เป็น รอเรียกคิว หรือไม่	status_trigger_flows_status_xqxfz	exec	3	49	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //รอเรียกคิว\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"1\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 1'); \\n\\n};\\n"}	aa77d1a9-5803-4a1d-af68-59f08434ef2f	b543351e-66d2-42bf-b9ba-8e1108a64000	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 04:32:17.616+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 293d3eb0-fe12-499b-a2c1-87c34eb25257	อัพเดทฟิลด์ status, close_cast_time ของ progress ตัวสุดท้าย	status_close_cast_time_progress	item-update	21	35	{"payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"collection":"progress","permissions":"$full"}	4b04350f-a32a-4547-a314-e0da694df9b8	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-18 16:19:40.811+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-1261d3f6-5b50-4b38-8f1b-4bfd17f41f3d	return ค่า id ของ progress ตัวสุดท้าย จากข้อมูล worklist ที่ถูกอ่านมาก่อนหน้านี้	last_no_progress	exec	39	18	{"code":"module.exports = async function(data) {\\n    const progressArray = {{read_data_worklist.progress}};\\n\\n    // เช็คว่า progress array มีค่าหรือไม่ และมีข้อมูลอยู่\\n    if (progressArray && progressArray.length > 0) {\\n        // จัดเรียง progress ตามไอดีจากน้อยไปมาก\\n        const sortedProgressArray = progressArray.sort((a, b) => a - b);\\n\\n        // ดึง progress ID ตัวสุดท้ายหลังจากจัดเรียง\\n        const lastProgressId = sortedProgressArray[sortedProgressArray.length - 1];\\n\\n        return {\\n            lastProgressId: lastProgressId\\n        };\\n    } else {\\n        return {\\n            message: 'No progress data found'\\n        };\\n    }\\n};"}	a0e1c010-08d5-47ea-941b-2c36ba2a0d84	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-18 16:05:50.019+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+aa77d1a9-5803-4a1d-af68-59f08434ef2f	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_vozys	item-update	21	49	{"permissions":"$full","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"]}	189b2fc0-9b13-4b35-a8ad-b233f808e4a0	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 04:50:04.881+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+1ba3594a-94eb-40fd-bb49-dab4bca02584	สร้าง progress เจ้าหน้าที่ US ส่งเคสเข้าห้อง	create_progress_send_in_room	item-create	76	33	{"collection":"progress","payload":{"title":"เจ้าหน้าที่ US ส่งเคสเข้าห้อง","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"US (Center)","worklist":"{{read_data_queue.worklist[0]}}"}}	aac18154-bb9a-4a0b-9068-51b235e71f58	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 11:42:04.512+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f3e3c947-30d5-4647-9149-be9a7af26e2b	เช็คว่ามี is_mam_after_us_done ส่งมาไหม (เคส spot ที่ทำ us ก่อน)	check_is_mam_after_us_done	exec	19	19	{"code":"module.exports = async function(data) {\\n    if({{$trigger.payload.is_mam_after_us_done}}) {\\n        return {{$trigger.payload.is_mam_after_us_done}} // true = ทำ mam หลัง us ไปแล้ว\\n    }\\n    \\n\\tthrow new Error('ไม่ใช่เคสถ่าย spot หลัง us')\\n}"}	649d04cb-ab4e-4367-a225-2e5236b00570	\N	a6078515-a2aa-435a-9862-4abe646ae8cc	2025-07-24 11:02:25.503+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e4322816-86bb-49a7-aa93-300cf7e10ee0	Create Data	item_create_doctor_work	item-create	37	18	{"collection":"doctor_work","payload":{"user_created":"{{$accountability.user}}","exam":"{{read_data_coordinate.exam}}","appointment":"{{read_data_coordinate.appointment}}","status":"{{check_status_coordinated.status}}","doctor":"{{read_data_coordinate.doctor}}","doctor_change":"{{check_status_coordinated.doctorChange}}"},"emitEvents":true,"permissions":"$full"}	545e4738-97c6-422c-8ead-e941ea4d4796	\N	baa6bf9a-4a45-475e-9aa9-93d402672662	2025-01-28 13:36:54.089+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-dfca3d1b-083a-4388-a626-e23540fd5f90	อ่านข้อมูล appointment	read_data_appointment	item-read	55	1	{"collection":"appointment","key":["{{read_data_examination.appointment}}"],"permissions":"$full"}	7b30897e-3435-416d-b15a-7d6b38727b22	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-18 16:05:50.251+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 43959dfe-a2d7-4dfe-95fa-90fa552b23ec	เช็คค่าว่าเป็นเคสเปลี่ยนแพทย์ไหม	check_doctor_change	exec	19	1	{"code":"module.exports = async function(data) {\\n    const doctor_change = {{$trigger.payload.doctor_change}}\\n\\n\\tif(!doctor_change) {\\n    \\tthrow new Error('ไม่ใช่เคสเปลี่ยนแพทย์')\\n    }\\n}"}	8a9fbbc4-e66f-46e1-ad6b-e5b37e7ae79f	\N	2ee6cb0b-eb4e-4740-93a3-ddd208b6305d	2025-10-30 05:26:34.016+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 545e4738-97c6-422c-8ead-e941ea4d4796	อัพเดทข้อมูล coordinate	item_update_o0jz9	item-update	55	18	{"collection":"coordinate","key":["{{$trigger.keys[0]}}"],"payload":{"doctor_work":"{{item_create_doctor_work[0]}}"},"permissions":"$full"}	ee0fcad1-0d08-4ef5-9c8f-a93389b2e8c0	\N	baa6bf9a-4a45-475e-9aa9-93d402672662	2025-01-29 02:13:45.812+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c5758ad9-6499-406b-9db6-37a71f5450c3	เช็คว่า appointment_datetime เป็นวันนี้ หรือไม่	exec_a27ow	exec	55	1	{"code":"module.exports = async function(data) {\\n    // ดึงวันที่ปัจจุบัน\\n    const today = new Date().toISOString().split('T')[0];\\n\\n    // ดึงข้อมูล inputDate จาก data ที่ส่งเข้ามาใน Flow\\n    const inputDate = data.read_appointment.appointment_datetime;\\n\\n    if (!inputDate) {\\n        throw new Error(\\"inputDate ไม่ถูกต้องหรือไม่ได้รับการส่งเข้ามา\\");\\n    }\\n\\n    // ตรวจสอบว่าตรงกับวันนี้หรือไม่\\n    const formattedInputDate = new Date(inputDate).toISOString().split('T')[0];\\n\\n    if (today === formattedInputDate) {\\n        console.log(\\"วันนี้\\");\\n        return true;\\n    } \\n\\t\\n    throw new Error('ไม่ใช่วันนี้');\\n    return false;\\n}\\n"}	0b14fc33-7c1d-4c5f-bdf6-0ca0e6f7cfeb	\N	123c9014-d9d2-4a4f-9a93-d59f291e1c24	2024-10-03 03:01:43.338+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c8078bfc-22df-4ccc-9b67-fed3b293d31b	เช็คสถานะ queue ว่าเป็น ยกเลิก หรือไม่	check_queue_status	exec	37	1	{"code":"module.exports = async function(data) {\\n    let queue = {{read_data_queue}};\\n\\n    if (queue.status == \\"3\\") {\\n        return true;\\n    }\\n\\n    throw new Error('สถานะคิวไม่ใช่ยกเลิก');\\n    return false;\\n}"}	da5c973d-083c-4922-b300-04c1f3d84193	\N	f3f4611a-021c-47c0-be3a-e85f03734d53	2024-10-22 10:54:12.777+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8a9fbbc4-e66f-46e1-ad6b-e5b37e7ae79f	สร้างการแจ้งเตือนไปยังแพทย์	create_doctor_notification	item-create	37	1	{"collection":"notification","permissions":"$full","emitEvents":true,"payload":{"is_doctor_noti":true,"status":"inbox","appointment":"{{$trigger.payload.appointment}}","from_dept":"Front (F.14)","from_user":"{{$trigger.payload.user_created}}","to_user":"{{$trigger.payload.doctor}}","to_dept":"แพทย์","subject":"ส่งทำ Ultrasound","message":"เคสเปลี่ยนแพทย์"}}	\N	\N	2ee6cb0b-eb4e-4740-93a3-ddd208b6305d	2025-10-30 05:26:33.999+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 91d4e2ee-5c31-41ea-a878-3766d2783f3e	อัพเดต noti ให้เป็นอ่านแล้ว	update_notification_read	item-update	55	1	{"permissions":"$full","collection":"notification","emitEvents":true,"payload":{"status":"read"},"query":{"filter":{"_and":[{"subject":{"_eq":"ขอเปลี่ยนแพทย์"}},{"appointment":{"_eq":"{{read_current_coordinate.appointment}}"}},{"status":{"_eq":"inbox"}}]}}}	\N	\N	41a5a56f-a402-4c2d-af82-734c4c1b4aaf	2025-11-12 16:55:50.304+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+dfca3d1b-083a-4388-a626-e23540fd5f90	อ่านข้อมูล appointment	read_data_appointment	item-read	55	1	{"collection":"appointment","key":["{{read_data_examination.appointment}}"],"permissions":"$full"}	7b30897e-3435-416d-b15a-7d6b38727b22	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-18 16:05:50.251+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+f12acf50-5b99-46ff-9fdf-26502dbfa19a	เช็คว่าเป็น create หรือ update	create_update	exec	40	33	{"code":"module.exports = async function(data) {\\n    if (\\"{{$trigger.event}}\\" == \\"ultrasound_work.items.create\\") {\\n        return true; \\n    } \\n    throw new Error('ไม่ใช่การสร้าง ultrasound_work'); \\n\\n};\\n"}	7e787b4c-cf0b-43db-b03a-636e9590bb3a	6d693638-dc88-4a29-8368-84a41da39091	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 11:36:44.063+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b13bf21c-4138-4770-8076-a67561fe6036	Operation คิดเงิน	calculate_price	pricing-operation	39	69	{"billingData":"{{read_data_billing}}","examCost":"{{read_data_examination_cost}}","pacsSyncData":"{{read_data_pacs_sync_info}}","appointmentData":"{{read_data_appointment}}","discountExam":"{{read_data_discount}}"}	ded6172c-3ba9-48e5-ba07-d7ecd37889b7	\N	32de3302-0f95-4186-81e2-955100e34997	2026-01-05 02:15:38.835+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 d086f883-d9ee-4a25-9973-46defa0a30a3	เช็คว่าเป็นคิว M หรือไม่	exec_1v3da	exec	37	1	{"code":"module.exports = async function(data) {\\n    const queue = {{read_data_queue}};\\n\\n    if (queue.queue_type == \\"M\\" || queue.queue_type == \\"BX\\") {\\n        return true;\\n    }\\n\\n    throw new Error('ไม่ใช่คิวประเภท M || BX');\\n    return false;\\n}"}	96f6e62a-deaa-45f1-afe2-b01688d546c4	\N	4e842895-1751-490e-b100-8426a00cde26	2024-10-25 11:54:49.625+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7de9530c-e17c-446f-b3b0-461fbf4a8b31	อ่านข้อมูล queue ที่ถูก trigger	read_data_queue	item-read	19	1	{"collection":"queue","key":["{{$trigger.keys[0]}}"],"permissions":"$full"}	d086f883-d9ee-4a25-9973-46defa0a30a3	\N	4e842895-1751-490e-b100-8426a00cde26	2024-10-25 11:54:49.663+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+05976409-0ba8-4e6a-bea6-415468ba0c1d	อ่านข้อมูล appointment	read_data_appointment	item-read	3	17	{"permissions":"$full","collection":"appointment","key":["{{read_data_ultrasound_work.appointment}}"]}	c2af3dfb-6550-414f-b337-13ec7113eb30	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 02:37:58.93+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c011e6a9-74c7-420b-bf93-9c07e689e094	เช็ค bx status ว่าเป็นยกเลิกหรือไม่	check_bx_status	condition	19	1	{"filter":{"$trigger":{"payload":{"bx_status":{"_eq":"0"}}}}}	4ff132d2-f3d9-4e1b-bb4d-c1851837948c	\N	bed2e574-ce79-4612-8cbc-30b8da6078e7	2025-12-10 03:34:57.504+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-a2b87961-208e-4ef9-96b7-02a89f066007	อ่านข้อมูล appointment ทั้งหมดที่ appointment_status ไม่ใช่ส่งตรวจ หรือเสร็จสิ้น	read_data_appointment	item-read	37	1	{"collection":"appointment","query":{"filter":{"_and":[{"appointment_datetime":{"_lte":"{{$last}}"}},{"_or":[{"appointment_status":"ยังไม่ถึงเวลานัด/ยังไม่มา"},{"appointment_status":"รอเรียกคิว"},{"appointment_status":"เรียกแล้ว"}]}]}},"permissions":"$full"}	b8191d54-9433-49fa-84b1-45cfc0ae52c1	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2024-10-03 04:19:51.904+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-0988be74-3a09-4199-bb29-fd72ed307321	return ค่าวันที่และเวลาของ เวลาเริ่มต้นของวันพรุ่งนี้	date_today	exec	19	1	{"code":"module.exports = async function(data) {\\n\\tconst now = new Date();\\n\\tconst startOfTomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0).toISOString();\\n\\treturn startOfTomorrow;\\n}"}	a2b87961-208e-4ef9-96b7-02a89f066007	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2024-10-03 04:19:51.958+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-4db81d6a-acf2-460f-9413-924314df740d	ยิง Webhook (Patch) ไปอัพเดทสถานะนัดหมายทั้งหมดให้เป็น ไม่มาตามนัด	request_l0r35	request	133	1	{"method":"PATCH","body":"{\\n    \\"keys\\": {{map_ids_appointment}},\\n    \\"data\\": {\\n        \\"appointment_status\\": \\"ไม่มาตามนัด\\"\\n    }\\n}","url":"{{read_environment.url}}/items/appointment","headers":[{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}]}	\N	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2024-10-03 04:19:51.824+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 6b529e11-987a-4ea4-8ca0-77a50a605023	สร้าง billing	create_billing	item-create	39	35	{"collection":"billing","payload":{"appointment":"{{read_data_appointment.id}}","appointment_datetime":"{{read_data_appointment.appointment_datetime}}","an":"{{read_data_appointment.an}}","room":"{{read_data_appointment.room}}","building":"{{read_data_appointment.building}}","patient":"{{read_data_appointment.patient_info}}","hn":"{{read_data_patient_info.hn}}","exam":"{{read_data_exam.id}}","exam_datetime":"{{read_data_exam.exam_date}}","finance_work":"{{create_finance_work[0]}}"},"emitEvents":true,"permissions":"$full"}	50e1145c-a14f-4f3a-9990-8e7b8fc7741a	\N	32de3302-0f95-4186-81e2-955100e34997	2025-02-19 05:15:25.522+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 9d23418f-4e5c-45ae-89df-3ac0e00ab14a	อ่านข้อมูล patient_info	read_data_patient_info	item-read	21	35	{"collection":"patient_info","key":["{{read_data_appointment.patient_info}}"],"permissions":"$full"}	6b529e11-987a-4ea4-8ca0-77a50a605023	\N	32de3302-0f95-4186-81e2-955100e34997	2025-02-19 05:37:41.557+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 02ead41e-146d-4ff7-8fcb-86ba2df9a952	อ่านข้อมูล appointment	read_data_appointment	item-read	3	35	{"collection":"appointment","key":["{{read_data_coordinate.appointment}}"],"permissions":"$full"}	9d23418f-4e5c-45ae-89df-3ac0e00ab14a	\N	32de3302-0f95-4186-81e2-955100e34997	2025-02-19 05:30:01.178+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 6a14a28c-c401-4f9d-9260-0438a333070a	อัพเดทข้อมูล Coordinate	update_data_coordinate	item-update	21	19	{"collection":"coordinate","key":["{{$trigger.keys[0]}}"],"payload":{"finance_work":"{{create_finance_work[0]}}"},"permissions":"$full"}	f866a263-627a-462d-a551-59c369f5e614	\N	32de3302-0f95-4186-81e2-955100e34997	2025-02-06 16:42:45.308+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+f251a7f6-ce3a-485d-b867-72d133b3f73c	คิดเงิน (MAM)	calculate_price_backup	exec	39	86	{"code":"module.exports = async function (data) {\\n  const billingData = {{read_data_billing}};\\n  const examCost = {{read_data_examination_cost}};\\n  const pacsSyncData = {{read_data_pacs_sync_info}} || {};\\n  const appointmentData = {{read_data_appointment}};\\n  const discountExam = {{read_data_discount}};\\n  const location = {{read_data_finance_work.location}}; \\n\\n  const total = pacsSyncData.reduce(\\n  (acc, item) => {\\n    acc.mamAmount += Number(item.confirm_num_of_mam ?? 0);\\n    acc.spotAmount += Number(item.confirm_num_of_spot ?? 0);\\n    acc.implantAmount += Number(item.confirm_num_of_implant ?? 0);\\n    if (item.modality === \\"US\\" && item.is_mark_del === false) {\\n      acc.ultrasoundAmount += 1;\\n    }\\n    return acc;\\n  },\\n  { mamAmount: 0, spotAmount: 0, implantAmount: 0, ultrasoundAmount: 0 }\\n);\\n  const CopyCDAmount = Array.isArray(appointmentData.front_note_1)\\n  ? appointmentData.front_note_1.some((note) =>\\n      note.toLowerCase().includes(\\"รับผลเป็น cd\\")\\n    )\\n    ? 1\\n    : 0\\n  : 0;\\n\\n  const findExamPrice = (exam_type_id) => {\\n    const exam = examCost.find((item) => item.type === exam_type_id);\\n    if (!exam) return 0;\\n      // 1 = TYR\\n    return Number(location === 1 ? exam.price_tyr : exam.price_ics);\\n  };\\n\\n  let a_price = 0,\\n    b_price = 0,\\n    c_price = 0,\\n    d_price = 0;\\n    e_price = 0;\\n\\n  const usedTypes = new Set();\\n\\n  // e_price (Copy CD)\\n  if(CopyCDAmount > 0) {\\n    e_price = findExamPrice(\\"H\\");\\n    usedTypes.add(\\"H\\");\\n  }\\n\\n  // d_price (Ultrasound)\\n  if (total.mamAmount > 0 && total.ultrasoundAmount > 0) {\\n    d_price = findExamPrice(\\"D\\");\\n    usedTypes.add(\\"D\\");\\n  } else if (total.mamAmount === 0 && total.ultrasoundAmount > 0) {\\n    d_price = findExamPrice(\\"C\\");\\n    usedTypes.add(\\"C\\");\\n  }\\n\\n  // a_price (Mammogram)\\n  if (total.mamAmount > 0) {\\n    if (total.mamAmount <= 2) {\\n      a_price = findExamPrice(\\"A\\");\\n      usedTypes.add(\\"A\\");\\n    } else {\\n      a_price = findExamPrice(\\"B\\");\\n      usedTypes.add(\\"B\\");\\n    }\\n  }\\n\\n  // b_price (SPOT)\\n  if (total.spotAmount > 0) {\\n    b_price = findExamPrice(\\"E\\");\\n    usedTypes.add(\\"E\\");\\n  }\\n\\n  // c_price (Implant)\\n  if (total.implantAmount > 0 && total.mamAmount > 2) {\\n    c_price = findExamPrice(\\"F\\");\\n    usedTypes.add(\\"F\\");\\n  } else if (total.implantAmount > 0 && total.mamAmount > 0) {\\n    c_price = findExamPrice(\\"G\\");\\n    usedTypes.add(\\"G\\");\\n  }\\n\\n  const sortedUsedTypes = Array.from(usedTypes).sort();\\n  const isOutpatient = appointmentData.care_type !== 2;\\n  let care_type = appointmentData.care_type;\\n  const isOvertime = billingData?.is_overtime || false;\\n  const isForeigner = billingData?.is_foreigner || false;\\n\\n  let subtotal =\\n    a_price +\\n    b_price +\\n    c_price +\\n    d_price +\\n    //e_price +\\n    (isOutpatient ? 100 : 0) +\\n    (isOvertime ? 400 : 0);\\n\\n  let foreigner_fee = isForeigner ? subtotal * 0.25 : 0;\\n  subtotal += foreigner_fee;\\n\\n  // Discount logic\\n  let discountAmount = 0;\\n  if (Array.isArray(discountExam)) {\\n    for (const d of discountExam) {\\n      const types = d.typeList?.split(\\",\\").map((x) => x.trim()).sort();\\n      if (\\n        types?.length === sortedUsedTypes.length &&\\n        types.every((v, i) => v === sortedUsedTypes[i])\\n      ) {\\n        discountAmount = Number(d.discount || 0);\\n        break;\\n      }\\n    }\\n  }\\n\\n  let finalTotal = location === \\"TYR\\" ? subtotal : Math.max(0, subtotal - discountAmount);\\n\\n  const is_invoice_requested = appointmentData.issue_an_invoice;\\n  const hasOutpatient = Array.isArray(appointmentData.outpatient) && appointmentData.outpatient.length > 0;\\n  let payment_type = null;\\n  let can_claim_expense = null;\\n  let payment_method = null;\\n  if(appointmentData.payment_type != 0 && appointmentData.payment_type != 8){\\n      can_claim_expense = true;\\n      if(care_type == 1){\\n      \\tpayment_type = appointmentData.payment_type;\\n      }else{\\n      \\tif(appointmentData.payment_type == 1){\\n        \\tpayment_type = 18;\\n        }\\n        else  if(appointmentData.payment_type == 2){payment_type = 19;}\\n        else  if(appointmentData.payment_type == 3){payment_type = 20;}\\n        else  if(appointmentData.payment_type == 4){payment_type = 21;}\\n        else  if(appointmentData.payment_type == 5){payment_type = 22;}\\n        else if(appointmentData.payment_type == 6){payment_type = 23;}\\n        else if(appointmentData.payment_type == 7){payment_type = 0;}\\n      }\\n  }else if(appointmentData.payment_type == 8){\\n      can_claim_expense = false;\\n      if(care_type == 1){\\n         payment_type = 7;\\n      }\\n      else{\\n      \\t payment_type = 24;\\n      }\\n  }\\n\\n  if(hasOutpatient){\\n      care_type = 3;\\n      payment_method = 2;\\n      can_claim_expense = false;\\n      if(appointmentData.outpatient.includes(1)){\\n      \\t\\tpayment_type = 8;\\n      }\\n      else if(appointmentData.outpatient.includes(2)){\\n      \\t\\tpayment_type = 9;\\n      }\\n      else if(appointmentData.outpatient.includes(3)){\\n      \\t\\tpayment_type = 10;\\n      }\\n      else if(appointmentData.outpatient.includes(4)){\\n      \\t\\tpayment_type = 11;\\n      }\\n      else if(appointmentData.outpatient.includes(5)){\\n      \\t\\tpayment_type = 16;\\n      }\\n      else if(appointmentData.outpatient.includes(6)){\\n      \\t\\tpayment_type = 17;\\n      }\\n  }\\n\\n\\n  if(payment_type){\\n     if(payment_type == 1 || payment_type == 2){\\n         payment_method = 1;\\n     }\\n     else if(payment_type == 3 || payment_type == 4 || payment_type == 5 || payment_type == 6\\n            || payment_type == 18 || payment_type == 19 || payment_type == 20 || payment_type == 21\\n            || payment_type == 22 || payment_type == 23){\\n         payment_method = 3;\\n     }\\n     else if(payment_type == 7){\\n         payment_method = 2;\\n     }\\n  }\\n\\n\\tif(payment_type){\\n        if(payment_type == 8){\\n            finalTotal = 0;\\n        }\\n    }\\n\\n  return {\\n    a: total.mamAmount,\\n    a_price: a_price.toFixed(2),\\n    b: total.spotAmount,\\n    b_price: b_price.toFixed(2),\\n    c: total.implantAmount,\\n    c_price: c_price.toFixed(2),\\n    d: total.ultrasoundAmount,\\n    d_price: d_price.toFixed(2),\\n    e: CopyCDAmount,\\n    e_price: e_price.toFixed(2),\\n    is_out_patient: isOutpatient,\\n    is_overtime: isOvertime,\\n    is_foreigner: isForeigner,\\n    foreigner_fee: foreigner_fee.toFixed(2),\\n    discount_amount: discountAmount.toFixed(2),\\n    total: finalTotal.toFixed(2),\\n    exam_types_used: sortedUsedTypes,\\n    care_type: care_type,\\n    is_invoice_requested: is_invoice_requested,\\n    can_claim_expense: can_claim_expense,\\n    payment_type: payment_type,\\n    payment_method: payment_method,\\n    hasOutpatient: hasOutpatient,\\n  };\\n};\\n"}	\N	\N	32de3302-0f95-4186-81e2-955100e34997	2025-02-19 08:15:04.692+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c0764b84-82c6-477f-a75a-09ab8e72e766	อ่านข้อมูล queue ทั้งหมดที่เป็นสถานะ รอเรียกคิว, เรียกคิวแล้ว	read_data_queue	item-read	5	19	{"collection":"queue","query":{"filter":{"queue_datetime":{"_lte":"{{date_today}}"},"_or":[{"status":"0"},{"status":"1"}]}},"permissions":"$full"}	781a4174-23c0-4904-ab91-de2970dd1d5a	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2024-10-24 04:14:38.038+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+33144962-94a0-4cde-b911-056801de5816	อ่าน exam ล่าสุด (ครั้งที่ผ่านมา)	read_previous_examination	item-read	55	1	{"permissions":"$full","collection":"examination","query":{"filter":{"patient":{"_eq":"{{read_appointment.patient_info}}"},"appointment":{"_neq":null}},"fields":["*","exam_reason_multi.*"],"sort":"-exam_date","limit":1}}	6397645a-8a44-48b4-b373-fd5d7d0f2dda	\N	4e6e586f-780c-4bbc-9372-9b43d1994495	2026-02-19 03:34:17.364+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 a7bd35c0-c69b-4ccc-a643-9f896371f569	เข้า Trigger Flow ของ read_environment data	read_environment	trigger	73	1	{"flow":"f5ad1f92-3584-40cb-8931-926f1cd88ff1"}	7a0f41be-6e61-4a5f-935a-6e6e86ce4da7	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2024-11-05 02:05:30.499+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b8191d54-9433-49fa-84b1-45cfc0ae52c1	return ค่า array ของ ID ทั้งหมดจาก appointments	map_ids_appointment	exec	55	1	{"code":"module.exports = async function(data) {\\n  const appointments = {{read_data_appointment}};\\n\\n  // Extracting the IDs\\n  const ids = appointments.map(appointment => appointment.id);\\n\\n  return ids; \\n}\\n"}	a7bd35c0-c69b-4ccc-a643-9f896371f569	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2024-10-03 04:19:51.838+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-f251a7f6-ce3a-485d-b867-72d133b3f73c	คิดเงิน (MAM)	calculate_price_backup	exec	39	86	{"code":"module.exports = async function (data) {\\n  const billingData = {{read_data_billing}};\\n  const examCost = {{read_data_examination_cost}};\\n  const pacsSyncData = {{read_data_pacs_sync_info}} || {};\\n  const appointmentData = {{read_data_appointment}};\\n  const discountExam = {{read_data_discount}};\\n  const location = {{read_data_finance_work.location}}; \\n\\n  const total = pacsSyncData.reduce(\\n  (acc, item) => {\\n    acc.mamAmount += Number(item.confirm_num_of_mam ?? 0);\\n    acc.spotAmount += Number(item.confirm_num_of_spot ?? 0);\\n    acc.implantAmount += Number(item.confirm_num_of_implant ?? 0);\\n    if (item.modality === \\"US\\" && item.is_mark_del === false) {\\n      acc.ultrasoundAmount += 1;\\n    }\\n    return acc;\\n  },\\n  { mamAmount: 0, spotAmount: 0, implantAmount: 0, ultrasoundAmount: 0 }\\n);\\n  const CopyCDAmount = Array.isArray(appointmentData.front_note_1)\\n  ? appointmentData.front_note_1.some((note) =>\\n      note.toLowerCase().includes(\\"รับผลเป็น cd\\")\\n    )\\n    ? 1\\n    : 0\\n  : 0;\\n\\n  const findExamPrice = (exam_type_id) => {\\n    const exam = examCost.find((item) => item.type === exam_type_id);\\n    if (!exam) return 0;\\n      // 1 = TYR\\n    return Number(location === 1 ? exam.price_tyr : exam.price_ics);\\n  };\\n\\n  let a_price = 0,\\n    b_price = 0,\\n    c_price = 0,\\n    d_price = 0;\\n    e_price = 0;\\n\\n  const usedTypes = new Set();\\n\\n  // e_price (Copy CD)\\n  if(CopyCDAmount > 0) {\\n    e_price = findExamPrice(\\"H\\");\\n    usedTypes.add(\\"H\\");\\n  }\\n\\n  // d_price (Ultrasound)\\n  if (total.mamAmount > 0 && total.ultrasoundAmount > 0) {\\n    d_price = findExamPrice(\\"D\\");\\n    usedTypes.add(\\"D\\");\\n  } else if (total.mamAmount === 0 && total.ultrasoundAmount > 0) {\\n    d_price = findExamPrice(\\"C\\");\\n    usedTypes.add(\\"C\\");\\n  }\\n\\n  // a_price (Mammogram)\\n  if (total.mamAmount > 0) {\\n    if (total.mamAmount <= 2) {\\n      a_price = findExamPrice(\\"A\\");\\n      usedTypes.add(\\"A\\");\\n    } else {\\n      a_price = findExamPrice(\\"B\\");\\n      usedTypes.add(\\"B\\");\\n    }\\n  }\\n\\n  // b_price (SPOT)\\n  if (total.spotAmount > 0) {\\n    b_price = findExamPrice(\\"E\\");\\n    usedTypes.add(\\"E\\");\\n  }\\n\\n  // c_price (Implant)\\n  if (total.implantAmount > 0 && total.mamAmount > 2) {\\n    c_price = findExamPrice(\\"F\\");\\n    usedTypes.add(\\"F\\");\\n  } else if (total.implantAmount > 0 && total.mamAmount > 0) {\\n    c_price = findExamPrice(\\"G\\");\\n    usedTypes.add(\\"G\\");\\n  }\\n\\n  const sortedUsedTypes = Array.from(usedTypes).sort();\\n  const isOutpatient = appointmentData.care_type !== 2;\\n  let care_type = appointmentData.care_type;\\n  const isOvertime = billingData?.is_overtime || false;\\n  const isForeigner = billingData?.is_foreigner || false;\\n\\n  let subtotal =\\n    a_price +\\n    b_price +\\n    c_price +\\n    d_price +\\n    //e_price +\\n    (isOutpatient ? 100 : 0) +\\n    (isOvertime ? 400 : 0);\\n\\n  let foreigner_fee = isForeigner ? subtotal * 0.25 : 0;\\n  subtotal += foreigner_fee;\\n\\n  // Discount logic\\n  let discountAmount = 0;\\n  if (Array.isArray(discountExam)) {\\n    for (const d of discountExam) {\\n      const types = d.typeList?.split(\\",\\").map((x) => x.trim()).sort();\\n      if (\\n        types?.length === sortedUsedTypes.length &&\\n        types.every((v, i) => v === sortedUsedTypes[i])\\n      ) {\\n        discountAmount = Number(d.discount || 0);\\n        break;\\n      }\\n    }\\n  }\\n\\n  let finalTotal = location === \\"TYR\\" ? subtotal : Math.max(0, subtotal - discountAmount);\\n\\n  const is_invoice_requested = appointmentData.issue_an_invoice;\\n  const hasOutpatient = Array.isArray(appointmentData.outpatient) && appointmentData.outpatient.length > 0;\\n  let payment_type = null;\\n  let can_claim_expense = null;\\n  let payment_method = null;\\n  if(appointmentData.payment_type != 0 && appointmentData.payment_type != 8){\\n      can_claim_expense = true;\\n      if(care_type == 1){\\n      \\tpayment_type = appointmentData.payment_type;\\n      }else{\\n      \\tif(appointmentData.payment_type == 1){\\n        \\tpayment_type = 18;\\n        }\\n        else  if(appointmentData.payment_type == 2){payment_type = 19;}\\n        else  if(appointmentData.payment_type == 3){payment_type = 20;}\\n        else  if(appointmentData.payment_type == 4){payment_type = 21;}\\n        else  if(appointmentData.payment_type == 5){payment_type = 22;}\\n        else if(appointmentData.payment_type == 6){payment_type = 23;}\\n        else if(appointmentData.payment_type == 7){payment_type = 0;}\\n      }\\n  }else if(appointmentData.payment_type == 8){\\n      can_claim_expense = false;\\n      if(care_type == 1){\\n         payment_type = 7;\\n      }\\n      else{\\n      \\t payment_type = 24;\\n      }\\n  }\\n\\n  if(hasOutpatient){\\n      care_type = 3;\\n      payment_method = 2;\\n      can_claim_expense = false;\\n      if(appointmentData.outpatient.includes(1)){\\n      \\t\\tpayment_type = 8;\\n      }\\n      else if(appointmentData.outpatient.includes(2)){\\n      \\t\\tpayment_type = 9;\\n      }\\n      else if(appointmentData.outpatient.includes(3)){\\n      \\t\\tpayment_type = 10;\\n      }\\n      else if(appointmentData.outpatient.includes(4)){\\n      \\t\\tpayment_type = 11;\\n      }\\n      else if(appointmentData.outpatient.includes(5)){\\n      \\t\\tpayment_type = 16;\\n      }\\n      else if(appointmentData.outpatient.includes(6)){\\n      \\t\\tpayment_type = 17;\\n      }\\n  }\\n\\n\\n  if(payment_type){\\n     if(payment_type == 1 || payment_type == 2){\\n         payment_method = 1;\\n     }\\n     else if(payment_type == 3 || payment_type == 4 || payment_type == 5 || payment_type == 6\\n            || payment_type == 18 || payment_type == 19 || payment_type == 20 || payment_type == 21\\n            || payment_type == 22 || payment_type == 23){\\n         payment_method = 3;\\n     }\\n     else if(payment_type == 7){\\n         payment_method = 2;\\n     }\\n  }\\n\\n\\tif(payment_type){\\n        if(payment_type == 8){\\n            finalTotal = 0;\\n        }\\n    }\\n\\n  return {\\n    a: total.mamAmount,\\n    a_price: a_price.toFixed(2),\\n    b: total.spotAmount,\\n    b_price: b_price.toFixed(2),\\n    c: total.implantAmount,\\n    c_price: c_price.toFixed(2),\\n    d: total.ultrasoundAmount,\\n    d_price: d_price.toFixed(2),\\n    e: CopyCDAmount,\\n    e_price: e_price.toFixed(2),\\n    is_out_patient: isOutpatient,\\n    is_overtime: isOvertime,\\n    is_foreigner: isForeigner,\\n    foreigner_fee: foreigner_fee.toFixed(2),\\n    discount_amount: discountAmount.toFixed(2),\\n    total: finalTotal.toFixed(2),\\n    exam_types_used: sortedUsedTypes,\\n    care_type: care_type,\\n    is_invoice_requested: is_invoice_requested,\\n    can_claim_expense: can_claim_expense,\\n    payment_type: payment_type,\\n    payment_method: payment_method,\\n    hasOutpatient: hasOutpatient,\\n  };\\n};\\n"}	\N	\N	32de3302-0f95-4186-81e2-955100e34997	2025-02-19 08:15:04.692+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-33144962-94a0-4cde-b911-056801de5816	อ่าน exam ล่าสุด (ครั้งที่ผ่านมา)	read_previous_examination	item-read	55	1	{"permissions":"$full","collection":"examination","query":{"filter":{"patient":{"_eq":"{{read_appointment.patient_info}}"},"appointment":{"_neq":null}},"fields":["*","exam_reason_multi.*"],"sort":"-exam_date","limit":1}}	6397645a-8a44-48b4-b373-fd5d7d0f2dda	\N	4e6e586f-780c-4bbc-9372-9b43d1994495	2026-02-19 03:34:17.364+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+a2b87961-208e-4ef9-96b7-02a89f066007	อ่านข้อมูล appointment ทั้งหมดที่ appointment_status ไม่ใช่ส่งตรวจ หรือเสร็จสิ้น	read_data_appointment	item-read	37	1	{"collection":"appointment","query":{"filter":{"_and":[{"appointment_datetime":{"_lte":"{{$last}}"}},{"_or":[{"appointment_status":"ยังไม่ถึงเวลานัด/ยังไม่มา"},{"appointment_status":"รอเรียกคิว"},{"appointment_status":"เรียกแล้ว"}]}]},"limit":1000},"permissions":"$full"}	b8191d54-9433-49fa-84b1-45cfc0ae52c1	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2024-10-03 04:19:51.904+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+0988be74-3a09-4199-bb29-fd72ed307321	return ค่าวันที่และเวลาของ เวลาเริ่มต้นของวันพรุ่งนี้	date_today	exec	19	1	{"code":"module.exports = async function(data) {\\n\\tconst now = new Date();\\n\\tconst startOfTomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0).toISOString();\\n\\treturn startOfTomorrow;\\n}"}	a2b87961-208e-4ef9-96b7-02a89f066007	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2024-10-03 04:19:51.958+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 24c591c0-e195-467e-9f92-18d80e52e37d	เช็คเงื่อนไขว่าไม่ใช่เคสที่สร้างจาก us ส่ง confirm_bx	check_not_us	exec	37	1	{"code":"module.exports = async function(data) {\\n    if(\\"{{$trigger.payload.appointment_bx_id}}\\" !== \\"undefined\\") {\\n    \\tthrow new Error('เป็นเคส confirm_bx')\\n    }\\n\\t\\n}"}	47ded662-4d85-43f0-a253-f38ffb725239	\N	b518e2cd-e651-4758-b71e-cee45014725d	2025-12-16 01:05:44.555+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+69c72dc9-ee2f-46a7-b635-ed4e514a3b24	เช็คว่า progress ตัวสุดท้ายไม่ใช่ รอปรึกษาแพทย์	exec_9j8jk_expqo	exec	21	99	{"code":"module.exports = async function(data) {\\n\\tlet lastProgressTitle = \\"{{read_data_last_progress.title}}\\"; \\n    if (lastProgressTitle != \\"รอปรึกษาแพทย์\\") {\\n        return true; \\n    } \\n\\n    throw new Error('Progress title ตัวสุดท้ายคือรอปรึกษาแพทย์'); \\n\\n};\\n"}	7bfea05c-5bad-4136-b0a8-124c5dd5349a	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-06-09 02:00:29.04+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+5378ec6f-e65b-492c-a442-71ad7ebac5ee	เช็คว่ามี statusTriggerFlows และ status เป็น รับเคสแล้ว(ปรึกษาแพทย์) หรือไม่	exec_qg6x7_xhzcd	exec	3	99	{"code":"module.exports = async function(data) {\\n    const statusTriggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    const status = \\"{{$trigger.payload.status}}\\";\\n    \\n    //รับเคสแล้ว(ปรึกษาแพทย์)\\n    if (statusTriggerFlows === \\"trigger\\" && status === \\"9\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี statusTriggerFlows หรือ status ไม่เท่ากับ 9'); \\n\\n};\\n"}	69c72dc9-ee2f-46a7-b635-ed4e514a3b24	4b3e80ef-7763-45bc-a400-c5772b121e87	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-06-09 02:00:29.282+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+690634d8-2f25-4db8-8455-1ec6c9d302c6	สร้าง progress เจ้าหน้าออกใบเรียกเก็บค่าบริการ	create_progress_Issue_service_invoice	item-create	39	83	{"payload":{"title":"เจ้าหน้าออกใบเรียกเก็บค่าบริการ","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"การเงิน","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	\N	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-03-10 06:48:44.519+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b84c13b1-3ddc-429c-a9df-08e7b89b91fe	อ่านข้อมูล appointment	read_appointment_data	item-read	19	1	{"permissions":"$full","collection":"appointment","key":["{{$trigger.key}}"]}	\N	\N	a4478d87-09b2-4841-9b79-c6378eaae11d	2025-11-27 03:44:33.205+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+13f5e1dc-2b60-400f-a62d-e746fef930fa	เข้า Trigger Flow Progress Created (v. ส่ง id)	trigger_flow_progress_created_nxndg_qrrfa_fplcz	trigger	93	67	{"flow":"89be6643-9611-41be-8186-059689a6c8d3","payload":{"action":"doctor","user":"{{read_data_examination.case_owner_doctor}}","progress":"{{create_progress_send_us}}"}}	\N	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2026-06-29 11:39:02.211+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 fdc17e3c-7fcf-4f7f-8a26-ebeba2fd609b	เคลียร์ค่า queue ใน appointment	queue_appointment	item-update	37	17	{"collection":"appointment","permissions":"$full","payload":{"queue":[]},"key":["{{$trigger.keys[0]}}"]}	36f830f9-24ef-4a19-ab51-9c810ee2a857	\N	e2c372dc-14d8-4e55-806a-e906e5dd52b3	2026-01-08 06:48:36.441+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 aeb3404a-23bf-4c86-b900-1d69240b6808	Update Data	item_update_et3i6	item-update	55	1	{"collection":"nurse_work","permissions":"$full","emitEvents":true,"key":["{{read_data_nurse_work[0].id}}"],"payload":{"appointment_datetime":"{{$trigger.payload.appointment_datetime}}","bx_status":"0"}}	d551d694-a08f-476b-ac00-67b57c1e9039	\N	e2c372dc-14d8-4e55-806a-e906e5dd52b3	2025-12-14 17:39:58.43+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8c75f87e-455c-4ece-b783-6fba6cc9fd2a	เช็ค appointed_dept เพื่อดูว่าส่งมาที่พยาบาลไหม	check_appointed_dept	condition	19	1	{"filter":{"$trigger":{"payload":{"appointed_dept":{"_eq":"nurse"}}}}}	613f6a54-c681-454b-9734-2915529f52e3	\N	ce3b63e2-5413-4dc6-9236-b9dcef31efea	2026-01-27 03:48:36.834+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 cd21d750-3f4a-47c8-9b7d-43df17f29a0b	อ่านข้อมูล nurse_work	read_data_nurse_work	item-read	19	1	{"permissions":"$full","collection":"nurse_work","key":[],"query":{"filter":{"appointment":{"_eq":"{{$trigger.keys[0]}}"}}}}	f667429d-0afc-4e01-83ea-779867f373c1	\N	e2c372dc-14d8-4e55-806a-e906e5dd52b3	2025-12-14 17:39:58.444+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 95dbac9a-fd39-4050-9d43-efdc024069a5	อ่าน doctor_work ปัจจุบัน	read_nurse_work	item-read	37	1	{"permissions":"$full","collection":"nurse_work","key":"{{$trigger.keys[0]}}"}	bb616dad-e777-4001-ade1-8ff28de10380	\N	7f4f84da-8f9f-4d4d-8e01-f14aec4515e0	2026-01-23 07:43:02.945+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8058cade-55e9-4cb3-a17e-6bda6e0897a2	เช็คเงื่อนไขอัพเดท bx_status ของนัดหมาย	check_department_bx	exec	55	40	{"code":"module.exports = async function (data) {\\n  const departmentBx = \\"{{read_appointment_data.department_bx}}\\";\\n\\n  if (departmentBx === \\"tech-cd\\") {\\n    return {\\n      bx_status: \\"2\\",\\n    };\\n  }\\n\\n  if (departmentBx === \\"tech\\") {\\n    const frontNote1 = {{read_appointment_data.front_note_1}};\\n    const acceptances = [\\"มี CD\\", \\"นำผลเก่ามา\\"];\\n    \\n    return {\\n      bx_status: frontNote1.some(note => acceptances.includes(note)) ? \\"2\\" : \\"1\\",\\n    };\\n  }\\n\\n  throw new Error(\\"นัดหมายนี้ไม่เข้าเงื่อนไข\\");\\n};\\n"}	9a6dd89c-ac48-467b-bdba-ca576497c3d5	\N	a4478d87-09b2-4841-9b79-c6378eaae11d	2025-12-10 01:54:00.6+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+418105e9-a468-4422-b81b-6c662cd1a98e	เช็คว่าเป็น create หรือ update	check_event	exec	17	1	{"code":"module.exports = async function (data) {\\n  const event = \\"{{$trigger.event}}\\";\\n  let key = \\"\\";\\n\\n  if (event === \\"ultrasound_work.items.create\\") {\\n    key = \\"{{$trigger.key}}\\";\\n  } else {\\n    key = \\"{{$trigger.keys[0]}}\\";\\n  }\\n\\n  return { key };\\n};\\n"}	f1e1420d-c68a-4328-9787-bebbe8f3c0d7	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-03 03:18:01.408+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 82256ef0-d02b-434a-81f4-b8ae9b186941	สร้างข้อมูล nurse_work	nurse_work	item-create	55	1	{"collection":"nurse_work","emitEvents":true,"permissions":"$full","payload":{"appointment":"{{$trigger.key}}","status":"{{get_nurse_work_resources.status}}","appointed_dept":"{{get_nurse_work_resources.appointed_dept}}"}}	\N	\N	a4478d87-09b2-4841-9b79-c6378eaae11d	2025-11-27 03:50:45.464+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 21cbe656-af1a-4a67-8607-17465d9cdcb9	เตรียมข้อมูลสำหรับสร้าง nurse_work 	get_nurse_work_resources	exec	37	1	{"code":"module.exports = async function(data) {\\n    if (\\"{{$trigger.payload.request}}\\" !== \\"bx\\") {\\n        throw new Error('นัดหมายนี้ไม่เข้าเงื่อนไข'); \\n    }\\n    const hasCdAcceptance = [\\"มี CD\\", \\"นำผลเก่ามา\\"]\\n    \\n    const department_bx = \\"{{$trigger.payload.department_bx}}\\";\\n    const frontNote1 = {{$trigger.payload.front_note_1}} ?? [];\\n\\tconst hasCD = frontNote1.some(note => hasCdAcceptance.includes(note))\\n    const appointed_dept = department_bx.replace(\\"-cd\\",\\"\\");\\n    const status = department_bx.includes(\\"cd\\") || hasCD ? \\"7\\" : \\"0\\"; // รอลงข้อมูล : รอเรียกคิว\\n    \\n    return {\\n        appointed_dept,\\n        status\\n    }\\n};\\n"}	82256ef0-d02b-434a-81f4-b8ae9b186941	\N	a4478d87-09b2-4841-9b79-c6378eaae11d	2025-11-27 03:50:45.484+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 aff576f2-6aa7-4a7e-a705-3251cc925521	stamp เวลาที่ nurse_received_appointment_at	stamp_nurse_received_appointment_at	item-update	55	1	{"collection":"nurse_work","permissions":"$full","emitEvents":true,"key":"{{create_payload.id}}","payload":{"nurse_appointment_received_at":"{{create_payload.timestamp}}"}}	\N	\N	ce3b63e2-5413-4dc6-9236-b9dcef31efea	2026-01-27 03:50:04.072+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15883,71 +16026,114 @@ aff576f2-6aa7-4a7e-a705-3251cc925521	stamp เวลาที่ nurse_received_
 de2e85d8-7511-4b5b-a36a-d91ce587d716	PACS Sync Operation	pacs_sync_operation_vgk0a	pacs-sync-operation	37	19	{"payload":"{{create_API_body}}"}	\N	\N	f8348b38-4052-4bed-81f1-f1462291ae17	2025-12-11 16:00:58.171+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f52edefd-f390-4063-a084-620289aaf6a6	ปั้น Body ก่อนยิง API	create_API_body	exec	55	1	{"code":"module.exports = async function(data) {\\n\\tconst pacs_sync_info = {{read_pacs_sync_info}};\\n\\tconst patient_info = {{read_patient_info}};\\n    const mergeData = {...pacs_sync_info, patient: patient_info};\\n    \\n\\treturn  [mergeData] ;\\n}"}	64688255-452a-4768-a4a1-f9b3d69ce944	\N	f8348b38-4052-4bed-81f1-f1462291ae17	2025-01-16 07:45:01.195+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 9ff4910f-b9ea-4127-9974-bbec14744c91	ยิงไปสร้าง file	post_to_create_file	request	55	19	{"method":"POST","headers":[{"header":"Authorization","value":"Bearer {{$trigger.payload.access_token}}"}],"body":"{{create_API_body}}","url":"{{read_environment.url}}/pacs-sync/pacs-sync-file"}	\N	\N	f8348b38-4052-4bed-81f1-f1462291ae17	2025-01-16 09:56:11.038+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+1261d3f6-5b50-4b38-8f1b-4bfd17f41f3d	return ค่า id ของ progress ตัวสุดท้าย จากข้อมูล worklist ที่ถูกอ่านมาก่อนหน้านี้	last_no_progress	exec	39	18	{"code":"module.exports = async function(data) {\\n    const progressArray = {{read_data_worklist.progress}};\\n\\n    // เช็คว่า progress array มีค่าหรือไม่ และมีข้อมูลอยู่\\n    if (progressArray && progressArray.length > 0) {\\n        // จัดเรียง progress ตามไอดีจากน้อยไปมาก\\n        const sortedProgressArray = progressArray.sort((a, b) => a - b);\\n\\n        // ดึง progress ID ตัวสุดท้ายหลังจากจัดเรียง\\n        const lastProgressId = sortedProgressArray[sortedProgressArray.length - 1];\\n\\n        return {\\n            lastProgressId: lastProgressId\\n        };\\n    } else {\\n        return {\\n            message: 'No progress data found'\\n        };\\n    }\\n};"}	a0e1c010-08d5-47ea-941b-2c36ba2a0d84	\N	cbd6eeeb-ea02-40ee-be82-36164ee8b18c	2025-02-18 16:05:50.019+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 2cbe2557-1ecf-4401-a61f-9402a46c62ac	สร้างข้อมูล  appointment	create_new_appointment	item-create	62	118	{"collection":"appointment","permissions":"$full","payload":"{{body_create_exam_edit_appointment}}","emitEvents":true}	\N	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-12-16 04:39:26.356+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 48eff0a9-e03f-41bb-80d7-f18e791d205f	สร้าง nurse_work แบบเรียกคิวแล้ว	create_nurse_work	item-create	37	17	{"payload":{"appointment":"{{$trigger.keys[0]}}","status":"1","CD_Pacs":"{{get_pacs_condition.CD_Pacs}}","scan_Pacs":"{{get_pacs_condition.scan_Pacs}}"},"permissions":"$full","collection":"nurse_work","emitEvents":true}	\N	\N	b518e2cd-e651-4758-b71e-cee45014725d	2025-12-12 02:52:19.517+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 af53aa9e-c4a7-464e-9dd7-4f6022a42df7	อัพเดทจำนวนเงิน	item_update_fkv42	item-update	39	85	{"collection":"billing","emitEvents":true,"permissions":"$full","payload":{"a":"{{calculate_price.a}}","a_price":"{{calculate_price.a_price}}","b":"{{calculate_price.b}}","b_price":"{{calculate_price.b_price}}","c":"{{calculate_price.c}}","c_price":"{{calculate_price.c_price}}","d":"{{calculate_price.d}}","d_price":"{{calculate_price.d_price}}","e":"{{calculate_price.e}}","e_price":"{{calculate_price.e_price}}","total":"{{calculate_price.total}}","is_out_patient":"{{calculate_price.is_out_patient}}","is_overtime":"{{calculate_price.is_overtime}}","is_foreigner":"{{calculate_price.is_foreigner}}","foreigner_fee":"{{calculate_price.foreigner_fee}}","care_type":"{{calculate_price.care_type}}","is_invoice_requested":"{{calculate_price.is_invoice_requested}}","can_claim_expense":"{{calculate_price.can_claim_expense}}","payment_type":"{{calculate_price.payment_type}}","payment_method":"{{calculate_price.payment_method}}"},"key":["{{create_billing[0]}}"]}	0c64b43e-fc74-45da-b34e-48b561ff8972	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-07-06 04:21:37.77+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8a777282-4583-469d-8fbe-0fd7793bfda2	เช็คเงื่อนไขว่าเป็นการเรียกคิว bx หรือส่งไปที่แผนกพยาบาลหรือไม่	check_bx_condition	condition	19	1	{"filter":{"_or":[{"$trigger":{"payload":{"bx_status":{"_eq":"3"}}}},{"$trigger":{"payload":{"department_bx":{"_eq":"nurse"}}}}]}}	24c591c0-e195-467e-9f92-18d80e52e37d	\N	b518e2cd-e651-4758-b71e-cee45014725d	2025-12-12 02:52:19.531+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-781a4174-23c0-4904-ab91-de2970dd1d5a	return ค่า array ของ ID ทั้งหมดจาก queue	map_ids_queue	exec	25	19	{"code":"module.exports = async function(data) {\\n  const queues = {{read_data_queue}};\\n\\n  // Extracting the IDs\\n  const ids = queues.map(queue => queue.id);\\n\\n  return ids; \\n}\\n"}	e220f43c-4749-4771-8417-4d3af87b5bc6	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2024-10-24 04:14:37.979+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c74646e2-c4dd-41c5-9561-9f3a3efe79c0	return ค่า array ของ ID ทั้งหมดจาก notification	map_ids_notification	exec	80	19	{"code":"module.exports = async function(data) {\\n  const notifications = {{read_data_notification}};\\n\\n  // Extracting the IDs\\n  const ids = notifications.map(notification => notification.id);\\n\\n  return ids; \\n}\\n"}	8a8da9e9-bbbe-4d4f-a398-b26582f6457d	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2025-07-01 11:21:43.819+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+f90d0acb-70d4-4bf1-9825-0abc5fac855c	เช็คว่ามี Mammogram หรือไม่ แล้ว return แผนกออกไป	check_mammogram	exec	57	132	{"code":"module.exports = async function (data) {\\n  let department = \\"Front(F.14)\\";\\n  const pacsSyncData = {{read_data_pacs_sync_info}} || [];\\n\\n  pacsSyncData.forEach((item) => {\\n    if (\\n      item.modality === \\"MG\\" &&\\n      item.is_mark_del === false &&\\n      item.end_time\\n    ) {\\n      department = \\"แพทย์\\";\\n    }\\n  });\\n\\n  return { department };\\n};\\n"}	58e5ec36-c069-4cb6-ad84-2b306cd76507	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-08 15:04:41.063+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 95e5e2dc-2c96-492f-8e55-384bf54d8b50	อ่านข้อมูล Notification ทั้งหมด	read_data_notification	item-read	62	19	{"collection":"notification","query":null,"permissions":"$full"}	c74646e2-c4dd-41c5-9561-9f3a3efe79c0	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2025-07-01 11:21:43.927+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-8d0c6e3c-1208-4ec9-bf9c-2c8b05c9aa34	ยิง Webhook (Patch) ไปอัพเดทสถานะคิวทั้งหมดให้เป็น ยกเลิกคิว	request_l0r35_sipvh	request	118	1	{"method":"PATCH","body":"{\\n    \\"keys\\": {{map_ids_queue}},\\n    \\"data\\": {\\n        \\"status\\": \\"3\\"\\n    }\\n}","url":"{{read_environment.url}}/items/queue","headers":[{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}]}	\N	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2024-10-24 04:14:37.97+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-b22415f4-7c80-475d-856b-6bcf16596a25	ยิง Webhook (Delete) ไปเคลียร์ค่า Notification ทั้งหมด	request_l0r35_sipvh_usexz	request	124	17	{"method":"DELETE","body":"{\\n    \\"keys\\": {{map_ids_notification}}\\n}","url":"{{read_environment.url}}/items/notification","headers":[{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}]}	\N	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2025-07-01 11:21:43.781+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+781a4174-23c0-4904-ab91-de2970dd1d5a	return ค่า array ของ ID ทั้งหมดจาก queue	map_ids_queue	exec	25	19	{"code":"module.exports = async function(data) {\\n  const queues = {{read_data_queue}};\\n\\n  // Extracting the IDs\\n  const ids = queues.map(queue => queue.id);\\n\\n  return ids; \\n}\\n"}	e220f43c-4749-4771-8417-4d3af87b5bc6	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2024-10-24 04:14:37.979+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c8a79719-448b-4716-8769-7d0f30d71817	read appointment data	read_appointment_data	item-read	19	1	{"permissions":"$full","collection":"appointment","key":["{{$trigger.key}}"]}	abd5dfbc-ca0a-4303-8069-b250b9862610	\N	f68004b6-ccad-4ccb-bea1-0a41a0067056	2026-01-27 04:32:46.6+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-ad86bc96-ccfb-47c8-becb-c8a5f6d040e1	อ่านข้อมูล nurse_work ทั้งหมด	read_data_nurse_work	item-read	5	35	{"collection":"nurse_work","query":{"filter":{"status":{"_in":["0","1"]}}},"permissions":"$full"}	2db0164c-47da-49cb-9259-59af5b22c769	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2025-11-28 04:48:28.254+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 a957c5f1-a6e8-4f68-add4-a4e33ae169db	อ่านข้อมูล appointment	read_data_appointment	item-read	3	18	{"permissions":"$full","collection":"appointment","query":{"filter":{"id":{"_eq":"{{read_data_finance_work.appointment}}"}}}}	1804bd3d-ceb0-4387-9c58-c0ee0423d685	\N	9eb9360a-fa14-4b41-87db-345589c2ceb8	2025-12-12 03:01:19.088+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+23fd6bfb-d9db-4666-959a-31892dceacba	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg_roxym_vozys_drvte	item-update	21	65	{"permissions":"$full","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"]}	a9c41096-0580-43c7-a774-6e08ffb0bf8f	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 04:59:59.481+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+0d34d7fe-a28d-4c8b-9716-9ebfce149b34	สร้าง progress แพทย์วินิจฉัย	create_progress_send_doctor	item-create	57	51	{"payload":{"title":"แพทย์วินิจฉัย","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"แพทย์","worklist":"{{read_data_queue.worklist[0]}}"},"collection":"progress"}	26b2bc43-cf77-465b-b60a-c0a09bfaa4e4	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-03-08 15:29:14.773+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+0b57264f-7820-47a0-9b5f-21c6a1b68d9b	return ค่า id ของ progress ตัวสุดท้าย จากข้อมูล worklist ที่ถูกอ่านมาก่อนหน้านี้	last_no_progress	exec	21	34	{"code":"module.exports = async function(data) {\\n    const progressArray = {{read_data_worklist.progress}};\\n\\n    // เช็คว่า progress array มีค่าหรือไม่ และมีข้อมูลอยู่\\n    if (progressArray && progressArray.length > 0) {\\n        // จัดเรียง progress ตามไอดีจากน้อยไปมาก\\n        const sortedProgressArray = progressArray.sort((a, b) => a - b);\\n\\n        // ดึง progress ID ตัวสุดท้ายหลังจากจัดเรียง\\n        const lastProgressId = sortedProgressArray[sortedProgressArray.length - 1];\\n\\n        return {\\n            lastProgressId: lastProgressId\\n        };\\n    } else {\\n        return {\\n            message: 'No progress data found'\\n        };\\n    }\\n};"}	b921e43f-39fb-4dfb-b5f1-03f4c1a2b1a3	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-02-26 10:48:49.07+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+92d73fb2-cb8e-49d9-b69d-c9cfda1be346	อ่านข้อมูล examination	examination	item-read	20	18	{"collection":"examination","key":["{{read_data_coordinate.exam}}"],"permissions":"$full"}	5ff9bad1-cd77-4ef9-ba77-70e5a9bdfe20	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2026-06-29 11:40:40.869+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+a2e0a114-647c-4789-a8ba-34f89f9d1407	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_avqgq	trigger	57	83	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_Issue_service_invoice}}"}	\N	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-03-10 06:48:44.504+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+ad86bc96-ccfb-47c8-becb-c8a5f6d040e1	อ่านข้อมูล nurse_work ทั้งหมด	read_data_nurse_work	item-read	5	35	{"collection":"nurse_work","query":{"filter":{"status":{"_in":["0","1"]}}},"permissions":"$full"}	2db0164c-47da-49cb-9259-59af5b22c769	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2025-11-28 04:48:28.254+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 abd5dfbc-ca0a-4303-8069-b250b9862610	read all patient_info data	read_all_patient_info_data	item-read	37	1	{"permissions":"$full","collection":"examination","query":{"filter":{"patient":{"_eq":"{{read_appointment_data.patient_info}}"},"us":{"state":{"_eq":"3"}}},"fields":["*","examination_general.*","us.*"]}}	27facdb2-9e65-4b42-832b-b8a22b1fc5af	\N	f68004b6-ccad-4ccb-bea1-0a41a0067056	2026-01-27 04:39:15.298+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+93b82c03-d4b0-4d1a-8bea-cb47532b3dba	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย	status_close_case_time_progress_gulsg	item-update	21	83	{"collection":"progress","payload":{"close_case_time":"{{current_time.currentTime}}","status":"เสร็จสิ้น"},"key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	690634d8-2f25-4db8-8455-1ec6c9d302c6	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2025-03-10 06:48:44.632+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+65770f72-5947-405a-b08f-8779e76f95c6	เข้า Trigger Flow Progress Created (v. ส่ง id)	trigger_flow_progress_created_nxndg_qrrfa	trigger	93	51	{"flow":"89be6643-9611-41be-8186-059689a6c8d3","payload":{"action":"doctor","user":"{{read_data_examination.case_owner_doctor}}","progress":"{{create_progress_send_doctor}}"}}	\N	\N	ed9487b5-5316-42b2-96ee-6c58162b72bb	2026-06-29 11:39:02.979+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 2db0164c-47da-49cb-9259-59af5b22c769	return ค่า array ของ ID นัดหมายทั้งหมดจาก nurse_work	map_ids_in_nurse_work	exec	23	35	{"code":"module.exports = async function (data) {\\n  const nurse_work = {{read_data_nurse_work}};\\n\\n  const nurseWorkIds = nurse_work.map(nw => nw.id);\\n  const appointmentIds = nurse_work\\n    .map(nw => nw.appointment)\\n    .filter(Boolean); // กัน null\\n\\n  return {\\n    nurseWorkIds,\\n    appointmentIds,\\n  };\\n};\\n"}	1ee8d910-7718-414b-98cd-1f76e9fee1ac	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2025-11-28 04:51:38.685+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f65d1af9-ea24-4eca-a9e2-38c3fa0a5672	ยิง Webhook (Patch) ไปอัพเดทสถานะนัดหมายทั้งหมดให้เป็น ไม่มาตามนัด	request_l0r35_oekuw	request	139	17	{"method":"PATCH","body":"{\\n    \\"keys\\": {{map_ids_appointment_in_nurse_work}},\\n    \\"data\\": {\\n        \\"appointment_status\\": \\"ไม่มาตามนัด\\"\\n    }\\n}","url":"{{read_environment.url}}/items/appointment","headers":[{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}]}	\N	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2025-11-28 04:51:38.669+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 d551d694-a08f-476b-ac00-67b57c1e9039	ปรับ status ของคิวเป็น "เสร็จสิ้น"	update_queue_status	item-update	19	17	{"collection":"queue","permissions":"$full","emitEvents":true,"payload":{"status":"2"},"key":"{{$trigger.payload.queue[0].id}}"}	fdc17e3c-7fcf-4f7f-8a26-ebeba2fd609b	\N	e2c372dc-14d8-4e55-806a-e906e5dd52b3	2026-02-25 08:20:50.194+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 27facdb2-9e65-4b42-832b-b8a22b1fc5af	sort data by id	sort_data_by_id	exec	1	21	{"code":"module.exports = async function (data) {\\n  const exams = {{read_all_patient_info_data}};\\n\\n  const sorted = [...exams].sort((a, b) => b.id - a.id);\\n\\n  return sorted[0] ?? null;\\n};"}	829a3a11-2a96-488a-8244-143301d5f7a2	\N	f68004b6-ccad-4ccb-bea1-0a41a0067056	2026-01-27 04:43:04.508+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 1804bd3d-ceb0-4387-9c58-c0ee0423d685	อัพเดท bx_status เป็น "รอเรียกคิว"	bx_status	item-update	22	18	{"collection":"appointment","permissions":"$full","key":["{{read_data_appointment[0].appointment_bx_id}}"],"payload":{"bx_status":"1"}}	5fb16b73-dea0-4136-b5e4-57dbd8f3c345	\N	9eb9360a-fa14-4b41-87db-345589c2ceb8	2025-12-12 03:05:32.378+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-2f635067-7335-4aff-beaf-1129a764de71	อัพเดทสถานะนัดหมายทั้งหมดให้เป็น ไม่มาตามนัด	update_data_nurse_work	item-update	42	51	{"collection":"nurse_work","permissions":"$full","key":[],"payload":{"status":"5"},"query":{"filter":{"id":{"_in":"{{map_ids_in_nurse_work.nurseWorkIds}}"}}}}	\N	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2025-12-18 14:40:53.544+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-7a0f41be-6e61-4a5f-935a-6e6e86ce4da7	อัพเดทสถานะนัดหมายทั้งหมดให้เป็น ไม่มาตามนัด	update_data_appointment	item-update	91	1	{"collection":"appointment","permissions":"$full","key":[],"payload":{"appointment_status":"ไม่มาตามนัด"},"query":{"filter":{"id":{"_in":"{{map_ids_appointment}}"}}}}	c0764b84-82c6-477f-a75a-09ab8e72e766	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2025-12-02 03:14:00.293+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 15c0461e-17ab-4c21-853b-adffd06392b8	current_time	current_time	exec	3	34	{"code":"module.exports = async function(data) {\\n    return {\\n        currentTime: new Date().toISOString()\\n    };\\n};"}	b73f254f-febf-450d-8505-ac60e79fb5d5	\N	9eb9360a-fa14-4b41-87db-345589c2ceb8	2026-01-13 03:57:30.66+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 829a3a11-2a96-488a-8244-143301d5f7a2	Update Data	item_update_oe51x	item-update	19	21	{"collection":"appointment","permissions":"$full","key":["{{$trigger.key}}"],"payload":{"us_mass":"{{sort_data_by_id.us}}","assessment_birads_des":"{{sort_data_by_id.examination_general[0].assessment_birads_des}}"}}	\N	\N	f68004b6-ccad-4ccb-bea1-0a41a0067056	2026-01-27 06:10:17.631+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+2f635067-7335-4aff-beaf-1129a764de71	อัพเดทสถานะนัดหมายทั้งหมดให้เป็น ไม่มาตามนัด	update_data_nurse_work	item-update	42	51	{"collection":"nurse_work","permissions":"$full","key":[],"payload":{"status":"5"},"query":{"filter":{"id":{"_in":"{{map_ids_in_nurse_work.nurseWorkIds}}"}}}}	\N	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2025-12-18 14:40:53.544+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+7a0f41be-6e61-4a5f-935a-6e6e86ce4da7	อัพเดทสถานะนัดหมายทั้งหมดให้เป็น ไม่มาตามนัด	update_data_appointment	item-update	91	1	{"collection":"appointment","permissions":"$full","key":[],"payload":{"appointment_status":"ไม่มาตามนัด"},"query":{"filter":{"id":{"_in":"{{map_ids_appointment}}"}}}}	c0764b84-82c6-477f-a75a-09ab8e72e766	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2025-12-02 03:14:00.293+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+ded0aef6-a9fd-45cd-8a54-df900c90bf81	สร้าง Examination	create_examination	item-create	19	18	{"collection":"examination","payload":{"patient":"{{read_appointment[0].patient_info}}","appointment":"{{read_appointment[0].id}}","location":"{{read_appointment[0].location}}"},"permissions":"$full"}	c24d515b-ac1c-4334-94f2-99399e1044ee	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2024-12-18 01:57:01.936+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+37059709-8059-49ca-b715-95cb1be63225	อัพเดท Bx_status	bx_status	item-update	108	33	{"permissions":"$full","collection":"nurse_work","emitEvents":true,"key":["{{read_nurse_work[0].id}}"],"payload":{"bx_status":"0"}}	\N	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2026-02-02 05:15:58+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+9aacdce4-f872-4f3d-a847-0c47db5e63f9	backup data	backup_data	exec	91	50	{"code":"module.exports = async function(data) {\\n    const data = {\\n        \\"tech_login_name\\": null,\\n        \\"mobile\\": null,\\n        \\"mobile_update\\": null,\\n        \\"menstruation_age\\": null,\\n        \\"menopause_age\\": null,\\n        \\"first_pregnancy_age\\": null,\\n        \\"num_pregnancy\\": null,\\n        \\"cont_use\\": false,\\n        \\"cont_yrs\\": null,\\n        \\"hormone_use\\": false,\\n        \\"hormone_yrs\\": null,\\n        \\"hysterectomy\\": false,\\n        \\"ovaries_removed\\": false,\\n        \\"pregnant\\": false,\\n        \\"referring_md\\": null,\\n        \\"referring_hospital\\": null,\\n        \\"prev_mammo_date\\": null,\\n        \\"prev_mammo_loc\\": null,\\n        \\"sister_cancer_age\\": null,\\n        \\"mother_cancer_age\\": null,\\n        \\"grandmother_cancer_age\\": null,\\n        \\"other_cancer_age\\": null,\\n        \\"irr_l_date\\": null,\\n        \\"irr_r_date\\": null,\\n        \\"rm_l_date\\": null,\\n        \\"rm_r_date\\": null,\\n        \\"ri_l_date\\": null,\\n        \\"ri_r_date\\": null,\\n        \\"fna_l_date\\": null,\\n        \\"fna_r_date\\": null,\\n        \\"fnx_l_date\\": null,\\n        \\"fnx_r_date\\": null,\\n        \\"biopsy_l_date\\": null,\\n        \\"biopsy_r_date\\": null,\\n        \\"lump_l_date\\": null,\\n        \\"lump_r_date\\": null,\\n        \\"cyst_l_date\\": null,\\n        \\"cyst_r_date\\": null,\\n        \\"mast_l_date\\": null,\\n        \\"mast_r_date\\": null,\\n        \\"id_l_date\\": null,\\n        \\"id_r_date\\": null,\\n        \\"bct_l_date\\": null,\\n        \\"bct_r_date\\": null,\\n        \\"chemo_l_date\\": null,\\n        \\"chemo_r_date\\": null,\\n        \\"rad_l_date\\": null,\\n        \\"rad_r_date\\": null,\\n        \\"l_side_mass\\": false,\\n        \\"r_side_mass\\": false,\\n        \\"num_left_mass\\": null,\\n        \\"num_right_mass\\": null,\\n        \\"lnwn\\": false,\\n        \\"lnww\\": false,\\n        \\"ln\\": false,\\n        \\"lnen\\": false,\\n        \\"lnee\\": false,\\n        \\"le\\": false,\\n        \\"lm\\": false,\\n        \\"lw\\": false,\\n        \\"lsws\\": false,\\n        \\"lsww\\": false,\\n        \\"ls\\": false,\\n        \\"lses\\": false,\\n        \\"lsee\\": false,\\n        \\"rnwn\\": false,\\n        \\"rnww\\": false,\\n        \\"rn\\": false,\\n        \\"rnen\\": false,\\n        \\"rnee\\": false,\\n        \\"re\\": false,\\n        \\"rm\\": false,\\n        \\"rw\\": false,\\n        \\"rsws\\": false,\\n        \\"rsww\\": false,\\n        \\"rs\\": false,\\n        \\"rses\\": false,\\n        \\"rsee\\": false,\\n        \\"lother\\": false,\\n        \\"rother\\": false,\\n        \\"l_axillar\\": false,\\n        \\"r_axillar\\": false,\\n        \\"exam_reason\\": null,\\n        \\"exam_reason_text\\": null,\\n        \\"exam_reason_memotext\\": null,\\n        \\"mobile_updated\\": null,\\n        \\"mobile_loc\\": null,\\n        \\"patient_cancer_age\\": null,\\n        \\"daughter_cancer_age\\": null,\\n        \\"daughter_cancer_age_more\\": false,\\n        \\"sister_cancer_age_more\\": false,\\n        \\"other_cancer_age_more\\": false,\\n        \\"stophormone_yrs\\": null,\\n        \\"ca_hormone_use\\": false,\\n        \\"ca_hormone_yrs\\": null,\\n        \\"stop_ca_hormone_yrs\\": null,\\n        \\"stop_contr_yrs\\": null,\\n        \\"send_exam_login_name\\": null,\\n        \\"old_exam_id\\": null,\\n        \\"old_pid\\": null,\\n        \\"mother_cancer\\": false,\\n        \\"daughter_cancer\\": false,\\n        \\"sister_cancer\\": false,\\n        \\"grandmother_cancer\\": false,\\n        \\"other_cancer\\": false,\\n        \\"status\\": null\\n    }\\n}"}	\N	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2026-07-02 08:22:40.667+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b4b4ffb9-600c-4d9f-8b08-3949c0bc4c81	สร้าง examination	create_examination	item-update	37	17	{"collection":"nurse_work","permissions":"$full","payload":{"examination":"{{create_exam_payload}}"},"key":"{{$trigger.key}}"}	\N	\N	4e6e586f-780c-4bbc-9372-9b43d1994495	2026-02-23 18:19:13.759+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+696acf1f-f08d-4b68-8bda-1a5736f0b64e	อัพเดทฟิลด์ pid ของ patient_info ตาม id	item_update_g8udx	item-update	73	1	{"collection":"patient_info","key":["{{read_patient_info_data.id}}"],"payload":{"pid":"{{read_patient_info_data.id}}"},"permissions":"$full"}	02554e7d-7c6f-44c7-b910-2fd9a5dfcafa	\N	745702ca-86a5-4630-86d5-0c21951b61ce	2024-10-03 02:51:33.705+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+0a889b5a-d657-47c0-be24-e1053ff8c4af	เช็คสถานะของ appointment ว่าเป็นส่งตรวจ หรือไม่	exec_a46nd	exec	37	1	{"code":"module.exports = async function(data) {\\n    let appointment = {{read_data_appointment}};\\n\\n    if (appointment.appointment_status == \\"ส่งตรวจ\\") {\\n        return true;\\n    }\\n\\n    throw new Error('สถานะไม่ใช่ส่งตรวจ');\\n    return false;\\n}"}	b5528219-a2b5-4d03-b87b-1f34d5852353	\N	745702ca-86a5-4630-86d5-0c21951b61ce	2024-10-03 02:46:57.681+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+09cafffb-679b-4613-a53e-9828069295e5	return body ของ data เพื่อนำไป create ต่อ	body_create_data	exec	57	19	{"code":"module.exports = async function(data) {\\nconst frontNote1 = {{$trigger.payload.front_note_1}};\\nlet resultType = [];\\n\\nif (frontNote1 && frontNote1.includes(\\"รับผลเป็น CD\\")) {\\n    resultType.push(\\"2\\");\\n} if (frontNote1 && frontNote1.includes(\\"รับผลตรวจวันนี้\\")) {\\n    resultType.push(\\"1\\");\\n}\\n\\nconst dataToCreate = {\\n    status: 0,\\n    appointments: [\\n        {\\n            appointment_id: \\"{{$trigger.keys[0]}}\\"\\n        }\\n    ],\\n    queues: [\\n        \\"{{read_data_appointment.queue[0]}}\\"\\n    ],\\n    result_type: resultType\\n};\\n\\nreturn dataToCreate;\\n\\n}"}	79a92916-f129-477a-848d-0aad358718b4	\N	745702ca-86a5-4630-86d5-0c21951b61ce	2024-10-03 02:51:33.59+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+1913fa4a-1d06-4f53-862c-a7356191662e	สร้างข้อมูล patient_result ตาม body data ที่ถูกส่งมา	patient_result_body_data	item-create	22	35	{"collection":"patient_result","permissions":"$full","payload":"{{body_create_data}}"}	\N	\N	ce0d2f42-09c1-4e35-b370-f5db5c3abbbb	2026-07-03 04:25:25.059+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+05e337ad-4cd9-46f0-984b-42a84d8fb54f	สร้างข้อมูล center_income (CD)	center_income_cd	item-create	22	37	{"collection":"center_income","emitEvents":true,"payload":{"first_name":"{{read_data_patient_info.first_name_th}}","last_name":"{{read_data_patient_info.last_name_th}}","full_name":"{{read_data_patient_info.prefix_th}} {{read_data_patient_info.first_name_th}} {{read_data_patient_info.last_name_th}}","type":"1","service_fee":"1","amount":100,"location":"{{read_data_finance_work.location}}","date_time_created":"{{read_data_billing.date_created}}","patient_info":"{{read_data_patient_info.id}}","address":"{{read_data_address.address}} {{read_data_address.sub_district}} {{read_data_address.district}} {{read_data_address.province}} {{read_data_address.zipcode}}"},"permissions":"$full"}	402b78e1-95cf-4a1f-95d9-e83366111013	\N	69f5e99d-d7b5-4afd-94ef-770ec1a60747	2025-04-22 05:58:23.164+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+4db81d6a-acf2-460f-9413-924314df740d	ยิง Webhook (Patch) ไปอัพเดทสถานะนัดหมายทั้งหมดให้เป็น ไม่มาตามนัด	request_l0r35	request	133	1	{"method":"PATCH","body":"{\\n    \\"keys\\": {{map_ids_appointment}},\\n    \\"data\\": {\\n        \\"appointment_status\\": \\"ไม่มาตามนัด\\"\\n    }\\n}","url":"{{read_environment.url}}/items/appointment","headers":[{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}]}	\N	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2024-10-03 04:19:51.824+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+8d0c6e3c-1208-4ec9-bf9c-2c8b05c9aa34	ยิง Webhook (Patch) ไปอัพเดทสถานะคิวทั้งหมดให้เป็น ยกเลิกคิว	request_l0r35_sipvh	request	118	1	{"method":"PATCH","body":"{\\n    \\"keys\\": {{map_ids_queue}},\\n    \\"data\\": {\\n        \\"status\\": \\"3\\"\\n    }\\n}","url":"{{read_environment.url}}/items/queue","headers":[{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}]}	\N	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2024-10-24 04:14:37.97+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8aa03e6c-8edf-4b51-a4d1-8ef096f30be8	เช็ค condition การลง PACs	get_pacs_condition	exec	19	17	{"code":"module.exports = async function(data) {\\n    const front_note_1 = {{read_appointment.front_note_1}} ?? [];\\n\\tconst CD_Pacs = front_note_1?.some(note => [\\"มี CD\\", \\"นำผลเก่ามา\\"].includes(note));\\n\\n\\tconst cd_provider_hospital = \\"{{read_appointment.cd_provider_hospital}}\\"\\n    const scan_Pacs = !!cd_provider_hospital;\\n    \\n    \\n\\treturn { CD_Pacs, scan_Pacs};\\n}"}	48eff0a9-e03f-41bb-80d7-f18e791d205f	\N	b518e2cd-e651-4758-b71e-cee45014725d	2025-12-12 03:13:59.24+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 47ded662-4d85-43f0-a253-f38ffb725239	อ่าน appointment	read_appointment	item-read	55	1	{"permissions":"$full","collection":"appointment","key":"{{$trigger.keys[0]}}"}	8aa03e6c-8edf-4b51-a4d1-8ef096f30be8	\N	b518e2cd-e651-4758-b71e-cee45014725d	2025-12-12 03:13:59.251+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+b22415f4-7c80-475d-856b-6bcf16596a25	ยิง Webhook (Delete) ไปเคลียร์ค่า Notification ทั้งหมด	request_l0r35_sipvh_usexz	request	124	17	{"method":"DELETE","body":"{\\n    \\"keys\\": {{map_ids_notification}}\\n}","url":"{{read_environment.url}}/items/notification","headers":[{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}]}	\N	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2025-07-01 11:21:43.781+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 74fc7f0b-6be9-4a05-8893-81955ec4b8c5	เพิ่ม exam_date ลงใน examination	update_exam_date	item-update	19	33	{"collection":"examination","permissions":"$full","emitEvents":true,"key":"{{read_examination[0].id}}","payload":{"exa_date":"{{$trigger.payload.appointment_datetime}}"}}	\N	\N	e2c372dc-14d8-4e55-806a-e906e5dd52b3	2026-02-27 10:44:41.398+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 36f830f9-24ef-4a19-ab51-9c810ee2a857	อ่าน examination	read_examination	item-read	55	17	{"permissions":"$full","collection":"examination","query":{"filter":{"nurse_work":{"_eq":"{{read_data_nurse_work[0].id}}"}},"fields":["id"]}}	74fc7f0b-6be9-4a05-8893-81955ec4b8c5	\N	e2c372dc-14d8-4e55-806a-e906e5dd52b3	2026-02-27 10:44:41.462+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+34e57379-2546-4c58-86c3-428aa31a7a2a	เช็คว่า front_note_1 มี รับผลตรวจวันนี้, รับผลเป็น CD หรือไม่	check_front_note_1	exec	39	17	{"code":"module.exports = async function(data) {\\n    let appointment = {{read_data_appointment}};\\n\\n    if (appointment.front_note_1.includes(\\"รับผลตรวจวันนี้\\") || appointment.front_note_1.includes(\\"รับผลเป็น CD\\")) {\\n        return true;\\n    }\\n\\n    throw new Error('ไม่รับผลตรวจวันนี้ หรือ CD');\\n    return false;\\n}"}	85bfe0d7-db3e-4bdc-932b-9d9fe4e1345a	\N	ce0d2f42-09c1-4e35-b370-f5db5c3abbbb	2026-07-03 04:25:25.551+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+ec87be42-d8c3-4a99-b7fb-e4925477ed98	อ่านข้อมูล queue	read_data_queue	item-read	21	17	{"permissions":"$full","collection":"queue","key":["{{read_data_appointment.queue[0]}}"]}	34e57379-2546-4c58-86c3-428aa31a7a2a	\N	ce0d2f42-09c1-4e35-b370-f5db5c3abbbb	2026-07-03 04:25:25.747+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 4ab4a5a7-73eb-4a6a-9c38-0bc1a52f8e1c	อ่านข้อมูล finance_work	read_data_finance_work	item-read	19	1	{"permissions":"$full","collection":"finance_work","key":["{{$trigger.keys[0]}}"]}	4ed71c21-4820-4e87-aa8e-20cac7b48480	\N	9eb9360a-fa14-4b41-87db-345589c2ceb8	2025-12-12 03:45:59.272+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 ded6172c-3ba9-48e5-ba07-d7ecd37889b7	อัพเดทจำนวนเงิน	item_update_fkv42	item-update	57	69	{"collection":"billing","payload":{"a":"{{calculate_price.a}}","a_price":"{{calculate_price.a_price}}","b":"{{calculate_price.b}}","b_price":"{{calculate_price.b_price}}","c":"{{calculate_price.c}}","c_price":"{{calculate_price.c_price}}","d":"{{calculate_price.d}}","d_price":"{{calculate_price.d_price}}","e":"{{calculate_price.e}}","e_price":"{{calculate_price.e_price}}","total":"{{calculate_price.total}}","is_out_patient":"{{calculate_price.is_out_patient}}","is_overtime":"{{calculate_price.is_overtime}}","is_foreigner":"{{calculate_price.is_foreigner}}","foreigner_fee":"{{calculate_price.foreigner_fee}}","care_type":"{{calculate_price.care_type}}","is_invoice_requested":"{{calculate_price.is_invoice_requested}}","can_claim_expense":"{{calculate_price.can_claim_expense}}","payment_type":"{{calculate_price.payment_type}}","payment_method":"{{calculate_price.payment_method}}"},"emitEvents":true,"key":["{{create_billing[0]}}"],"permissions":"$full"}	\N	\N	32de3302-0f95-4186-81e2-955100e34997	2025-02-19 08:36:14.523+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 3b882040-0243-4f38-be1b-9b77d460b03f	สร้างข้อมูล Finance Work	create_finance_work	item-create	3	19	{"collection":"finance_work","payload":{"reason":"{{$trigger.payload.reason || null}}","additional_information":"{{$trigger.payload.additional_information || null}}","exam":"{{read_data_coordinate.exam}}","appointment":"{{read_data_coordinate.appointment}}","status":"0","location":"{{read_data_coordinate.location}}"},"emitEvents":true,"permissions":"$full"}	6a14a28c-c401-4f9d-9260-0438a333070a	\N	32de3302-0f95-4186-81e2-955100e34997	2025-02-06 16:32:17.94+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 419b1bd0-140a-4e20-bac2-584b353ac34a	เช็คว่าสถานะ Coordinat ถูกอัพเดทเป็น เสร็จสิ้น ใช่หรือไม่	check_status_coordinate	exec	37	1	{"code":"module.exports = async function(data) {\\n    let payload = {{$trigger.payload}};\\n\\n\\t//4 = เสร็จสิ้น\\n    if (payload.status == \\"4\\" && payload.status) {\\n        return true;\\n    }\\n\\n    throw new Error('coordinate ไม่ใช่สถานะ เสร็จสิ้น');\\n    return false;\\n}"}	3b882040-0243-4f38-be1b-9b77d460b03f	\N	32de3302-0f95-4186-81e2-955100e34997	2025-02-06 16:33:48.755+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8a8da9e9-bbbe-4d4f-a398-b26582f6457d	เคลียร์ค่า Notification ทั้งหมด	item_delete_notification	item-delete	98	19	{"collection":"notification","key":[],"permissions":"$full","query":{"filter":{"id":{"_in":"{{map_ids_notification}}"}}}}	ad86bc96-ccfb-47c8-becb-c8a5f6d040e1	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2025-12-02 03:30:19.357+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e220f43c-4749-4771-8417-4d3af87b5bc6	อัพเดทสถานะคิวทั้งหมดให้เป็น ยกเลิกคิว	update_data_queue	item-update	44	19	{"collection":"queue","permissions":"$full","key":[],"payload":{"status":"3"},"query":{"filter":{"id":{"_in":"{{map_ids_queue}}"}}}}	95e5e2dc-2c96-492f-8e55-384bf54d8b50	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2025-12-02 03:30:20.072+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+85bfe0d7-db3e-4bdc-932b-9d9fe4e1345a	return body ของ data เพื่อนำไป create ต่อ	body_create_data	exec	3	35	{"code":"module.exports = async function(data) {\\nconst frontNote1 = {{read_data_appointment.front_note_1}};\\nlet resultType = [];\\n\\nif (frontNote1 && frontNote1.includes(\\"รับผลเป็น CD\\")) {\\n    resultType.push(\\"2\\");\\n} if (frontNote1 && frontNote1.includes(\\"รับผลตรวจวันนี้\\")) {\\n    resultType.push(\\"1\\");\\n}\\n\\nconst dataToCreate = {\\n    status: 0,\\n    appointments: [\\n        {\\n            appointment_id: \\"{{$trigger.payload.appointment.id}}\\"\\n        }\\n    ],\\n    queues: [\\n        \\"{{read_data_appointment.queue[0]}}\\"\\n    ],\\n    result_type: resultType\\n};\\n\\nreturn dataToCreate;\\n\\n}"}	1913fa4a-1d06-4f53-862c-a7356191662e	\N	ce0d2f42-09c1-4e35-b370-f5db5c3abbbb	2026-07-03 04:25:25.069+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+da7a847c-b169-4143-a802-c3254a89a848	อ่านข้อมูล appointment	read_data_appointment	item-read	3	17	{"permissions":"$full","collection":"appointment","key":["{{$trigger.payload.appointment.id}}"]}	ec87be42-d8c3-4a99-b7fb-e4925477ed98	\N	ce0d2f42-09c1-4e35-b370-f5db5c3abbbb	2026-07-03 04:23:17.574+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+1ee8d910-7718-414b-98cd-1f76e9fee1ac	อัพเดทสถานะนัดหมายทั้งหมดให้เป็น ไม่มาตามนัด	update_data_appointment_thwwz	item-update	42	35	{"collection":"appointment","permissions":"$full","key":[],"payload":{"appointment_status":"ไม่มาตามนัด"},"query":{"filter":{"id":{"_in":"{{map_ids_in_nurse_work.appointmentIds}}"}}}}	2f635067-7335-4aff-beaf-1129a764de71	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2025-12-02 03:34:59.792+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 4ed71c21-4820-4e87-aa8e-20cac7b48480	เช็คสถานะ finance_work	exec_vx5iq	exec	37	1	{"code":"module.exports = async function(data) {\\n    const finance_work_status = \\"{{read_data_finance_work.status}}\\";\\n\\n    if (finance_work_status == \\"3\\") {\\n        return true;\\n    }\\n\\n    throw new Error('ไม่ใช่สถานะ ชำระเงินแล้ว');\\n    return false;\\n}"}	a957c5f1-a6e8-4f68-add4-a4e33ae169db	\N	9eb9360a-fa14-4b41-87db-345589c2ceb8	2025-12-12 03:54:03.064+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+4a0e20d9-0f45-4377-8d71-352e93ab575c	เช็คสถานะ finance_work	check_status	exec	37	1	{"code":"module.exports = async function(data) {\\n    let finance_work = {{read_data_finance_work}};\\n\\n    if (finance_work.status == 1) {\\n        return true; \\n    } \\n    throw new Error('สถานะคิว ไม่ใช่ กำลังดำเนินการ'); \\n\\n};\\n"}	da7a847c-b169-4143-a802-c3254a89a848	\N	ce0d2f42-09c1-4e35-b370-f5db5c3abbbb	2026-07-03 04:37:18.841+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+e8368cc8-f59b-49e2-bbae-a916353cd652	อ่านข้อมูล finance_work	read_data_finance_work	item-read	19	1	{"permissions":"$full","collection":"finance_work","key":["{{$trigger.keys[0]}}"]}	4a0e20d9-0f45-4377-8d71-352e93ab575c	\N	ce0d2f42-09c1-4e35-b370-f5db5c3abbbb	2026-07-03 04:37:19.013+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 95345a4c-8278-4ffa-9954-df1f9d16a44b	ปั้นข้อมูล recommended_procedures	create_recommended_procedures	exec	3	134	{"code":"module.exports = async function(data) {\\n    const examinationGeneral = {{read_data_exam_new.examination_general[0]}}\\n    const recommendationDes = examinationGeneral?.recommendation_des ?? []\\n    const procedures = recommendationDes.map(({ technique, procedure, side, location_des }) => ({\\n  \\t\\ttechnique,\\n  \\t\\tprocedure,\\n  \\t\\tside,\\n  \\t\\tlocation: location_des,\\n\\t}));\\n    \\n    return procedures;\\n}"}	cdd197c9-e335-40c4-bd1d-ca94356f34a4	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2026-03-24 09:29:05.397+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 722166d7-c75a-48a3-8466-278db03c6376	เช็คว่าเป็น nurse_work ที่ถูกสร้างจาก [id-5] ไหม	check_confirm_bx	exec	19	1	{"code":"module.exports = async function(data) {\\n\\tconst stopFlow = {{$trigger.payload.stop_flow_id87}}\\n\\t\\n\\tif(stopFlow) {\\n    \\tthrow new Error(\\"เคส confirm_bx: หยุดการทำงาน [id-87]\\")\\n    }\\n}"}	f31e0e98-ee3b-4afa-8323-2fa3bc4dcb29	\N	4e6e586f-780c-4bbc-9372-9b43d1994495	2026-03-25 05:18:21.763+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-1ee8d910-7718-414b-98cd-1f76e9fee1ac	อัพเดทสถานะนัดหมายทั้งหมดให้เป็น ไม่มาตามนัด	update_data_appointment_thwwz	item-update	42	35	{"collection":"appointment","permissions":"$full","key":[],"payload":{"appointment_status":"ไม่มาตามนัด"},"query":{"filter":{"id":{"_in":"{{map_ids_in_nurse_work.appointmentIds}}"}}}}	2f635067-7335-4aff-beaf-1129a764de71	\N	e34ea695-536b-4eb7-8fd0-b26bcbdf030f	2025-12-02 03:34:59.792+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e8eb4f11-3d95-4862-bf98-ce0f0aa87bfd	หา nurse_work ที่ผูกกับ appointment	get_related_nurse_work	item-read	19	1	{"permissions":"$full","collection":"nurse_work","query":{"filter":{"appointment":{"_eq":"{{$trigger.keys[0]}}"}},"sort":"date_created","limit":1}}	96e5ae9e-f933-4050-a162-dada34a28c2c	\N	c886e7be-6abc-4501-b5a1-9792bc5e0399	2026-03-03 09:29:07.316+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+ce671c3a-a057-4f0a-87d1-857b2c40da9c	read_last_examination	read_last_examination	item-read	21	52	{"collection":"examination","query":{"filter":{"patient":{"_eq":"{{read_appointment[0].patient_info}}"}},"sort":["-created_date"],"offset":1,"limit":1}}	e23c300e-c0ee-4a50-aaed-441c7026ab32	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2024-12-18 02:17:49.015+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 35806b94-002a-4efa-b928-2586fa724cb7	สร้างข้อมูล exam	creat_exam_data	item-create	37	40	{"collection":"examination","emitEvents":true,"permissions":"$full","payload":{"appointment":"{{read_appointment_data.id}}","status":"0"}}	8058cade-55e9-4cb3-a17e-6bda6e0897a2	\N	a4478d87-09b2-4841-9b79-c6378eaae11d	2025-12-02 15:43:48.712+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 9e7dc062-9503-4bef-a177-17058c1ede7e	เช็คเงื่อนไขสร้าง nurse_work (tech)	exec_oecsf_qquub	exec	19	40	{"code":"module.exports = async function(data) {\\n    if (\\"{{read_appointment_data.request}}\\" === \\"bx\\" && (\\"{{read_appointment_data.department_bx}}\\" === \\"tech\\" \\n        || \\"{{read_appointment_data.department_bx}}\\" === \\"tech-cd\\")) {\\n        return true; \\n    } \\n    throw new Error('นัดหมายนี้ไม่เข้าเงื่อนไข'); \\n\\n};\\n"}	35806b94-002a-4efa-b928-2586fa724cb7	\N	a4478d87-09b2-4841-9b79-c6378eaae11d	2025-12-02 15:43:48.722+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 6039e4b2-049f-4853-9e5c-210711c1502f	ถ้า request เป็น bx จะไม่ไปต่อ	check_request_bx	exec	55	1	{"code":"module.exports = async function(data) {\\n    const request = \\"{{$trigger.payload.request}}\\";\\n\\n    if (request != \\"bx\\" ){\\n        return true;\\n    }\\n\\n    throw new Error('request เป็น bx');\\n    return false;\\n}"}	6f4ab2f4-6af1-49be-9a14-7ed34a754e7b	\N	c886e7be-6abc-4501-b5a1-9792bc5e0399	2026-03-17 02:31:52.449+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 96e5ae9e-f933-4050-a162-dada34a28c2c	เช็คเงื่อนไข status เป็นส่งตรวจ + เจอ nurse_work	check_bx_conditions	exec	37	1	{"code":"module.exports = async function(data) {\\n\\tconst appointment_status = \\"{{$trigger.payload.appointment_status}}\\";\\n    const nurse_work = {{get_related_nurse_work[0]}};\\n\\n\\tif(appointment_status !== \\"ส่งตรวจ\\" || !nurse_work) {\\n\\t\\tthrow new Error(\\"ไม่เข้าเงื่อนไขการส่งตรวจ เคส BX\\")\\n    }\\n}"}	6039e4b2-049f-4853-9e5c-210711c1502f	\N	c886e7be-6abc-4501-b5a1-9792bc5e0399	2026-03-03 09:43:07.315+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 f100f991-e1e1-4da3-a149-ee5902d40e54	ถ้า request ไม่ใช่ bx ให้สร้าง exam	check_request_bx_exam	exec	55	1	{"code":"module.exports = async function(data) {\\n    const request = \\"{{read_appointment[0].request}}\\";\\n\\n    if (request != \\"bx\\" ){\\n       throw new Error('request ไม่ใช่ bx');\\n    }\\n}"}	0880e993-49b2-4a0e-8835-09237de17696	ded0aef6-a9fd-45cd-8a54-df900c90bf81	d555b629-b0a2-4177-a879-10f65d083aaa	2026-02-02 02:53:30.906+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-ce671c3a-a057-4f0a-87d1-857b2c40da9c	read_last_examination	read_last_examination	item-read	21	52	{"collection":"examination","query":{"filter":{"patient":{"_eq":"{{read_appointment[0].patient_info}}"}},"sort":["-created_date"],"offset":1,"limit":1}}	e23c300e-c0ee-4a50-aaed-441c7026ab32	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2024-12-18 02:17:49.015+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-f667429d-0afc-4e01-83ea-779867f373c1	เช็คสถานะ nurse_work, action (ถ้ามี action จะไม่เข้าเงื่อนไขนื่องจาก ถ้าเปลี่ยนสถานะ appointment จากฝั่งพยาบาลจะมา reset สถานะตรงนี้เลยต้องเช็ค action ถ้าเช็ค code search คำว่า "action to flows id:82")	exec_epqst	exec	37	1	{"code":"module.exports = async function(data) {\\n    const nurse_work_status = \\"{{read_data_nurse_work[0].status}}\\";\\n    const action = \\"{{$trigger.payload.action}}\\"\\n    const appointment_status = \\"{{$trigger.payload.appointment_status}}\\"\\n\\n    //\\"6\\": \\"ส่งปรึกษาแพทย์\\"\\n\\t//\\"8\\": \\"แพทย์ตอบกลับ\\"\\n\\t//\\"9\\": \\"แพทย์ตอบกลับ/ยกเลิกทำนัด BX\\"\\n\\tif (\\n  \\t\\t[\\"6\\", \\"8\\",\\"9\\"].includes(nurse_work_status) ||\\n  \\t\\taction === \\"action to flows id:82\\" ||\\n  \\t\\tappointment_status === \\"ส่งตรวจ\\" ||\\n        \\"{{$trigger.payload.appointment_datetime}}\\" === \\"undefined\\"\\n\\t) {\\n  \\t\\tthrow new Error(\\"status ไม่เข้าเงื่อนไข\\");\\n\\t}\\n}"}	aeb3404a-23bf-4c86-b900-1d69240b6808	\N	e2c372dc-14d8-4e55-806a-e906e5dd52b3	2026-01-08 11:00:12.023+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c237e2b8-08d0-4232-8844-692f55dfa02b	update_current_examination_history	update_current_examination_history	item-update	57	52	{"collection":"examination","payload":{"menstruation_age":"{{read_last_examination.menstruation_age}}","menopause_age":"{{read_last_examination.menopause_age}}","first_pregnancy_age":"{{read_last_examination.first_pregnancy_age}}","num_pregnancy":"{{read_last_examination.num_pregnancy}}","cont_use":"{{read_last_examination.cont_use}}","cont_yrs":"{{read_last_examination.cont_yrs}}","hormone_use":"{{read_last_examination.hormone_use}}","hormone_yrs":"{{read_last_examination.hormone_yrs}}","hysterectomy":"{{read_last_examination.hysterectomy}}","ovaries_removed":"{{read_last_examination.ovaries_removed}}","prev_mammo_date":null,"prev_mammo_loc":null,"sister_cancer_age":"{{read_last_examination.sister_cancer_age}}","mother_cancer_age":"{{read_last_examination.mother_cancer_age}}","grandmother_cancer_age":"{{read_last_examination.grandmother_cancer_age}}","other_cancer_age":"{{read_last_examination.other_cancer_age}}","patient_cancer_age":null,"daughter_cancer_age":"{{read_last_examination.daughter_cancer_age}}","daughter_cancer_age_more":"{{read_last_examination.daughter_cancer_age_more}}","sister_cancer_age_more":"{{read_last_examination.sister_cancer_age_more}}","other_cancer_age_more":"{{read_last_examination.other_cancer_age_more}}","stophormone_yrs":"{{read_last_examination.stophormone_yrs}}","ca_hormone_use":"{{read_last_examination.ca_hormone_use}}","ca_hormone_yrs":"{{read_last_examination.ca_hormone_yrs}}","stop_ca_hormone_yrs":"{{read_last_examination.stop_ca_hormone_yrs}}","stop_contr_yrs":"{{read_last_examination.stop_contr_yrs}}","mother_cancer":"{{read_last_examination.mother_cancer}}","daughter_cancer":"{{read_last_examination.daughter_cancer}}","sister_cancer":"{{read_last_examination.sister_cancer}}","grandmother_cancer":"{{read_last_examination.grandmother_cancer}}","other_cancer":"{{read_last_examination.other_cancer}}"},"query":{"filter":{"id":{"_eq":"{{create_examination.id}}"}}}}	\N	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2024-12-18 02:17:48.951+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+f667429d-0afc-4e01-83ea-779867f373c1	เช็คสถานะ nurse_work, action (ถ้ามี action จะไม่เข้าเงื่อนไขนื่องจาก ถ้าเปลี่ยนสถานะ appointment จากฝั่งพยาบาลจะมา reset สถานะตรงนี้เลยต้องเช็ค action ถ้าเช็ค code search คำว่า "action to flows id:82")	exec_epqst	exec	37	1	{"code":"module.exports = async function(data) {\\n    const nurse_work_status = \\"{{read_data_nurse_work[0].status}}\\";\\n    const action = \\"{{$trigger.payload.action}}\\"\\n    const appointment_status = \\"{{$trigger.payload.appointment_status}}\\"\\n\\n    //\\"6\\": \\"ส่งปรึกษาแพทย์\\"\\n\\t//\\"8\\": \\"แพทย์ตอบกลับ\\"\\n\\t//\\"9\\": \\"แพทย์ตอบกลับ/ยกเลิกทำนัด BX\\"\\n\\tif (\\n  \\t\\t[\\"6\\", \\"8\\",\\"9\\"].includes(nurse_work_status) ||\\n  \\t\\taction === \\"action to flows id:82\\" ||\\n  \\t\\tappointment_status === \\"ส่งตรวจ\\" ||\\n        \\"{{$trigger.payload.appointment_datetime}}\\" === \\"undefined\\"\\n\\t) {\\n  \\t\\tthrow new Error(\\"status ไม่เข้าเงื่อนไข\\");\\n\\t}\\n}"}	aeb3404a-23bf-4c86-b900-1d69240b6808	\N	e2c372dc-14d8-4e55-806a-e906e5dd52b3	2026-01-08 11:00:12.023+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 7c48ef4a-8562-4b41-88d7-0b1a31715064	อัพเดทฟิลด์ appointment_status ของ appointment ที่ผูกอยู่กับ queue	item_update_a3q4b	item-update	19	17	{"collection":"appointment","key":["{{read_data_queue.appointment}}"],"payload":{"appointment_status":"รอเรียกคิว"},"permissions":"$full"}	\N	\N	4e842895-1751-490e-b100-8426a00cde26	2024-10-25 11:54:49.554+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 96f6e62a-deaa-45f1-afe2-b01688d546c4	เช็คว่าสถานะของคิวเป็น รอเรียกคิว หรือไม่	check_queue_status	exec	55	1	{"code":"module.exports = async function(data) {\\n    const queue = {{read_data_queue}};\\n\\n    if (queue.status == \\"0\\") {\\n        return true;\\n    }\\n\\n    throw new Error(\\"สถานะคิวไม่ใช่รอเรียกคิว\\");\\n    return false;\\n}"}	7c48ef4a-8562-4b41-88d7-0b1a31715064	\N	4e842895-1751-490e-b100-8426a00cde26	2024-10-25 11:54:49.565+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-0025b1c9-f263-4e36-8320-dabab1825af4	อัพเดท status exam เป็น รอเรียกคิว	update_exam_status	item-update	109	1	{"permissions":"$full","collection":"examination","emitEvents":true,"key":["{{read_exam_data[0].id}}"],"payload":{"status":"0","exam_date":"{{get_current_time}}"}}	\N	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2026-03-17 03:22:55.406+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+0880e993-49b2-4a0e-8835-09237de17696	อ่านข้อมูล exam	read_exam_data	item-read	73	1	{"permissions":"$full","collection":"examination","query":{"filter":{"appointment":{"_eq":"{{read_appointment[0].id}}"}}}}	37e1c395-57cf-45b6-b7dd-8a87a9282f2c	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2026-03-17 03:22:55.428+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+04355e76-f0c8-4fba-a35a-62d061852017	อ่านข้อมูล Nurse work	read_nurse_work	item-read	90	33	{"permissions":"$full","collection":"nurse_work","query":{"filter":{"appointment":{"_eq":"{{read_appointment[0].id}}"}}}}	37059709-8059-49ca-b715-95cb1be63225	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2026-02-02 05:11:24.681+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 6f4ab2f4-6af1-49be-9a14-7ed34a754e7b	อัพเดตข้อมูลใน nurse_work	update_nurse_work	item-update	73	1	{"collection":"nurse_work","permissions":"$full","emitEvents":true,"key":"{{get_related_nurse_work[0].id}}","payload":{"bx_status":"0","is_visit":true}}	\N	\N	c886e7be-6abc-4501-b5a1-9792bc5e0399	2026-03-03 09:54:02.447+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 d755017a-31ad-4029-86ac-7adb4fa0ee0a	ปั้น body เพื่อไปสร้าง exam	body_create_exam	exec	39	102	{"code":"module.exports = function(data) {\\n    // 1. ฟังก์ชันล้างข้อมูล System Fields\\n    const cleanData = (sourceData, removeFields = []) => {\\n        if (!sourceData) return null;\\n        \\n        const newData = { ...sourceData };\\n        const systemFields = [\\n            'id', \\n            'user_created', 'date_created', \\n            'user_updated', 'date_updated',\\n            'last_saved_at'\\n        ];\\n\\n        [...systemFields, ...removeFields].forEach(field => {\\n            delete newData[field];\\n        });\\n\\n        return newData;\\n    };\\n\\n    // 2. เตรียมข้อมูล Appointment\\n    const appointmentPayload = cleanData({{read_data_appointment}});\\n    if (appointmentPayload) {\\n        // [UPDATE] เคลียร์ข้อมูล queue ให้เป็น array ว่าง\\n        appointmentPayload.queue = []; \\n        appointmentPayload.appointment_datetime = null;\\n        appointmentPayload.appointment_status = \\"ยังไม่ถึงเวลานัด/ยังไม่มา\\";\\n        appointmentPayload.request = \\"bx\\"\\n    }\\n    \\n    // 3. เตรียมข้อมูล Examination General\\n    const examGeneralPayload = cleanData({{read_data_examination_general}}, ['exam']);\\n\\n    // 4. เตรียมข้อมูล Exam (Parent)\\n    const mainExamPayload = cleanData({{read_data_exam}}, ['appointment', 'examination_general']);\\n    \\n    if (mainExamPayload) {\\n        // [UPDATE] เคลียร์ข้อมูล pacs_sync_infos และ exam_reason_multi ให้เป็น array ว่าง\\n        mainExamPayload.pacs_sync_infos = [];\\n        mainExamPayload.exam_reason_multi = [];\\n        mainExamPayload.exam_date = null;\\n    }\\n\\n    // 5. การประกอบร่าง (Nesting)\\n    if (appointmentPayload) {\\n        mainExamPayload.appointment = appointmentPayload;\\n    }\\n\\n    if (examGeneralPayload) {\\n        mainExamPayload.examination_general = [examGeneralPayload]; \\n    }\\n\\n    return mainExamPayload;\\n}"}	eda07fc0-4e79-435c-a5f2-56cce03a9d6d	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-12-12 16:03:49.96+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 e59c83bc-589d-41e3-bae4-31fb5f453d3f	อ่านข้อมูล financa_work	read_data_finance_work	item-read	3	85	{"permissions":"$full","collection":"finance_work","query":null,"key":["{{create_finance_work[0]}}"]}	437e4482-53fd-49b7-b2fd-16977e148cec	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-07-06 04:21:37.815+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 6397645a-8a44-48b4-b373-fd5d7d0f2dda	ปั้น payload สำหรับสร้าง exam	create_exam_payload	exec	19	17	{"code":"module.exports = async function(data) {\\n    const last_examination = {{read_previous_examination[0]}};\\n    const nurse_work = {{$trigger.key}};\\n\\tconst appointment = \\"{{$trigger.payload.appointment}}\\"\\n    // ผูกกับ nurse_work, appointment ปัจจุบันไว้ก่อน\\n    const payload = { \\n        nurse_work, \\n        appointment,\\n        patient: {{read_appointment.patient_info}}\\n    } \\n    \\n    // ถ้าไม่มี exam ครั้งที่แล้ว (มาตรวจครั้งแรก) => ไม่ต้องปั้นอะไรเพิ่ม \\n    if(!last_examination) {\\n    \\treturn payload \\n    }\\n\\n\\t// ต้องปั้น exam_reason_multi ตามที่พยาบาลเลือก procedures มา\\n\\tconst exam_reason_multi = last_examination.exam_reason_multi?.map(reason => reason.exam_reason_id) ?? [];\\n    payload.exam_reason_multi = []; // ติดไว้ก่อน => ต้องไปอ่าน recommeded_procedures ว่ามีอะไรบ้าง\\n\\tpayload.exam_reason_type = \\"Special Procedure\\";\\n\\n\\tconst targetFields = [\\n        \\"menstruation_age\\",\\"menopause_age\\",\\"first_pregnancy_age\\",\\"num_pregnancy\\",\\n\\n  \\t\\t\\"hormone_use\\",\\"hormone_yrs\\",\\n        \\"cont_use\\",\\"cont_yrs\\",\\n        \\"ca_hormone_use\\",\\"ca_hormone_yrs\\",\\n\\n      \\t\\"hysterectomy\\",\\"ovaries_removed\\",\\n\\n  \\t\\t\\"mother_cancer\\",\\"mother_cancer_age\\",\\n        \\"daughter_cancer\\",\\"daughter_cancer_age_more\\",\\"daughter_cancer_age\\",\\n  \\t\\t\\"sister_cancer\\",\\"sister_cancer_age_more\\",\\"sister_cancer_age\\",\\n  \\t\\t\\"grandmother_cancer\\",\\"grandmother_cancer_age\\",\\n  \\t\\t\\"other_cancer\\",\\"other_cancer_age_more\\",\\"other_cancer_age\\",\\n\\n  \\t\\t\\"exam_reason_memotext\\",\\"limitation\\",\\n        \\"l_side_mass\\",\\"num_left_mass\\",\\n  \\t\\t\\"r_side_mass\\",\\"num_right_mass\\",\\n\\n  \\t\\t\\"ln\\",\\"lnwn\\",\\"lnen\\",\\"lnww\\",\\"lnee\\",\\"lw\\",\\"lm\\",\\"le\\",\\"lsww\\",\\"lsee\\",\\"lsws\\",\\"lses\\",\\"ls\\",\\"l_axillar\\",\\"lother\\",\\n\\n        \\"rn\\",\\"rnwn\\",\\"rnen\\",\\"rnww\\",\\"rnee\\",\\"rw\\",\\"rm\\",\\"re\\",\\"rsww\\",\\"rsee\\",\\"rsws\\",\\"rses\\",\\"rs\\",\\"r_axillar\\",\\"rother\\",\\n\\t]\\n    \\n    for (const key of targetFields) {\\n        if (key in last_examination) {\\n        \\tpayload[key] = last_examination[key]\\n        }\\n    }\\n\\n\\treturn payload\\n}"}	b4b4ffb9-600c-4d9f-8b08-3949c0bc4c81	\N	4e6e586f-780c-4bbc-9372-9b43d1994495	2026-02-23 08:45:28.879+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-0880e993-49b2-4a0e-8835-09237de17696	อ่านข้อมูล exam	read_exam_data	item-read	73	1	{"permissions":"$full","collection":"examination","query":{"filter":{"appointment":{"_eq":"{{read_appointment[0].id}}"}}}}	37e1c395-57cf-45b6-b7dd-8a87a9282f2c	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2026-03-17 03:22:55.428+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-04355e76-f0c8-4fba-a35a-62d061852017	อ่านข้อมูล Nurse work	read_nurse_work	item-read	90	33	{"permissions":"$full","collection":"nurse_work","query":{"filter":{"appointment":{"_eq":"{{read_appointment[0].id}}"}}}}	37059709-8059-49ca-b715-95cb1be63225	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2026-02-02 05:11:24.681+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+87bee657-35e9-43fa-83c8-bb4e2a09eb31	Check PATCH	check_patch	exec	3	65	{"code":"module.exports = async function(data) {\\n    const copyCdChange = \\"{{$trigger.payload.copy_cd}}\\";\\n    \\n    if (copyCdChange === \\"PATCH\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่ใช่ PATCH'); \\n\\n};\\n"}	a5087141-4e7b-4d8e-9a8d-8e70fa7b40df	f8acc5fa-4af4-4279-affa-14b23c36dbf2	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:36:12.208+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+0025b1c9-f263-4e36-8320-dabab1825af4	อัพเดท status exam เป็น รอเรียกคิว	update_exam_status	item-update	109	1	{"permissions":"$full","collection":"examination","emitEvents":true,"key":["{{read_exam_data[0].id}}"],"payload":{"status":"0","exam_date":"{{get_current_time}}"}}	\N	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2026-03-17 03:22:55.406+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+a5087141-4e7b-4d8e-9a8d-8e70fa7b40df	แก้ไข Center Income	patch_center_income	item-update	21	65	{"collection":"center_income","key":["{{read_data_billing.center_income}}"],"payload":{"amount":"{{$trigger.payload.e_price}}"},"permissions":"$full"}	\N	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:36:12.146+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 d2b985a6-6d92-4fc7-ba94-893b8a8a7d6e	อัพเดทฟิลด์ appointment_status ของ appointment ที่ผูกกับ queue ให้เป็น รอเรียกคิว	item_update_y9izm	item-update	37	1	{"collection":"appointment","payload":{"appointment_status":"รอเรียกคิว"},"key":["{{$trigger.payload.appointment}}"],"permissions":"$full"}	\N	\N	6174f165-0635-4ca6-9981-7d0453c17458	2024-10-03 02:57:58.965+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 3aae050b-0661-41c4-a52d-7b2af26f0ce4	เช็คว่าเป็นคิว M หรือ BX หรือไม่	exec_fpgy3	exec	19	1	{"code":"module.exports = async function(data) {\\n\\tlet queue = {{$trigger.payload}}\\n\\n    if (queue.queue_type == \\"M\\" ||  queue.queue_type == \\"BX\\") {\\n        return true;\\n    }\\n\\n    throw new Error('Queue_type not type M || BX');\\n    return false;\\n}"}	d2b985a6-6d92-4fc7-ba94-893b8a8a7d6e	\N	6174f165-0635-4ca6-9981-7d0453c17458	2024-10-03 02:57:58.982+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-ded0aef6-a9fd-45cd-8a54-df900c90bf81	สร้าง Examination	create_examination	item-create	19	18	{"collection":"examination","payload":{"patient":"{{read_appointment[0].patient_info}}","appointment":"{{read_appointment[0].id}}","location":"{{read_appointment[0].location}}","backup":{"tech_login_name":null,"mobile":null,"mobile_update":null,"menstruation_age":null,"menopause_age":null,"first_pregnancy_age":null,"num_pregnancy":null,"cont_use":false,"cont_yrs":null,"hormone_use":false,"hormone_yrs":null,"hysterectomy":false,"ovaries_removed":false,"pregnant":false,"referring_md":null,"referring_hospital":null,"prev_mammo_date":null,"prev_mammo_loc":null,"sister_cancer_age":null,"mother_cancer_age":null,"grandmother_cancer_age":null,"other_cancer_age":null,"irr_l_date":null,"irr_r_date":null,"rm_l_date":null,"rm_r_date":null,"ri_l_date":null,"ri_r_date":null,"fna_l_date":null,"fna_r_date":null,"fnx_l_date":null,"fnx_r_date":null,"biopsy_l_date":null,"biopsy_r_date":null,"lump_l_date":null,"lump_r_date":null,"cyst_l_date":null,"cyst_r_date":null,"mast_l_date":null,"mast_r_date":null,"id_l_date":null,"id_r_date":null,"bct_l_date":null,"bct_r_date":null,"chemo_l_date":null,"chemo_r_date":null,"rad_l_date":null,"rad_r_date":null,"l_side_mass":false,"r_side_mass":false,"num_left_mass":null,"num_right_mass":null,"lnwn":false,"lnww":false,"ln":false,"lnen":false,"lnee":false,"le":false,"lm":false,"lw":false,"lsws":false,"lsww":false,"ls":false,"lses":false,"lsee":false,"rnwn":false,"rnww":false,"rn":false,"rnen":false,"rnee":false,"re":false,"rm":false,"rw":false,"rsws":false,"rsww":false,"rs":false,"rses":false,"rsee":false,"lother":false,"rother":false,"l_axillar":false,"r_axillar":false,"exam_reason":null,"exam_reason_text":null,"exam_reason_memotext":null,"mobile_updated":null,"mobile_loc":null,"patient_cancer_age":null,"daughter_cancer_age":null,"daughter_cancer_age_more":false,"sister_cancer_age_more":false,"other_cancer_age_more":false,"stophormone_yrs":null,"ca_hormone_use":false,"ca_hormone_yrs":null,"stop_ca_hormone_yrs":null,"stop_contr_yrs":null,"send_exam_login_name":null,"old_exam_id":null,"old_pid":null,"mother_cancer":false,"daughter_cancer":false,"sister_cancer":false,"grandmother_cancer":false,"other_cancer":false,"status":null}},"permissions":"$full"}	c24d515b-ac1c-4334-94f2-99399e1044ee	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2024-12-18 01:57:01.936+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-37059709-8059-49ca-b715-95cb1be63225	อัพเดท Bx_status	bx_status	item-update	108	33	{"permissions":"$full","collection":"nurse_work","emitEvents":true,"key":["{{read_nurse_work[0].id}}"],"payload":{"bx_status":"0"}}	\N	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2026-02-02 05:15:58+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+4ce4a61e-af81-449a-ba5c-cd43f43d0ffc	อ่าน pacs_sync_infos ว่ามีการถ่าย us ไปแล้วหรือยัง	read_us_pacs_sync_infos	item-read	75	36	{"permissions":"$full","collection":"pacs_sync_info","query":{"filter":{"_and":[{"end_time":{"_neq":null}},{"is_mark_del":{"_eq":false}},{"modality":{"_eq":"US"}},{"exam":{"_eq":"{{read_data_examination.id}}"}}]}}}	b6e11f73-e864-42e5-9904-37e6ce51aa7b	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-09-29 02:41:23.367+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+97f4f4bd-6669-4d16-a833-5e9df49f4b8f	อัพเดทสถานะ doctor_work ของหมอคนนั้นเป็น "รออ่านผลเพิ่มหลัง US"	update_doctor_work_sent_us_zsuei	item-update	111	53	{"collection":"doctor_work","payload":{"status":"13"},"key":["{{read_doctor_work_lofpz[0].id}}"],"permissions":"$full"}	\N	\N	e472714e-dd02-4bfc-8038-133053a0a457	2026-06-26 11:53:32.349+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+4c97f054-082f-4dc9-83a9-108b15a12788	อ่านข้อมูล doctor_work ที่ผูกกับ exam นี้	read_doctor_work_lofpz	item-read	93	53	{"collection":"doctor_work","key":[],"permissions":"$full","query":{"filter":{"exam":{"_eq":"{{read_data_examination.id}}"}}}}	97f4f4bd-6669-4d16-a833-5e9df49f4b8f	\N	e472714e-dd02-4bfc-8038-133053a0a457	2026-06-26 11:53:32.478+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+b0b16a52-a467-41ce-bcc8-b2c11f1a2228	สร้างข้อมูล patient_result ที่ฟิลด์ queues คือ id ของ queue ที่ถูก trigger	create_patient_result	item-create	37	1	{"payload":{"status":"8","queues":["{{$trigger.key}}"]},"collection":"patient_result","permissions":"$full"}	\N	\N	39fa8fb9-ea1b-4962-aeb5-1c92a10e8dde	2024-10-03 02:42:08.974+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+b54c528e-42c7-4f7f-a3aa-f8d8f6b335f0	เช็คว่าเคสนี้เคยสร้าง Coordinate ใช่หรือไม่	exec_87597_jfegj_fykuh	exec	57	18	{"code":"module.exports = async function (data) {\\n  const coordinateList = {{read_data_coordinate}};\\n\\n  if (coordinateList.length > 0) {\\n    return true;\\n  }\\n\\n  throw new Error(\\"เคสนี้ไม่เคยสร้าง Coordinate\\");\\n};\\n"}	4c97f054-082f-4dc9-83a9-108b15a12788	bfc3dd87-a97d-41b4-a2b1-0fce6637f8b0	e472714e-dd02-4bfc-8038-133053a0a457	2025-09-10 03:42:33.149+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+e10e40a3-d832-4875-bbdc-0b88ade461b3	เช็คว่าเป็นคิว R หรือไม่	check_queue_r	exec	19	1	{"code":"module.exports = async function(data) {\\n\\tlet queue = {{$trigger.payload}}\\n\\n    if (queue.queue_type == \\"R\\" ) {\\n        return true;\\n    }\\n\\n    throw new Error('Queue_type not type R');\\n    return false;\\n}"}	b0b16a52-a467-41ce-bcc8-b2c11f1a2228	\N	39fa8fb9-ea1b-4962-aeb5-1c92a10e8dde	2024-10-03 02:42:08.986+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+a726a6d2-5fc9-4e27-b5bf-315170076e05	อ่านข้อมูล doctor_work ที่ผูกกับ exam นี้	read_doctor_work_cancel	item-read	111	36	{"collection":"doctor_work","key":[],"permissions":"$full","query":{"filter":{"exam":{"_eq":"{{read_data_examination.id}}"}}}}	d507371d-5f0d-4825-9dbd-5c1e171e7b95	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-09-29 02:41:23.245+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+b6e11f73-e864-42e5-9904-37e6ce51aa7b	เช็คว่า data ที่มาจาก read_us_pacs_sync_infos มี length > 0 ไหม	check_us_pacs_sync_infos_length	exec	93	36	{"code":"module.exports = async function(data) {\\n\\tconst usPacs = {{read_us_pacs_sync_infos}}\\n\\n\\tif(Array.isArray(usPacs) && usPacs.length === 0) {\\n    \\tthrow new Error('ไม่พบการทำ ultrasound ของเคสนี้')\\n    }\\n}"}	a726a6d2-5fc9-4e27-b5bf-315170076e05	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-09-29 02:41:23.329+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+e92e6855-1a2a-4fec-a587-f95abd2f7c11	เช็คว่าเคสนี้ยังไม่เคยสร้าง Coordinate ใช่หรือไม่	exec_87597_jfegj	exec	93	18	{"code":"module.exports = async function (data) {\\n  const coordinateList = {{read_data_coordinate}};\\n\\n  if (coordinateList.length === 0) {\\n    return true;\\n  }\\n\\n  throw new Error(\\"เคสนี้ เคยสร้าง Coordinate ไปแล้ว\\");\\n};\\n"}	b8e3a46f-b8bc-4b63-866b-aaaf0e5b218d	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-09-10 03:40:12.923+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+6f0c124f-40f2-4f4d-adb1-531485414b89	อัพเดทสถานะ doctor_work ของหมอคนนั้นเป็น "ส่ง us แล้ว"	update_doctor_work_sent_us	item-update	111	1	{"collection":"doctor_work","payload":{"status":"8"},"key":["{{read_doctor_work[0].id}}"],"permissions":"$full"}	e8935944-6534-41f1-a15c-15a42517f7ed	\N	e472714e-dd02-4bfc-8038-133053a0a457	2025-08-26 11:19:13.691+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+c80ec306-91ce-4c7d-a50a-d739013ac9a9	เช็คว่าเคสนี้มีหมอรับเคสไปแล้วหรือยัง	exec_87597	exec	75	1	{"code":"module.exports = async function(data) {\\n    const exam = {{read_data_examination}};\\n\\n    if (exam.case_owner_doctor) {\\n        return true;\\n    }\\n\\n    throw new Error('exam นี้ยังไม่มีหมอ');\\n    return false;\\n}"}	37c847ac-8392-440e-911f-92a69edd3949	e92e6855-1a2a-4fec-a587-f95abd2f7c11	e472714e-dd02-4bfc-8038-133053a0a457	2025-03-24 10:12:58.106+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 73f79828-06fe-4d19-9df5-38d73eefe429	อ่านข้อมูล examination_general	read_data_examination_general	item-read	21	102	{"permissions":"$full","collection":"examination_general","key":["{{read_data_exam.examination_general[0].id}}"]}	d755017a-31ad-4029-86ac-7adb4fa0ee0a	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-12-12 16:08:56.895+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+cc9f080a-8264-4672-8d43-d5949d3cbf13	เช็คว่า exam เป็นสถานะ ส่งต่อแพทย์ หรือไม่	exec_hb7dh	exec	38	1	{"code":"module.exports = async function(data) {\\n    const examStatus = \\"{{$trigger.payload.status}}\\";\\n\\n    if (examStatus === \\"ส่งต่อแพทย์\\") {\\n        return true;\\n    }\\n\\n    throw new Error('ไม่ใช่สถานะ ส่งต่อแพทย์');\\n    return false;\\n}"}	3755a54d-74a8-45db-8c11-364bb0948e3c	f5a42e53-4f80-48c8-8ff5-8e084ff671df	e472714e-dd02-4bfc-8038-133053a0a457	2025-01-23 02:23:25.798+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+d8088e40-c8e3-40f0-812c-7fa92846329e	อ่านข้อมูล Appointment	read_data_appointment	item-read	21	17	{"collection":"appointment","key":["{{read_data_finance_work.appointment}}"],"permissions":"$full"}	541d3ee3-55dd-468c-9303-16a815b012e2	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:43:38.63+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+6da9584b-85d8-4130-9756-0f9d0fddfd0e	เข้า Trigger Flow Progress Created	trigger_flow_progress_created_nxndg	trigger	57	49	{"flow":"91f7c920-9249-42c7-9215-cf7a2a4eb971","payload":"{{create_progress_start_us}}"}	fef52545-fee4-4246-9a7d-648199312db2	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 04:50:04.859+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 51b29370-86ea-44df-aa4c-1973eb15f61f	เช็ค action เป็น แพทย์อ่านผลเพิ่ม ใช่หรือไม่	check_action_wbhho	exec	40	1	{"code":"module.exports = async function(data) {\\n\\tconst action = \\"{{$trigger.payload.action}}\\";\\n\\n    if (action === \\"แพทย์อ่านผลเพิ่ม\\") {\\n        return true;\\n    }\\n\\n    throw new Error('action ไม่ใช่ แพทย์อ่านผลเพิ่ม');\\n    return false;\\n}"}	37f35e00-2f2e-4d22-94de-3155585a2dd0	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-07-09 03:29:26.169+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 8a8e99d3-f47a-461b-a2f5-28069795c100	อ่านข้อมูล billing	read_data_billing	item-read	39	68	{"permissions":"$full","collection":"billing","query":null,"key":["{{create_billing[0]}}"]}	e59c83bc-589d-41e3-bae4-31fb5f453d3f	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-07-06 04:21:37.912+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 bdbadc5d-6cbb-4d76-af20-5cd041f543bb	เช็ค Triggerflows และสถานะ us_work ว่าเป็น ถ่ายสำเร็จ ใช่หรือไม่	triggerflows_us_work	exec	4	18	{"code":"module.exports = async function(data) {\\n\\t// ถ่ายสำเร็จ\\n    const ultrasoundStatus = {{$trigger.payload.status}};\\n\\tconst triggerFlows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n\\n    if (ultrasoundStatus == \\"6\\" && triggerFlows !== \\"undefined\\") {\\n        return true;\\n    }\\n\\n    throw new Error('สถานะไม่ใช่ ถ่ายสำเร็จ หรือ  triggerFlows ไม่มีค่า');\\n    return false;\\n}"}	51b72105-e1ca-4f18-be10-3b869a176dff	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-07-06 04:21:38.606+00	f0e0b60d-69de-45ef-aab0-14da792a6145
-37e1c395-57cf-45b6-b7dd-8a87a9282f2c	ดึงเวลาปัจจุบันออกมา	get_current_time	exec	91	1	{"code":"module.exports = async function(data) {\\n\\treturn new Date().toISOString()\\n}"}	0025b1c9-f263-4e36-8320-dabab1825af4	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2026-03-26 10:01:17.284+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+062ac778-e47c-486a-82ab-1312b495b58e	เช็คว่ามี่ officer แล้วหรือยัง	check_have_officer	exec	37	1	{"code":"module.exports = async function(data) {\\n    const progressData = {{read_data_progress}};\\n\\n    if (progressData && !progressData.officer) {\\n        return true; \\n    }\\n\\n    throw new Error('progress นี้มี officer แล้ว'); \\n}"}	45fef03d-a498-4b3e-b1a6-b343dfb69654	\N	91f7c920-9249-42c7-9215-cf7a2a4eb971	2026-06-26 11:04:01.153+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 184e4429-2e9c-4950-9507-9648edbd29ef	คิดเงิน (MAM)	calculate_price_backup	exec	58	85	{"code":"module.exports = async function (data) {\\n  const billingData = {{read_data_billing}};\\n  const examCost = {{read_data_examination_cost}};\\n  const pacsSyncData = {{read_data_pacs_sync_info}} || {};\\n  const appointmentData = {{read_data_appointment}};\\n  const discountExam = {{read_data_discount}};\\n  const location = {{read_data_finance_work.location}}; \\n\\n  const total = pacsSyncData.reduce(\\n  (acc, item) => {\\n    acc.mamAmount += Number(item.confirm_num_of_mam ?? 0);\\n    acc.spotAmount += Number(item.confirm_num_of_spot ?? 0);\\n    acc.implantAmount += Number(item.confirm_num_of_implant ?? 0);\\n    if (item.modality === \\"US\\" && item.is_mark_del === false) {\\n      acc.ultrasoundAmount += 1;\\n    }\\n    return acc;\\n  },\\n  { mamAmount: 0, spotAmount: 0, implantAmount: 0, ultrasoundAmount: 0 }\\n);\\n  const CopyCDAmount = Array.isArray(appointmentData.front_note_1)\\n  ? appointmentData.front_note_1.some((note) =>\\n      note.toLowerCase().includes(\\"รับผลเป็น cd\\")\\n    )\\n    ? 1\\n    : 0\\n  : 0;\\n\\n  const findExamPrice = (exam_type_id) => {\\n    const exam = examCost.find((item) => item.type === exam_type_id);\\n    if (!exam) return 0;\\n      // 1 = TYR\\n    return Number(location === 1 ? exam.price_tyr : exam.price_ics);\\n  };\\n\\n  let a_price = 0,\\n    b_price = 0,\\n    c_price = 0,\\n    d_price = 0;\\n    e_price = 0;\\n\\n  const usedTypes = new Set();\\n\\n  // e_price (Copy CD)\\n  if(CopyCDAmount > 0) {\\n    e_price = findExamPrice(\\"H\\");\\n    usedTypes.add(\\"H\\");\\n  }\\n\\n  // d_price (Ultrasound)\\n  if (total.mamAmount > 0 && total.ultrasoundAmount > 0) {\\n    d_price = findExamPrice(\\"D\\");\\n    usedTypes.add(\\"D\\");\\n  } else if (total.mamAmount === 0 && total.ultrasoundAmount > 0) {\\n    d_price = findExamPrice(\\"C\\");\\n    usedTypes.add(\\"C\\");\\n  }\\n\\n  // a_price (Mammogram)\\n  if (total.mamAmount > 0) {\\n    if (total.mamAmount <= 2) {\\n      a_price = findExamPrice(\\"A\\");\\n      usedTypes.add(\\"A\\");\\n    } else {\\n      a_price = findExamPrice(\\"B\\");\\n      usedTypes.add(\\"B\\");\\n    }\\n  }\\n\\n  // b_price (SPOT)\\n  if (total.spotAmount > 0) {\\n    b_price = findExamPrice(\\"E\\");\\n    usedTypes.add(\\"E\\");\\n  }\\n\\n  // c_price (Implant)\\n  if (total.implantAmount > 0 && total.mamAmount > 2) {\\n    c_price = findExamPrice(\\"F\\");\\n    usedTypes.add(\\"F\\");\\n  } else if (total.implantAmount > 0 && total.mamAmount > 0) {\\n    c_price = findExamPrice(\\"G\\");\\n    usedTypes.add(\\"G\\");\\n  }\\n\\n  const sortedUsedTypes = Array.from(usedTypes).sort();\\n  const isOutpatient = appointmentData.care_type !== 2;\\n  let care_type = appointmentData.care_type;\\n  const isOvertime = billingData?.is_overtime || false;\\n  const isForeigner = billingData?.is_foreigner || false;\\n\\n  let subtotal =\\n    a_price +\\n    b_price +\\n    c_price +\\n    d_price +\\n    //e_price +\\n    (isOutpatient ? 100 : 0) +\\n    (isOvertime ? 400 : 0);\\n\\n  let foreigner_fee = isForeigner ? subtotal * 0.25 : 0;\\n  subtotal += foreigner_fee;\\n\\n  // Discount logic\\n  let discountAmount = 0;\\n  if (Array.isArray(discountExam)) {\\n    for (const d of discountExam) {\\n      const types = d.typeList?.split(\\",\\").map((x) => x.trim()).sort();\\n      if (\\n        types?.length === sortedUsedTypes.length &&\\n        types.every((v, i) => v === sortedUsedTypes[i])\\n      ) {\\n        discountAmount = Number(d.discount || 0);\\n        break;\\n      }\\n    }\\n  }\\n\\n  let finalTotal = location === \\"TYR\\" ? subtotal : Math.max(0, subtotal - discountAmount);\\n\\n  const is_invoice_requested = appointmentData.issue_an_invoice;\\n  let payment_type = appointmentData.payment_type;\\n  let can_claim_expense = null;\\n  let payment_method = null;\\n\\n  if(payment_type){\\n     if(payment_type == 1 || payment_type == 2){\\n         payment_method = 1;\\n     }\\n     else if(payment_type == 3 || payment_type == 4 || payment_type == 5 || payment_type == 6\\n            || payment_type == 18 || payment_type == 19 || payment_type == 20 || payment_type == 21\\n            || payment_type == 22 || payment_type == 23){\\n         payment_method = 3;\\n     }\\n     else if(payment_type == 7){\\n         payment_method = 2;\\n     }\\n  }\\n\\n\\tif(payment_type){\\n        if(payment_type == 8){\\n            finalTotal = 0;\\n        }\\n    }\\n\\n  return {\\n    a: total.mamAmount,\\n    a_price: a_price.toFixed(2),\\n    b: total.spotAmount,\\n    b_price: b_price.toFixed(2),\\n    c: total.implantAmount,\\n    c_price: c_price.toFixed(2),\\n    d: total.ultrasoundAmount,\\n    d_price: d_price.toFixed(2),\\n    e: CopyCDAmount,\\n    e_price: e_price.toFixed(2),\\n    is_out_patient: isOutpatient,\\n    is_overtime: isOvertime,\\n    is_foreigner: isForeigner,\\n    foreigner_fee: foreigner_fee.toFixed(2),\\n    discount_amount: discountAmount.toFixed(2),\\n    total: finalTotal.toFixed(2),\\n    exam_types_used: sortedUsedTypes,\\n    care_type: care_type,\\n    is_invoice_requested: is_invoice_requested,\\n    can_claim_expense: can_claim_expense,\\n    payment_type: payment_type,\\n    payment_method: payment_method,\\n    //hasOutpatient: hasOutpatient,\\n  };\\n};\\n"}	\N	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-07-06 04:21:37.781+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+37e1c395-57cf-45b6-b7dd-8a87a9282f2c	ดึงเวลาปัจจุบันออกมา	get_current_time	exec	91	1	{"code":"module.exports = async function(data) {\\n\\treturn new Date().toISOString()\\n}"}	0025b1c9-f263-4e36-8320-dabab1825af4	\N	d555b629-b0a2-4177-a879-10f65d083aaa	2026-03-26 10:01:17.284+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+097fe629-0442-4516-af79-01c84fa7dd72	สร้าง Center Income	post_center_income	item-create	39	49	{"collection":"center_income","payload":{"full_name":"{{read_data_patient_info.prefix_th}} {{read_data_patient_info.first_name_th}} {{read_data_patient_info.last_name_th}}","type":"1","service_fee":"1","amount":"{{$trigger.payload.e_price}}","location":"{{read_data_finance_work.location}}","date_time_created":"{{read_data_billing.date_created}}","patient_info":"{{read_data_patient_info.id}}","address":"{{read_data_address.address}} {{read_data_address.sub_district}} {{read_data_address.district}} {{read_data_address.province}} {{read_data_address.zipcode}}"},"emitEvents":true,"permissions":"$full"}	518078a0-98be-47aa-9ab2-863f0990d099	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:36:12.289+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+aaf08630-1df2-4c5a-93b7-f84e14551963	read_address	read_data_address	item-read	21	49	{"permissions":"$full","collection":"address","key":["{{read_data_patient_info.addresses[0]}}"]}	097fe629-0442-4516-af79-01c84fa7dd72	\N	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2026-07-03 10:14:46.18+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+f3cd0901-e20c-42bb-b4f3-c59e113b04d8	Check POST	check_post	exec	3	49	{"code":"module.exports = async function(data) {\\n    const copyCdChange = \\"{{$trigger.payload.copy_cd}}\\";\\n    \\n    if (copyCdChange === \\"POST\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่ใช่ POST'); \\n\\n};\\n"}	aaf08630-1df2-4c5a-93b7-f84e14551963	87bee657-35e9-43fa-83c8-bb4e2a09eb31	4978440d-6b21-4b42-bf79-b63cdb9dd1be	2025-05-09 05:36:12.356+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+189b2fc0-9b13-4b35-a8ad-b233f808e4a0	สร้าง progress ผู้มาตรวจทำ US (เตียง ?)	create_progress_start_us	item-create	39	49	{"collection":"progress","payload":{"title":"ผู้มาตรวจทำ US (เตียง {{read_data_ultrasound_work.bed}})","admission_time":"{{current_time.currentTime}}","status":"รอดำเนินการ","department":"US (ห้อง US)","worklist":"{{read_data_queue.worklist[0]}}"}}	6da9584b-85d8-4130-9756-0f9d0fddfd0e	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 04:50:04.869+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 c8a0c4d2-6b9b-40cc-b1c8-1e4443701cf6	อ่านข้อมูล exam ที่พึ่งถูกสร้าง	read_data_exam_new	item-read	21	118	{"permissions":"$full","collection":"examination","key":["{{create_new_exam[0]}}"],"query":{"fields":["*","examination_general.*"]}}	6267c4ca-a736-4625-a567-54fdc7ba0116	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-12-13 15:21:14.668+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 613f6a54-c681-454b-9734-2915529f52e3	สร้าง payload	create_payload	exec	37	1	{"code":"module.exports = async function(data) {\\n\\tconst event = \\"{{$trigger.event}}\\".split(\\".\\").at(-1)\\n    const now = new Date().toISOString()\\n    \\n    return {\\n    \\ttimestamp: now,\\n        id: event === \\"create\\" ? \\"{{$trigger.key}}\\" :  \\"{{$trigger.keys[0]}}\\"\\n    }\\n}"}	aff576f2-6aa7-4a7e-a705-3251cc925521	\N	ce3b63e2-5413-4dc6-9236-b9dcef31efea	2026-02-02 07:15:01.634+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 0c64b43e-fc74-45da-b34e-48b561ff8972	เช็ค action เป็น confirm_bx ใช่หรือไม่	check_action_fbjlh	exec	3	102	{"code":"module.exports = async function(data) {\\n\\tconst action = \\"{{$trigger.payload.action}}\\";\\n\\n    if (action === \\"Confirm Bx\\") {\\n        return true;\\n    }\\n\\n    throw new Error('action ไม่ใช่ Confirm Bx');\\n    return false;\\n}"}	73f79828-06fe-4d19-9df5-38d73eefe429	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-12-04 04:32:54.753+00	f0e0b60d-69de-45ef-aab0-14da792a6145
@@ -15958,17 +16144,28 @@ d819f2ca-5797-4285-9145-8e34926c33cb	อ่านข้อมูล patient_info
 868a457b-88f8-48b8-b12c-9ebe1ca68af0	อ่านข้อมูล exam	read_data_exam	item-read	3	34	{"permissions":"$full","collection":"examination","key":["{{read_data_ultrasound_work.exam}}"],"query":{"fields":["*","examination_general.*"]}}	21dc2cd3-f869-4a02-b467-3045393791ca	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-07-06 04:21:38.415+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 9a23c65b-d297-445b-a47a-9d2a4492a93c	สร้างข้อมูล Finance Work	create_finance_work	item-create	41	18	{"permissions":"$full","collection":"finance_work","emitEvents":true,"payload":{"exam":"{{read_data_ultrasound_work.exam}}","appointment":"{{read_data_ultrasound_work.appointment}}","status":"0","location":"{{read_data_ultrasound_work.location}}"}}	868a457b-88f8-48b8-b12c-9ebe1ca68af0	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-07-06 04:21:38.479+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 51b72105-e1ca-4f18-be10-3b869a176dff	เช็ค action เป็น ปล่อยกลับบ้าน หรือ confirm_bx ใช่หรือไม่	check_action	exec	22	18	{"code":"module.exports = async function(data) {\\n\\tconst action = \\"{{$trigger.payload.action}}\\";\\n\\n    if (action === \\"ปล่อยกลับบ้าน\\" || action === \\"Confirm Bx\\") {\\n        return true;\\n    }\\n\\n    throw new Error('action ไม่ใช่ ปล่อยกลับบ้าน หรือ Confirm Bx');\\n    return false;\\n}"}	9a23c65b-d297-445b-a47a-9d2a4492a93c	51b29370-86ea-44df-aa4c-1973eb15f61f	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-07-06 04:21:38.543+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+6e7db230-f050-478a-8825-d792086e59ae	return ค่าวัน-เวลาของตอนนี้	current_time	exec	49	1	{"code":"module.exports = async function(data) {\\n    return {\\n        currentTime: new Date().toISOString()\\n    };\\n};"}	05976409-0ba8-4e6a-bea6-415468ba0c1d	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 02:37:58.958+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+f1e1420d-c68a-4328-9787-bebbe8f3c0d7	อ่านข้อมูล ultrasound_work	read_data_ultrasound_work	item-read	33	1	{"permissions":"$full","collection":"ultrasound_work","key":["{{check_event.key}}"]}	6e7db230-f050-478a-8825-d792086e59ae	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 02:37:59.057+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 b73f254f-febf-450d-8505-ac60e79fb5d5	อัพเดท status nurse_work 	status_nurse_work	item-update	22	34	{"collection":"nurse_work","permissions":"$full","payload":{"status":"0","nurse_receive_time":"{{current_time.currentTime}}"},"key":["{{read_data_nurse_work[0].id}}"],"emitEvents":true}	\N	\N	9eb9360a-fa14-4b41-87db-345589c2ceb8	2025-12-13 15:57:57.45+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 5fb16b73-dea0-4136-b5e4-57dbd8f3c345	อ่านข้อมูล nurse_work	read_data_nurse_work	item-read	40	18	{"collection":"nurse_work","permissions":"$full","query":{"filter":{"appointment":{"_eq":"{{read_data_appointment[0].appointment_bx_id}}"}}}}	15c0461e-17ab-4c21-853b-adffd06392b8	\N	9eb9360a-fa14-4b41-87db-345589c2ceb8	2025-12-13 15:57:57.47+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 cdd197c9-e335-40c4-bd1d-ca94356f34a4	สร้างข้อมูล nurse_work	nurse_work	item-create	21	134	{"collection":"nurse_work","permissions":"$full","emitEvents":true,"payload":{"appointment":"{{read_data_exam_new.appointment}}","status":"3","examination_general":"{{read_data_exam_new.examination_general[0]}}","recommended_procedures":"{{create_recommended_procedures}}","recommended_procedures_backup":"{{create_recommended_procedures}}","appointed_dept":"{{$trigger.payload.selectedDepartment}}","recommendation_des_backup":"{{read_data_exam_new.examination_general[0].recommendation_des}}","radiologist":"{{read_data_exam_new.case_owner_doctor}}","stop_flow_id87":true}}	\N	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-12-04 07:53:12.086+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+34421518-f22e-4093-b515-f226e33972bf	return ค่า id ของ progress ตัวสุดท้าย จากข้อมูล worklist ที่ถูกอ่านมาก่อนหน้านี้	last_no_progress	exec	3	33	{"code":"module.exports = async function(data) {\\n    const progressArray = {{read_data_worklist.progress}};\\n\\n    // เช็คว่า progress array มีค่าหรือไม่ และมีข้อมูลอยู่\\n    if (progressArray && progressArray.length > 0) {\\n        // จัดเรียง progress ตามไอดีจากน้อยไปมาก\\n        const sortedProgressArray = progressArray.sort((a, b) => a - b);\\n\\n        // ดึง progress ID ตัวสุดท้ายหลังจากจัดเรียง\\n        const lastProgressId = sortedProgressArray[sortedProgressArray.length - 1];\\n\\n        return {\\n            lastProgressId: lastProgressId\\n        };\\n    } else {\\n        return {\\n            message: 'No progress data found'\\n        };\\n    }\\n};"}	1e00b341-3245-4cf3-9158-2cb01ced0b25	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 02:37:58.791+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+c2af3dfb-6550-414f-b337-13ec7113eb30	อ่านข้อมูล queue	read_data_queue	item-read	21	17	{"permissions":"$full","collection":"queue","key":["{{read_data_appointment.queue[0]}}"]}	b0b3f313-248e-4d04-b1e6-49302deba6ad	\N	38e52e80-eabb-4db2-8ee3-6de19379ff4f	2025-09-02 02:37:58.841+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 cdb013c5-3a24-4a6e-8b72-e4bc9e48deb6	เช็ค status_trigger_flows	exec_dk56a	exec	3	19	{"code":"module.exports = async function(data) {\\n    const status_trigger_flows = \\"{{$trigger.payload.status_trigger_flows}}\\";\\n    \\n    if (status_trigger_flows != \\"undefined\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี status_trigger_flows'); \\n\\n};\\n"}	2209f21d-6005-44b8-a0df-c73b8690fef4	42886dbb-bb32-4e4f-9fe2-b7cfbeab7d0f	836b85ad-418d-47b0-8d41-547021433cc7	2025-05-09 06:41:46.493+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 6267c4ca-a736-4625-a567-54fdc7ba0116	อัพเดท appointment_bx_id ที่ appointment	item_update_e9wk8	item-update	39	118	{"collection":"appointment","permissions":"$full","key":["{{read_data_appointment.id}}"],"payload":{"appointment_bx_id":"{{read_data_exam_new.appointment}}"}}	95345a4c-8278-4ffa-9954-df1f9d16a44b	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-12-04 09:28:06.666+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 eda07fc0-4e79-435c-a5f2-56cce03a9d6d	สร้างข้อมูล exam, appointment, exam_gen	create_new_exam	item-create	3	118	{"collection":"examination","permissions":"$full","payload":"{{body_create_exam}}"}	c8a0c4d2-6b9b-40cc-b1c8-1e4443701cf6	\N	52bed9fc-4f3a-4b41-9c82-07cea484cb76	2025-12-04 09:28:06.678+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+6df67a1a-22f1-42eb-8eca-2b0c63c2a297	อัพเดทฟิลด์ officer ของ progress ตัวสุดท้าย	update_officer	item-update	22	86	{"payload":{"officer":"{{$trigger.payload.officer}}"},"collection":"progress","key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	\N	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2026-06-27 03:43:02.068+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+06d3eb40-94e1-4bf0-8471-9e203d3ec8a1	เช็คว่ามี officer หรือไม่	check_officer	exec	4	86	{"code":"module.exports = async function(data) {\\n    const officer = \\"{{$trigger.payload.officer}}\\";\\n   \\n    if (officer != \\"null\\" && officer != \\"undefined\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี officer'); \\n\\n};\\n"}	6df67a1a-22f1-42eb-8eca-2b0c63c2a297	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2026-06-27 03:43:02.351+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+8dc73caf-5382-4dcc-9695-7c54332d85de	อ่านข้อมูล progress ตัวสุดท้าย	read_data_last_progress	item-read	39	53	{"collection":"progress","key":["{{last_no_progress.lastProgressId}}"],"permissions":"$full"}	686f8f72-f5e5-423d-9a8c-c29f7d8132fc	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 12:11:12.144+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 41453c3b-4766-4852-835c-562a4c8fc0b7	อัพเดทให้ผู้มาตรวจเป็น คนไข้เก่า	item_update_hgpj7	item-update	39	69	{"collection":"patient_info","permissions":"$full","key":["{{read_data_patient_info.id}}"],"payload":{"patient_category":"2"}}	\N	\N	836b85ad-418d-47b0-8d41-547021433cc7	2025-05-11 04:29:52.128+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 68578121-e432-4a13-a584-ad31e1bc0cdc	อัพเดทสถานะ Queue ให้เป็น เสร็จสิ้น	queue	item-update	39	53	{"collection":"queue","key":["{{read_data_queue.id}}"],"payload":{"status":"2"},"permissions":"$full","emitEvents":true}	41453c3b-4766-4852-835c-562a4c8fc0b7	\N	836b85ad-418d-47b0-8d41-547021433cc7	2025-05-11 04:26:05.07+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 2e8a0bdd-e6b5-409b-aaf9-321439a5d9b8	อัพเดทข้อมูล Finance_work (ชำระเงินแล้ว)	finance_work_rgtev	item-update	21	36	{"collection":"finance_work","key":["{{read_data_finance_work.id}}"],"payload":{"status":"3"},"permissions":"$full","emitEvents":true}	859d1d47-31d0-4aba-8a6e-5d710aa67567	\N	836b85ad-418d-47b0-8d41-547021433cc7	2025-05-10 04:13:40.702+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 42886dbb-bb32-4e4f-9fe2-b7cfbeab7d0f	เช็ค make_payment	exec_dk56a_pxuxv	exec	3	36	{"code":"module.exports = async function(data) {\\n    const make_payment = \\"{{$trigger.payload.make_payment}}\\";\\n    \\n    if (make_payment != \\"undefined\\") {\\n        return true; \\n    } \\n\\n    throw new Error('ไม่มี make_payment'); \\n\\n};\\n"}	2e8a0bdd-e6b5-409b-aaf9-321439a5d9b8	\N	836b85ad-418d-47b0-8d41-547021433cc7	2025-05-10 04:13:40.731+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 2209f21d-6005-44b8-a0df-c73b8690fef4	อัพเดทข้อมูล Finance_work (รอบันทึกรับเงิน)	finance_work	item-update	21	19	{"collection":"finance_work","key":["{{read_data_finance_work.id}}"],"payload":{"status":"2"},"permissions":"$full"}	f118e0ab-f4ae-4864-be5c-d0871cd38a64	\N	836b85ad-418d-47b0-8d41-547021433cc7	2025-05-09 06:41:46.374+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+09320da1-f955-41ca-95b6-5f0451e5dfe9	return ค่า id ของ progress ตัวสุดท้าย จากข้อมูล worklist ที่ถูกอ่านมาก่อนหน้านี้	last_no_progress	exec	3	36	{"code":"module.exports = async function(data) {\\n    const progressArray = {{read_data_worklist.progress}};\\n\\n    // เช็คว่า progress array มีค่าหรือไม่ และมีข้อมูลอยู่\\n    if (progressArray && progressArray.length > 0) {\\n        // จัดเรียง progress ตามไอดีจากน้อยไปมาก\\n        const sortedProgressArray = progressArray.sort((a, b) => a - b);\\n\\n        // ดึง progress ID ตัวสุดท้ายหลังจากจัดเรียง\\n        const lastProgressId = sortedProgressArray[sortedProgressArray.length - 1];\\n\\n        return {\\n            lastProgressId: lastProgressId\\n        };\\n    } else {\\n        return {\\n            message: 'No progress data found'\\n        };\\n    }\\n};"}	abffb104-2300-44bf-a38c-db99044a3ee7	\N	afbac7d9-554e-4ab6-a1c8-cd0a649312ae	2025-03-10 09:59:45.919+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+c38c951c-395a-4b62-bfd1-f9a3c6f8ef3c	ปั้นข้อมูล ชื่อจริง-นามสกุล	body_fullname	exec	21	19	{"code":"module.exports = async function(data) {\\n    const userData = {{query_user.data.data}}; \\n    \\n    if (!userData) return null;\\n    const fullName = `${userData.first_name} ${userData.last_name}`;\\n    \\n    return fullName; \\n}"}	9c34d5cb-4e86-4576-bc98-15ada08dbeef	\N	89be6643-9611-41be-8186-059689a6c8d3	2026-06-29 03:10:01.233+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+9af25f42-d40f-45a9-966f-c746851d6f76	query ข้อมูลของ user โดยใช้ id ที่อยู่ใน progress	query_user	request	3	19	{"url":"{{read_environment.url}}/users/{{$trigger.user}}","headers":[{"header":"Authorization","value":"Bearer {{read_environment.access_token}}"}],"body":"{}"}	c38c951c-395a-4b62-bfd1-f9a3c6f8ef3c	\N	89be6643-9611-41be-8186-059689a6c8d3	2026-06-29 03:10:01.289+00	f0e0b60d-69de-45ef-aab0-14da792a6145
+98f28f2d-f0ed-4443-a5de-cc6ae3a6e408	เข้า Trigger Flow Read environment data	read_environment	trigger	37	1	{"flow":"f5ad1f92-3584-40cb-8931-926f1cd88ff1"}	9af25f42-d40f-45a9-966f-c746851d6f76	\N	89be6643-9611-41be-8186-059689a6c8d3	2026-06-29 03:10:01.764+00	f0e0b60d-69de-45ef-aab0-14da792a6145
 \.
 
 
@@ -16918,6 +17115,40 @@ COPY public.directus_permissions (id, collection, action, permissions, validatio
 1157	procedure_item	read	\N	\N	\N	*	6a100111-7584-4df9-8a61-122c023e978a
 1198	vital_signs	read	\N	\N	\N	*	6a100111-7584-4df9-8a61-122c023e978a
 1202	bx_statuses	read	\N	\N	\N	*	6a100111-7584-4df9-8a61-122c023e978a
+1203	lab_list	read	\N	\N	\N	*	6a100111-7584-4df9-8a61-122c023e978a
+1204	lab_list	read	\N	\N	\N	*	abf8a154-5b1c-4a46-ac9c-7300570f4f17
+1205	special_procedure_plans_bx_options	read	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1206	special_procedure_plans_bx_options	update	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1207	special_procedure_plans_bx_options	create	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1208	special_procedure_plans_bx_options_1	create	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1209	special_procedure_plans_bx_options_1	read	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1210	special_procedure_plans_bx_options_1	update	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1211	special_procedure_plans_bx_options	delete	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1212	special_procedure_plans_bx_options_1	delete	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1213	special_procedure_plans_lab_list	create	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1214	special_procedure_plans_lab_list	read	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1215	special_procedure_plans_lab_list	update	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1216	special_procedure_plans_lab_list	delete	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1217	special_procedures_bx_options	read	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1218	special_procedures_bx_options	update	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1219	special_procedures_bx_options	create	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1220	special_procedures_bx_options	delete	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1221	special_procedures_lab_list	create	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1222	special_procedures_lab_list	read	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1223	special_procedures_lab_list	update	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1224	special_procedures_lab_list	delete	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1255	appointment_reschedules	create	\N	\N	\N	*	6a100111-7584-4df9-8a61-122c023e978a
+1259	finance_cost	read	\N	\N	\N	*	6a100111-7584-4df9-8a61-122c023e978a
+1260	spot	read	\N	\N	\N	*	684de547-f66d-400b-bd82-3446d07b443e
+1261	spot	update	\N	\N	\N	*	684de547-f66d-400b-bd82-3446d07b443e
+1262	spot	create	\N	\N	\N	*	684de547-f66d-400b-bd82-3446d07b443e
+1263	spot_shape	create	\N	\N	\N	*	684de547-f66d-400b-bd82-3446d07b443e
+1264	spot_shape	read	\N	\N	\N	*	684de547-f66d-400b-bd82-3446d07b443e
+1265	spot_shape	update	\N	\N	\N	*	684de547-f66d-400b-bd82-3446d07b443e
+1270	notification	create	\N	\N	\N	*	6a100111-7584-4df9-8a61-122c023e978a
+1271	notification	update	\N	\N	\N	*	6a100111-7584-4df9-8a61-122c023e978a
+1272	bx_statuses	read	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1273	pacs_sync_info	read	\N	\N	\N	*	00b023d2-2be6-44cd-ac18-0797db0a9b33
 1055	lab_list	read	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
 1056	location_surgery	read	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
 1068	examination_general	create	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
@@ -16940,6 +17171,41 @@ COPY public.directus_permissions (id, collection, action, permissions, validatio
 1199	vital_signs	read	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
 1200	vital_signs	create	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
 1201	vital_signs	update	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1225	special_procedure_plans	create	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1226	special_procedure_plans	read	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1227	special_procedure_plans	update	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1228	special_procedure_plans_bx_options	create	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1229	special_procedure_plans_bx_options	read	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1230	special_procedure_plans_bx_options	update	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1231	special_procedure_plans_bx_options	delete	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1232	special_procedure_plans_bx_options_1	create	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1233	special_procedure_plans_bx_options_1	read	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1234	special_procedure_plans_bx_options_1	update	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1235	special_procedure_plans_bx_options_1	delete	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1236	special_procedure_plans_lab_list	create	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1237	special_procedure_plans_lab_list	read	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1238	special_procedure_plans_lab_list	update	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1239	special_procedure_plans_lab_list	delete	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1240	special_procedures	create	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1241	special_procedures	read	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1242	special_procedures	update	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1243	special_procedures_bx_options	create	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1244	special_procedures_bx_options	read	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1245	special_procedures_bx_options	update	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1246	special_procedures_bx_options	delete	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1247	special_procedures_lab_list	create	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1248	special_procedures_lab_list	read	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1249	special_procedures_lab_list	update	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1250	special_procedures_lab_list	delete	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1251	special_procedures_lab_orders	create	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1252	special_procedures_lab_orders	read	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1253	special_procedures_lab_orders	update	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1254	special_procedures_lab_orders	delete	\N	\N	\N	*	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1256	nurse_work	read	\N	\N	\N	*	00b023d2-2be6-44cd-ac18-0797db0a9b33
+1266	spot	create	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1267	spot	update	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1268	spot_shape	update	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
+1269	spot_shape	create	\N	\N	\N	*	daec5484-1f3c-44ec-8681-0dce364ca752
 1057	appointment	read	\N	\N	\N	*	684de547-f66d-400b-bd82-3446d07b443e
 1058	appointment	update	\N	\N	\N	*	684de547-f66d-400b-bd82-3446d07b443e
 1059	appointment	create	\N	\N	\N	*	684de547-f66d-400b-bd82-3446d07b443e
@@ -16957,6 +17223,8 @@ COPY public.directus_permissions (id, collection, action, permissions, validatio
 1165	tab_location_options	read	\N	\N	\N	*	9b36f75a-3274-4773-ac09-5a73da7d60aa
 1166	tab_clinical_options	read	\N	\N	\N	*	9b36f75a-3274-4773-ac09-5a73da7d60aa
 1167	tab_assessment_options	read	\N	\N	\N	*	9b36f75a-3274-4773-ac09-5a73da7d60aa
+1257	special_procedures	read	\N	\N	\N	*	00b023d2-2be6-44cd-ac18-0797db0a9b33
+1258	special_procedure_plans	read	\N	\N	\N	*	00b023d2-2be6-44cd-ac18-0797db0a9b33
 1060	queue	read	\N	\N	\N	*	684de547-f66d-400b-bd82-3446d07b443e
 1061	queue	create	\N	\N	\N	*	684de547-f66d-400b-bd82-3446d07b443e
 1062	queue	update	\N	\N	\N	*	684de547-f66d-400b-bd82-3446d07b443e
@@ -16997,9 +17265,6 @@ COPY public.directus_permissions (id, collection, action, permissions, validatio
 1185	recommended_procedures	create	\N	\N	\N	*	9b36f75a-3274-4773-ac09-5a73da7d60aa
 1186	recommended_procedures	read	\N	\N	\N	*	9b36f75a-3274-4773-ac09-5a73da7d60aa
 1187	recommended_procedures	update	\N	\N	\N	*	9b36f75a-3274-4773-ac09-5a73da7d60aa
-1188	lab_plans	read	\N	\N	\N	*	9b36f75a-3274-4773-ac09-5a73da7d60aa
-1189	lab_plans	update	\N	\N	\N	*	9b36f75a-3274-4773-ac09-5a73da7d60aa
-1190	lab_plans	create	\N	\N	\N	*	9b36f75a-3274-4773-ac09-5a73da7d60aa
 1191	special_procedure_plans	create	\N	\N	\N	*	9b36f75a-3274-4773-ac09-5a73da7d60aa
 1192	special_procedure_plans	read	\N	\N	\N	*	9b36f75a-3274-4773-ac09-5a73da7d60aa
 1193	special_procedure_plans	update	\N	\N	\N	*	9b36f75a-3274-4773-ac09-5a73da7d60aa
@@ -17033,100 +17298,101 @@ COPY public.directus_presets (id, bookmark, "user", role, collection, search, la
 38	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	hospitals	\N	\N	{"tabular":{"page":1,"fields":["id","name"]}}	{"tabular":{"widths":{"name":245.65234375}}}	\N	\N	bookmark	\N
 66	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	recommend_bx_form	\N	tabular	{"tabular":{"page":1,"fields":["id","examination","ultrasound_work","examination.patient.first_name_th","examination.patient.last_name_th","bx_code.bx_code_id","other_reason","date_updated","date_created"],"sort":["id"]}}	{"tabular":{"widths":{"id":93.39453125,"examination":109.55078125,"ultrasound_work":104.875,"examination.patient.first_name_th":129.91015625,"bx_code.bx_code_id":153.58203125,"other_reason":220.27734375}}}	\N	\N	bookmark	\N
 16	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	pacs_export_pdf	\N	tabular	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
-11	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	worklist	\N	\N	{"tabular":{"page":1,"fields":["id","date_created","queue","start_time","end_time","patient_info","progress","appointment","queue.number"],"sort":["-id"]}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
-25	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	pacs_sync_info		\N	{"tabular":{"page":1,"fields":["id","exam","patient","accession_id","modality","status","ris_code","date_created","patient.first_name_th"],"sort":["-id"]}}	{"tabular":{"widths":{"id":96.84375,"exam":98.22265625,"patient":113.84375,"modality":119.2890625,"status":100.2421875,"ris_code":106,"date_created":230}}}	\N	\N	bookmark	\N
-6	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	address	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
-2	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	patient_type	\N	\N	{"tabular":{"page":1,"fields":["id","can_claim_expense","class","description","is_in_patient_type"]}}	{"tabular":{"widths":{"id":93,"can_claim_expense":177,"class":93,"description":324.66015625,"is_in_patient_type":165}}}	\N	\N	bookmark	\N
-42	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	mammogram_cal	\N	\N	{"tabular":{"fields":["described_cal_id","exam_date","old_exam_id","old_pid","id","exam","date_updated"],"page":2,"sort":["-date_updated"]}}	\N	\N	\N	bookmark	\N
-13	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	patient_result	\N	\N	{"tabular":{"fields":["delivery_method","receipt_number","receipt_number_copy_cd","result_type","id","date_created","queues.number"],"page":1,"sort":["-date_created"]}}	\N	\N	\N	bookmark	\N
-7	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	patient_info	\N	tabular	{"tabular":{"page":1,"fields":["id","pid","hn","soc_id","date_of_birth","gender","first_name_th","last_name_th","date_created","photo"],"sort":["-photo"]}}	{"tabular":{"widths":{"id":97.9765625,"pid":102.13671875,"date_of_birth":216.171875,"gender":92.8125}}}	\N	{"_and":[{"photo":{"_nnull":true}}]}	bookmark	\N
+3	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	role_menu	\N	\N	{"tabular":{"fields":["id","link","policies","role_name","menu_type","menu_detail","menu_icon_name","menu_order","parent"],"page":1,"limit":50}}	{"tabular":{"widths":{"link":295.4296875,"role_name":245}}}	\N	\N	bookmark	\N
+2	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	patient_type	\N	\N	{"tabular":{"page":1,"fields":["id","can_claim_expense","class","description","is_in_patient_type","date_created"]}}	{"tabular":{"widths":{"id":93,"can_claim_expense":177,"class":93,"description":324.66015625,"is_in_patient_type":165}}}	\N	\N	bookmark	\N
 36	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	donate_type	\N	\N	{"tabular":{"page":1,"fields":["name","old_db_id"]}}	{"tabular":{"widths":{"name":274.78125}}}	\N	\N	bookmark	\N
-29	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	examination_general	\N	\N	{"tabular":{"page":1,"fields":["id","exam","date_created","date_updated","assessment_birads","recommendation","recommendation_des"],"sort":["-date_created"]}}	{"tabular":{"widths":{"id":96,"exam":111,"assessment_birads":181,"recommendation":169,"recommendation_des":293}}}	\N	\N	bookmark	\N
 10	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	progress	\N	\N	{"tabular":{"page":1,"fields":["id","worklist","admission_time","close_case_time","date_created","user_created","title"],"sort":["-id"]}}	{"tabular":{"widths":{"id":95.12890625}}}	\N	\N	bookmark	\N
+11	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	worklist	\N	\N	{"tabular":{"page":1,"fields":["id","date_created","queue","start_time","end_time","patient_info","progress","appointment","queue.number"],"sort":["-id"]}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
+42	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	mammogram_cal	\N	\N	{"tabular":{"fields":["described_cal_id","exam_date","old_exam_id","old_pid","id","exam","date_updated"],"page":2,"sort":["-date_updated"]}}	\N	\N	\N	bookmark	\N
+6	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	address	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
+39	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	examination_recommend_birads45	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
+37	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	referring_md	กริช	\N	{"tabular":{"page":1,"fields":["id","fullname","hospital","license_no","send_patho","date_created"]}}	{"tabular":{"widths":{"fullname":326.2734375}}}	\N	\N	bookmark	\N
+28	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	mammogram	\N	\N	{"tabular":{"page":1,"fields":["id","exam","exam_date","old_exam_id","old_pid","date_created","date_updated"],"sort":["-id"]}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
+47	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	directus_activity	\N	tabular	{"tabular":{"sort":["-timestamp"],"fields":["action","collection","timestamp","user","user.policies.policy.name","item"],"page":1}}	{"tabular":{"widths":{"action":120,"collection":426.3828125,"timestamp":240,"user":240,"user.policies.policy.name":201,"item":485}}}	\N	\N	bookmark	\N
 26	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	holiday	\N	\N	{"tabular":{"page":1,"fields":["date","name"]}}	{"tabular":{"widths":{"date":263,"name":410}}}	\N	\N	bookmark	\N
 30	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	exam_reason	\N	\N	{"tabular":{"fields":["id","type","reason_text","parent_sequence","child_sequence"],"page":1,"sort":["id"]}}	{"tabular":{"widths":{"id":98.57421875,"type":166.671875,"reason_text":249.42578125,"parent_sequence":150.828125}}}	\N	\N	bookmark	\N
-23	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	billing	\N	\N	{"tabular":{"page":1,"fields":["id","exam","exam_datetime","is_in_patient","total","date_created","date_updated","outpatient"],"sort":["-date_created"]}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
+5	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	directus_files	svg	cards	{"cards":{"sort":["-uploaded_on"],"page":1}}	{"cards":{"icon":"insert_drive_file","title":"{{ title }}","subtitle":"{{ type }} • {{ filesize }}","size":3,"imageFit":"crop"}}	\N	\N	bookmark	\N
 33	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	mammogram_mass	\N	\N	{"tabular":{"page":1,"fields":["id","described_mass_id","exam_date","old_exam_id","old_pid","exam","shape"],"sort":["-id"]}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
+25	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	pacs_sync_info		\N	{"tabular":{"page":1,"fields":["id","exam","patient","accession_id","modality","status","ris_code","date_created","patient.first_name_th"],"sort":["-id"]}}	{"tabular":{"widths":{"id":96.84375,"exam":98.22265625,"patient":113.84375,"accession_id":156.59765625,"modality":189.3984375,"status":100.2421875,"ris_code":106,"date_created":230}}}	\N	\N	bookmark	\N
+23	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	billing	\N	\N	{"tabular":{"page":1,"fields":["id","exam","exam_datetime","is_in_patient","total","date_created","date_updated","patient.first_name_th"],"sort":["-date_created"]}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
+7	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	patient_info	ทดสอบ098	tabular	{"tabular":{"page":1,"fields":["id","pid","hn","soc_id","date_of_birth","gender","first_name_th","last_name_th","date_created","photo"],"sort":["-id"]}}	{"tabular":{"widths":{"id":97.9765625,"pid":102.13671875,"date_of_birth":216.171875,"gender":92.8125}}}	\N	\N	bookmark	\N
 35	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	examination_cost	\N	\N	{"tabular":{"page":1,"fields":["activity","exam_type_id","price","price_ics","code"],"sort":["exam_type_id"]}}	{"tabular":{"widths":{"activity":376}}}	\N	\N	bookmark	\N
-39	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	examination_recommend_birads45	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
 21	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	environment_data	\N	\N	{"tabular":{"page":1,"fields":["id","url","access_token"]}}	{"tabular":{"widths":{"id":101,"url":503.2578125,"access_token":381}}}	\N	\N	bookmark	\N
-47	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	directus_activity	\N	tabular	{"tabular":{"sort":["-timestamp"],"fields":["action","collection","timestamp","user","user.policies.policy.name"],"page":1}}	{"tabular":{"widths":{"action":120,"collection":426.3828125,"timestamp":240,"user":240,"user.policies.policy.name":201}}}	\N	\N	bookmark	\N
 22	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	mobile_location	\N	\N	{"tabular":{"page":1,"fields":["id","name","old_id"]}}	{"tabular":{"widths":{"id":82,"name":391}}}	\N	\N	bookmark	\N
-5	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	directus_files		cards	{"cards":{"sort":["-uploaded_on"],"page":4}}	{"cards":{"icon":"insert_drive_file","title":"{{ title }}","subtitle":"{{ type }} • {{ filesize }}","size":3,"imageFit":"crop"}}	\N	\N	bookmark	\N
-28	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	mammogram	\N	\N	{"tabular":{"page":1,"fields":["id","exam","exam_date","old_exam_id","old_pid","date_created","date_updated"],"sort":["-id"]}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
-3	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	role_menu	\N	\N	{"tabular":{"fields":["id","link","policies","role_name","menu_type","menu_detail","menu_icon_name","menu_order","parent"],"page":1}}	{"tabular":{"widths":{"link":295.4296875,"role_name":245}}}	\N	\N	bookmark	\N
-37	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	referring_md	\N	\N	{"tabular":{"page":1,"fields":["fullname","hospital","license_no","send_patho"]}}	{"tabular":{"widths":{"fullname":326.2734375}}}	\N	\N	bookmark	\N
+13	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	patient_result	\N	\N	{"tabular":{"fields":["delivery_method","receipt_number","receipt_number_copy_cd","result_type","id","date_created","queues.number"],"page":1,"sort":["-id"]}}	\N	\N	\N	bookmark	\N
+29	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	examination_general	\N	\N	{"tabular":{"page":1,"fields":["id","exam","date_created","date_updated","assessment_birads","recommendation","recommendation_des"],"sort":["-date_created"]}}	{"tabular":{"widths":{"id":96,"exam":111,"assessment_birads":181,"recommendation":169,"recommendation_des":668}}}	\N	{"_and":[{"recommendation_des":{"_nnull":true}}]}	bookmark	\N
 41	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	spot_shape	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
 53	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	settings	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
 46	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	center_income	\N	\N	{"tabular":{"page":1,"fields":["id","amount","first_name","last_name","type","location","receipt_number"]}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
-58	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	place	\N	\N	{"tabular":{"fields":["id","title"],"page":1}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
 54	\N	14bb706e-8573-452f-993a-20254f24d730	\N	mammogram	302	\N	{"tabular":{"fields":["id","exam","exam_date","old_exam_id","old_pid"],"sort":["-id"],"page":1}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
 55	\N	14bb706e-8573-452f-993a-20254f24d730	\N	role_menu	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
 69	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	ultrasound_cyst	\N	\N	{"tabular":{"page":1,"fields":["id","exam","l_position_clock","l_position_des","r_position_des"],"sort":["-id"]}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
 70	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	notification_message	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
-43	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	exam_costs	\N	\N	{"tabular":{"fields":["id","activity","type","price_tyr","price_ics","has_other_activity"],"page":1,"sort":["type"]}}	{"tabular":{"widths":{"activity":359,"type":194,"has_other_activity":225}}}	\N	\N	bookmark	\N
+48	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	income	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
 49	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	billing_discount	\N	\N	{"tabular":{"page":1,"fields":["discount_amount","types_combination"]}}	{"tabular":{"widths":{"discount_amount":217,"types_combination":274}}}	\N	\N	bookmark	\N
 32	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	doctor_work		\N	{"tabular":{"fields":["id","appointment.patient_info","appointment.patient_info.first_name_th","appointment.patient_info.last_name_th","appointment.queue","appointment","exam","nurse_work","doctor.first_name","status","date_created"],"page":1,"sort":["-id"]}}	{"tabular":{"widths":{"id":90.4140625,"appointment.patient_info":106.67578125,"appointment.patient_info.first_name_th":133.203125,"appointment.patient_info.last_name_th":129.38671875,"appointment.queue":109.08203125,"appointment":98.9453125,"exam":91.0234375,"doctor.first_name":140,"status":93}}}	\N	\N	bookmark	\N
 62	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	notification	\N	\N	{"tabular":{"fields":["id","from_dept","to_dept","subject","message","status","doctor_work","appointment","from_user","to_user","date_created"],"page":1,"sort":["-id"]}}	{"tabular":{"widths":{"id":91.67578125,"from_dept":130.734375,"to_dept":113.13671875,"status":106.5234375,"doctor_work":135.74609375,"appointment":111.12890625}}}	\N	\N	bookmark	\N
 40	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	spot	\N	\N	{"tabular":{"page":1,"fields":["id","exam","exam.patient.first_name_th","exam.patient.last_name_th","doctor_work","spot_shapes","date_created"],"sort":["-id"]}}	{"tabular":{"widths":{"id":97.1015625}}}	\N	\N	bookmark	\N
 24	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	tab_exam_option	\N	tabular	{"tabular":{"page":1,"fields":["id","tab_id","tab_name","option_label","option_value","option_type","option_order","is_have_child","child_option.related_tab_exam_option_id.option_label","group","check_type"],"sort":["id"]}}	{"tabular":{"widths":{"id":100,"tab_id":143,"tab_name":254,"option_label":234,"option_value":145,"option_order":134,"is_have_child":153,"child_option.related_tab_exam_option_id.option_label":501}}}	\N	\N	bookmark	\N
 60	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	ultrasound_mass	\N	\N	{"tabular":{"page":1,"fields":["id","l_position","l_position_des","r_position","r_position_des"],"sort":["-id"]}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
-45	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	center_income	\N	\N	{"tabular":{"page":1,"fields":["id","amount","type","location","receipt_number","full_name","date_created","date_updated"]}}	{"tabular":{"widths":{"id":83,"type":97,"location":127}}}	\N	\N	bookmark	\N
+58	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	place	\N	\N	{"tabular":{"fields":["id","title"],"page":1}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
 31	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	coordinate	\N	\N	{"tabular":{"page":1,"fields":["id","appointment","exam","appointment.patient_info.first_name_th","appointment.patient_info.last_name_th","case_tag","reason","detail","date_created","date_updated"],"sort":["-date_created"]}}	{"tabular":{"widths":{"id":91,"appointment":126.1875,"exam":114.2734375,"appointment.patient_info.first_name_th":146.1484375}}}	\N	\N	bookmark	\N
 67	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	medical_certificate	\N	\N	{"tabular":{"page":1,"fields":["id","certification_text","certification_text_des","examining_physician","inspection_date","date_created"],"sort":["-id"]}}	{"tabular":{"widths":{"certification_text_des":265,"examining_physician":222.19140625}}}	\N	\N	bookmark	\N
 68	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	certificate_reason	\N	\N	{"tabular":{"page":1,"fields":["label","type","value"]}}	{"tabular":{"widths":{"label":844}}}	\N	\N	bookmark	\N
 64	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	locations	\N	\N	{"tabular":{"fields":["id","label","name","name_en"],"page":1}}	{"tabular":{"widths":{"name":368.5,"name_en":414.984375}}}	\N	\N	bookmark	\N
 65	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	bx_code	\N	\N	{"tabular":{"page":1,"fields":["id","name","is_mark_del","is_require_reason","test"]}}	{"tabular":{"widths":{"name":409.73046875}}}	\N	\N	bookmark	\N
-50	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	ultrasound	\N	\N	{"tabular":{"page":1,"fields":["id","exam","exam.patient","exam.patient.first_name_th","exam.patient.last_name_th","mass","cyst","exam.examination_general.assessment_birads_des","state","date_created"],"sort":["-id"]}}	{"tabular":{"widths":{"id":91.3828125,"exam":92.046875,"exam.patient":125.65625,"exam.patient.first_name_th":179,"exam.patient.last_name_th":161.91796875,"mass":92.671875,"cyst":95.6484375,"exam.examination_general.assessment_birads_des":249.796875}}}	\N	\N	bookmark	\N
+50	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	ultrasound	\N	\N	{"tabular":{"page":1,"fields":["id","exam","exam.patient","exam.patient.first_name_th","exam.patient.last_name_th","mass","cyst","exam.examination_general.assessment_birads_des","state","date_created","date_updated"],"sort":["-id"]}}	{"tabular":{"widths":{"id":91.3828125,"exam":92.046875,"exam.patient":125.65625,"exam.patient.first_name_th":179,"exam.patient.last_name_th":161.91796875,"mass":92.671875,"cyst":95.6484375,"exam.examination_general.assessment_birads_des":249.796875,"date_created":331}}}	\N	\N	bookmark	\N
 56	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	beds	\N	\N	{"tabular":{"fields":["id","location","room","bed_number","name","is_available","ultrasound_works"],"page":1}}	{"tabular":{"widths":{"id":102.5703125,"ultrasound_works":191.1640625}}}	\N	\N	bookmark	\N
 59	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	donate_for	\N	\N	{"tabular":{"fields":["id","title"],"page":1}}	{"tabular":{"widths":{"title":445}}}	\N	\N	bookmark	\N
-17	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	pacs_riscode	\N	tabular	{"tabular":{"page":2,"fields":["id","riscode","riscode_des","modality","worklist_type","default_mam","default_implant"],"sort":["categories"]}}	{"tabular":{"widths":{"id":91.55078125,"riscode":174.39453125,"riscode_des":360.3125}}}	\N	\N	bookmark	\N
-48	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	income	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
+45	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	center_income	\N	\N	{"tabular":{"page":1,"fields":["id","amount","type","location","receipt_number","full_name","date_created","date_updated"],"sort":["-id"]}}	{"tabular":{"widths":{"id":181,"type":97,"location":127}}}	\N	\N	bookmark	\N
+17	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	pacs_riscode	\N	tabular	{"tabular":{"page":1,"fields":["id","riscode","riscode_des","modality","worklist_type","default_mam","default_implant"],"sort":["categories"]}}	{"tabular":{"widths":{"id":91.55078125,"riscode":174.39453125,"riscode_des":360.3125}}}	\N	\N	bookmark	\N
 52	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	settings	\N	\N	{"tabular":{"fields":["key","value","description"],"page":1}}	{"tabular":{"widths":{"key":240,"description":449}}}	\N	\N	bookmark	\N
+43	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	exam_costs	\N	\N	{"tabular":{"fields":["id","activity","type","price_tyr","price_ics","has_other_activity"],"page":1,"sort":["type"]}}	{"tabular":{"widths":{"activity":359,"type":194,"has_other_activity":225}}}	\N	\N	bookmark	\N
 57	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	ultrasound_work	\N	\N	{"tabular":{"page":1,"fields":["id","location","exam","appointment","doctor_work","appointment.queue.number","appointment.patient_info.first_name_th","exam.patient.last_name_th","bed.name","status","date_updated","date_created"],"sort":["-id"]}}	{"tabular":{"widths":{"id":91.1171875,"location":120.1875,"exam":102.16796875,"appointment":93.73828125,"doctor_work":106.37890625,"appointment.queue.number":119.80859375,"appointment.patient_info.first_name_th":131.3359375,"bed.name":143.24609375},"align":{"date_updated":"left"}}}	\N	\N	bookmark	\N
-8	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	queue	\N	tabular	{"tabular":{"fields":["id","number","queue_datetime","citizen_id","prefix_th","first_name_th","last_name_th","date_created","status"],"sort":["-id"],"page":1}}	{"tabular":{"widths":{"id":90,"number":105,"queue_datetime":183.08984375,"citizen_id":205,"status":102}}}	\N	\N	bookmark	\N
+88	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	procedure	\N	\N	{"tabular":{"page":1,"fields":["id","exam","state","date_created","date_updated","clinical","patient_type","patient_type_des","review_outside_study"]}}	{"tabular":{"widths":{"id":82,"clinical":104}}}	\N	\N	bookmark	\N
 83	\N	\N	ca513c3f-f7f9-46dc-80c1-0331bfeb5772	queue	\N	table	\N	{}	\N	{"first_name_th":{"_eq":"มนตรา"}}	bookmark	\N
 85	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	underlying_disease	\N	\N	{"tabular":{"fields":["value","label"]}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
-76	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	lab_cost	\N	\N	{"tabular":{"fields":["lab_name","lab_cost","after_official_hours","official_hours","doctor_fee","df_cap"],"page":1}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
-75	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	procedure_cost	\N	\N	{"tabular":{"page":1,"fields":["technique","procedure","price","after_official_hours","doctor_fee","df_step","isAllowedAfterHour"]}}	{"tabular":{"widths":{"procedure":243,"after_official_hours":255}}}	\N	\N	bookmark	\N
+84	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	payment_type	\N	\N	{"tabular":{"fields":["id","value","label","care_type","date_created"],"page":1,"sort":["id"]}}	{"tabular":{"widths":{"label":542}}}	\N	\N	bookmark	\N
+74	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	bx_options	\N	\N	{"tabular":{"fields":["id","type","subtype","value","label","is_after_hours","is_default_cyto","is_default_patho"],"page":2}}	{"tabular":{"widths":{"id":95.11328125,"type":184.4921875,"subtype":106.01171875,"value":110.7421875,"label":259.7109375,"is_after_hours":140.7109375,"is_default_cyto":147.8671875,"is_default_patho":156.38671875}}}	\N	\N	bookmark	\N
 86	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	underlying_diseases	\N	\N	{"tabular":{"page":1,"fields":["value","label"]}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
-88	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	procedure	\N	\N	{"tabular":{"page":1,"fields":["id","exam","state","date_created","date_updated","clinical","patient_type","patient_type_des","review_outside_study"]}}	{"tabular":{"widths":{"id":82,"clinical":104}}}	\N	\N	bookmark	\N
-73	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	nurse_work	\N	tabular	{"tabular":{"page":1,"fields":["id","appointment_datetime","is_visit","appointed_dept","appointment","appointment.patient_info.first_name_th","appointment.patient_info.last_name_th","status","bx_status","date_created"],"sort":["-id"]}}	{"tabular":{"widths":{"id":90.046875,"appointment_datetime":161.7890625,"is_visit":102.7265625,"appointed_dept":115.16796875,"appointment":120.7734375,"appointment.patient_info.first_name_th":122.6171875,"status":139.73828125,"bx_status":235.91015625}}}	\N	\N	bookmark	\N
+75	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	procedure_cost	\N	\N	{"tabular":{"page":1,"fields":["technique","procedure","price","after_official_hours","doctor_fee","df_step","isAllowedAfterHour"]}}	{"tabular":{"widths":{"procedure":243,"after_official_hours":255}}}	\N	\N	bookmark	\N
+72	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	lab_list	\N	\N	{"tabular":{"fields":["id","key","value"],"page":1}}	{"tabular":{"widths":{"value":309.04296875}}}	\N	\N	bookmark	\N
 81	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	directus_presets	\N	tabular	{"tabular":{"fields":["bookmark","collection","user","role","id"],"page":3}}	{"tabular":{"widths":{"bookmark":200,"collection":200,"user":200,"role":200}}}	\N	\N	bookmark	\N
 80	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	directus_presets	\N	tabular	{"tabular":{"fields":["bookmark","collection","user","role","id"],"page":3}}	{"tabular":{"widths":{"bookmark":200,"collection":200,"user":200,"role":200}}}	\N	\N	bookmark	\N
-84	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	payment_type	\N	\N	{"tabular":{"fields":["id","value","label","care_type"],"page":1,"sort":["id"]}}	{"tabular":{"widths":{"label":542}}}	\N	\N	bookmark	\N
 79	QueueDecember	\N	ca513c3f-f7f9-46dc-80c1-0331bfeb5772	queue	\N	table	{"table":{"page":1}}	{}	\N	{"_and":[{"queue_datetime":{"_eq":"2025-12-02T09:52:49"}}]}	bookmark	\N
 77	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	directus_presets	83	tabular	{"tabular":{"fields":["bookmark","collection","user","role","id"],"page":1}}	{"tabular":{"widths":{"bookmark":200,"collection":200,"user":200,"role":200}}}	\N	\N	bookmark	\N
 82	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	directus_presets	\N	tabular	{"tabular":{"fields":["bookmark","collection","user","role"],"page":3}}	{"tabular":{"widths":{"bookmark":200,"collection":200,"user":200,"role":200}}}	\N	\N	bookmark	\N
-71	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	location_surgery	\N	\N	{"tabular":{"fields":["id","key","abbreviation","location_surgery","pickup_and_dropoff"],"page":1}}	{"tabular":{"widths":{"location_surgery":227,"pickup_and_dropoff":194.91015625}}}	\N	\N	bookmark	\N
-1	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	directus_users	test	tabular	{"cards":{"sort":["email"],"page":1},"tabular":{"page":1,"fields":["username","email","first_name","last_name","first_name_en","last_name_en","abbreviation","policies","id","role","policies.id"],"limit":100,"sort":["abbreviation"]}}	{"cards":{"icon":"account_circle","title":"{{ first_name }} {{ last_name }}","subtitle":"{{ email }}","size":3},"tabular":{"widths":{"last_name":180.98046875,"abbreviation":230}}}	\N	\N	bookmark	\N
+14	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	time_slot	\N	tabular	{"tabular":{"fields":["mon_thurs_app","mon_thurs_office","slot","time_period","index","id","is_disabled","is_bx_time","is_after_hours","time_start","time_end"],"page":1}}	{"tabular":{"widths":{"mon_thurs_app":153.38671875,"mon_thurs_office":270,"slot":94.23828125,"time_period":112.33203125,"index":97.67578125,"is_disabled":120.35546875,"is_bx_time":122.43359375,"time_start":140.578125}}}	\N	\N	bookmark	\N
+12	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	appointment	\N	tabular	{"tabular":{"page":1,"fields":["id","appointment_datetime","patient_info.pid","patient_info.first_name_th","patient_info.last_name_th","appointment_status","bx_status"],"sort":["-id"]}}	{"tabular":{"widths":{"id":106.5546875,"appointment_datetime":236.40625,"patient_info.pid":125.54296875}}}	\N	\N	bookmark	\N
 78	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	directus_presets	\N	tabular	{"tabular":{"fields":["bookmark","collection","user","role"],"page":3}}	{"tabular":{"widths":{"bookmark":200,"collection":200,"user":200,"role":200}}}	\N	\N	bookmark	\N
 87	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	underlying_diseases	\N	\N	{"tabular":{"fields":["value","label"]}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
-12	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	appointment	\N	tabular	{"tabular":{"page":1,"fields":["id","appointment_datetime","patient_info.pid","patient_info.first_name_th","patient_info.last_name_th"],"sort":["-id"]}}	{"tabular":{"widths":{"appointment_datetime":294}}}	\N	\N	bookmark	\N
-72	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	lab_list	\N	\N	{"tabular":{"fields":["id","key","value"],"page":1}}	{"tabular":{"widths":{"value":309.04296875}}}	\N	\N	bookmark	\N
-14	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	time_slot	\N	tabular	{"tabular":{"fields":["mon_thurs_app","mon_thurs_office","slot","time_period","index","is_disabled","is_bx_time","is_after_hours","time_start","time_end","id"],"page":2}}	{"tabular":{"widths":{"mon_thurs_app":153.38671875,"slot":94.23828125,"time_period":112.33203125,"index":97.67578125,"is_disabled":120.35546875,"is_bx_time":122.43359375,"time_start":140.578125}}}	\N	\N	bookmark	\N
-74	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	bx_options	\N	\N	{"tabular":{"fields":["id","type","subtype","value","label","parent.related_bx_options_id","is_after_hours"],"page":2}}	{"tabular":{"widths":{"id":95.11328125,"type":219.5390625,"subtype":106.01171875,"value":264.140625,"label":259.7109375}}}	\N	\N	bookmark	\N
-18	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	examination		\N	{"tabular":{"page":15,"fields":["id","appointment","exam_date","patient","patient.first_name_th","patient.last_name_th","case_owner_tech","case_owner_doctor.first_name","doctor_comment_detail","spots","status","date_created","date_updated"],"sort":["-id"]}}	{"tabular":{"widths":{"id":92.8125,"appointment":108.6015625,"exam_date":246,"patient":97.23828125,"patient.first_name_th":121.21875,"patient.last_name_th":125.26171875,"case_owner_tech":134.98828125,"case_owner_doctor.first_name":102.24609375,"doctor_comment_detail":202.19140625,"status":284.79296875}}}	\N	\N	bookmark	\N
-93	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	tab_procedure_options	\N	tabular	{"tabular":{"fields":["assessment_id","clinical_id","location_id","procedures_id","technique_id_1","technique_id_2","technique_id_3","technique_id_4","technique_id_5"],"page":1}}	{"tabular":{"widths":{"assessment_id":208}}}	\N	\N	bookmark	\N
-89	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	form_consent	\N	\N	{"tabular":{"page":1,"fields":["id","appointment","form_type","us_cnb","st_cnb","st_vabb","fna_asp","us_nl","st_nl","ci","tc_99m","other"],"sort":["-id"]}}	{"tabular":{"widths":{"id":92.1875,"appointment":94.13671875,"form_type":214.66796875,"us_cnb":96.5625,"st_cnb":92.66796875,"st_vabb":92.58984375,"fna_asp":90.34375,"us_nl":91.0859375,"st_nl":91.9296875,"ci":91.09375,"tc_99m":90.46875,"other":92.7734375}}}	\N	\N	bookmark	\N
-104	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	special_procedure_plans	\N	\N	{"tabular":{"fields":["nurse_work","side","technique","technique_other","procedure","procedure_other","breast_quadrant","breast_quadrant_other","patient_position","patient_position_other","breast_compression","breast_compression_other","approach","approach_other"],"page":1}}	{"tabular":{"widths":{"nurse_work":117.96875,"side":90.34765625,"technique":101.671875,"technique_other":100.859375,"procedure":98.8984375,"procedure_other":97.05078125,"breast_quadrant":135.91796875,"breast_quadrant_other":132.19140625,"patient_position":90.8125,"patient_position_other":90.18359375,"breast_compression":137.63671875,"breast_compression_other":137.375,"approach":144.7734375,"approach_other":117.94921875}}}	\N	\N	bookmark	\N
-98	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	tab_location_options	\N	\N	{"tabular":{"fields":["id","label","order","tab","type"]}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
-102	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	tab_technique_options	\N	\N	{"tabular":{"fields":["id","label","order","tab","type","procedure_id_1","procedure_id_2","procedure_id_3","procedure_id_4","procedure_id_5"],"page":4}}	{"tabular":{"widths":{"id":106,"label":271,"order":101,"type":178}}}	\N	\N	bookmark	\N
-94	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	tab_procedure_options	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
-111	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	bx_statuses	\N	\N	{"tabular":{"page":1,"fields":["status_key","description","nurse_appointment","nurse_procedure","doctor_biopsy"]}}	{"tabular":{"widths":{"status_key":136.47265625,"description":337.796875,"nurse_appointment":230.15625,"nurse_procedure":222.28125,"doctor_biopsy":255.84375}}}	\N	\N	bookmark	\N
-110	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	vital_signs	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
+73	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	nurse_work		tabular	{"tabular":{"page":2,"fields":["id","appointment_datetime","is_visit","appointed_dept","appointment","appointment.patient_info.first_name_th","appointment.patient_info.last_name_th","status","bx_status","date_created","date_updated"],"sort":["-id"]}}	{"tabular":{"widths":{"id":90.046875,"appointment_datetime":161.7890625,"is_visit":102.7265625,"appointed_dept":115.16796875,"appointment":120.7734375,"appointment.patient_info.first_name_th":122.6171875,"status":139.73828125,"bx_status":235.91015625}}}	\N	\N	bookmark	\N
+1	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	directus_users	ธนาว	tabular	{"cards":{"sort":["email"],"page":1},"tabular":{"page":1,"fields":["username","email","first_name","last_name","first_name_en","last_name_en","abbreviation","id","role","policies.id"],"limit":100,"sort":["abbreviation"]}}	{"cards":{"icon":"account_circle","title":"{{ first_name }} {{ last_name }}","subtitle":"{{ email }}","size":3},"tabular":{"widths":{"username":131.2421875,"last_name":180.98046875,"abbreviation":112.01171875}}}	\N	\N	bookmark	\N
+8	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	queue	\N	tabular	{"tabular":{"fields":["id","number","queue_datetime","citizen_id","prefix_th","first_name_th","last_name_th","date_created","status"],"sort":["-id"],"page":1}}	{"tabular":{"widths":{"id":90,"number":105,"queue_datetime":183.08984375,"citizen_id":205,"status":102}}}	\N	\N	bookmark	\N
+71	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	location_surgery	\N	\N	{"tabular":{"fields":["id","key","abbreviation","location_surgery","pickup_and_dropoff"],"page":1}}	{"tabular":{"widths":{"location_surgery":227,"pickup_and_dropoff":194.91015625}}}	\N	\N	bookmark	\N
+76	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	lab_cost	\N	\N	{"tabular":{"fields":["id","lab_name","lab_cost","after_official_hours","official_hours","doctor_fee","df_cap"],"page":1}}	{"tabular":{"widths":{"after_official_hours":188.44140625}}}	\N	\N	bookmark	\N
+114	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	external_exam_records	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
 106	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	tab_result_options	distance	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
-101	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	tab_assessment_options	\N	\N	{"tabular":{"fields":["id","label","order","tab","type"]}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
+102	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	tab_technique_options	\N	\N	{"tabular":{"fields":["id","label","order","tab","type","procedure_id_1","procedure_id_2","procedure_id_3","procedure_id_4","procedure_id_5"],"page":1}}	{"tabular":{"widths":{"id":106,"label":271,"order":101,"type":178}}}	\N	\N	bookmark	\N
+89	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	form_consent	\N	\N	{"tabular":{"page":1,"fields":["id","appointment","form_type","us_cnb","st_cnb","st_vabb","fna_asp","us_nl","st_nl","ci","tc_99m","other"],"sort":["-id"]}}	{"tabular":{"widths":{"id":92.1875,"appointment":94.13671875,"form_type":214.66796875,"us_cnb":96.5625,"st_cnb":92.66796875,"st_vabb":92.58984375,"fna_asp":90.34375,"us_nl":91.0859375,"st_nl":91.9296875,"ci":91.09375,"tc_99m":90.46875,"other":92.7734375}}}	\N	\N	bookmark	\N
+112	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	finance_cost	\N	\N	{"tabular":{"page":1,"fields":["id","hospital_code","cgd_code","procedure_name","procedure_price","excess_price"]}}	{"tabular":{"widths":{"procedure_name":755}}}	\N	\N	bookmark	\N
+98	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	tab_location_options	\N	\N	{"tabular":{"fields":["id","label","order","tab","type"]}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
+105	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	special_procedures	\N	\N	{"tabular":{"page":1,"fields":["id","nurse_work","order","technique","procedure","side","breast_quadrant","approach","status"],"sort":["-id"]}}	{"tabular":{"widths":{"id":92.921875,"nurse_work":253.09375,"order":92.03515625,"technique":120.35546875,"procedure":158.81640625,"side":121.12890625,"breast_quadrant":124.2265625}}}	\N	\N	bookmark	\N
+94	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	tab_procedure_options	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
+110	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	vital_signs	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
 34	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	finance_work	\N	\N	{"tabular":{"fields":["id","appointment.patient_info.first_name_th","appointment.patient_info.last_name_th","exam","appointment","additional_information","reason","status","date_created","date_updated"],"page":1,"sort":["-date_created"]}}	{"tabular":{"widths":{"id":92.53125,"appointment.patient_info.first_name_th":114.921875,"appointment.patient_info.last_name_th":117.7109375,"exam":92.55078125,"appointment":114.4296875,"additional_information":193.75390625,"status":181.97265625}}}	\N	\N	bookmark	\N
-105	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	special_procedures	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
-107	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	lab_orders	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
+101	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	tab_assessment_options	\N	\N	{"tabular":{"fields":["id","label","order","tab","type"]}}	{"tabular":{"widths":{}}}	\N	\N	bookmark	\N
+90	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	procedure_item	\N	\N	{"tabular":{"fields":["id","room","type","date_created"],"page":1}}	{"tabular":{"widths":{"id":100.6015625,"room":221.31640625,"type":170.52734375}}}	\N	\N	bookmark	\N
 95	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	tab_clinical_options	\N	\N	{"tabular":{"fields":["label","order","tab","type","procedure_id"]}}	{"tabular":{"widths":{"label":262}}}	\N	\N	bookmark	\N
+108	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	appointment_reschedules	14899	\N	{"tabular":{"page":1,"fields":["appointment","appointed_by","appointment_datetime","time_slot","date_created"],"sort":["-date_created"]}}	{"tabular":{"widths":{"appointment":219.5390625,"appointed_by":333.328125,"appointment_datetime":251.80078125}}}	\N	\N	bookmark	\N
 99	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	tab_procedures_options	\N	\N	{"tabular":{"fields":["label","order","tab","type","date_created"]}}	\N	\N	\N	bookmark	\N
 100	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	tab_recommendation_options	\N	\N	{"tabular":{"fields":["label","order","tab","type","date_created"]}}	\N	\N	\N	bookmark	\N
-108	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	appointment_reschedules	\N	\N	{"tabular":{"page":1,"fields":["appointment","appointed_by","appointment_datetime","time_slot"]}}	{"tabular":{"widths":{"appointment":219.5390625,"appointed_by":333.328125,"appointment_datetime":251.80078125}}}	\N	\N	bookmark	\N
-103	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	lab_options	\N	\N	{"tabular":{"fields":["id","type","label"],"page":1}}	{"tabular":{"widths":{"id":96.77734375,"type":176.7734375,"label":235.75}}}	\N	\N	bookmark	\N
+104	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	special_procedure_plans	\N	\N	{"tabular":{"fields":["id","nurse_work","side","technique","technique_other","procedure","procedure_other","breast_quadrant","breast_quadrant_other","patient_position","patient_position_other","breast_compression","breast_compression_other","approach","approach_other"],"page":1,"sort":["-id"]}}	{"tabular":{"widths":{"id":97.55859375,"nurse_work":163.62890625,"side":90.34765625,"technique":101.671875,"technique_other":100.859375,"procedure":98.8984375,"procedure_other":97.05078125,"breast_quadrant":135.91796875,"breast_quadrant_other":132.19140625,"patient_position":90.8125,"patient_position_other":90.18359375,"breast_compression":137.63671875,"breast_compression_other":137.375,"approach":144.7734375,"approach_other":117.94921875}}}	\N	\N	bookmark	\N
 109	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	recommended_procedures	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
-90	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	procedure_item	\N	\N	{"tabular":{"fields":["id","room","type","date_created"],"page":1}}	{"tabular":{"widths":{"id":100.6015625,"room":221.31640625,"type":170.52734375}}}	\N	\N	bookmark	\N
+111	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	bx_statuses	\N	\N	{"tabular":{"page":1,"fields":["status_key","description","nurse_appointment","nurse_procedure","doctor_biopsy"]}}	{"tabular":{"widths":{"status_key":136.47265625,"description":410.69921875,"nurse_appointment":230.15625,"nurse_procedure":222.28125,"doctor_biopsy":255.84375}}}	\N	\N	bookmark	\N
+93	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	tab_procedure_options	\N	tabular	{"tabular":{"fields":["assessment_id","clinical_id","location_id","procedures_id","technique_id_1","technique_id_2","technique_id_3","technique_id_4","technique_id_5"],"page":1}}	{"tabular":{"widths":{"assessment_id":208}}}	\N	\N	bookmark	\N
+18	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	examination		\N	{"tabular":{"page":5,"fields":["id","appointment","exam_date","patient","patient.first_name_th","patient.last_name_th","case_owner_tech","case_owner_doctor.first_name","doctor_comment_detail","spots","status","date_created","date_updated","referring_md"],"sort":["-id"]}}	{"tabular":{"widths":{"id":92.8125,"appointment":108.6015625,"exam_date":246,"patient":97.23828125,"patient.first_name_th":121.21875,"patient.last_name_th":125.26171875,"case_owner_tech":134.98828125,"case_owner_doctor.first_name":102.24609375,"doctor_comment_detail":202.19140625,"status":284.79296875}}}	\N	\N	bookmark	\N
+113	\N	f0e0b60d-69de-45ef-aab0-14da792a6145	\N	finance_cost	\N	\N	{"tabular":{"page":1}}	\N	\N	\N	bookmark	\N
 \.
 
 
@@ -17165,7 +17431,6 @@ COPY public.directus_relations (id, many_collection, many_field, one_collection,
 28	examination	user_created	directus_users	\N	\N	\N	\N	\N	nullify
 29	examination	patient	patient_info	\N	\N	\N	\N	\N	nullify
 30	examination	referring_md	referring_md	\N	\N	\N	\N	\N	nullify
-32	examination	appointment	appointment	\N	\N	\N	\N	\N	nullify
 33	examination_cost	user_created	directus_users	\N	\N	\N	\N	\N	nullify
 34	examination_cost	user_updated	directus_users	\N	\N	\N	\N	\N	nullify
 35	examination_general	user_created	directus_users	\N	\N	\N	\N	\N	nullify
@@ -17399,10 +17664,6 @@ COPY public.directus_relations (id, many_collection, many_field, one_collection,
 360	tab_recommendation_options	procedure_id	tab_procedure_options	recommendation_id	\N	\N	\N	\N	nullify
 383	special_procedure_plans	user_created	directus_users	\N	\N	\N	\N	\N	nullify
 384	special_procedure_plans	user_updated	directus_users	\N	\N	\N	\N	\N	nullify
-385	lab_options	user_created	directus_users	\N	\N	\N	\N	\N	nullify
-386	lab_options	user_updated	directus_users	\N	\N	\N	\N	\N	nullify
-389	lab_plans	user_created	directus_users	\N	\N	\N	\N	\N	nullify
-390	lab_plans	user_updated	directus_users	\N	\N	\N	\N	\N	nullify
 399	special_procedures	user_updated	directus_users	\N	\N	\N	\N	\N	nullify
 400	special_procedures	technique	bx_options	\N	\N	\N	\N	\N	nullify
 401	special_procedures	procedure	bx_options	\N	\N	\N	\N	\N	nullify
@@ -17417,10 +17678,6 @@ COPY public.directus_relations (id, many_collection, many_field, one_collection,
 393	tab_technique_options	procedure_id_3	tab_procedure_options	technique_id_3	\N	\N	\N	\N	nullify
 394	tab_technique_options	procedure_id_4	tab_procedure_options	technique_id_4	\N	\N	\N	\N	nullify
 408	special_procedures	equipment	procedure_item	\N	\N	\N	\N	\N	nullify
-409	lab_orders	user_created	directus_users	\N	\N	\N	\N	\N	nullify
-410	lab_orders	user_updated	directus_users	\N	\N	\N	\N	\N	nullify
-411	special_procedures_lab_orders	lab_orders_id	lab_orders	\N	\N	\N	special_procedures_id	\N	nullify
-412	special_procedures_lab_orders	special_procedures_id	special_procedures	lab_orders	\N	\N	lab_orders_id	\N	nullify
 418	tab_result_options	procedure_id_1	tab_procedure_options	result_id_1	\N	\N	\N	\N	nullify
 419	tab_result_options	procedure_id_2	tab_procedure_options	result_id_2	\N	\N	\N	\N	nullify
 420	tab_result_options	procedure_id_3	tab_procedure_options	result_id_3	\N	\N	\N	\N	nullify
@@ -17441,8 +17698,6 @@ COPY public.directus_relations (id, many_collection, many_field, one_collection,
 436	special_procedure_plans	patient_position	bx_options	\N	\N	\N	\N	\N	nullify
 437	special_procedure_plans	breast_compression	bx_options	\N	\N	\N	\N	\N	nullify
 438	special_procedure_plans	approach	bx_options	\N	\N	\N	\N	\N	nullify
-439	lab_plans	breast_quadrant	bx_options	\N	\N	\N	\N	\N	nullify
-441	lab_orders	breast_quadrant	bx_options	\N	\N	\N	\N	\N	nullify
 442	special_procedures	breast_quadrant	bx_options	\N	\N	\N	\N	\N	nullify
 443	special_procedures	breast_compression	bx_options	\N	\N	\N	\N	\N	nullify
 446	recommended_procedures	technique	bx_options	\N	\N	\N	\N	\N	nullify
@@ -17450,15 +17705,11 @@ COPY public.directus_relations (id, many_collection, many_field, one_collection,
 448	recommended_procedures	breast_quadrant	bx_options	\N	\N	\N	\N	\N	nullify
 449	recommended_procedures	nurse_work	nurse_work	recommended_procedures	\N	\N	\N	\N	nullify
 414	special_procedure_plans	nurse_work	nurse_work	special_procedure_plans	\N	\N	\N	\N	nullify
-415	lab_plans	nurse_work	nurse_work	lab_plans	\N	\N	\N	\N	nullify
 413	special_procedures	nurse_work	nurse_work	special_procedures	\N	\N	\N	\N	nullify
-450	lab_orders	patho	bx_options	\N	\N	\N	\N	\N	nullify
-451	lab_orders	cyto	bx_options	\N	\N	\N	\N	\N	nullify
-452	lab_plans	patho	bx_options	\N	\N	\N	\N	\N	nullify
-453	lab_plans	cyto	bx_options	\N	\N	\N	\N	\N	nullify
 454	appointment_reschedules	user_updated	directus_users	\N	\N	\N	\N	\N	nullify
 455	appointment_reschedules	user_created	directus_users	\N	\N	\N	\N	\N	nullify
 456	appointment_reschedules	appointed_by	directus_users	\N	\N	\N	\N	\N	nullify
+412	special_procedures_lab_orders	special_procedures_id	special_procedures	\N	\N	\N	lab_orders_id	\N	nullify
 457	appointment_reschedules	time_slot	time_slot	\N	\N	\N	\N	\N	nullify
 459	appointment_reschedules	appointment	appointment	appointment_reschedules	\N	\N	\N	\N	nullify
 460	external_exam_records	user_created	directus_users	\N	\N	\N	\N	\N	nullify
@@ -17470,6 +17721,20 @@ COPY public.directus_relations (id, many_collection, many_field, one_collection,
 466	vital_signs	user_updated	directus_users	\N	\N	\N	\N	\N	nullify
 467	vital_signs	user_created	directus_users	\N	\N	\N	\N	\N	nullify
 468	vital_signs	appointment	appointment	vital_signs	\N	\N	\N	\N	nullify
+470	special_procedure_plans_bx_options	bx_options_id	bx_options	\N	\N	\N	special_procedure_plans_id	\N	nullify
+471	special_procedure_plans_bx_options	special_procedure_plans_id	special_procedure_plans	\N	\N	\N	bx_options_id	\N	nullify
+472	special_procedure_plans_bx_options_1	bx_options_id	bx_options	\N	\N	\N	special_procedure_plans_id	\N	nullify
+474	special_procedure_plans_lab_list	lab_list_id	lab_list	\N	\N	\N	special_procedure_plans_id	\N	nullify
+473	special_procedure_plans_bx_options_1	special_procedure_plans_id	special_procedure_plans	patho_labs	\N	\N	bx_options_id	\N	nullify
+475	special_procedure_plans_lab_list	special_procedure_plans_id	special_procedure_plans	other_labs	\N	\N	lab_list_id	\N	nullify
+476	special_procedures_bx_options	bx_options_id	bx_options	\N	\N	\N	special_procedures_id	\N	nullify
+477	special_procedures_bx_options	special_procedures_id	special_procedures	patho_labs	\N	\N	bx_options_id	\N	nullify
+478	special_procedures_lab_list	lab_list_id	lab_list	\N	\N	\N	special_procedures_id	\N	nullify
+479	special_procedures_lab_list	special_procedures_id	special_procedures	other_labs	\N	\N	lab_list_id	\N	nullify
+480	finance_cost	user_created	directus_users	\N	\N	\N	\N	\N	nullify
+481	finance_cost	user_updated	directus_users	\N	\N	\N	\N	\N	nullify
+482	billing	finance_case_owner	directus_users	\N	\N	\N	\N	\N	nullify
+32	examination	appointment	appointment	examination	\N	\N	\N	\N	nullify
 \.
 
 
@@ -17486,89 +17751,245 @@ COPY public.directus_shares (id, name, collection, item, role, password, user_cr
 --
 
 COPY public.directus_sessions (token, "user", expires, ip, user_agent, share, origin, next_token) FROM stdin;
-4QdWJdoeaokO45DsqF6Gx_U4d8Y26z5QhNELgqY_zU7bjazdNxd_bA5dR2yVMhB1	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-05-17 16:17:51.081+00	127.0.0.1	node	\N	\N	\N
-x-nMThHxLQW-nHTKJE-3a2TDyYK5ds0UggUZEwLpiiPZPh1TzfEEQy4o5Kq_5ud_	14bb706e-8573-452f-993a-20254f24d730	2026-05-17 18:26:32.464+00	127.0.0.1	node	\N	\N	\N
-EhpIDuV-8iwsIc4ExbEcTluykvk4U9dH7VcGlp3YVaIIAg6_jteGXBNYnRwSRn4w	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-05-17 19:43:58.687+00	127.0.0.1	node	\N	\N	\N
-M2dUai4nSbhOZ5dPV6iuQYIvDy9A5g4g_xF7Jt2z8nkRPRZTsKoU3Fr9LC1DMnUI	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-05-18 00:59:50.81+00	127.0.0.1	node	\N	\N	\N
-nAIfS7BQq3GaPIfxgXcPi-rSPnDa9fSmCAo6tvmy5xdoSG02AcCZ3MI5nbOmyDFg	14bb706e-8573-452f-993a-20254f24d730	2026-05-18 06:23:02.442+00	127.0.0.1	node	\N	\N	\N
-QT8SfJKGa_wA9rAtiyFvW5ozas8dMnz5Je4cpIx8S2yRgUZcsQQC-XpisCdfrLvF	14bb706e-8573-452f-993a-20254f24d730	2026-05-18 04:31:58.508+00	127.0.0.1	node	\N	\N	\N
-AND5TnevwpdCbH5HPBNMm1TSpzu2_iAKMVKMZH63wJfeN38hcdvPR0hH3t2Zf6jk	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-05-18 07:17:50.757+00	127.0.0.1	node	\N	\N	\N
-qfqE42zEPKL1mYzg-KZyTabtb6cYsx-kYxvnI70Gh0v49IufqEfBsEwiaxoHFzpv	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-05-19 23:38:46.758+00	127.0.0.1	node	\N	\N	\N
-NzbkZ2Y0Z4uX83VqGSh8TU0SqqpDIUCBLNYCFGKli4frN05UgoNZCTTsz7C4BXRS	1a4564d5-384b-4299-b8de-c2761baa1413	2026-05-20 03:32:00.035+00	127.0.0.1	node	\N	\N	\N
-4zODmN2g2MMlOJqkReigiuU6PCDM1JJDBjVJRF92ZbydfsNxRY4W1HqEckPxLRwK	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-05-20 07:14:58.921+00	127.0.0.1	node	\N	\N	\N
-NR5h1bEO-E6m_hTq4t1486XCSRPYdA-krg30gJDKHv_lX9qT3eJ2stD0_WQWSwGO	14bb706e-8573-452f-993a-20254f24d730	2026-05-17 12:55:35.584+00	127.0.0.1	node	\N	\N	\N
-puip3WpbFYPcCkXVj2N5y8Esk6_2kw7zRawXV0DbHooj2GkwgGErVt_I-ZrIhI3K	14bb706e-8573-452f-993a-20254f24d730	2026-05-17 14:53:42.591+00	127.0.0.1	node	\N	\N	\N
-H_48F0N-6x_CVuuW-5S1D0-23cfhOEKjni4l_-kOkqWPMD_1MKG65BVTytAtdXIj	14bb706e-8573-452f-993a-20254f24d730	2026-05-17 15:01:05.795+00	127.0.0.1	node	\N	\N	\N
-5HdeEBfGi6gevMkEpjXx05mpJbPWbVqFLo3ovxW9tj2hDP8zx4cO_vJZHq-0U6HU	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-05-17 15:16:16.096+00	127.0.0.1	node	\N	\N	\N
-V9BAlUzyvMYiNvDO5U1QD9DNSSnJ_9K7FhflZaTEkTG-1_xH0_wdVWvTDdw0BP5j	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-05-17 16:24:06.84+00	127.0.0.1	node	\N	\N	\N
-zDiwU_woRUbJOEqSiTK9ePgawHXMGGrbGlfX6WPV_Ual3jZTnZvTpE8w7f5f3HB7	14bb706e-8573-452f-993a-20254f24d730	2026-05-17 19:37:38.442+00	127.0.0.1	node	\N	\N	\N
-xC_0lL-O_ccQMEJt7_8gf2Ynr6M9-HmXKcz73m2IHfQv0EE6bjxQHqPkpBh_1Ejq	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-05-17 20:13:55.739+00	127.0.0.1	node	\N	\N	\N
-vFCClNfkjdgyWLIIp4dvoKKN1E2MqlaAWBzOfSchXi8xCWK1uhiN0gag1D1nM3iY	14bb706e-8573-452f-993a-20254f24d730	2026-05-17 22:17:40.62+00	127.0.0.1	node	\N	\N	\N
-Va0G_r5TiFdmXq-29X1rs2Z3qAuOM8o0Kw69PTXqRls208FZrE97cNPlW_NToc49	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-05-18 07:25:01.311+00	127.0.0.1	node	\N	\N	\N
-JcLkgaqtfJiJ4typE2iTFLOqTs8Ek73sYDi8n-T1OF_76fAHaafgVr-5AbrukiS-	14bb706e-8573-452f-993a-20254f24d730	2026-05-18 02:32:39.759+00	127.0.0.1	node	\N	\N	\N
-tMSwNPJMp28_NNWjQzl3fg571oPGo5Nr1Fu7yBxhO7DuNkGjEX53EncoQ4H5DgRQ	14bb706e-8573-452f-993a-20254f24d730	2026-05-18 02:50:17.134+00	127.0.0.1	node	\N	\N	\N
-bxsGidezsvq-Bg7eIEUATmyr68fd3kWXNIrRAXsGwgefj4ZX3G_JTcCGqeePM2MK	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-19 07:46:08.939+00	10.104.11.224	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36	\N	https://dev-cluster.bis-backoffice.bytebetter.io	\N
-wuplbhJmXwhpaA9ITM2HASRHieNdpt3Pm45ol3bk906fNYo6lU0JqTMJEo7sRrVk	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-05-20 07:17:08.825+00	127.0.0.1	node	\N	\N	\N
-99E5Ue5yHRfyXDoik2VUbH78iMrVJOSRXkOpqIshTetrccv_X8hBJ3vQfZkMpMD1	14bb706e-8573-452f-993a-20254f24d730	2026-05-17 12:58:41.741+00	127.0.0.1	node	\N	\N	\N
-ed2Fw7mQytFjb0zdarPxPG9QK9m5KcPuTtclnDSomnDom84J2cQtpYa-u1yxKsvm	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-05-17 16:25:03.035+00	127.0.0.1	node	\N	\N	\N
-U77FnMvAaNWcCSSe0yTVbdXPvT5SP8p63_fG_6jk5y9fpzULIH0b9_MZpEG9pXmK	f748f768-61a6-420d-be8b-e48df54a0988	2026-05-17 20:44:32.293+00	127.0.0.1	node	\N	\N	\N
-cTcXG1rlmGjxgcFE3ZLJRN0kKBkkrZEpxUYLpQ5VgrRm7rR7M1vJjDss1GkdxScw	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-05-18 02:14:39.245+00	127.0.0.1	node	\N	\N	\N
-I7MXub564QjAKrEgJDHhNsQ1Msrhm-guQb9EpyWt4NPGnEVoPPhJNQ8Hwg5gxhjf	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-05-18 07:27:32.105+00	127.0.0.1	node	\N	\N	\N
-xSd3_4G8vGkBsyqIJKe8BcKeg732IWuFYko13VN6M5ho1Ejo4USe-LHpRws9yeOu	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-05-18 07:29:07.936+00	127.0.0.1	node	\N	\N	\N
-voVMA0MCYVqE0O3T2rA21ptpgeaB8u91FvbKfr1Dr26W8q6CHQfQYFe5bR_PEHhW	1a4564d5-384b-4299-b8de-c2761baa1413	2026-05-20 03:51:20.384+00	127.0.0.1	node	\N	\N	\N
-ETUzRduk4G1ZV9BhzRSigYTAC4ZK-2R5HaI0Q5HXjyQyG_BMPzt1irLum1zpMiX9	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-05-20 07:19:00.505+00	127.0.0.1	node	\N	\N	\N
-Bo0CF2jrtioi_NCSgzn3OT_V12ngu2GK1_xUokVud8NxaPT_Kgs-Qtwwoi1G1ysY	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-05-20 07:19:14.234+00	127.0.0.1	node	\N	\N	\N
-xkgjmtpD5z64V76hEnx1zaP5DHQI121PLeOlNM_oPNjAHvqgGMVhFpdmHyCalrfu	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-05-17 16:26:14.451+00	127.0.0.1	node	\N	\N	\N
-ttPvzkg621TQPXMlKICd67rN_BmxSouAY-LLMjXor5Kra6FrlIS39dRaQxNzje9O	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-05-17 20:45:37.599+00	127.0.0.1	node	\N	\N	\N
-496l37ts9GntqXx2WMY_az-KLSpGT_gQI2FzsBYfhMT9fcsOFcCSqT6aJ7jfUsOe	14bb706e-8573-452f-993a-20254f24d730	2026-05-19 21:58:40.141+00	127.0.0.1	node	\N	\N	\N
-1MLmRLrewQQRXt7pGQBWqd14F5spnnV9nLr6aIQD0Y3RyrzYIxiBCCWWzFDVIp6h	f748f768-61a6-420d-be8b-e48df54a0988	2026-05-20 07:22:27.35+00	127.0.0.1	node	\N	\N	\N
-eQbq6cLsr1pgOmYWhnXKpONoTEe-k0M6lOGIV-Pwa2_W3qQbdrXhKxMR9c22d24_	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-05-17 16:29:40.398+00	127.0.0.1	node	\N	\N	\N
-LOdFroJi0lrrKabjQQLalmc-anDslqAFfkAtc-pgx4vY5oBMKcnlquMOhAsP-iST	14bb706e-8573-452f-993a-20254f24d730	2026-05-17 18:50:26.907+00	127.0.0.1	node	\N	\N	\N
-w5oJuO0yEah6WX0xFruQIVLVSScY9hOBjqSsz9k7FFv7TYgGBs295EdCJQWjdZXh	14bb706e-8573-452f-993a-20254f24d730	2026-05-17 23:09:12.063+00	127.0.0.1	node	\N	\N	\N
-l7EaEBufVWmBX0QA5hTfUd6omk683HgRACTkmqiefUk5dE5evOT1XAFayzd8-Mpx	f748f768-61a6-420d-be8b-e48df54a0988	2026-05-19 23:30:44.261+00	127.0.0.1	node	\N	\N	\N
-gm5RqDsFN147iG5rQsm8OJUXT60V6bYc-rJgDMTwk8lIcU_d4m3IgkM229_jbIj8	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-05-20 05:29:47.744+00	127.0.0.1	node	\N	\N	\N
-1SgLFMtiGxm0XFvAobSsM3QOppX0qVeC3HCYGbVuBcUa44S0qe1amegMe2yI9HIW	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-05-20 07:24:09.434+00	127.0.0.1	node	\N	\N	\N
-EXmvznOA9UF9mm6Bfj3pCMPhPEPRcpTH4OAtQhlnR2_sgBz5-zDANB1khJ4DKevO	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-05-17 16:34:18.215+00	127.0.0.1	node	\N	\N	\N
-O_Sy908gMRAZBiZUyiKHNyJyZ77KIeNw5CD8ZBn0L75R3jVIAWqiGxulScFNMZHq	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-05-19 23:32:01.131+00	127.0.0.1	node	\N	\N	\N
-AQSeIX0BQpVqGn1NkbRlI1cuRcCD3NGI1l_ko0PMMZNoK20aCIyH5sL0jAs04qmS	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-14 01:42:03.342+00	10.104.11.224	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0	\N	https://dev-cluster.bis-backoffice.bytebetter.io	\N
-Q5HbqNtOSCoN7m2mCUk6Bd3XVayQO58WIQFQ3tCfUorP161Zi-H6UrgD20Y4O2mu	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-05-20 07:25:12.834+00	127.0.0.1	node	\N	\N	\N
-vfn3Aj25dIe_jHLbL-8cFufYgiECIOBDIxStVzqNXR1smUB6jG9uA_12K6nOBCmn	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-05-17 16:08:36.744+00	127.0.0.1	node	\N	\N	\N
-B9tgXgpbk7wK8Yv6uz2-SMpFpjUDbmwArCSTUbaAjzj6lcV6dgcYJ6_uW-qMJWv8	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-05-17 16:36:49.738+00	127.0.0.1	node	\N	\N	\N
-jdG0hxRIY0-tbJ1JMzJg-qCO4r5Wkrzywb3O3aKZByLq-krNVspTaIhHe5zDdheU	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-05-17 19:41:07.773+00	127.0.0.1	node	\N	\N	\N
-c9wtw1AsS05cG0tYVV98sqJ86FWISqUts6_qo5-EOHcIkW4bi3leIGzpHikZ32oD	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-05-19 23:32:58.902+00	127.0.0.1	node	\N	\N	\N
-RNxsLxVEqQMISPpy_WuDKogNNmIQSt_wPJk-dxXcfHMfT7w8Luukn0dbbmvbMPJy	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-05-19 23:33:34.962+00	127.0.0.1	node	\N	\N	\N
-_XOuPTldzw6tam8NzoF4LfUn7S5yAjCpkfOV6s9LTK12F0PhQGSZgCLNmVMAPaaV	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-05-20 08:11:38.923+00	127.0.0.1	node	\N	\N	\N
-Pzg9kI9OfEpvtKvQRstB1_T4G119oBzw8qBZwPaDcb0mUv5Ch4Kpz7GDq3ZdvvIQ	f748f768-61a6-420d-be8b-e48df54a0988	2026-05-17 16:45:40.208+00	127.0.0.1	node	\N	\N	\N
-NpC-YamZzGoDEFc-5Pyk-YwZjsSl9iM08C7yYk-oMWTkaE0MdKY-TZc4Q5mRRQW9	14bb706e-8573-452f-993a-20254f24d730	2026-05-20 02:25:08.624+00	127.0.0.1	node	\N	\N	\N
-eX1oy-bLRReuj-zdDSTKH7eSJdSFgDABVJGQ-pZ5aCwI1Lk5w2zqXPnyDqptX804	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-05-20 08:12:38.629+00	127.0.0.1	node	\N	\N	\N
-r9LZ_Y6bb6MdCiVlfznBmKwZsfA1Fp7FUsbUkhuJUW1q4RFSnxSZWaPeffiv-ADE	14bb706e-8573-452f-993a-20254f24d730	2026-05-17 16:30:45.939+00	127.0.0.1	node	\N	\N	\N
-vrSHeZWBq-WbiVUzUOzXU-a-h4PdpVFEuE7fAHARmgjUu4GC2kL5QDUmw1BYGURx	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-05-17 16:48:49.26+00	127.0.0.1	node	\N	\N	\N
-YOuJ7YAFq1bamTnslMO9UdE7-axbTwjh4v-0M1jNLUHzbFPEtJToSzoPl0hD4pLw	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-05-20 08:13:54.143+00	127.0.0.1	node	\N	\N	\N
-r4ai5Jfnm-lPDCmUn47bgt8rV6g6rwoLo58KKbLgnoqQB5RsbXj4_koNI_DAi43T	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-05-20 08:16:29.019+00	127.0.0.1	node	\N	\N	\N
-vRDbrMMlI2zFIKn3TbOnXw8QETDIK5YD_8FlgymWz7oFXpBn8vlrMiMn2po_HBOt	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-05-17 16:49:50.422+00	127.0.0.1	node	\N	\N	\N
-OXKsnDfUif9xSOYBQZhemKk8EGDPLAmn_nGtQbj7dYkGXmFqzraMDvQXAUZ-N2QZ	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-05-17 16:50:50.354+00	127.0.0.1	node	\N	\N	\N
-nHlInobB-FaQZYnxpZyTg4OkQXuFa5EVS75mRiaRmTAhRdRjpIlhDJrFsLIlMKCe	14bb706e-8573-452f-993a-20254f24d730	2026-05-17 22:08:01.293+00	127.0.0.1	node	\N	\N	\N
-RyyFIKmK0hJwr1Jrn1Sep8hFR73GiRYr48sbd1J11bv-Nd5wXMQfnBz3pdKKaONb	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-14 03:23:33.356+00	10.104.11.224	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36	\N	https://dev-cluster.bis-backoffice.bytebetter.io	\N
-Xw3jMI1jPTWM86S3-l-fDp8Lt-2TdTvI6GSUHJWV-fR-79DqyI-LdoFOgTV5ksz3	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-05-20 09:05:54.235+00	127.0.0.1	node	\N	\N	\N
-h5Kwbg6cOowOhyMdnLGTMFUiZQpiEo1eZIALaPyGEMZf1kXFGANAI4cpeP8VqbhY	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-05-17 16:55:14.063+00	127.0.0.1	node	\N	\N	\N
-lyP_lsR1w9Pw6-cnBnRjoNY3xiSMQ2uCQ1h7aidfO_wJlVpS-6vE7qsO3LZiT6jN	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-05-17 17:45:39.084+00	127.0.0.1	node	\N	\N	\N
-1QcRneDzInJBXNxh4_0kB16VSY1B81UUSpFNPurBUTaWMZvlP8ZRA1WhCuQ35xmR	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-20 14:13:03.342+00	10.104.11.224	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36	\N	https://dev-cluster.bis-backoffice.bytebetter.io	\N
-ZVCBYMPZk1xC8tTjsJX__oqYTMr8NzWecI2N3HiZM8EEb4YzFs5BSgdvSgQsmmyj	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-05-17 17:02:52.972+00	127.0.0.1	node	\N	\N	\N
-I5Ywg7cjRUlnsPVvqIp6cKqelE4t46S-lza_anC3w36W0Vf1SUtuQkAqn4cXNWTH	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-05-17 17:48:03.663+00	127.0.0.1	node	\N	\N	\N
-5sAKQ_yR_01Jls02lGom_SM3PfRpDWse47XDwLaQGUvJkDKszpGAgJM4GGSxFBKp	bd338144-090c-40e1-b016-f89cf67be5ad	2026-05-20 15:09:46.553+00	127.0.0.1	node	\N	\N	\N
-GnRaqKfJhSYpvbGo-yPnj0c_1MUvOjjzimUtAYGiknrAlWdlzkBhqJ53D81lPA4K	f748f768-61a6-420d-be8b-e48df54a0988	2026-05-17 17:09:59.348+00	127.0.0.1	node	\N	\N	\N
-k-Q6-VgKeiBxgBYTyNX-ZwVU-zvZn8OK2k9kcvIdOHZndI-lqC4YpfUACB73ScoW	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-05-17 17:10:52.716+00	127.0.0.1	node	\N	\N	\N
-Eo_O2hxm2gTWFmOefrra67m2zBWEvtOk01ytdCsplqLawENvJBXsQAcZSCIpsGek	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-05-17 17:50:03.843+00	127.0.0.1	node	\N	\N	\N
-om7J-oGL-YE-mf_pu3t0oLZSPVOaEHVA18P_rQ4zdd4ihrYkWyR-UqPdCR81Xudj	f748f768-61a6-420d-be8b-e48df54a0988	2026-05-17 17:51:43.502+00	127.0.0.1	node	\N	\N	\N
-qeIlZpr5wjWqr-W--jedrvYgMh0Q0zj1lmAs9vOjdXckiRzCFCtDt_2hGQO1EHye	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-05-17 17:11:43.625+00	127.0.0.1	node	\N	\N	\N
-CVWCqpAoK3GAEOjEKYL4pRjonywNAZqcHLn9MCxR0ZFjb9CmITMyzHOtg-dMK22N	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-05-17 18:00:04.011+00	127.0.0.1	node	\N	\N	\N
-0Ni_d2ebGA3u43gBEJe4_GndO5GZhhib0S0iYGN3pDkg60yZAddOvrzIxJVZTLbm	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-05-20 01:53:27.082+00	127.0.0.1	node	\N	\N	\N
-tEqGhjK18oRBOJyAJL5DirzPifEWvD4qRDfe3rbLvyW8l-gNQACSyOxCq9if7GJZ	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-05-17 17:12:24.447+00	127.0.0.1	node	\N	\N	\N
-AX7nrLDa2OOaBgTMAJksk641GaYxYckRKZRVQZbrbq7ObcQ4oHtbZ40SCMdt5x-O	f748f768-61a6-420d-be8b-e48df54a0988	2026-05-17 18:01:53.829+00	127.0.0.1	node	\N	\N	\N
-5VAFljmIPMi4q1KcuhBo9jiF1tpLKmLETNmG1Ifpgh0BfwIzyg0_RLgNIW6hIa1A	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-05-20 01:56:10.468+00	127.0.0.1	node	\N	\N	\N
-Dx-xs8lbVKnLM64dz04uO7CD5CJPAg0QJUO5tE6a6Z9iI0l7fosB351fddB9zaQ1	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-05-17 18:02:51.94+00	127.0.0.1	node	\N	\N	\N
-oLZOFcaX2zBmIpEfFVDOEd-QPA26feYT81XS0czwTLjvF-gCRINzMtC-WftJUR2H	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-05-20 02:14:16.585+00	127.0.0.1	node	\N	\N	\N
-d5WuQeBorBR0cNg0MubM-6mRBV-BxEaCiu8KHI-moeGdZsHVYHSyUiOQlazgLr4t	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-05-17 18:04:14.431+00	127.0.0.1	node	\N	\N	\N
+c7R_E6xGEDNbqkMmXm1UIsfIe6nAiwb5v6Q1W8JYZ_jKO8tj3O31BYc_Cfn-1UWU	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-07-08 23:52:37.29+00	127.0.0.1	node	\N	\N	\N
+BghLDeZdUbBM2lWGI8UHv5mMY9stUc41bQDj3CKNrZhp7g7Lfew-GGu_5cV_UOqs	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 01:21:29.597+00	127.0.0.1	node	\N	\N	\N
+zURJw1h_E_VwiEbHmgDrJKom1zJLtLAKvt9Xux3PBGLOINa_AR8O3oty15c6NiAD	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 07:44:02.512+00	127.0.0.1	node	\N	\N	\N
+wbGCEXC4ldGTBsA1gUhGI4B2qyu6mxWQTvxvfli5NWMT09l5QWEqWkzyu3dETbWE	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-09 02:22:00.666+00	127.0.0.1	node	\N	\N	\N
+L8IWNiT2XHwgSA6lGS6UJYU_FiFTuVOXa17nzSO443EbWlBXj8OplRf_oHEvliIH	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 07:52:26.552+00	127.0.0.1	node	\N	\N	\N
+gWqCeyUwbpdqN9UAr1m_yiANTYpWsZ4cMp1yi3D-4PGhFhCGZwKdSxXESyCfMcjW	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-09 03:19:10.296+00	127.0.0.1	node	\N	\N	\N
+MhAkzxN4aiHDZEUq1hfc3hz_7EIaxd4CsZFvnZ96rNvPm9cQkt_KShLCwUtEOoG7	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-09 07:54:09.905+00	127.0.0.1	node	\N	\N	\N
+CCcYS3fzYEnIv2Atw_6LC9L43pspa2LDgFjbe9G7k8gzOwtvJ6WXMrv6XEqqyTPK	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-09 03:22:56.663+00	127.0.0.1	node	\N	\N	\N
+MxcU2E7aQZTIorH-1Tiu0-YTFcMAiQqQcATdqsO_DWcgvH7w2jPJNk2Nj0zhbIEE	a9634c90-69be-4b98-bf67-e00e782712bc	2026-07-08 13:06:41.629+00	127.0.0.1	node	\N	\N	\N
+6RO7Ol0x4iyPifBLYnPs1_PvoN-92wNL-ErWGa25P13pHn9Yvn7_i94CYqGpbUsB	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 08:13:29.869+00	127.0.0.1	node	\N	\N	\N
+pZgW2vJ5I1e-QuxzwYz84lVVhkK-4utg3y0YO3MYu-ZL2suvlj9BwN59fMuvdqtt	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-08 15:18:43.93+00	127.0.0.1	node	\N	\N	\N
+oATNnOrIrEyrBl7hpJjfyNCa0JXQTDpFOZOefFraim1PHG6pSJT1qbiavL-XDFnc	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-08 16:33:22.92+00	127.0.0.1	node	\N	\N	\N
+5JG2yX1RSKj52OQtxPoxgRCRZlhRsAuWXuGAb5j7etti6ULepyHod5DQWt_VHPtY	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-08 18:12:32.465+00	127.0.0.1	node	\N	\N	\N
+UmVtInw9EPtJkrnkB9ZdLHBhvMoA6VRbgEVxLI3mzWvexSTRCezoKp1Dz9ix4865	bd338144-090c-40e1-b016-f89cf67be5ad	2026-07-08 18:19:02.441+00	127.0.0.1	node	\N	\N	\N
+sYppYm9BvmhODA66v9tOT1UmARXohU78rm0OIubRNuPj244ol9IVXI3RGkRvWWL-	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-08 20:47:44.795+00	127.0.0.1	node	\N	\N	\N
+MPlojo4fYrq6KrSbETheU3uV5WXO2xZ7J0aGDGMOm6ZyMutMzv9Ekpny16EwiHzJ	14bb706e-8573-452f-993a-20254f24d730	2026-07-08 23:05:35.737+00	127.0.0.1	node	\N	\N	\N
+kq6mlV7KzvLz0w1-Ppcvj3ckvsSFVJNiljtr2nswNEcnwnJVGBg4iE5YMB-RQ9pB	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-08 23:28:10.037+00	127.0.0.1	node	\N	\N	\N
+NgFLzshIAQ-7jrRDzpVFU-MF-cLuaHgPNH-Er2BVxakcDI_HPzQhrX907qUfJuJN	14bb706e-8573-452f-993a-20254f24d730	2026-07-09 03:40:57.862+00	127.0.0.1	node	\N	\N	\N
+oCvVH-QtUPeSzRnTq0XMMsum8CyZkU8bDKgV6v6Pi5ke7Y5WA0jy1nEg-yFazBBz	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 05:01:33.343+00	127.0.0.1	node	\N	\N	\N
+bhWx4afHfeWMiBAwgyx8_feAA5Zkt61_t2usaxoCtPvadDFZiiGbMYw6oP9s4IUQ	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-09 05:06:43.24+00	127.0.0.1	node	\N	\N	\N
+f7Rf46A3VeMWnoxWzI0NeBzy0a_xwxUin0sK1CWQ1SIgmGSBa-oo285DTrJJzS1S	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-09 06:30:45.203+00	127.0.0.1	node	\N	\N	\N
+pomSo7wIHuY8LfaP5LOP-WUzdMNH6fYlE5ZYkkKGSMRo6cQ2MJQhGZUst2SCOEI0	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-10 10:18:22.035+00	127.0.0.1	node	\N	\N	\N
+n1x8ToPglQA6pH7VmOTG6Fta3zyfLf4YCf7hlXyt12fn29Ew6rP2WJ0Ba7BjL0Ww	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 07:35:42.652+00	127.0.0.1	node	\N	\N	\N
+j-Ulrml9KobMNIm7jw0N4y3Ktlsyfzz26Fry9jHfZ60IVXtlDXYich62SsFf5Daf	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-07-09 07:36:57.103+00	127.0.0.1	node	\N	\N	\N
+SvsvB2c15eXIVJzttzVW6eKfth3iHrY0su3HnJtYns4htd3H3D6GUULeOIAQ18V6	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 07:40:33.894+00	127.0.0.1	node	\N	\N	\N
+LJXSsx3iObos3GrfX6KyqZK14baBG5hm81GhrV_9DDuYxyMu5TByOX_9J4-fnF2Q	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-09 07:42:17.973+00	127.0.0.1	node	\N	\N	\N
+D7-xfYZud7_ovpJxCHKctHA_XYNPsk5bwvAhKmnkWZkjzTxW6j62UgrHF7424l2P	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-07-09 07:42:42.487+00	127.0.0.1	node	\N	\N	\N
+Ofd4Fwr7hgYV1VEBHPVJeuYBNp2CaomPYFW66yGDQkN55XMkUGnDA0awLd0ioC45	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-10 10:21:13.086+00	127.0.0.1	node	\N	\N	\N
+8x7zjO4oE4bhiaiDmTfPssY4maOm_dCbtNntWGwaXJb_XN9AZGUtuHiURnnAXqZo	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-10 10:22:12.317+00	127.0.0.1	node	\N	\N	\N
+SWHoB27lfcHJ9zQH7QWT_oCbwbLzE-rLP5dO0VJ43F0cYo9xTXFzcCElU_BbgXGr	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-10 10:34:53.729+00	127.0.0.1	node	\N	\N	\N
+0pXNq2M-T5QsJNntN2PafwVbjG0hGHm-dEFR9w7ecbCdqVKGGppWESO4So1xZ58d	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-07-03 11:08:53.263+00	10.104.11.224	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36	\N	https://dev-cluster.bis-backoffice.bytebetter.io	c_C8qRoQO9HGCADQDNnUXrqXDdd1ScJmLmrKR39OFFkdctHwYoem8GJX0u7ZmktE
+jqGyHv2vdJg-1sTGV456Hm3Gwq56tgzkHdzwh2zvgQ1eepOUfoUm5b9fLrQOMH8F	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 23:53:35.16+00	127.0.0.1	node	\N	\N	\N
+OrsD-kAK6Ut6Rul078r3pR11cpMwmbp4q7YMR4Fb20NwT7DzsNpgLWLH0q_6oGSp	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-09 02:01:52.171+00	127.0.0.1	node	\N	\N	\N
+W7ANIzxGlGR38wyOi2IfeGQzXQibP6rIoepEI4Jiz1Iu23FKpYsHgpF_4nCtKCCd	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-09 02:20:39.741+00	127.0.0.1	node	\N	\N	\N
+ZTgAXBHX_rR81yORJ9jx8PCx5L83-OB2xZEj8OTB9mRItCJVIqeJWkYTCQOKzLMz	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-09 02:52:19.841+00	127.0.0.1	node	\N	\N	\N
+Djq_zaNagjpdvKtLWBSrhhTpA8TCycJfX0X3uDDdtz_-1IOfTPI4NEZkaCqFLsnA	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-09 03:31:48.722+00	127.0.0.1	node	\N	\N	\N
+bEllOaM8aSJaKizDUAR149fk7Orpn1KU49yv4Y_kMNvRoLZ7HfgL8EwGjmbeIdXN	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-09 07:45:28.829+00	127.0.0.1	node	\N	\N	\N
+j6dB-FjYDK8ancvdKi2hxrvUhetuPt9ChTEWwzA7gS7TGlBAk4iYXMyEIiGqX9x2	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 05:05:36.724+00	127.0.0.1	node	\N	\N	\N
+VLH6EeFy_FU7am0dg0HDE5I9I8ekYvOTn99-PLS_g9YPgDS_CsU1_FDuiki09MbW	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 13:11:03.448+00	127.0.0.1	node	\N	\N	\N
+WQB73xTBNnFX4epspcxAGEiQBW94ul-1cSVdH5IEq0mmmsGkj-dl19o289sklDgA	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 07:55:15.265+00	127.0.0.1	node	\N	\N	\N
+oBSzYljbLIhtG7E2_K1rGITyB_ldKgiRKgZAXE9sl9dHe2kN4Atznb-IzdsPARqY	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-08 15:24:24.434+00	127.0.0.1	node	\N	\N	\N
+qM2PepOkPi4vBJ5gl5lkPFD8zj7aQ_j5dZKyA7pO5VpoKfmyCFI1WbYTyybECW5Q	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 07:07:33.738+00	127.0.0.1	node	\N	\N	\N
+0jTBC0wGbTP3irUBupbjfdu7FACjRMt2U1urK0wERWWIua1JCce7TY15P9G3m7ah	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-10 04:18:21.91+00	127.0.0.1	node	\N	\N	\N
+vPrBGUEuRIr_Pxhcw3YFpUhrOg1tY76Bo9kvZCXYKADfJepp597kC2Tuxoy5IF4J	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-10 05:07:30.939+00	127.0.0.1	node	\N	\N	\N
+TQ-gGWJg9B9ym5Djyzl0i-dnwdBYu3vpcSC6Xj8MGAkf-D8V2-Tzr8WaVJeq3SbQ	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-10 05:32:43.901+00	127.0.0.1	node	\N	\N	\N
+KK_S8iUp2yvPxgGY55BROTdAjvuMn5DVMEts4cuSVFuQhhohN74tYW7lJtCNc1f9	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-10 06:45:37.475+00	127.0.0.1	node	\N	\N	\N
+jA0-oJMFSiIQJxOuyx6omXFDf7-YbBhedhmPjVR42x6IhO6QpMIRvYAyZ1N6zuKa	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-08 16:38:29.057+00	127.0.0.1	node	\N	\N	\N
+SgWyewVniyCpQL9Jq5Z0i4rKa_JtlQg5OUT37SQOnn3DcCc5kz9KvrN-M_tH17xS	14bb706e-8573-452f-993a-20254f24d730	2026-07-08 16:50:25.554+00	127.0.0.1	node	\N	\N	\N
+Lo6c8sLcgMeGI-cL5Mfu5dsyh4PyTG9TaiDkuykLTsvZ54GJNQ0ZkmSXsrzhi7A0	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 07:42:53.388+00	127.0.0.1	node	\N	\N	\N
+4Y6Mepdng2wYQbU7aCL93nrtA-dwSFlAlfxBhZ__vT2KAL19UHSpXRCYYwSG6OWW	a9634c90-69be-4b98-bf67-e00e782712bc	2026-07-10 10:23:40.038+00	127.0.0.1	node	\N	\N	\N
+TyDYAHvHnsCH6VK8L_z452qnBfAh3ntciaBeli_hfl9dpyCSzppSvFA4rn3-N4Rr	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-10 10:57:56.025+00	127.0.0.1	node	\N	\N	\N
+FU4fcdMnRIp04lIeVZ9_1C92jdG90xEjoh0O2UvNIHMCkEqIHdnsiTalHDw2ieUN	14bb706e-8573-452f-993a-20254f24d730	2026-07-08 18:09:24.819+00	127.0.0.1	node	\N	\N	\N
+AC7gEBY6QK4-fNf_j_GL8lFpXGiHXLv8LdfjbrHrLKDHw2qNnGW9hi1uNDe65VCi	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-08 18:12:50.596+00	127.0.0.1	node	\N	\N	\N
+IMvEl0ZjszOGa1w7L8_kxQ1dqLWje1JpZXmnK-CDjPQhwAUEv7bLr7wkQNPXzvQ1	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-08 19:13:17.702+00	127.0.0.1	node	\N	\N	\N
+rKWixdxBvAh7xOjTMlSlMCDXDJObbTCnLTFHW9hgVsHT7KEXpuRu956eYhoNMrap	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-08 23:29:14.397+00	127.0.0.1	node	\N	\N	\N
+P4MTt-7aN-UiKPGVGJ3sNliJH6oVFSIHfXWbO_l0TSXE_HF6LPdkz9nnCtkV0v_e	bd338144-090c-40e1-b016-f89cf67be5ad	2026-07-09 08:40:15.897+00	127.0.0.1	node	\N	\N	\N
+ja4HAzdbnNozrLBgPL1PtpO3x8v-fwIi-vd5YXDeIUu9bldEKMPQWSEyoAH2pCVx	14bb706e-8573-452f-993a-20254f24d730	2026-07-10 02:50:50.846+00	127.0.0.1	node	\N	\N	\N
+19nMsa6SLN4_aPI3I_SZF4qNCcILa7wyy-bjMPVuML56klG5TnKcEyMVW4Ec9Uil	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-08 13:23:11.999+00	127.0.0.1	node	\N	\N	\N
+0_BXEqO5zP7WP5-0dYwKdBfZXzHAlx7ZqcK4lJWI3w4vVa02Rq89onSwM4OsJ1zw	a9634c90-69be-4b98-bf67-e00e782712bc	2026-07-09 07:46:13.236+00	127.0.0.1	node	\N	\N	\N
+wyD9yfkujU3oRrPzNgRWyZegRcbf8oitawRDbDYRW1JxxgWSe_F6_qmqrU1N4OGa	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 07:49:33.121+00	127.0.0.1	node	\N	\N	\N
+NYBIQhVcRrKgZEwairTOednJSzu9ZG6bEnPDTGVal5V6uwU16dluPgoJurKEldi-	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-08 13:25:21.711+00	127.0.0.1	node	\N	\N	\N
+Iru3QbZ0eNFd9tjwLMlbe8bFr-39xM6E42j1HVUwfFEXCdfzABfO5tnXFD866ch3	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-08 15:04:45.123+00	127.0.0.1	node	\N	\N	\N
+N5KE5ypTbGqdG6KZILu5HOztJ22jJKewAabEBZTSHsxDOIaCdNbF4BPJDTHHWBrW	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-08 15:12:23.78+00	127.0.0.1	node	\N	\N	\N
+HPrv3noxfcVSzEkACSO9-uEWJj-KDEBTDSmWoxQn-4IV92SbSbACqJ1J9GXncF9L	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-07-08 23:55:16.111+00	127.0.0.1	node	\N	\N	\N
+Jsi0Wb7aEjHzxMeH1Yi8PEpHVrr62eZjMrqsLiBsU9m0I5upBXMsO9d-EXs6vebW	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-09 02:02:24.173+00	127.0.0.1	node	\N	\N	\N
+a1rocoMzWbDrIjPhL8IGZBwStzol4uYQNngLtEe53UUbGKB1Y9a9JTKFzvTxUGIh	a9634c90-69be-4b98-bf67-e00e782712bc	2026-07-09 02:53:14.697+00	127.0.0.1	node	\N	\N	\N
+XPL6buRTjg_WWbu6nQmY2a7DTwa2PJxTtgwumvBe6EW1-B8Ej6AzaIjLrmn9Uu0B	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 05:13:48.086+00	127.0.0.1	node	\N	\N	\N
+c9yxgb2rBAtQGIaF__zlQ3rTjdMRhvNn_UmlODK9sXoEglv92aGhsP8DppOaSdzX	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-07-09 06:14:14.278+00	127.0.0.1	node	\N	\N	\N
+mieuwkkLK6LxrrdKSv235gxdIdsyx4GWV1rrVCjw985kJpUcmestluiRAz6tB8pD	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 07:27:52.342+00	127.0.0.1	node	\N	\N	\N
+WVkhV02brB9K-LhbMWM5cT48ux958Yl8IXUbcWnXWStq48fbuedsB3KUF2uE5vIn	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-08 15:25:18.666+00	127.0.0.1	node	\N	\N	\N
+UeBeHiS98uaACKoZt1m6sH8RWZLZYItP7scTJ_yMz9Q5kyn0Dm4D1L5rhL7lPi9m	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-08 16:03:20.379+00	127.0.0.1	node	\N	\N	\N
+F3myY664Xb-6Zpk1vHWzvM0epfjmAsaV2kQThPpmsmeqXIRT6e_158QCiGPiloY9	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-10 05:11:35.042+00	127.0.0.1	node	\N	\N	\N
+oXNE_yoIcDsn-rA23-YQ6smhzlueEeNrGSNKxoGPHfHLEedyP89fw9NvY_IYKZoj	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 16:44:17.139+00	127.0.0.1	node	\N	\N	\N
+Tx4NZfVc9C2o5bYIb0EskCDe2IaBLNnV6HlTqlKBIZsn830wTvTaFWtzjBn1uiho	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-08 19:13:57.926+00	127.0.0.1	node	\N	\N	\N
+RR84bsR2ErvGOm2QCj0YNI1AXzxni6cO4dft28g_PYl7f-pS5nfwfpPnjlGgfeiE	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-08 20:48:47.687+00	127.0.0.1	node	\N	\N	\N
+MjoASeX01oHKHeX-E9_2yRhOcg0wHGmMIw8CESZfWyQF8U29DZyYimKG6HLavaaS	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-10 07:22:27.127+00	127.0.0.1	node	\N	\N	\N
+Klae8UZZIc1zsQmwa7ApZZNlTUBUXfY_QDiLpsYuQiwrSTlPbXFKaxqT3bGK6BFy	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-08 23:30:51.475+00	127.0.0.1	node	\N	\N	\N
+c_C8qRoQO9HGCADQDNnUXrqXDdd1ScJmLmrKR39OFFkdctHwYoem8GJX0u7ZmktE	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-07-04 11:08:43.263+00	10.104.11.224	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36	\N	https://dev-cluster.bis-backoffice.bytebetter.io	\N
+LhjIZS2amdS1Bjm9Z0-YytiYPi7ey9k-0-AwFsf9USIRm5vVYcwWM8uQXZHKLgVP	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-10 03:36:42.248+00	127.0.0.1	node	\N	\N	\N
+qKLUddaGpEqrJeksq7w99ItuvK_szyhHfTHqpa7ehoGcHoIjC5TX9q-scZ-0tvAQ	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 07:48:44.148+00	127.0.0.1	node	\N	\N	\N
+_-AXazzLP-dUfnRa4jG9QK4D4ZUUw0dtM4wkqfMXNYBSf5zVUyDUvI6TTKyHDy1d	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 13:28:45.709+00	127.0.0.1	node	\N	\N	\N
+AVINkUmiTs7B9Xqv2FuFXCgQOMlfqW1Pyy60AOzhQm7BQAkghLb_jo55yCSHYbpr	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 15:13:45.727+00	127.0.0.1	node	\N	\N	\N
+NYC7DyV2n-9kGyyD6nXEecpY3eaY2oUKwH4hLRf2YgMbEvuG_m5dOmI-KGmVWsrD	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-08 17:01:09.266+00	127.0.0.1	node	\N	\N	\N
+hrSCrCgKgsxfoTv-iPw2pIgIg48vfJxvBoe0uT7W-6hbdutkYFJcYFsJv5hlmvcz	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-08 23:59:58.748+00	127.0.0.1	node	\N	\N	\N
+JOzfvVJWUCOCcjkCSaliYxn75bKYLgAhQgizaGa0mBm8-_bT2Y9W_mgp3OBRP91a	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-09 03:09:55.619+00	127.0.0.1	node	\N	\N	\N
+4w1BOA8bKngHTXV1fA0tSbrkUoHgGyhbl23llkcpLiHhFTmNq4LY-bFp_SFPT2D0	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-09 05:17:56.991+00	127.0.0.1	node	\N	\N	\N
+m_hhZlNdNk3Fc0_Eq6cvH4wVF84edEfjSe_gnLsGpDZO4MDF6H24JGPkgtDqoWfq	bd338144-090c-40e1-b016-f89cf67be5ad	2026-07-08 18:19:45.724+00	127.0.0.1	node	\N	\N	\N
+r311D_zCmf3bQKK4zlDYZmKFyfMHWv970G8UJv8Pw2cpwO4QUJbDHbhe43RtWbw8	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 19:32:49.432+00	127.0.0.1	node	\N	\N	\N
+nOgvQgd0LyliONQ9Ae_kbjNn0xSTHZmN9tCZQe7yWTV-E5RpccADAI6C1Qw1OLoY	a9634c90-69be-4b98-bf67-e00e782712bc	2026-07-09 06:35:41.253+00	127.0.0.1	node	\N	\N	\N
+BzqPrGEamqdcVks2H_q0T04G1fIFdsx2BSp0Voci_tE4GuBYHUOQGYLMnVxyq2kx	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-08 23:18:12.69+00	127.0.0.1	node	\N	\N	\N
+-rg3Y9tFXrq2suk2rDPf_35XO_Gvjt_k3ifiWnRKMu4hVr7CeGyZ6Mu09YiP7mjC	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-09 07:30:17.121+00	127.0.0.1	node	\N	\N	\N
+jFCS1Z6UvfbVC0o-UpFC8F1A6bAOKj_M8mjw6mzmCOVzDvZwvI_G9J8MmGlgRLZI	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-10 05:13:05.629+00	127.0.0.1	node	\N	\N	\N
+9MDu8X4HR9-CogN7onLnmloukiu62hLcZqb4UV972qgUB824NBnQSm9-XX3AGN60	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-09 07:49:38.734+00	127.0.0.1	node	\N	\N	\N
+U4CuMnXKL81K8zbEgx2RgDrKlcj4qhmZjcUrGuyMqxpfhFDI-KUKP38dazdjOt4X	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-08 15:16:31.039+00	127.0.0.1	node	\N	\N	\N
+298hqyGBNZHC1UoS9iEcVGMe28rorbu9gIGT5GqAqqevZebtwqWd-kQbjqjvE02R	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 17:02:03.606+00	127.0.0.1	node	\N	\N	\N
+KETwlZIheVkuCinX9MjuqpoIMPtiqL84Dk4zH8Ayx_9RRrUoMGuG8Dx37qjFSQWy	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-08 18:33:29.345+00	127.0.0.1	node	\N	\N	\N
+AeTLaKbM9KWkRrjucEZVyiwmHQb9rGCP9r0_ovJIeDtjN6quPZrR1MepKCCb5M-o	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-08 19:33:30.503+00	127.0.0.1	node	\N	\N	\N
+eEGXHx67MmMVN0VQpvvAXn600wBsbXxcF1dIC9i7o4sbzntHhqrdxvbJoa5rOrik	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 23:22:17.711+00	127.0.0.1	node	\N	\N	\N
+7LHSab47pylpsRR50GBqODV0Qmo2ZkRoN057iY0WYWaSQKkXGHwVWM1zDvqaqCv1	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-08 23:35:29.29+00	127.0.0.1	node	\N	\N	\N
+xRWhY_0XzF6b4cSYcV0KItxosATSKueEz2Iez98XQ2bxZnzEVia0UlZ6OTxqjSbu	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-07-09 00:06:04.299+00	127.0.0.1	node	\N	\N	\N
+fX-vCJuWPzvUn2I8bhEiCKXBgz0qZsJvGlBzcKD0ViwPQ0U7cI3ZUtrhTdNcCeyO	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 03:55:01.246+00	127.0.0.1	node	\N	\N	\N
+v642_WOc4X0VFZ5yrhkvAH--_GFfn1XMITkgapKhQvhsTJXSQlfYqEWfkrnOc92N	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 05:31:47.156+00	127.0.0.1	node	\N	\N	\N
+yRTyz_AbRiO3eF_kDgD-GYXAKf2RJPBlPqOG1I6pIKKVJSMGonhHpS1XQ_T5jjV_	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 06:38:20.989+00	127.0.0.1	node	\N	\N	\N
+u3ztEsMipjEPvXmQ0U5ePnhGnJc913pY1ip1nP0olkx4U42UfAg_qOj4tZny1x9v	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 07:37:00.331+00	127.0.0.1	node	\N	\N	\N
+ZOFS74hmKuQQhaAvi041Pifz6iQc9FTCk4kMDehwy8-bcOiad5YYafZHCnGJyGYZ	a9634c90-69be-4b98-bf67-e00e782712bc	2026-07-10 05:14:30.305+00	127.0.0.1	node	\N	\N	\N
+nyz-bfsiEaQwQbxvpowFTvyLtq4QdD9YN_E1F3jyos68OoFUuDreERX5Nd4cuVip	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-10 08:52:09.364+00	127.0.0.1	node	\N	\N	\N
+rhA_del-e-RnLyYotd6hQow6JsGwk0giFTGy7nknEqXLYhfIX77x6xE-iwQ6DN6O	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 07:50:27.534+00	127.0.0.1	node	\N	\N	\N
+gyT1IICmxWW8cmlu8LXT-nYnO7Io1RDz54zBYW7Ow_MMxwlSNvNNgGF34Gp_EeDH	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-09 00:07:45.013+00	127.0.0.1	node	\N	\N	\N
+J0xouEC-GybhZ298YwuiY7iy0ctioS9CXQ8OtRXemb_SUFQcldLj1L9vApbuSLS_	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-08 15:35:05.672+00	127.0.0.1	node	\N	\N	\N
+QSBTeb2j-oBtprrIkO7xW5d8KGsVCUvrYnTWIACm1YJ1cTe_Ayuys592OGKVvfrU	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-08 17:02:52.122+00	127.0.0.1	node	\N	\N	\N
+rQxo_DCDGgDID9UraQ3g5dVIejDiA58SQ5i46ujsixJITScgxn2kvQVCnFplr0cH	14bb706e-8573-452f-993a-20254f24d730	2026-07-09 04:10:37.445+00	127.0.0.1	node	\N	\N	\N
+lJxBrZu6XjFwcxA4kXGskDhbwWRPJp52fdEO_2h0JS6860JPlwR_29yYILFMYtzj	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 17:51:32.139+00	127.0.0.1	node	\N	\N	\N
+LYVgNXfcwTygVabEWnlTq7_Mj8PbkqjmubtwTibV8dEnQtqT2cJrw-XPBqqsaXJr	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 05:42:12.258+00	127.0.0.1	node	\N	\N	\N
+S3XRQGTXUmw9FDyxmMzrrrjKT_E_zUZztfZHnIma7UipCX4SHXkJHu_3y7eKZZ6F	a9634c90-69be-4b98-bf67-e00e782712bc	2026-07-09 06:39:01.484+00	127.0.0.1	node	\N	\N	\N
+K-0o6lFydAqX7WC3bH62DbcUFOW3zqsVew2F7jjq1zD4_ou4HzApGAEIYCsmgsin	14bb706e-8573-452f-993a-20254f24d730	2026-07-08 19:09:11.3+00	127.0.0.1	node	\N	\N	\N
+cL77WxDXpS_MT7KEK1ZCe6uycQ0oG4FBBdKwBVMU7cG2A5mba_EDk5kFvklnb_0t	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-09 07:19:40.664+00	127.0.0.1	node	\N	\N	\N
+31mCa0aJodB2HoQdMUyESUBL54BuGQ4EMq5LMYsNnupHO_7QPdDw-3Fo4lg0VpmG	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-08 11:19:59.456+00	127.0.0.1	node	\N	\N	\N
+tJw3oFcWT9mQAIrbkCM_-oqMtkLv4hRGZ2IIwsBRJvbG6IplXrf2-1-D113Lf9--	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-08 19:43:01.313+00	127.0.0.1	node	\N	\N	\N
+vsAWkPGo3qG1v_98siewIED2bzQTR6JV2UXQjLm3eZuXYO5emk98N4ESf9LE4z6t	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-07-08 23:23:37.617+00	127.0.0.1	node	\N	\N	\N
+0RS8TDd5QtfHEv2VbUEMI2TOwSFZRJd7lGOY5Tfk0L26oPLu8mtdU0ympfXefWEH	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-09 07:38:19.353+00	127.0.0.1	node	\N	\N	\N
+BJuSyP9knFKcMhzu4G0YsBIYQArmFq4dH_cd5seSKaxpzmASiy2PnMfzwfO-nkbe	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-10 05:16:53.14+00	127.0.0.1	node	\N	\N	\N
+JQKEjDfxfqPnUhsFF0VAO1xmLGxgbHZW5cvweqN0YfmEw6ak7n4EaZAqLOmMDv19	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-10 08:54:00.956+00	127.0.0.1	node	\N	\N	\N
+7v6QLoDJhyXP4lesesNnXsKmIMiE4aHvbKdZX0mFkfAp21rHv181HHuOM9KTsZUD	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 08:01:34.739+00	127.0.0.1	node	\N	\N	\N
+H1pn5kjvj44qip61fcB9ATOYE9cqNXVTHRulLYmHmdrfbcJFXFigcnX95BvEtAEW	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 01:09:58.596+00	127.0.0.1	node	\N	\N	\N
+tp5Ze9PskIKf5DGvq9gGkLDsDD953Tqs0VFIksjG2UM65B-XKO89Mzh8aE5gr3pQ	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-09 04:58:33.723+00	127.0.0.1	node	\N	\N	\N
+CCWWptJa0g2CEhaRbJyNP0CeyCnZXgpngZmkbYzJwb13W7gkChye3g3rVc3n5LBX	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-07-08 14:16:57.836+00	127.0.0.1	node	\N	\N	\N
+AsD2QRdh6N6N2pU4LQCHWZ7zL82qw-rSkzf2XdQmk8WplCqZ2HxE-zi0I3zLjeRn	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 14:23:16.881+00	127.0.0.1	node	\N	\N	\N
+xNSo6AM0_OAUkV9EMCEJ5kyIAEj83eiq9PO8WnPjBo2anWuKRhJVO60-sgIoUNZe	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-08 15:40:48.692+00	127.0.0.1	node	\N	\N	\N
+cfl3oWCCmzw2idrJfR-H0iWT54VHOqW3i1jo2584_HYNmAln5W9nh1FBI0ZpoVN1	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-08 17:04:09.009+00	127.0.0.1	node	\N	\N	\N
+5JWULlB_r-KiPoszmCJNiA9mKwjm4XYKQJSRXyPNsib6ZlsdzDlRjqAR76Uwlbv3	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 04:59:11.141+00	127.0.0.1	node	\N	\N	\N
+5-MC4iN-SY2PxLQdCxCRMFnoFEKm9hDIIWPLlvMkpHbqFVXdhLnLq0UykC4037aU	a9634c90-69be-4b98-bf67-e00e782712bc	2026-07-09 05:56:22.803+00	127.0.0.1	node	\N	\N	\N
+WyZa7jegvWB85c09yX3H1mdhCpXfDWbNze_ETOBA7UavsyJ5sjIP6HuyNqyBh68K	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-08 17:53:39.981+00	127.0.0.1	node	\N	\N	\N
+Vb9GXMA61rZYLECHdo72wWgeM3XjQqqxFnr5CeLsd3kB3syQc1iDlXFZw4_SX4RJ	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 06:53:58.613+00	127.0.0.1	node	\N	\N	\N
+shdu9Fa8zpYr1um6BeOEfV_0jDZW4JyuK5RIn-C9qbGWkDOiE4VeFIwDfY6upnPm	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-10 05:22:48.522+00	127.0.0.1	node	\N	\N	\N
+0sOQEFVekLNTjv4IWTkibvqiHNP62e-oqyNwkPoylkYVkB_CQ9nyi352zFOK8-hE	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-08 19:22:39.772+00	127.0.0.1	node	\N	\N	\N
+DM3OFsYLNsot4zA0FFoihxiB44YUHL_KAh6YNJzVsbw4UNbJmtnJyen2sZRBlIXv	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-10 09:12:09.199+00	127.0.0.1	node	\N	\N	\N
+Bq-4x7SKjc3BDCRHs8JBI7BUoDYrzw3PQlod0Yd9LRVDfLbPpvW5R76UVHu7HjSC	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-08 19:46:15.665+00	127.0.0.1	node	\N	\N	\N
+c6XllVgcZCytjYj_tuKl3avF2dMZWWN67wlCKic5amlhOs7N4PbEGA-MeOzth6Qn	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 23:28:59.26+00	127.0.0.1	node	\N	\N	\N
+BklOYegB2fj_K_yzUfrXbe3_tlqiVxrbd4Yhsb7OW7X47gh3-yQ1rHBjrFFGKPbO	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-08 23:29:00.076+00	127.0.0.1	node	\N	\N	\N
+Q7NLsjCqSMyaorEgCE-rWXnSpUMVDsz8yenfk5dWQvTQlLyZa3TjMeLOISTWn53j	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-08 14:29:38.438+00	127.0.0.1	node	\N	\N	\N
+YuHxa3bGkp1izQC1wDT-pkz7K1hxD-LEALGUqd6KoF6BnEVLVl2IY4AnaPrb2kpO	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-09 08:02:17.349+00	127.0.0.1	node	\N	\N	\N
+DItzpAXNS5rlryJe9TS25rS1iaJkahyF1n1CDLlkilWtHnK3HeHoXeFv_cDkAmBL	14bb706e-8573-452f-993a-20254f24d730	2026-07-09 00:16:32.457+00	127.0.0.1	node	\N	\N	\N
+oiLeVTBCCxvvkJF7VypvFQ8vYRkDSnON104SGaCXKv_9n6p1cgonFBMqlUTPX2aw	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-08 15:47:34.31+00	127.0.0.1	node	\N	\N	\N
+Ubkl07A8PS2fzbSQaxsWaHo48WVDtD3LVvoZu2EuYVaWyZqo4gA-sfAuTDtMFYb2	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-08 16:03:17.247+00	127.0.0.1	node	\N	\N	\N
+UZINujvRztP4uFFBp0TxjY2k80yljknA-0Kpc19AjUVt1DoJMdjGiZNrR3e4dcK4	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-08 17:04:50.394+00	127.0.0.1	node	\N	\N	\N
+Z3rRXjsqDYje9L_nmbjVCn6v77oTx_YsLDPnmJi0INcbVWwG7uj2DKSXHLpz2uh5	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-08 17:56:33.617+00	127.0.0.1	node	\N	\N	\N
+cWKwR0rEQbppNUTAn4VhRypguvWSZXGOpvAp59DO58qerjqIRpN6Sw_n6lkKAuqB	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 01:18:59.088+00	127.0.0.1	node	\N	\N	\N
+CocMo0pKCYyFjcO81qYbfC3Kv7DjcEtA-ow5dQJrSpmp8Y8T0K_JjWDFqGWV-rtP	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-10 09:13:17.748+00	127.0.0.1	node	\N	\N	\N
+Ede4mBWBjzIG3SGR3gSA7Rsr1Jf4m_eiO6xoM9UCt_hw0DfPQBC2CYXxvtW9Pjgv	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 05:06:34.618+00	127.0.0.1	node	\N	\N	\N
+jBznYFFSuTX3q57IQlxMN6UMMxzmQ2K6gXE-37SbrnzTqd-3bAcWvF1T3lHCvYbG	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 19:53:34.907+00	127.0.0.1	node	\N	\N	\N
+ulL4bAoU5Vj67QoHdNFwssIUrs3U3dVg5R68ejpifmutQR8BbfovqM-CYGHlCC_k	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-09 06:06:52.318+00	127.0.0.1	node	\N	\N	\N
+mdXW0w7Es08FUDxulfs9hFyoGU9S9mrPRKS6qonJaROgj_AFfpDqE8lX2qa1bHNo	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-07-09 06:58:11.427+00	127.0.0.1	node	\N	\N	\N
+3BpDyqHvpkHsqYP0lP_piF5qTPUDouAOFDF1JvdflLEvhPqUpNkyZSYlE0pcHNJR	a9634c90-69be-4b98-bf67-e00e782712bc	2026-07-09 07:02:05.195+00	127.0.0.1	node	\N	\N	\N
+sINv0ACI5t0tx7gYFljD1R_zg5rrHIG2ulstpZ1u47ZG8QpjS7STkvBmY0gGJT6A	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-08 23:29:37.353+00	127.0.0.1	node	\N	\N	\N
+wmInQtSaHGDrbM8xJOKT46iyc0pYfT7Jt2fNmgwySacxt98nTeHonontDe9Y9XUt	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-08 23:31:21.082+00	127.0.0.1	node	\N	\N	\N
+yObphCM1Irq5nHW73qWqhhk0F3GB9vmbfRoklnVOk17EN7wro2BjGYq4YK5_3Uo2	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-08 14:35:53.92+00	127.0.0.1	node	\N	\N	\N
+W8y2U95J_pnDA3VUc64SGK_NtJJwS0MrqUd2KkjCGfmMSXrGCCFLGo6haOwQ1MMe	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-07-08 23:32:44.156+00	127.0.0.1	node	\N	\N	\N
+IdnEnRpQo7YIfQyzVQL_4_GUtyBtbRaxAlMIX9KIxWYPP13aJhW5uAYy_y0WMRow	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-09 01:25:21.955+00	127.0.0.1	node	\N	\N	\N
+1hMymQAiQyfoJI1-t_b9zm60dHiYepTG1xQZO8gYAbo0rfhXDh7CVRqZtk8-OKbW	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-08 15:49:01.986+00	127.0.0.1	node	\N	\N	\N
+xJAY_9SISo8gN2a5FJRk5DzBtwDMo7TMz9kK0vVtT_nSykvfu42cIlMR_Goir30i	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-09 16:07:15.05+00	127.0.0.1	node	\N	\N	\N
+zgpgpXV8DtSVdRD8wZ7ZNJkxdyRunqqg5VdcttSevsmNAojTP_ehAjOcq_csCD3K	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-08 17:59:01.66+00	127.0.0.1	node	\N	\N	\N
+QuV9ea9u-fxQh1tg-eYzBtZDH7g1cx46TcScaRZchOvsQ2rYaXlTB7BD4LMvP0Ke	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-08 19:41:31.404+00	127.0.0.1	node	\N	\N	\N
+uNAQrHOKZWC3SDz0CaxRL5f3BgoogW2NRTeUPBQuXEDKQ4D9Y5GyrApm6nvDoov3	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 05:18:15.625+00	127.0.0.1	node	\N	\N	\N
+5U_c8Hg2Npv-hyAp3lN3UsE2B62AyLBE08rk3BNKN6IlBWQoYMz-NuUBcXarhGqr	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-09 16:14:13.709+00	127.0.0.1	node	\N	\N	\N
+dK-D7lIPrLdSqxpczullSw7O8TdaeB730Xv3B_1IuIjdlc-16LacvepbcTFvuVMW	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-09 07:17:12.985+00	127.0.0.1	node	\N	\N	\N
+EG9cSCcb4Rn62mVEjQAJgm_9NVlBFVUNo9THe-GNEc_rrOzuwDEa5ZTT7woMn0qf	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-07-06 08:15:04.929+00	10.104.11.224	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36	\N	https://dev-cluster.bis-backoffice.bytebetter.io	\N
+6lhmY04522gOJDBz4FkhiKRZhYxfsYpuRvQhcDUAxv27QPslkb5eEWcWyYo5tFlY	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-10 09:13:55.814+00	127.0.0.1	node	\N	\N	\N
+AVyM5RaMuZzj11UIGuToxHInBKQBs52tc3fz7rHI_jxbW8X4MK0k_OoHzoAMGVPy	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 14:40:34.398+00	127.0.0.1	node	\N	\N	\N
+Eau0IefbLJy5JJr9k6Kuln8HupEhAMQubEc8yOwX1R5MDeOGfpDQpMjVIA8mlCwi	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 16:10:56.45+00	127.0.0.1	node	\N	\N	\N
+durMwDaDo7oAhycyKg46oe8ijAatLVVBjWPqKJ0l9oiJ6QQs4mcHFYJNvAx9GbrC	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 18:02:26.265+00	127.0.0.1	node	\N	\N	\N
+IZtm1GMuqXUJ0o5jBuwR38gb0WE_oCHH-zmB7zIVb2QAUM9wz6JdOqevJtUwQrl0	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-08 23:31:23.309+00	127.0.0.1	node	\N	\N	\N
+BObyReZckPmVrB2olb4oQ4Ip0QRVR4PvoECm0Xj2CIJL459obQ2Ix5PAaICF90LN	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-08 23:34:06.224+00	127.0.0.1	node	\N	\N	\N
+wjwC7f3iIMNglQoxQTN5bASUYMDpGrlhQ3pGqMeNxYigZv7qC9XvNoO5M3vqHS7X	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-09 01:26:15.276+00	127.0.0.1	node	\N	\N	\N
+4sFfMWuhNXTuwiZlbfFwHOYlURuLkA0bv4kPI5FvRhR4kN6PWgIbGkOTdn3qtZOr	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 01:32:37.665+00	127.0.0.1	node	\N	\N	\N
+2c1nEz_luFSVWGLLt3bo4nvTL3TUlqA6c9AQsTIPuzJ2CrxrbArHK39G7SF4uYt8	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-09 01:47:11.663+00	127.0.0.1	node	\N	\N	\N
+MtiOYOF7ZPFgps3LPzkpGu4v_ag1vu9vPEUzMmaaRSJykCN0mQ_PXbli4cf8VNIs	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-09 16:13:51.645+00	127.0.0.1	node	\N	\N	\N
+ChKPyv85iSPitRZT0NfGDAKaf4pEBgdgYYhYfcz9fs7an4jMpCm4wzSj8C_EKXgu	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-09 05:18:55.942+00	127.0.0.1	node	\N	\N	\N
+1tn-PVcvc_VG3PSXzr-yT1zDcAcJdEVAPRAYe6waoIF8Ck_LyTZQ6lwf8gSZW2d2	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-07-10 09:19:26.139+00	10.104.11.224	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36	\N	https://dev-cluster.bis-backoffice.bytebetter.io	\N
+eURRD5IcTT59GBqAecCLDnS0cMCmFdrB6Trw4GrguD07VIONr-ylI2uth-CSf08P	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-09 05:51:22.889+00	127.0.0.1	node	\N	\N	\N
+FsQQeKXImfelp13eGAJeGfR1mGXfarJ9PTLcgT0ZfRNW6Jlrw7CAKz5r-YgAcZL-	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-07-09 07:19:36.163+00	127.0.0.1	node	\N	\N	\N
+36EsRE0sB75FtGk3UUaGwHCOlvbulpTFx9YZU6RGGG2KNa1FzTLaCVwbLwv2xajG	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-07-08 23:36:53.006+00	127.0.0.1	node	\N	\N	\N
+GFd8V05xJxloWygY51bjahv4GRGWG59HNg4ApEyThx-WyIA2RCRghFQz5Z4aU63E	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-07-04 04:33:56.277+00	10.104.11.224	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 Edg/149.0.0.0	\N	https://dev-cluster.bis-backoffice.bytebetter.io	\N
+FEYtmDmCaaAhH2TFbRb7dIWSqY1j4e7XFaym4uv1AwxVDrPPSkK5snJ4HzV3fX9f	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-08 14:46:29.675+00	127.0.0.1	node	\N	\N	\N
+GeargHy9Wz2QsOEEnp47sgSA6MLq4WOjL3ZoXL-g4_pXCMDIk4IYv0rTzKhQoPnR	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-08 16:11:38.558+00	127.0.0.1	node	\N	\N	\N
+fvDI60kH-8NFJlAvhBjVPFgNTTpormGnuxe3C3OFFRevdhfHtyw95sQZd48T-wMB	bd338144-090c-40e1-b016-f89cf67be5ad	2026-07-08 23:38:16.705+00	127.0.0.1	node	\N	\N	\N
+yiUS8EfLm0mCq_EG4lNnMWO5Sq__VYnMR6c6ux0BbvPHJQAbze8N06GO4E3IM7Mk	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-09 00:34:14.408+00	127.0.0.1	node	\N	\N	\N
+WTepXG9sfJh5KjN-3wJ1gtxyP9I216u0pyaGvE3d-MCxHuO_RW3bDo2faPwgcxZ2	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-07-04 09:25:01.139+00	10.104.11.224	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36	\N	https://dev-cluster.bis-backoffice.bytebetter.io	\N
+gnywjSCGzVYxRJAyOZLZivhxW7K9HUyvyuiwQ5-MkKHI4JD2S3POcpOSdKB-6Nf2	14bb706e-8573-452f-993a-20254f24d730	2026-07-09 00:34:16.732+00	127.0.0.1	node	\N	\N	\N
+j-gcSo19YiPumPCu799tVOajwk_bk9yDp-w57hX-WL5q2NWEdWD22_iyrJl7Za0q	a9634c90-69be-4b98-bf67-e00e782712bc	2026-07-09 02:00:51.306+00	127.0.0.1	node	\N	\N	\N
+7ryEPr5DQb3F6yEe3C_AenJRDTIh5ElQP5ayI9KYgps8mobH6R0was2zd8S-6Y76	a9634c90-69be-4b98-bf67-e00e782712bc	2026-07-09 05:19:13.514+00	127.0.0.1	node	\N	\N	\N
+gVtDG50DzgP1qOsCGwJhsk5VLMQd1A6wltxrVYiSVfOdQTShm20NSxYXOYodLAiT	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-09 05:54:17.782+00	127.0.0.1	node	\N	\N	\N
+17tLR1QToOz3tx3E5QaeFnswfIALH0iMbMmug44E5fxZEh7UyWJdVxmfDCAKuxXX	bd338144-090c-40e1-b016-f89cf67be5ad	2026-07-09 16:43:08.319+00	127.0.0.1	node	\N	\N	\N
+0f4XlSWN3mjbFw9epCXQMCs0HnN5KwbfshIgiEJVf6V6s_sqoqu0Zev3FR2TR6rs	a9634c90-69be-4b98-bf67-e00e782712bc	2026-07-08 14:58:07.319+00	127.0.0.1	node	\N	\N	\N
+lDtze0zLHLTI8LazN_5s_gZCIBAzbEEblW-Zi2AcrR-NmgkPKPVemFY8h2jGevKC	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-08 16:14:38.878+00	127.0.0.1	node	\N	\N	\N
+D48crafNdQVxGNctu64TO6u2NzJ229aUwKL_kALAUiG7s612pHFc3ShDbJyP1GXd	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-08 18:06:03.151+00	127.0.0.1	node	\N	\N	\N
+APdr-dESL17bQo70xI0xkuM_KoFndQ2M1I7xFwHvaAU1nhG8KnTfhIS7HndR8QvT	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 23:32:23.01+00	127.0.0.1	node	\N	\N	\N
+9vw0rliRSuAGlhd39AGiG79UxlYnEZAtpcxqPVRJkJB1_v1k3zJevlvNyK5kN-x5	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 23:37:44.436+00	127.0.0.1	node	\N	\N	\N
+8hUxxpCSDcxMUHtgYROo5azDGf2DYCRRN8YZg8lnLyjMFmhd-MHuaMzlge8X32oT	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 02:05:37.897+00	127.0.0.1	node	\N	\N	\N
+Khn5TNxjIPXu6YdwPscB9msrb6u3qWFIE9z7kbW-fE3hygG8NdvFfuqR9Ehjx60z	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-09 04:05:51.369+00	127.0.0.1	node	\N	\N	\N
+dQA8FnGaZhmN1ZDQOrXMImXN37q1Hw8ooNb__9G6clBo3eOGTf1AYIhy9zI9wtM-	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-10 06:01:33.738+00	127.0.0.1	node	\N	\N	\N
+vCrU7248Dq_jMQ9kkuqITQ9FFZf2yCqdrd8dYuFC20P3InQtvOIkyfsnzd1YAUKu	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-07-04 09:54:48.748+00	10.104.11.224	Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36	\N	https://dev-cluster.bis-backoffice.bytebetter.io	\N
+DpngU8qW4sqF2PW8O4MmcpaiGgy510lWFFgJouIUB6Ycv9pr5jNvIRl6UGnds6ls	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-09 05:53:40.251+00	127.0.0.1	node	\N	\N	\N
+-GWNuchI4aTrFUY6nISnbD6DyAzAy16zZTMWChzb5rXueGhPD5eMndWd8hrrGK2L	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-09 06:06:55.086+00	127.0.0.1	node	\N	\N	\N
+ZcEB8L6Msu1Me3e4r2bcZp715lslcIJyiuVDJjr8_2JFyWxKrPi2S4giK2ZiVT66	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-08 15:51:28.654+00	127.0.0.1	node	\N	\N	\N
+6Tw9CblRK2KNx64PswLdtkVM6N3-V1emXqC9dMwNOCqFj16ilsUXePb3LTSLRrD9	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-07-04 04:44:56.091+00	10.104.11.224	Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36 Edg/149.0.0.0	\N	https://dev-cluster.bis-backoffice.bytebetter.io	\N
+FSHDXZchXpytZ1Sdnor7yFBalGhNJ7u9PInntSX6MDTfMGb8ri6ZERi7c8PXmeQ8	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-08 23:39:42.827+00	127.0.0.1	node	\N	\N	\N
+w7379eNzn-pq5K0SkM-NtPZXE6AiJquTJ0LhO2ieYUqDhIdJm0LpnxLqEjc_V0cQ	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 02:07:10.209+00	127.0.0.1	node	\N	\N	\N
+E4Lv47Ml8r6pXCzURBowvu60_WCumczM6ZKsxxeusseWXiamDq-A6citMbINmXMq	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-10 06:15:14.412+00	127.0.0.1	node	\N	\N	\N
+OBG1pyF23DwR2EWKy9jkGuXvu81opahEqDxwBxqLK2NefLFLYJfmQ2bQc56v0XZp	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-08 17:20:37.512+00	127.0.0.1	node	\N	\N	\N
+Ew4YAvK6rUWiMHIZ4ZC-y_KUyIk3pTNDADZXDKFRuJ4TdeSQ8orWaiJnNNmfahjY	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 05:55:20.738+00	127.0.0.1	node	\N	\N	\N
+WSPkST07wopobIa0nVi1c7ALcnVB5MdvJY4p8qecNuOr1THEzHS1RPPddu1_zkuQ	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 06:18:43.317+00	127.0.0.1	node	\N	\N	\N
+JxRJXIb3JE5EezaRX1tqZuuWT3YY03kwawBL7Lr09k6JlYvDH8w9aSHrwsG8p2iL	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 16:10:30.766+00	127.0.0.1	node	\N	\N	\N
+pocs1Fn9XORUcNS_EWpxuOUX4lg89IRYCIlFyFKZl4nMYtnMkqwFuqjiuvtY_NLv	1a4564d5-384b-4299-b8de-c2761baa1413	2026-07-10 06:18:45.341+00	127.0.0.1	node	\N	\N	\N
+hqK7I5jZGPynHBAPHhekROrtfkzg8goHbb7LTvtqSN9rf7uOxg0k0j1za999PIJh	ac5f0a25-9aac-4440-91c5-5632d172a6c6	2026-07-08 17:20:53.994+00	127.0.0.1	node	\N	\N	\N
+-gd9f9xDjxQnp-WR4MwEOBQtxn_2AGZSK42DMVfBULwCxaqTrfHYCq7XC6sYopX_	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-07-08 23:40:49.428+00	127.0.0.1	node	\N	\N	\N
+StcRVhTkpJgz1Fa7KO__9gksWfkRED6OQil05DH28vT9lhMfT0qtU-_mtrwBgmph	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 02:08:49.922+00	127.0.0.1	node	\N	\N	\N
+cjTmdjj3EfYDnr3AwU7RqPFE7jqJXengfPruhNA_k5d7OwFdMihmHATBlkcJBl0X	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 05:55:58.208+00	127.0.0.1	node	\N	\N	\N
+IIYU_Z02UbZnSSN31tiRh7F66Y0SdU-Qig_Pc1iTKqo_nZpSMiTolTQ6SI9z0JvN	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 06:38:25.752+00	127.0.0.1	node	\N	\N	\N
+ezz0i10l5FHau45ufRnAzh65sBetwd78P6szcXZd_Z--botBY5WwgNM2uR-697G1	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-10 06:34:09.03+00	127.0.0.1	node	\N	\N	\N
+MyITBUsyQTsR_c9oBqWj7jvAQSlnv4axDAnJr1BvK19Pnhd5Xnaz41tPMetcHUJ2	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-08 16:17:22.266+00	127.0.0.1	node	\N	\N	\N
+yK4Ps4sq8bhWuGUY1o1ZROua543hWKGaj47Di9AjED2kHVWvlh3q1zwVFSdWZZ3n	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-08 23:44:03.52+00	127.0.0.1	node	\N	\N	\N
+clr1Z5CrH76aRlLLThllUCqz3X8QhwkM7Yev2xoFdAccSNHpbGunpvjQL4OlJbo6	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 02:10:36.704+00	127.0.0.1	node	\N	\N	\N
+wlENgprt3wPfcu0lL0W_b8xNjRIvYFsgfZymajFW1yuNqNyzWrG_UJFajLlEcwF1	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 06:01:56.23+00	127.0.0.1	node	\N	\N	\N
+sSFQe-QIlZA5KtfV9RLn5gQIaPAoxVbldEmbba6xPkeCIHykHhiFBj7NZRT_bwIk	e9f7b4ee-9489-4230-bd70-240ca91d6d21	2026-07-08 23:48:46.696+00	127.0.0.1	node	\N	\N	\N
+8v2JJXMVg5TCM537fuu0jrJyGRULT0PHNdpSxSGZhdOCb5f0Y-_23QRWoic2Lmly	bd338144-090c-40e1-b016-f89cf67be5ad	2026-07-09 00:36:25.298+00	127.0.0.1	node	\N	\N	\N
+uEl3km4Z4s0vYw7gMKUhm70c_EOrIZA5sN_JsE8ECPtxj2D7Oh1XX0rdsbVUIpKt	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-10 06:35:27.613+00	127.0.0.1	node	\N	\N	\N
+W7p0bviH99xKgJQu6hZqA4xNoYYI2LSFd_aJ_II2jdanDW9-hRmD6o0woo2Eol0s	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 02:11:11.149+00	127.0.0.1	node	\N	\N	\N
+v65rU9tITtmtvaH0DzAyW-NuWWYQPS3_Cen6cOm9mp61Rn3iuZQ2NfuF60SOxChp	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-09 06:12:38.938+00	127.0.0.1	node	\N	\N	\N
+I7WoLZ3tNiQddLw_qdCFic-p-PLb3GL6Bu3qAAPiVsrwB3DY794sDIbJdchs5tZf	7fb14fb7-5bcd-42a8-9950-d16903cb1c7d	2026-07-09 07:28:43.119+00	127.0.0.1	node	\N	\N	\N
+DZ0_tvG6_ZL8mSfQ6Bm_rXDf0UWQ0-u7RqbB_hFpcT--er85HFkFh1tJyzr9-wp1	14bb706e-8573-452f-993a-20254f24d730	2026-07-09 08:47:14.024+00	127.0.0.1	node	\N	\N	\N
+lRpmhXpCpWce2NJldPVXgwGFNBm-5vHqfC9xFlezFkonVySHgLZLjSic5rUnWnj0	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-09 08:47:14.879+00	127.0.0.1	node	\N	\N	\N
+x8jLnJyGFN0QQbDnvahXasBhDl58OwxmfvwRD0QZNYttpMGU8EhoPDNlVSzezRXG	14bb706e-8573-452f-993a-20254f24d730	2026-07-09 08:47:24.883+00	127.0.0.1	node	\N	\N	\N
+3fezbVrVwqNJdZlsbdXF_DVxW71mzwwqT1RT-oZ3TAEZ1NRR49OuiEjRRndl2axl	a9634c90-69be-4b98-bf67-e00e782712bc	2026-07-10 06:36:21.346+00	127.0.0.1	node	\N	\N	\N
+xNiA4XYqfv9KaQhNbZ67crpSbY-n7tOwZ8aFqlfR0iD9irnfzWbR5uQLrKT8C0Y2	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-08 23:51:51.265+00	127.0.0.1	node	\N	\N	\N
+hq5qSMqJrsJ6tm7MGfSoM6Wz3XGEDR69MYu2wL9pbnaSk4Z67Nr9aCV545kOLTic	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 02:21:10.793+00	127.0.0.1	node	\N	\N	\N
+veIf0vXvIK6NZdiFgZrPxyZw38I4FcAjaRcUQhrgkKV9ajyvA88xnIPLvgRRk_py	eeae556b-97ea-4681-8df3-1facf4bc11be	2026-07-09 06:29:48.923+00	127.0.0.1	node	\N	\N	\N
+-_a4p1HGRKSriKppUOv6Tb6xDmHP8eI5bnJ4YYLBKOrDFj69SPrJejzXCg-mYruH	f748f768-61a6-420d-be8b-e48df54a0988	2026-07-09 07:39:02.458+00	127.0.0.1	node	\N	\N	\N
+51v2Wj0ZJb3Qxd9tLw8geklqMaFWAuGlbCD0EoiFTTT-vimw91EXAD5-n5CC62i9	859fd704-aec3-446d-8c4e-e3d6f33a170c	2026-07-09 08:47:39.937+00	127.0.0.1	node	\N	\N	\N
+Qo4O561XiSzkjGQMEZdS2dYTk2UIwLk8pzDNIh1x1YA6GN2PbMjcdubUH7YHpDix	bd338144-090c-40e1-b016-f89cf67be5ad	2026-07-09 08:47:55.102+00	127.0.0.1	node	\N	\N	\N
 \.
 
 
@@ -17611,10 +18032,6 @@ COPY public.directus_webhooks (id, name, method, url, status, data, actions, col
 
 COPY public.donate_for (id, user_created, date_created, user_updated, date_updated, title) FROM stdin;
 2	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-06-13 01:49:51.053+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-06-13 01:53:05.675+00	บริจาคสมทบทุนในการจัดตั้งกองทุนช่วยเหลือผู้ป่วยยากไร้
-3	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-06-13 01:50:01.295+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-06-13 01:53:07.566+00	บริจาคให้มาร์ช
-4	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-06-13 02:08:57.725+00	\N	\N	บริจาคให้ใคร
-5	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-06-13 03:22:02.521+00	\N	\N	บริจาคให้แตมป์
-6	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-06-13 03:22:08.399+00	\N	\N	บริจาคให้โอม
 7	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-06-16 08:32:14.741+00	\N	\N	บริจาคเพื่อการกุศล
 1	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-06-13 01:49:40.88+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2025-07-03 05:37:34.507+00	บริจาคสมทบทุนซื้อวัสดุอุปกรณ์ทางการแพทย์
 \.
@@ -17743,6 +18160,37 @@ COPY public.examination_cost (id, user_created, date_created, user_updated, date
 
 
 --
+-- Data for Name: finance_cost; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.finance_cost (id, user_created, date_created, user_updated, date_updated, hospital_code, procedure_name, cgd_code, procedure_price, excess_price) FROM stdin;
+1	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:39:49.283+00	\N	\N	3810	Ultrasound Breast	43330	1650.00000	850.00000
+3	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:44:24.538+00	\N	\N	5381	Ultrasound Needle Core Biopsy Clip Insertion	72999	5000.00000	\N
+2	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:43:19.813+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:44:34.615+00	3811	Ultrasound Needle Core Biopsy CNB	72999	5150.00000	\N
+4	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:45:16.339+00	\N	\N	3813	Stereotatic Needle Core Biopsy CNB	72999	11350.00000	\N
+5	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:45:47.517+00	\N	\N	5380	Stereotatic Needle Core Biopsy (NL)	72999	10800.00000	\N
+6	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:46:12.609+00	\N	\N	3845	Find Needle Aspiration	43910	2520.00000	520.00000
+7	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:46:43.135+00	\N	\N	5302	Digital mammography (1 ข้าง)	42337	1000.00000	100.00000
+8	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:47:08.099+00	\N	\N	5303	Digital mammography (2 ข้าง)	42332	1900.00000	\N
+9	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:49:25.117+00	\N	\N	5306	Digital mammography with US (2 ข้าง)	4233	2790.00000	390.00000
+10	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:49:52.323+00	\N	\N	5307	ถ่าย spot เพิ่ม	41003	490.00000	490.00000
+11	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:50:23.376+00	\N	\N	5308	Skin Mark	43330	1460.00000	660.00000
+12	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:50:47.298+00	\N	\N	5309	Aspiration	43910	2520.00000	520.00000
+13	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:51:04.431+00	\N	\N	5310	Needle Localization	72999	5250.00000	\N
+14	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:51:30.158+00	\N	\N	5312	Digital mammography with US (1 ข้าง)	42339	2100.00000	900.00000
+15	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:52:16.829+00	\N	\N	5364	ค่าบริการทำ Mammogram ในผู้ป่วยที่มี Implant 1 ข้าง	42337	1200.00000	550.00000
+16	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:52:41.417+00	\N	\N	5365	ค่าบริการทำ Mammogram ในผู้ป่วยที่มี Implant 2 ข้าง	42332	2200.00000	300.00000
+17	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:53:04.685+00	\N	\N	5366	ค่าบริการทำ Mammogram ในผู้ป่วยที่มี Implant ร่วมกับ Ultrasound 1 ข้าง	42339	2380.00000	1430.00000
+18	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:53:24.571+00	\N	\N	5367	ค่าบริการทำ Mammogram ในผู้ป่วยที่มี Implant ร่วมกับ Ultrasound 2 ข้าง	42333	2910.00000	510.00000
+19	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:53:49.969+00	\N	\N	P606	ค่าเวชภัณฑ์ : เข็ม	\N	\N	\N
+20	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:54:28.367+00	\N	\N	M416	ค่าธรรมเนียมศูนย์ถันยรักษ์	\N	400.00000	\N
+21	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:54:56.111+00	\N	\N	M417	ค่าธรรมเนียมสำหรับการเข้ารับบริการ Ultrasound - guided needle biopsy (ตำแหน่งแรก)	\N	1800.00000	1800.00000
+22	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:55:20.458+00	\N	\N	M418	ค่าธรรมเนียมสำหรับการเข้ารับบริการ Ultrasound - guided needle biopsy (ตำแหน่งที่ 2 เป็นต้นไป เพิ่มตำแหน่งละ)	\N	900.00000	900.00000
+23	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-05-28 03:56:14.004+00	\N	\N	M419	ค่าธรรมเนียมสำหรับการเข้ารับบริการ Ultrasound - guided needle Aspiration / FNA (ตำแหน่งแรก)	\N	1000.00000	1000.00000
+\.
+
+
+--
 -- Data for Name: holiday; Type: TABLE DATA; Schema: public; Owner: -
 --
 
@@ -17791,23 +18239,6 @@ COPY public.lab_list (id, key, value) FROM stdin;
 2	2	Culture
 3	3	Mycobacteria PROFILE 2
 4	4	AFB
-\.
-
-
---
--- Data for Name: lab_options; Type: TABLE DATA; Schema: public; Owner: -
---
-
-COPY public.lab_options (id, user_created, date_created, user_updated, date_updated, type, label) FROM stdin;
-1	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-02 18:02:02.445+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-02 18:16:02.464+00	micobiology	Gram stain
-2	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-02 18:07:55.548+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-02 18:16:06.215+00	micobiology	Culture
-3	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-02 18:15:28.923+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-02 18:16:09.766+00	micobiology	Mycobacteria: Culture PROFILE 2
-4	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-02 18:15:50.766+00	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-02 18:16:13.444+00	micobiology	AFB
-5	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-02 18:16:53.803+00	\N	\N	pathology	ER
-6	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-02 18:16:59.674+00	\N	\N	pathology	PR
-7	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-02 18:17:05.698+00	\N	\N	pathology	HER2
-8	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-02 18:17:15.588+00	\N	\N	pathology	Ki-67
-9	f0e0b60d-69de-45ef-aab0-14da792a6145	2026-04-02 18:17:24.171+00	\N	\N	other	Other
 \.
 
 
@@ -18367,8 +18798,6 @@ COPY public.role_menu (id, link, role_name, menu_type, parent, menu_detail, noti
 11	home/report_patient	\N	sidebar	5	สถิติผู้ป่วย	7	2	\N
 29	home/report_appointment/summary_appointment	\N	sidebar	5	รายงานสรุปยอดผู้มาตรวจ	0	5	\N
 3	nurse	หัตการประจำวัน	main	\N	\N	0	\N	BriefcaseMedical
-30	nurse	ลงผลแลป	main	\N	\N	0	\N	FlaskConical
-31	bx	เจาะชิ้นเนื้อ	main	\N	\N	0	\N	Slice
 17	tech/mam	เจ้าหน้าที่ห้อง Mammogram	main	\N	\N	0	\N	Radiation
 23	us/bed	เจ้าหน้าที่ Ultrasound (ห้องตรวจ)	main	\N	\N	0	\N	Wifi
 16	tech	เจ้าหน้าที่เทคนิค	main	\N	\N	0	\N	MessagesSquare
@@ -18376,6 +18805,121 @@ COPY public.role_menu (id, link, role_name, menu_type, parent, menu_detail, noti
 19	finance	เจ้าหน้าที่การเงิน	main	\N	\N	0	\N	HandCoins
 21	us	เจ้าหน้าที่ Ultrasound (Center)	main	\N	\N	0	\N	Monitor
 24	recommend_bx	บันทึกแนะนำ Bx	main	\N	\N	0	\N	BookMarked
+33	lab	ส่งตรวจชิ้นเนื้อ	main	\N	\N	0	\N	Microscope
+31	bx	เจาะชิ้นเนื้อ	main	\N	\N	0	\N	ClipboardPlus
+\.
+
+
+--
+-- Data for Name: role_menu_directus_policies; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.role_menu_directus_policies (id, role_menu_id, directus_policies_id) FROM stdin;
+2	15	e71dde65-db51-45dc-96cb-983da47dd902
+3	16	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+1	1	0317e5ce-3983-4493-b76a-ab4c0b9cb6c9
+4	4	0317e5ce-3983-4493-b76a-ab4c0b9cb6c9
+5	5	0317e5ce-3983-4493-b76a-ab4c0b9cb6c9
+6	6	0317e5ce-3983-4493-b76a-ab4c0b9cb6c9
+7	8	0317e5ce-3983-4493-b76a-ab4c0b9cb6c9
+8	9	0317e5ce-3983-4493-b76a-ab4c0b9cb6c9
+9	10	0317e5ce-3983-4493-b76a-ab4c0b9cb6c9
+10	11	0317e5ce-3983-4493-b76a-ab4c0b9cb6c9
+11	12	0317e5ce-3983-4493-b76a-ab4c0b9cb6c9
+12	4	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+13	5	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+14	6	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+15	8	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+16	9	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+17	10	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+18	12	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+19	11	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+21	17	898699e3-4b48-4907-ab91-786e6aac07b2
+20	\N	\N
+22	18	9b36f75a-3274-4773-ac09-5a73da7d60aa
+23	19	00b023d2-2be6-44cd-ac18-0797db0a9b33
+24	20	0317e5ce-3983-4493-b76a-ab4c0b9cb6c9
+25	4	9b36f75a-3274-4773-ac09-5a73da7d60aa
+26	5	9b36f75a-3274-4773-ac09-5a73da7d60aa
+27	6	9b36f75a-3274-4773-ac09-5a73da7d60aa
+28	8	9b36f75a-3274-4773-ac09-5a73da7d60aa
+29	9	9b36f75a-3274-4773-ac09-5a73da7d60aa
+30	10	9b36f75a-3274-4773-ac09-5a73da7d60aa
+31	11	9b36f75a-3274-4773-ac09-5a73da7d60aa
+32	12	9b36f75a-3274-4773-ac09-5a73da7d60aa
+33	21	684de547-f66d-400b-bd82-3446d07b443e
+34	4	00b023d2-2be6-44cd-ac18-0797db0a9b33
+35	5	00b023d2-2be6-44cd-ac18-0797db0a9b33
+36	6	00b023d2-2be6-44cd-ac18-0797db0a9b33
+37	8	00b023d2-2be6-44cd-ac18-0797db0a9b33
+38	9	00b023d2-2be6-44cd-ac18-0797db0a9b33
+39	10	00b023d2-2be6-44cd-ac18-0797db0a9b33
+40	11	00b023d2-2be6-44cd-ac18-0797db0a9b33
+41	12	00b023d2-2be6-44cd-ac18-0797db0a9b33
+42	22	b93b9275-aca7-474b-a1c0-a62753a8b403
+43	4	b93b9275-aca7-474b-a1c0-a62753a8b403
+44	5	b93b9275-aca7-474b-a1c0-a62753a8b403
+45	6	b93b9275-aca7-474b-a1c0-a62753a8b403
+46	8	b93b9275-aca7-474b-a1c0-a62753a8b403
+47	9	b93b9275-aca7-474b-a1c0-a62753a8b403
+48	10	b93b9275-aca7-474b-a1c0-a62753a8b403
+49	11	b93b9275-aca7-474b-a1c0-a62753a8b403
+50	12	b93b9275-aca7-474b-a1c0-a62753a8b403
+52	4	684de547-f66d-400b-bd82-3446d07b443e
+51	\N	6a100111-7584-4df9-8a61-122c023e978a
+53	5	684de547-f66d-400b-bd82-3446d07b443e
+54	6	684de547-f66d-400b-bd82-3446d07b443e
+55	8	684de547-f66d-400b-bd82-3446d07b443e
+56	12	684de547-f66d-400b-bd82-3446d07b443e
+57	11	684de547-f66d-400b-bd82-3446d07b443e
+58	10	684de547-f66d-400b-bd82-3446d07b443e
+59	9	684de547-f66d-400b-bd82-3446d07b443e
+60	23	684de547-f66d-400b-bd82-3446d07b443e
+62	\N	0317e5ce-3983-4493-b76a-ab4c0b9cb6c9
+61	\N	6a100111-7584-4df9-8a61-122c023e978a
+63	24	684de547-f66d-400b-bd82-3446d07b443e
+70	26	9b36f75a-3274-4773-ac09-5a73da7d60aa
+71	25	2250e075-a2c0-435c-a914-b19edbb1f5b1
+64	\N	6a100111-7584-4df9-8a61-122c023e978a
+65	\N	9b36f75a-3274-4773-ac09-5a73da7d60aa
+66	\N	0317e5ce-3983-4493-b76a-ab4c0b9cb6c9
+67	\N	e71dde65-db51-45dc-96cb-983da47dd902
+68	\N	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+69	\N	684de547-f66d-400b-bd82-3446d07b443e
+72	26	0317e5ce-3983-4493-b76a-ab4c0b9cb6c9
+73	27	0317e5ce-3983-4493-b76a-ab4c0b9cb6c9
+74	28	0317e5ce-3983-4493-b76a-ab4c0b9cb6c9
+75	29	0317e5ce-3983-4493-b76a-ab4c0b9cb6c9
+76	3	daec5484-1f3c-44ec-8681-0dce364ca752
+79	\N	9b36f75a-3274-4773-ac09-5a73da7d60aa
+80	\N	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+81	3	cc6e04e3-02d7-4422-a70a-021b0a529c2d
+77	\N	daec5484-1f3c-44ec-8681-0dce364ca752
+78	\N	9b36f75a-3274-4773-ac09-5a73da7d60aa
+84	33	daec5484-1f3c-44ec-8681-0dce364ca752
+82	\N	9b36f75a-3274-4773-ac09-5a73da7d60aa
+85	31	9b36f75a-3274-4773-ac09-5a73da7d60aa
+83	\N	daec5484-1f3c-44ec-8681-0dce364ca752
+\.
+
+
+--
+-- Data for Name: role_menu_directus_roles; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.role_menu_directus_roles (id, role_menu_id, directus_roles_id) FROM stdin;
+1	1	787b76ac-185a-4e6a-8cb2-869b39c450b0
+2	4	787b76ac-185a-4e6a-8cb2-869b39c450b0
+3	5	787b76ac-185a-4e6a-8cb2-869b39c450b0
+4	6	787b76ac-185a-4e6a-8cb2-869b39c450b0
+6	12	787b76ac-185a-4e6a-8cb2-869b39c450b0
+7	11	787b76ac-185a-4e6a-8cb2-869b39c450b0
+8	10	787b76ac-185a-4e6a-8cb2-869b39c450b0
+9	9	787b76ac-185a-4e6a-8cb2-869b39c450b0
+10	8	787b76ac-185a-4e6a-8cb2-869b39c450b0
+5	\N	787b76ac-185a-4e6a-8cb2-869b39c450b0
+11	15	787b76ac-185a-4e6a-8cb2-869b39c450b0
+12	16	787b76ac-185a-4e6a-8cb2-869b39c450b0
 \.
 
 
@@ -18883,32 +19427,32 @@ COPY public.time_slot (id, slot, time_period, mon_thurs_office, mon_thurs_app, f
 24	15:00	afternoon	4	0	12	5	0	0	8	0	\N	t	f	f	\N	\N
 2	07:45	morning	5	0	0	0	0	0	0	0	02	f	f	f	\N	\N
 6	09:00	morning	10	5	12	5	16	5	10	5	06	f	f	f	\N	\N
-19	13:20	afternoon	10	5	12	5	0	0	12	5	19	f	f	f	\N	\N
-25	17:00	evening	10	5	10	5	10	5	0	0	24	f	f	f	\N	\N
-23	14:40	afternoon	5	2	12	5	0	0	12	5	23	f	f	f	\N	\N
-20	13:40	afternoon	10	5	12	5	0	0	12	5	20	f	f	f	\N	\N
-5	08:40	morning	10	5	12	5	16	5	10	5	05	f	f	f	\N	\N
-29	08:00	morning	0	0	0	0	0	0	0	0	01	f	t	f	08:00	08:30
-18	13:00	afternoon	10	5	12	5	0	0	12	5	18	f	f	f	\N	\N
-32	13:00	afternoon	0	0	0	0	0	0	0	0	01	f	t	f	13:00	14:00
-22	14:20	afternoon	10	5	12	5	0	0	12	5	22	f	f	f	\N	\N
-33	17:00	evening	0	0	0	0	0	0	0	0	\N	f	t	t	17:00	17:30
-11	10:40	morning	10	5	10	5	16	5	10	5	11	f	f	f	\N	\N
+26	17:20	evening	10	5	10	5	10	5	0	0	25	f	f	f	\N	\N
 30	08:30	morning	0	0	0	0	0	0	0	0	02	f	t	f	08:30	10:00
-14	11:45	morning	5	0	0	0	0	0	0	0	14	f	f	f	\N	\N
-27	17:40	evening	8	5	8	5	8	5	0	0	26	f	f	f	\N	\N
-10	10:20	morning	10	5	12	5	16	5	10	5	10	f	f	f	\N	\N
+20	13:40	afternoon	10	5	12	5	0	0	12	5	20	f	f	f	\N	\N
+32	13:00	afternoon	0	0	0	0	0	0	0	0	01	f	t	f	13:00	14:00
+5	08:40	morning	10	5	12	5	16	5	10	5	05	f	f	f	\N	\N
+23	14:40	afternoon	5	2	12	5	0	0	12	5	23	f	f	f	\N	\N
 3	08:00	morning	10	5	12	5	16	5	0	0	03	f	f	f	\N	\N
-34	08:30	morning	0	0	0	0	0	0	0	0	\N	f	t	t	08:30	09:00
-9	10:00	morning	10	5	12	5	16	5	10	5	09	f	f	f	\N	\N
-28	18:00	evening	5	0	5	0	5	0	0	0	27	f	f	f	\N	\N
-15	12:00	afternoon	8	5	0	0	0	0	0	0	15	f	f	f	\N	\N
+18	13:00	afternoon	10	5	12	5	0	0	12	5	18	f	f	f	\N	\N
+17	12:40	afternoon	10	5	12	5	0	0	0	0	17	f	f	f	\N	\N
 21	14:00	afternoon	10	5	12	5	0	0	12	5	21	f	f	f	\N	\N
+19	13:20	afternoon	10	5	12	5	0	0	12	5	19	f	f	f	\N	\N
+11	10:40	morning	10	5	10	5	16	5	10	5	11	f	f	f	\N	\N
+27	17:40	evening	8	5	8	5	8	5	0	0	26	f	f	f	\N	\N
+33	17:00	evening	0	0	0	0	0	0	0	0	\N	f	t	t	17:00	17:30
+14	11:45	morning	5	0	0	0	0	0	0	0	14	f	f	f	\N	\N
+10	10:20	morning	10	5	12	5	16	5	10	5	10	f	f	f	\N	\N
+25	17:00	evening	10	5	10	5	10	5	0	0	24	f	f	f	\N	\N
+28	18:00	evening	5	0	5	0	5	0	0	0	27	f	f	f	\N	\N
+9	10:00	morning	10	5	12	5	16	5	10	5	09	f	f	f	\N	\N
+22	14:20	afternoon	10	5	12	5	0	0	12	5	22	f	f	f	\N	\N
+29	08:00	morning	0	0	0	0	0	0	0	0	01	f	t	f	08:00	08:30
+15	12:00	afternoon	8	5	0	0	0	0	0	0	15	f	f	f	\N	\N
 12	11:00	morning	5	0	0	0	16	5	0	0	12	f	f	f	\N	\N
 7	09:20	morning	10	5	12	5	16	5	10	5	07	f	f	f	\N	\N
-17	12:40	afternoon	10	5	12	5	0	0	0	0	17	f	f	f	\N	\N
-26	17:20	evening	10	5	10	5	10	5	0	0	25	f	f	f	\N	\N
 13	11:30	afternoon	5	0	0	0	0	0	0	0	13	f	f	f	\N	\N
+34	08:30	morning	0	0	0	0	0	0	0	0	\N	f	t	t	08:30	09:00
 1	07:30	morning	5	0	0	0	0	0	0	0	01	f	f	f	\N	\N
 16	12:20	afternoon	8	5	0	0	0	0	0	0	16	f	f	f	\N	\N
 35	13:00	afternoon	0	0	0	0	0	0	0	0	\N	f	t	t	13:00	13:30
@@ -18971,7 +19515,7 @@ SELECT pg_catalog.setval('public.certificate_reason_id_seq', 17, true);
 -- Name: directus_fields_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.directus_fields_id_seq', 3802, true);
+SELECT pg_catalog.setval('public.directus_fields_id_seq', 3862, true);
 
 
 --
@@ -18985,21 +19529,21 @@ SELECT pg_catalog.setval('public.directus_notifications_id_seq', 498, true);
 -- Name: directus_permissions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.directus_permissions_id_seq', 1202, true);
+SELECT pg_catalog.setval('public.directus_permissions_id_seq', 1273, true);
 
 
 --
 -- Name: directus_presets_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.directus_presets_id_seq', 111, true);
+SELECT pg_catalog.setval('public.directus_presets_id_seq', 114, true);
 
 
 --
 -- Name: directus_relations_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.directus_relations_id_seq', 469, true);
+SELECT pg_catalog.setval('public.directus_relations_id_seq', 482, true);
 
 
 --
@@ -19052,6 +19596,13 @@ SELECT pg_catalog.setval('public.examination_cost_id_seq', 26, true);
 
 
 --
+-- Name: finance_cost_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
+--
+
+SELECT pg_catalog.setval('public.finance_cost_id_seq', 23, true);
+
+
+--
 -- Name: holiday_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
@@ -19070,13 +19621,6 @@ SELECT pg_catalog.setval('public.lab_cost_id_seq', 6, true);
 --
 
 SELECT pg_catalog.setval('public.lab_list_id_seq', 4, true);
-
-
---
--- Name: lab_options_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
---
-
-SELECT pg_catalog.setval('public.lab_options_id_seq', 9, true);
 
 
 --
@@ -19157,10 +19701,24 @@ SELECT pg_catalog.setval('public.referring_md_id_seq', 203, true);
 
 
 --
+-- Name: role_menu_directus_policies_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
+--
+
+SELECT pg_catalog.setval('public.role_menu_directus_policies_id_seq', 85, true);
+
+
+--
+-- Name: role_menu_directus_roles_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
+--
+
+SELECT pg_catalog.setval('public.role_menu_directus_roles_id_seq', 12, true);
+
+
+--
 -- Name: role_menu_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.role_menu_id_seq', 32, true);
+SELECT pg_catalog.setval('public.role_menu_id_seq', 33, true);
 
 
 --
@@ -19251,5 +19809,4 @@ SELECT pg_catalog.setval('public.underlying_disease_id_seq', 9, true);
 -- PostgreSQL database dump complete
 --
 
-\unrestrict xP8YAlRFmUp7J3tXBxDIfjjxVnn0eax6JSrdGhNQUHAfI8snrSBz4eEy3zc7fLJ
 

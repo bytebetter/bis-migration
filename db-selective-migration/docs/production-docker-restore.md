@@ -1,6 +1,8 @@
 # Production: PostgreSQL ด้วย Docker + restore ไฟล์ selective dump
 
-ไฟล์ dump จาก `db-dump-selective-backup.sh` ถูกสร้างด้วย **PostgreSQL 16** และอาจมีคำสั่ง `\restrict` ใน `psql` — ควร restore ด้วย **image `postgres:16`** (หรือ client 16+)
+ไฟล์ dump จาก `db-dump-selective-backup.sh` ถูกสร้างด้วย **PostgreSQL 16** — restore ด้วย **`psql`** (ไม่ใช่ `pg_restore`) หรือรัน SQL ผ่าน client อื่น (เช่น TablePlus Query)
+
+> สคริปต์ dump จะลบ `\\restrict` / `\\unrestrict` ออกให้แล้ว (เป็น meta-command ของ `psql` เท่านั้น ไม่ใช่ SQL)
 
 ## ไฟล์ตั้งต้นใน Git (baseline)
 
@@ -89,3 +91,25 @@ gunzip -c /opt/bis/backups/bisinfo_selective.sql.gz | docker compose --env-file 
 - ถ้า restore ล้มเหลวเรื่องสิทธิ์หรือ extension ให้ใช้ user เดียวกับที่สร้างจาก `POSTGRES_USER` (เป็น superuser ใน container เริ่มต้น)
 - อย่าเปิดพอร์ต `0.0.0.0:5432` ถ้าไม่จำเป็น — ใน compose ตั้งเป็น `127.0.0.1` แล้ว
 - หลัง restore ควรเปลี่ยนรหัสผ่าน / จำกัด network และ backup volume `bis_pgdata` ตามนโยบายองค์กร
+
+## Restore ผ่าน TablePlus
+
+ไฟล์ `baseline/bisinfo_selective_initial.sql` ใน Git ใช้รูปแบบ **`COPY ... FROM stdin`** (เหมาะกับ `psql` / Docker) — **TablePlus รันไม่ได้**
+
+| วิธีใน TablePlus | ไฟล์ที่ต้องใช้ | หมายเหตุ |
+|------------------|----------------|----------|
+| **Restore Database** | ไม่รองรับ `.sql` plain | ใช้ได้เฉพาะ `pg_dump -Fc` (custom format) |
+| **Execute SQL file** | ต้องเป็น `INSERT` ไม่ใช่ `COPY` | สร้างด้วย `SQL_DATA_FORMAT=inserts` |
+
+สร้างไฟล์สำหรับ TablePlus:
+
+```bash
+SQL_DATA_FORMAT=inserts OUTPUT_PATH=backups/bisinfo_selective_tableplus.sql ./scripts/refresh-baseline.sh
+```
+
+จากนั้นใน TablePlus (ฐานว่าง, ปิด Directus ก่อน):
+
+1. อย่าใช้ **Restore Database**
+2. เปิด **Query** → **Execute SQL file** → เลือก `bisinfo_selective_tableplus.sql`
+
+ไฟล์แบบ `inserts` จะใหญ่กว่าและ restore ช้ากว่า — แนะนำใช้ `docker exec ... psql` บน production ถ้าทำได้

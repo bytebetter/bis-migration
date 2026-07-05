@@ -12,6 +12,7 @@ set -euo pipefail
 # Optional:
 # - OUTPUT_PATH (default: package root/backups/bisinfo_selective_YYYYMMDD_HHMMSS.sql)
 # - COMPRESS=true|false (default: false) — output .sql.gz when true
+# - SQL_DATA_FORMAT=copy|inserts (default: copy; use inserts for TablePlus Execute SQL)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=db-selective-tables.inc.sh
@@ -34,6 +35,7 @@ fi
 
 DIRECTUS_ARGS="$(join_pg_tables "${DIRECTUS_TABLES[@]}")"
 BUSINESS_ARGS="$(join_pg_tables "${MIGRATE_TABLES[@]}")"
+DATA_FORMAT_ARGS="$(pg_dump_data_format_args)"
 
 mkdir -p "$(dirname "$OUT")"
 
@@ -41,7 +43,7 @@ if [[ "$COMPRESS" == "true" ]] && [[ "$OUT" != *.gz ]]; then
   OUT="${OUT}.gz"
 fi
 
-echo "Writing backup to: ${OUT}" >&2
+echo "Writing backup to: ${OUT} (SQL_DATA_FORMAT=${SQL_DATA_FORMAT:-copy})" >&2
 
 _q_user="$(printf '%q' "$DB_USER")"
 _q_db="$(printf '%q' "$SOURCE_DB")"
@@ -58,6 +60,7 @@ cat <<'HDR'
 HDR
 pg_dump -U ${_q_user} -d ${_q_db} --schema-only --no-owner --no-privileges
 pg_dump -U ${_q_user} -d ${_q_db} --data-only --no-owner --no-privileges \\
+  ${DATA_FORMAT_ARGS} \\
   ${DIRECTUS_ARGS} \\
   --exclude-table=public.directus_activity \\
   --exclude-table=public.directus_revisions \\
@@ -66,9 +69,9 @@ EOF
 }
 
 if [[ "$COMPRESS" == "true" ]]; then
-  dump_stream | gzip -c >"$OUT"
+  dump_stream | strip_psql_meta_commands | gzip -c >"$OUT"
 else
-  dump_stream >"$OUT"
+  dump_stream | strip_psql_meta_commands >"$OUT"
 fi
 
 echo "Done. Size: $(du -h "$OUT" | cut -f1)" >&2
