@@ -170,6 +170,11 @@ const INSERT_DEFS = [
     (row) => toPgTimestamp(getField(row, "exam_date")),
   ],
   [
+    "last_saved_at",
+    "timestamp",
+    (row) => toPgTimestamp(getField(row, "exam_date")),
+  ],
+  [
     "tech_login_name",
     "text",
     (row) => nullIfTrimEmpty(getField(row, "tech_login_name")),
