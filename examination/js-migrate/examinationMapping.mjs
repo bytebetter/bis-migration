@@ -830,6 +830,101 @@ export async function syncExaminationIdSequenceOnce(pgClient) {
   `);
 }
 
+let cachedAppointmentPatientColForExam;
+
+/**
+ * คอลัมน์ FK -> patient ใน public.appointment (Directus: patient_info / patient / patient_id)
+ * ใช้ตอน fallback จับคู่ appointment จาก pid ของ examination
+ */
+async function resolveAppointmentPatientColumn(pgClient) {
+  if (cachedAppointmentPatientColForExam !== undefined) {
+    return cachedAppointmentPatientColForExam;
+  }
+  const r = await pgClient.query(`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'appointment'
+      AND column_name IN ('patient', 'patient_info', 'patient_id')
+    ORDER BY CASE column_name
+      WHEN 'patient_info' THEN 0
+      WHEN 'patient' THEN 1
+      WHEN 'patient_id' THEN 2
+      ELSE 99
+    END
+    LIMIT 1
+  `);
+  cachedAppointmentPatientColForExam = r.rows?.[0]?.column_name ?? null;
+  return cachedAppointmentPatientColForExam;
+}
+
+/**
+ * สร้าง index สำหรับ fallback: appointment ที่มี appointment_datetime (ไม่ใช่ placeholder)
+ * ของ patient ที่ต้องใช้ จัดกลุ่มด้วย `${patient_id}:${วันที่ YYYY-MM-DD ค.ศ.}` (ไม่รวมเวลา)
+ * @returns {Promise<Map<string, number[]>>}
+ */
+async function buildFallbackAppointmentIndex(pgClient, rows, mssqlUToPatient) {
+  /** เก็บเฉพาะ patient ที่มีแถว schedule_id เป็น null และ exam_date แปลงได้ */
+  const patientIds = new Set();
+  for (const row of rows) {
+    if (toStrictInt(getField(row, "schedule_id")) != null) continue;
+    const u = String(getField(row, "exam_id") ?? "");
+    const patientId = mssqlUToPatient.get(u) ?? null;
+    if (patientId == null) continue;
+    if (toPgTimestamp(getField(row, "exam_date")) == null) continue;
+    patientIds.add(Number(patientId));
+  }
+  if (patientIds.size === 0) return new Map();
+
+  const patientCol = await resolveAppointmentPatientColumn(pgClient);
+  if (patientCol == null) return new Map();
+
+  // patientCol มาจาก IN-list ที่กำหนดตายตัว จึงปลอดภัยที่จะ interpolate
+  // จับคู่ด้วยวันที่ (ปี+เดือน+วัน) ไม่รวมเวลา → cast เป็น ::date แล้วเก็บเป็น YYYY-MM-DD
+  const { rows: apptRows } = await pgClient.query(
+    `SELECT id,
+            "${patientCol}"::int AS patient_id,
+            to_char(appointment_datetime::date, 'YYYY-MM-DD') AS ymd
+     FROM public.appointment
+     WHERE "${patientCol}" = ANY($1::int[])
+       AND appointment_datetime IS NOT NULL`,
+    [[...patientIds]],
+  );
+
+  const index = new Map();
+  for (const r of apptRows) {
+    if (r.patient_id == null || r.ymd == null) continue;
+    const key = `${r.patient_id}:${r.ymd}`;
+    let arr = index.get(key);
+    if (!arr) {
+      arr = [];
+      index.set(key, arr);
+    }
+    arr.push(Number(r.id));
+  }
+  return index;
+}
+
+/**
+ * เลือก appointment.id จาก index ด้วย patient + วันที่ (ปี+เดือน+วัน ค.ศ.) ของ exam_date
+ * ไม่สนเวลา; ถ้าวันเดียวกันมีหลายนัด เลือก id น้อยสุดเพื่อความ deterministic
+ * @returns {number|null}
+ */
+export function pickFallbackAppointmentId(index, patientId, examTs) {
+  if (patientId == null || examTs == null) return null;
+  const ymd = examTs.slice(0, 10); // "YYYY-MM-DD" (exam_date เป็น ค.ศ. หลัง toPgTimestamp)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+
+  const ids = index.get(`${Number(patientId)}:${ymd}`);
+  if (!ids || ids.length === 0) return null;
+
+  let best = ids[0];
+  for (const id of ids) {
+    if (id < best) best = id;
+  }
+  return best;
+}
+
 /**
  * จับ patient จากข้อมูลบน staging ที่ load ลง PG จริง (ตรงกับ unnest) แทน in-memory จาก mssql
  * เพื่อไม่เสีย key เวลา pid รูปแบบ/ชนิดต่างจาก getField+String
@@ -977,6 +1072,14 @@ export async function runExaminationChunkPostLoad(
     chunkReferringNames,
   );
 
+  // Fallback: แถวที่ schedule_id เป็น null → จับคู่ appointment จาก pid + วันที่ (ปี+เดือน+วัน) ของ exam_date
+  const fallbackAppointmentByPatientDate = await buildFallbackAppointmentIndex(
+    pgClient,
+    rows,
+    mssqlUToPatient,
+  );
+  let fallbackAppointmentResolved = 0;
+
   const arrays = INSERT_DEFS.map(() => []);
   const insertedExamIds = [];
 
@@ -1012,10 +1115,22 @@ export async function runExaminationChunkPostLoad(
     const patientId = mssqlUToPatient.get(u) ?? null;
     const scheduleId = toStrictInt(getField(row, "schedule_id"));
     const scheduleKey = scheduleId == null ? null : String(scheduleId);
-    const appointmentId =
+    let appointmentId =
       scheduleKey == null
         ? null
         : (scheduleKeyToAppointmentId.get(scheduleKey) ?? null);
+    // schedule_id เป็น null → หา appointment จาก pid + ปี (ค.ศ.) ของ exam_date
+    if (appointmentId == null && scheduleId == null) {
+      const fb = pickFallbackAppointmentId(
+        fallbackAppointmentByPatientDate,
+        patientId,
+        toPgTimestamp(getField(row, "exam_date")),
+      );
+      if (fb != null) {
+        appointmentId = fb;
+        fallbackAppointmentResolved++;
+      }
+    }
     const context = { patientId, appointmentId };
     const rowMeta = {
       examIdRaw: u,
@@ -1053,6 +1168,12 @@ export async function runExaminationChunkPostLoad(
       patientCol,
     });
     recordRowFieldIssues(examId, rowMeta, fieldIssues);
+  }
+
+  if (fallbackAppointmentResolved > 0) {
+    log(
+      `>>> [examination] post-load: schedule_id เป็น null แต่จับคู่ appointment จาก pid+วันที่(ปี+เดือน+วัน) ได้ ${fallbackAppointmentResolved} ราย`,
+    );
   }
 
   if (arrays[0].length === 0) {
