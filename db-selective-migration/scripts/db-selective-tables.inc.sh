@@ -19,7 +19,9 @@ MIGRATE_TABLES=(
   nurse_work_statuses
   underlying_diseases
   bx_options
+  bx_options_bx_options
   tab_exam_option
+  tab_exam_option_tab_exam_option
   certificate_reason
   lab_list
   finance_cost
@@ -38,6 +40,7 @@ MIGRATE_TABLES=(
   procedure_cost
   exam_costs
   billing_discount
+  billing_discount_exam_costs
   place
   donate_for
   beds
