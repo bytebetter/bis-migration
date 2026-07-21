@@ -2,7 +2,7 @@
   "name": "bis-pacs-sync-api",
   "description": "Please enter a description for your extension",
   "icon": "extension",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "keywords": [
     "directus",
     "directus-extension",
