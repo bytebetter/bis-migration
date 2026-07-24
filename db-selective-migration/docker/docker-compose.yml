@@ -8,6 +8,9 @@
 #     -f docker/docker-compose.yml up -d
 #
 # URLs (localhost): Backoffice http://127.0.0.1:3000  |  Directus http://127.0.0.1:8055
+#
+# Production extension deploy: set DIRECTUS_EXTENSIONS_DIR=/opt/bis/directus-extensions
+# and use docker/deploy-extension.sh (see docker/EXTENSION_DEPLOY.md)
 
 services:
   postgres:
@@ -27,17 +30,34 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - bis_redis_data:/data
+    # Internal only — Directus reaches redis:6379 on the compose network
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   directus:
     image: directus/directus:11
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "127.0.0.1:${DIRECTUS_PORT:-8055}:8055"
     volumes:
       - directus_uploads:/directus/uploads
-      - ../directus-extensions-bb-dev:/directus/extensions:ro
+      - ${DIRECTUS_EXTENSIONS_DIR:-../directus-extensions-bb-dev}:/directus/extensions:ro
       - ${SMB_SHARE_MOUNT:-/mnt/bis-shared}:/data/shared
     environment:
       KEY: ${KEY:?set KEY in .env.directus}
@@ -56,6 +76,11 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-http://127.0.0.1:3000,http://localhost:3000}
       CORS_METHODS: ${CORS_METHODS:-*}
       CORS_ALLOWED_HEADERS: ${CORS_ALLOWED_HEADERS:-*}
+      # Redis cache (service name `redis` on the compose network)
+      CACHE_ENABLED: ${CACHE_ENABLED:-true}
+      CACHE_STORE: ${CACHE_STORE:-redis}
+      CACHE_AUTO_PURGE: ${CACHE_AUTO_PURGE:-true}
+      REDIS: ${REDIS:-redis://redis:6379}
 
   backoffice:
     image: ${BACKOFFICE_IMAGE:-bytebetter/bis-backoffice:v1.0.2}
@@ -86,5 +111,6 @@ services:
 
 volumes:
   bis_pgdata:
+  bis_redis_data:
   directus_uploads:
   uptime_kuma_data:
