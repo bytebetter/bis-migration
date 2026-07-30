@@ -623,6 +623,10 @@ END $$;
   `);
 
   let total = 0;
+  /** แถว MSSQL ที่ PID ว่าง — ข้าม ไม่ sync เข้า public.appointment */
+  let skippedNoPidRows = 0;
+  const skippedNoPidSampleIds = [];
+  const SKIPPED_NO_PID_SAMPLE_MAX = 100;
   const failedScheduleIdSet = new Set();
   const fieldIssueAcc = createFieldIssueAccumulator("schedule_id");
   const fieldIssueLogPath = path.join(
@@ -846,6 +850,11 @@ END $$;
       mergeFieldIssueChunk(fieldIssueAcc, postLoadResult);
       for (const sid of postLoadResult?.failedScheduleIds ?? [])
         failedScheduleIdSet.add(sid);
+      skippedNoPidRows += postLoadResult?.skippedNoPidCount ?? 0;
+      for (const sid of postLoadResult?.skippedNoPidScheduleIds ?? []) {
+        if (skippedNoPidSampleIds.length >= SKIPPED_NO_PID_SAMPLE_MAX) break;
+        skippedNoPidSampleIds.push(sid);
+      }
       postLoadMs = Date.now() - postLoadStartedAt;
       await pgClient.query("COMMIT");
       lastChunkProcessMs = Date.now() - chunkStartedAt;
@@ -857,6 +866,9 @@ END $$;
         sourceOffsetEnd,
         rowCount: advance,
         ...optionalDetailRowCount(advance, n),
+        ...(postLoadResult?.skippedNoPidCount
+          ? { skippedNoPidRows: postLoadResult.skippedNoPidCount }
+          : {}),
         firstScheduleId,
         lastScheduleId,
         mssqlFetchMs: fetchElapsedMs,
@@ -1020,6 +1032,12 @@ END $$;
     );
   }
 
+  if (skippedNoPidRows > 0) {
+    fieldIssueAcc.summaryExtras.skippedNoPidRows = skippedNoPidRows;
+    fieldIssueAcc.summaryExtras.skippedNoPidScheduleIdSample =
+      skippedNoPidSampleIds;
+  }
+
   let fieldIssueLogWritten = null;
   if (fieldIssueAcc.totalFieldIssueCount > 0) {
     const payload = buildFieldIssueLogPayload(fieldIssueAcc, {
@@ -1050,6 +1068,8 @@ END $$;
   const summary = {
     key,
     totalRowsRead: total,
+    skippedNoPidRows,
+    skippedNoPidScheduleIdSample: skippedNoPidSampleIds,
     fieldIssueLogPath: fieldIssueLogWritten,
     checkpointPath: checkpointEnabled ? checkpointPath : null,
     chunkCount: chunkIndex,
@@ -1060,6 +1080,11 @@ END $$;
     chunkResults,
     repairSummary,
   };
+  if (skippedNoPidRows > 0) {
+    console.error(
+      `>>> [${key}] ข้าม ${skippedNoPidRows} แถวที่ PID ว่างจาก MSSQL (ไม่ sync เข้า public.appointment)`,
+    );
+  }
   console.error(`>>> [${key}] done, total rows read: ${total}`);
   return summary;
 }

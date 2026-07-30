@@ -351,13 +351,40 @@ function normPid(v) {
   return t == null ? null : t;
 }
 
+function rowPid(row) {
+  return normPid(getField(row, "pid") ?? getField(row, "PID"));
+}
+
+/**
+ * แถวจาก MSSQL ที่ PID ว่าง (NULL / "" / เว้นวรรค) → ไม่ sync เข้า public.appointment
+ * แยกออกก่อน distinctOnScheduleId เพื่อให้ Schedule_ID ที่ซ้ำกันแต่มีแถวที่มี PID ยังถูก migrate
+ * @returns {{ rows: object[], skippedScheduleIds: string[] }}
+ */
+export function partitionAppointmentRowsByPid(mssqlRows) {
+  const rows = distinctOnScheduleId(
+    (mssqlRows ?? []).filter((r) => rowPid(r) != null),
+  );
+  const keptScheduleIds = new Set(
+    rows.map((r) => normScheduleId(getField(r, "schedule_id"))),
+  );
+
+  const skippedScheduleIds = [];
+  const seenSkipped = new Set();
+  for (const r of mssqlRows ?? []) {
+    if (rowPid(r) != null) continue;
+    const scheduleId = normScheduleId(getField(r, "schedule_id"));
+    if (scheduleId == null) continue;
+    if (keptScheduleIds.has(scheduleId) || seenSkipped.has(scheduleId)) continue;
+    seenSkipped.add(scheduleId);
+    skippedScheduleIds.push(scheduleId);
+  }
+
+  return { rows, skippedScheduleIds: sortScheduleIds(skippedScheduleIds) };
+}
+
 async function resolvePatientIdByPidMap(pgClient, rows) {
   const pids = Array.from(
-    new Set(
-      rows
-        .map((r) => normPid(getField(r, "pid") ?? getField(r, "PID")))
-        .filter((v) => v != null),
-    ),
+    new Set(rows.map((r) => rowPid(r)).filter((v) => v != null)),
   );
   if (pids.length === 0) return new Map();
 
@@ -665,16 +692,24 @@ function collectPatientCategoryFieldIssues(row) {
 /**
  * upsert ตาม old_db_id — UPDATE แถวเดิม (คง id) / INSERT เฉพาะแถวใหม่
  * ลดช่องว่างใน id จากการรัน migrate ซ้ำ (เดิม DELETE แล้ว INSERT ใหม่)
- * @returns {{ failedScheduleIds: string[], fieldIssues: object|null }}
+ * แถวที่ PID ว่างจะถูกข้าม (ไม่ INSERT/UPDATE public.appointment)
+ * @returns {{ failedScheduleIds: string[], fieldIssues: object|null, skippedNoPidCount: number, skippedNoPidScheduleIds: string[] }}
  */
 export async function runAppointmentChunkPostLoad(
   pgClient,
   mssqlRows,
   options = {},
 ) {
-  const rows = distinctOnScheduleId(mssqlRows);
+  const { rows, skippedScheduleIds: skippedNoPidScheduleIds } =
+    partitionAppointmentRowsByPid(mssqlRows);
+  const skippedNoPidCount = skippedNoPidScheduleIds.length;
   if (rows.length === 0) {
-    return { failedScheduleIds: [], fieldIssues: null };
+    return {
+      failedScheduleIds: [],
+      fieldIssues: null,
+      skippedNoPidCount,
+      skippedNoPidScheduleIds,
+    };
   }
 
   const failingScheduleIdSet = new Set();
@@ -718,9 +753,7 @@ export async function runAppointmentChunkPostLoad(
   const patientColumn = await resolveAppointmentPatientColumn(pgClient);
   const slotByClock = await getSlotIdByClock(pgClient);
   const payloads = rows.map((r) => mapScheduleRowToAppointment(r));
-  const chunkPids = rows
-    .map((r) => normPid(getField(r, "pid") ?? getField(r, "PID")))
-    .filter((p) => p != null);
+  const chunkPids = rows.map((r) => rowPid(r)).filter((p) => p != null);
   if (APPOINTMENT_MIGRATE_PLACEHOLDER_LOGIC_ENABLED) {
     const { inserted: placeholderPatientInserted } =
       await ensurePlaceholderPatientInfo(pgClient, chunkPids);
@@ -735,7 +768,7 @@ export async function runAppointmentChunkPostLoad(
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const scheduleId = payloads[i].old_db_id;
-    const pid = normPid(getField(row, "pid") ?? getField(row, "PID"));
+    const pid = rowPid(row);
     const patientId = pid == null ? null : (patientIdByPid.get(pid) ?? null);
     const rowMeta = {
       scheduleIdRaw: String(getField(row, "schedule_id") ?? ""),
@@ -798,9 +831,7 @@ export async function runAppointmentChunkPostLoad(
         if (!valueInFkSet(allowed, before)) {
           payloads[i][col] = null;
           const sid = payloads[i].old_db_id;
-          const pid = normPid(
-            getField(rows[i], "pid") ?? getField(rows[i], "PID"),
-          );
+          const pid = rowPid(rows[i]);
           recordScheduleIssues(
             sid,
             {
@@ -904,6 +935,8 @@ export async function runAppointmentChunkPostLoad(
             records: [...recordsWithIssues.values()],
           }
         : null,
+      skippedNoPidCount,
+      skippedNoPidScheduleIds,
     };
   }
 }
