@@ -76,3 +76,10 @@ node appointment/js-migrate/migrate-from-mssql.mjs --config ./migration.config.l
 - งานนี้ใช้ pagination แบบ OFFSET; ตารางใหญ่มากอาจช้า — รอบหน้าสามารถเพิ่ม keyset ตาม `Schedule_ID` ได้ถ้าต้องการ
 - โหมด **two-step** (ดึง ID ก่อนแล้วค่อยดึงรายละเอียด): ถ้ามีหลายแถวต่อ `Schedule_ID` ฝั่ง MSSQL จำนวนแถวจาก `IN (...)` อาจมากกว่าหน้า keyset — **progress / `offset` ใน checkpoint นับตามแถวลำดับ keyset** (ให้ตรง `COUNT(*)` และตำแหน่ง resume) ไม่ใช่จำนวนแถวจาก detail query
 - ไม่ล้าง `public.appointment` ทั้งตารางอัตโนมัติ — upsert ตาม `old_db_id` (UPDATE คง `id` / INSERT แถวใหม่) เพื่อไม่ให้ `id` กระโดดเมื่อรัน migrate ซ้ำ
+- **แถวที่ `PID` ว่าง (NULL / `''` / เว้นวรรค) จะถูกข้าม** — ไม่ INSERT และไม่ UPDATE `public.appointment` (ตัดออกใน `partitionAppointmentRowsByPid` ก่อนแมป) ผลที่ตามมา:
+  - จำนวนแถวใน `public.appointment` จะน้อยกว่า `COUNT(*)` ของ `dbo.schedule` — ตอนเทียบด้วย `compare-table.ps1` ให้หักส่วนนี้ออกก่อน
+  - นับจำนวนที่ข้ามได้จาก `skippedNoPidRows` ใน `logs/migrate-*.json` (ราย chunk + ระดับ job พร้อม `skippedNoPidScheduleIdSample` 100 ตัวแรก) และบรรทัดสรุปท้ายรัน
+  - `Schedule_ID` เดียวกันที่มีทั้งแถว PID ว่างและแถวที่มี PID จะยัง migrate โดยใช้แถวที่มี PID
+  - แถวที่มี PID แต่หาไม่เจอใน `public.patient_info` **ไม่ถูกข้าม** — ยัง insert โดย `patient` = NULL และลง log เป็น `patient_not_resolved` เหมือนเดิม
+  - `examination` ยังสร้าง appointment placeholder (`ไม่ทราบชื่อ` / `Schedule ID <id>`) ให้ `Schedule_ID` ที่อ้างถึงแต่ไม่มีใน `public.appointment` ตาม `ENSURE_PLACEHOLDER_APPOINTMENT_ENABLED` — ถ้าไม่ต้องการแถวเหล่านี้สำหรับคิวที่ PID ว่าง ต้องปิด flag นั้น
+  - แถวที่เคย migrate ไปก่อนมีกฎนี้ (PID ว่าง) จะยังอยู่ใน Postgres — สคริปต์ไม่ลบให้
