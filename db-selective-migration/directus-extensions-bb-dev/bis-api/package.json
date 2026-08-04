@@ -2,7 +2,7 @@
   "name": "bis-api",
   "description": "Please enter a description for your extension",
   "icon": "extension",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "keywords": [
     "directus",
     "directus-extension",
@@ -19,8 +19,11 @@
     "host": "^10.10.0"
   },
   "scripts": {
-    "build": "directus-extension build",
+    "build": "npm run build:dev",
     "build:dev": "dotenv -e .env.development directus-extension build",
+    "build:dev:patch": "npm version patch && npm run build:dev",
+    "build:dev:minor": "npm version minor && npm run build:dev",
+    "build:dev:major": "npm version major && npm run build:dev",
     "build:staging": "dotenv -e .env.staging directus-extension build",
     "build:prod": "dotenv -e .env.production directus-extension build",
     "dev": "directus-extension build -w --no-minify",
