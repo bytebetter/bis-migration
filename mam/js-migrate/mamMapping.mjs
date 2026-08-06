@@ -245,12 +245,13 @@ export async function runMamChunkPostLoad(
     } else if (name === "patient") expr = "p.id";
     else if (name === "payload") expr = "'{}'::jsonb";
     else if (name === "state") {
+      // 0=Draft, 1=Report, 2=undefined, 3=Sign to PACs (choices ฝั่ง Directus)
       expr =
         meta.data_type === "integer" ||
         meta.data_type === "smallint" ||
         meta.data_type === "bigint"
-          ? "0"
-          : `'0'`;
+          ? "1"
+          : `'1'`;
     } else if (sourceFieldByTarget[name]) {
       const raw = `NULLIF(btrim(s.${sourceFieldByTarget[name]}), '')`;
       expr = toSqlValueExpr(raw, meta);
