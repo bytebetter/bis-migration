@@ -2,7 +2,7 @@
   "name": "bis-sign-to-pacs-api",
   "description": "Please enter a description for your extension",
   "icon": "extension",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "keywords": [
     "directus",
     "directus-extension",

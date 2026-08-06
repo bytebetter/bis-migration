@@ -2,7 +2,7 @@
   "name": "bis-pacs-sync-manager",
   "description": "Please enter a description for your extension",
   "icon": "extension",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "keywords": [
     "directus",
     "directus-extension",
