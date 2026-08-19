@@ -4,20 +4,24 @@
 
 ## สร้างใหม่เมื่อ schema ต้นทางเปลี่ยน
 
-จากเครื่องที่มี `kubectl` เข้า cluster ต้นทางได้:
+แหล่งปัจจุบันคือ **Supabase (dev)** — dump จาก schema `SOURCE_SCHEMA` (เช่น `bis_dev`) แล้ว rewrite เป็น `TARGET_SCHEMA=public` สำหรับ restore บน prod
 
 ```bash
+cp docker/supabase.env.example .env.supabase
+# ใส่ Direct connection URI + SOURCE_SCHEMA=bis_dev + TARGET_SCHEMA=public
+set -a && source .env.supabase && set +a
 ./scripts/refresh-baseline.sh
 ```
 
-ค่าเริ่มต้น: context `bb-dev-cluster`, pod `postgresql-0`, ฐาน `bisinfo_dev`  
-ปรับได้ด้วย env `K8S_CONTEXT`, `K8S_NAMESPACE`, `POSTGRES_POD`, `SOURCE_DB`
+ต้องมี `pg_dump` **17+** ในเครื่อง หรือมี Docker (สคริปต์จะใช้ `postgres:17-alpine` อัตโนมัติถ้า local เป็น 14/16)
 
-หรือใช้สคริปต์ dump ทั่วไป (ต้องตั้ง `PGPASSWORD` เอง):
+ทางเลือกเก่า (Kubernetes pod): ไม่ตั้ง `SOURCE_DATABASE_URL` แล้วรัน `./scripts/refresh-baseline.sh` — ค่าเริ่มต้น `bb-dev-cluster` / `postgresql-0` / `bisinfo_dev`
+
+หรือ dump ไป `backups/` แทนการเขียนทับ baseline:
 
 ```bash
+set -a && source .env.supabase && set +a
 ./scripts/db-dump-selective-backup.sh
-# แล้วคัดลอกไฟล์ไป baseline/bisinfo_selective_initial.sql
 ```
 
 ## Restore

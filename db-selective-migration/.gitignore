@@ -1,7 +1,9 @@
 # Local SQL dumps may contain sensitive data
 /backups/
+baseline/*.backup
 
 # production Docker secrets (copy from docker/postgres.env.example)
 .env.postgres
 .env.directus
 .env.backoffice
+.env.supabase
