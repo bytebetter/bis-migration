@@ -13,11 +13,23 @@ If this folder lives inside [bis-migration](https://github.com/bytebetter/bis-mi
 
 ## Prerequisites
 
-- Access to Kubernetes context and namespace containing PostgreSQL pod
-- PostgreSQL role with create database permission (or pre-created target DB)
-- `kubectl` configured locally
+**Source (current):** Supabase Postgres — Direct connection URI + local `pg_dump` 16+ (or Docker)
+
+**Source (legacy):** Kubernetes Postgres pod + `kubectl`
+
+Target restore still needs a PostgreSQL 16 empty database (production Docker / Portainer).
 
 ## Environment Variables
+
+Supabase (preferred):
+
+```bash
+# Dashboard → Database → Connection string → URI (Direct, port 5432)
+# Do not use transaction pooler :6543
+export SOURCE_DATABASE_URL="postgresql://postgres.<ref>:<password>@db.<ref>.supabase.co:5432/postgres?sslmode=require"
+```
+
+Kubernetes (legacy):
 
 ```bash
 export K8S_CONTEXT="bb-dev-cluster"
@@ -44,21 +56,25 @@ export VERIFY_ONLY="false"            # default false
 
 ## Export backup file (for restore on production)
 
-Run this against the **PostgreSQL instance that is the source of truth** for the cutover (for example a read replica or the live primary during a maintenance window), from a machine that has `kubectl` access.
-
-From a machine with `kubectl` access to the source cluster, writes a single `.sql` under `backups/` (ignored by git in this package):
+Run this against the **PostgreSQL instance that is the source of truth** (currently Supabase dev). Writes a single `.sql` under `backups/` (ignored by git in this package):
 
 ```bash
-export K8S_CONTEXT="bb-dev-cluster"
-export K8S_NAMESPACE="default"
-export POSTGRES_POD="postgresql-0"
-export DB_USER="devuser"
-export PGPASSWORD="<postgres-password>"
-export SOURCE_DB="bisinfo_dev"
+cp docker/supabase.env.example .env.supabase
+# fill SOURCE_DATABASE_URL
+set -a && source .env.supabase && set +a
 # optional: OUTPUT_PATH=/path/to/dump.sql
 # optional: COMPRESS=true
 ./scripts/db-dump-selective-backup.sh
 ```
+
+To refresh the tracked baseline file:
+
+```bash
+set -a && source .env.supabase && set +a
+./scripts/refresh-baseline.sh
+```
+
+Kubernetes dump (legacy) still works if `SOURCE_DATABASE_URL` is unset and you export `K8S_*` / `DB_USER` / `PGPASSWORD` / `SOURCE_DB`.
 
 Restore on production (empty database, same major PostgreSQL version recommended):
 

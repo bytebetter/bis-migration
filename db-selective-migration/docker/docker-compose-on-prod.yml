@@ -1,0 +1,136 @@
+# PostgreSQL 16 + Directus 11 (local / restore selective dump)
+#
+# From db-selective-migration/:
+#   cp docker/postgres.env.example .env.postgres
+#   cp docker/directus.env.example .env.directus   # KEY, SECRET, ADMIN_PASSWORD
+#   docker compose --env-file .env.postgres --env-file .env.directus \
+#     -f docker/docker-compose.yml up -d
+#
+# UI: http://127.0.0.1:8055  (SSH tunnel ถ้าเข้าจากเครื่องอื่น)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bis}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-bisinfo}
+    volumes:
+      - bis_pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - bis_redis_data:/data
+    # Internal only — Directus reaches redis:6379 on the compose network
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  directus:
+    image: directus/directus:11.1.0
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8055:8055"
+    volumes:
+      - directus_uploads:/directus/uploads
+      - directus_extensions:/directus/extensions
+      - /mnt/bis-shared:/data/shared
+    environment:
+      KEY: CD42E4A1349B9A676EFADA6268CD6
+      SECRET: CD42E4A1349B9A676EFADA6268CD6
+      DB_CLIENT: ${DB_CLIENT:-pg}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:-${POSTGRES_DB:-bisinfo_prod}}
+      DB_USER: ${DB_USER:-${POSTGRES_USER:-bis}}
+      DB_PASSWORD: ${DB_PASSWORD:-${POSTGRES_PASSWORD:?set DB_PASSWORD or POSTGRES_PASSWORD}}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env.directus}
+      PUBLIC_URL: ${PUBLIC_URL:-http://10.12.10.109:8055}
+      WEBSOCKETS_ENABLED: ${WEBSOCKETS_ENABLED:-true}
+      CORS_ENABLED: ${CORS_ENABLED:-true}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      CORS_METHODS: ${CORS_METHODS:-*}
+      CORS_ALLOWED_HEADERS: ${CORS_ALLOWED_HEADERS:-*}
+      EXTENSIONS_AUTO_RELOAD: true
+      SHARED_FILE_PATH: /data/shared
+      STUDY_FOLDER_NAME: test_Study
+      REPORT_FOLDER_NAME: test_Report
+      BACKEND_URL: http://10.12.10.109:8055
+      QUERY_LIMIT_DEFAULT: 1000
+      ACCESS_TOKEN_TTL: 15h
+      CACHE_ENABLED: true
+      CACHE_STORE: redis
+      CACHE_TTL: 30m
+      CACHE_AUTO_PURGE: true
+      CACHE_SCHEMA: true
+      CACHE_PERMISSIONS: true
+      CACHE_NAMESPACE: bis-prod
+      REDIS: ${REDIS:-redis://redis:6379}
+
+  bis-backoffice:
+    image: bytebetter/bis-backoffice:v1.0.11
+    platform: linux/amd64
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - directus
+  shared-probe:
+    image: python:3.12-alpine
+    restart: unless-stopped
+    volumes:
+      - /mnt/bis-shared:/data/shared
+      - /opt/bis/docker/shared-probe.py:/app/shared-probe.py:ro
+    working_dir: /app
+    command: ["python", "shared-probe.py"]
+    environment:
+      SHARE_PATH: /data/shared
+      EXPECTED_FSTYPE: cifs
+      EXPECTED_MOUNT_SOURCE: //10.12.30.34/Interface
+    ports:
+      - "8081:8081"
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${UPTIME_KUMA_PORT:-3001}:3001"
+    volumes:
+      - uptime_kuma_data:/app/data
+
+volumes:
+  bis_pgdata:
+    external: true
+    name: docker_bis_pgdata
+  bis_redis_data:
+    external: true
+    name: bis_redis_data
+  directus_uploads:
+    external: true
+    name: bis_directus_uploads
+  directus_extensions:
+    external: true
+    name: bis_directus_extensions
+  uptime_kuma_data:
+    external: true
+    name: bis_uptime_data
