@@ -21,7 +21,7 @@ services:
       DB_CLIENT: ${DB_CLIENT:-pg}
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
-      DB_DATABASE: ${DB_DATABASE:-${POSTGRES_DB:-bisinfo}}
+      DB_DATABASE: ${DB_DATABASE:-${POSTGRES_DB:-bisinfo_prod}}
       DB_USER: ${DB_USER:-${POSTGRES_USER:-bis}}
       DB_PASSWORD: ${DB_PASSWORD:-${POSTGRES_PASSWORD:?set DB_PASSWORD in .env.directus or POSTGRES_PASSWORD in .env.postgres}}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}

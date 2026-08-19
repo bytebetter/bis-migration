@@ -18,7 +18,7 @@
       "postgresPort": 5432,
       "postgresUser": "bis",
       "postgresPassword": "Thanya@sj1",
-      "postgresDatabase": "bisinfo"
+      "postgresDatabase": "bisinfo_prod"
     },
     "migration": {
       "batchSize": 2000,
