@@ -135,6 +135,18 @@ function clockFromDirectusDateTime(dt) {
 
 /**
  * MSSQL schedule Patient_Type: 0 = คนไข้เก่า, 1 = คนไข้ใหม่
+ * Directus appointment.is_new_patient: 0 = คนไข้เก่า, 1 = คนไข้ใหม่ (ค่าตรงกัน)
+ * @returns {0|1|null}
+ */
+export function mapSchedulePatientTypeToIsNewPatient(mssqlPatientType) {
+  const n = toInt(mssqlPatientType);
+  if (n === 0) return 0;
+  if (n === 1) return 1;
+  return null;
+}
+
+/**
+ * MSSQL schedule Patient_Type: 0 = คนไข้เก่า, 1 = คนไข้ใหม่
  * Directus patient_info.patient_category: '1' = ใหม่, '2' = เก่า
  * @returns {'1'|'2'|null}
  */
@@ -165,6 +177,9 @@ export function mapScheduleRowToAppointment(
     prefix: nullIfTrimEmpty(getField(row, "Prefix")),
     first_name: nullIfTrimEmpty(getField(row, "Name")),
     last_name: nullIfTrimEmpty(getField(row, "Surname")),
+    is_new_patient: mapSchedulePatientTypeToIsNewPatient(
+      getField(row, "Patient_Type"),
+    ),
     receive_date: toDirectusDateTime(getField(row, "Receive_Date")),
     old_login_name: nullIfTrimEmpty(getField(row, "LoginName")),
     memo_detail: nullIfTrimEmpty(getField(row, "MemoDetail")),
@@ -459,6 +474,7 @@ function buildAppointmentColumnArrays(payloads, patientColumn) {
     prefix: [],
     first_name: [],
     last_name: [],
+    is_new_patient: [],
     receive_date: [],
     old_login_name: [],
     memo_detail: [],
@@ -489,6 +505,7 @@ function buildAppointmentColumnArrays(payloads, patientColumn) {
     arrays.prefix.push(item.prefix);
     arrays.first_name.push(item.first_name);
     arrays.last_name.push(item.last_name);
+    arrays.is_new_patient.push(item.is_new_patient ?? null);
     arrays.receive_date.push(item.receive_date);
     arrays.old_login_name.push(item.old_login_name);
     arrays.memo_detail.push(item.memo_detail);
@@ -520,6 +537,7 @@ function buildAppointmentInsertDefs(arrays, patientColumn) {
     ["prefix", "text[]", arrays.prefix],
     ["first_name", "text[]", arrays.first_name],
     ["last_name", "text[]", arrays.last_name],
+    ["is_new_patient", "int4[]", arrays.is_new_patient],
     ["receive_date", "timestamp[]", arrays.receive_date],
     ["old_login_name", "text[]", arrays.old_login_name],
     ["memo_detail", "text[]", arrays.memo_detail],
@@ -643,7 +661,8 @@ async function bulkUpdateAppointmentsByOldDbId(pgClient, insertDefs) {
 }
 
 /**
- * อัปเดต patient_info.patient_category จาก Patient_Type ของ schedule (ไม่ลง appointment.patient_type)
+ * อัปเดต patient_info.patient_category จาก Patient_Type ของ schedule
+ * แยกส่วนกับ appointment.is_new_patient — ตัวนี้เก็บสถานะระดับ "คนไข้", อีกตัวเก็บระดับ "ใบนัด"
  * @param {{ patientInfoId: number, patientCategory: string }[]} updates
  */
 async function bulkUpdatePatientCategoryFromSchedule(pgClient, updates) {
@@ -669,22 +688,31 @@ async function bulkUpdatePatientCategoryFromSchedule(pgClient, updates) {
   return upd.rowCount ?? 0;
 }
 
-function collectPatientCategoryFieldIssues(row) {
+/**
+ * Patient_Type ตัวเดียวป้อน 2 ปลายทาง (is_new_patient + patient_category)
+ * แปลงไม่ผ่าน = พังทั้งคู่ จึง log ครั้งเดียวไม่ให้ยอด issue ซ้ำซ้อน
+ */
+function collectPatientTypeFieldIssues(row) {
   const issues = [];
-  const srcRaw = getField(row, "patient_type") ?? getField(row, "Patient_Type");
+  const srcRaw = getField(row, "Patient_Type");
   if (!sourceRawNonempty(srcRaw)) return issues;
 
-  const mapped = mapSchedulePatientTypeToPatientCategory(srcRaw);
+  const mapped = mapSchedulePatientTypeToIsNewPatient(srcRaw);
   if (mapped != null) return issues;
 
   issues.push({
-    field: "patient_category",
+    field: "patient_type",
     reason: "patient_type_map_failed",
     message:
       "Patient_Type ใน schedule ต้องเป็น 0 (คนไข้เก่า) หรือ 1 (คนไข้ใหม่) เท่านั้น",
     source_raw: srcRaw,
     mapped: null,
-    detail: { target_table: "patient_info" },
+    detail: {
+      target_fields: [
+        "appointment.is_new_patient",
+        "patient_info.patient_category",
+      ],
+    },
   });
   return issues;
 }
@@ -776,10 +804,9 @@ export async function runAppointmentChunkPostLoad(
       patientInfoId: patientId,
     };
 
-    const srcPatientType =
-      getField(row, "patient_type") ?? getField(row, "Patient_Type");
-    const patientCategory =
-      mapSchedulePatientTypeToPatientCategory(srcPatientType);
+    const patientCategory = mapSchedulePatientTypeToPatientCategory(
+      getField(row, "Patient_Type"),
+    );
 
     const clock = clockFromDirectusDateTime(payloads[i].appointment_datetime);
     if (clock != null) {
@@ -792,7 +819,7 @@ export async function runAppointmentChunkPostLoad(
         patientId,
         clock,
       }),
-      ...collectPatientCategoryFieldIssues(row),
+      ...collectPatientTypeFieldIssues(row),
     ]);
 
     if (patientId != null && patientCategory != null) {
@@ -1086,6 +1113,7 @@ export const SCHEDULE_TO_APPOINTMENT_FIELD_MAP = [
   ["Prefix", "prefix"],
   ["Name", "first_name"],
   ["Surname", "last_name"],
+  ["Patient_Type", "is_new_patient"],
   ["Patient_Type", "patient_info.patient_category"],
   ["Receive_Date", "receive_date"],
   ["LoginName", "old_login_name"],
