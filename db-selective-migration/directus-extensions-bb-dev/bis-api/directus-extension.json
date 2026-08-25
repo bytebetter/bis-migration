@@ -1,8 +1,0 @@
-{
-  "id": "bis-api",
-  "type": "module",
-  "title": "BIS API",
-  "description": "Custom API for BIS",
-  "path": "./dist/index.js"
-}
-
