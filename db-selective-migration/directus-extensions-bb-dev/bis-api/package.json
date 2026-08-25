@@ -2,7 +2,7 @@
   "name": "bis-api",
   "description": "Please enter a description for your extension",
   "icon": "extension",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "keywords": [
     "directus",
     "directus-extension",
