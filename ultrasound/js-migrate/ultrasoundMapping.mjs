@@ -2,6 +2,14 @@ import { ensurePlaceholderPatientInfoFromStaging } from "../../shared/js-migrate
 
 const INT_RE = /^-?\d+$/;
 
+// คอลัมน์ฝั่ง Directus ที่เป็น json แบบ multi-select ต้องมี [] ครอบเสมอ
+const JSON_ARRAY_TARGET_COLUMNS = new Set([
+  "r_special_case",
+  "r_special_case_des",
+  "l_special_case",
+  "l_special_case_des",
+]);
+
 function nullIfTrimEmpty(v) {
   if (v == null) return null;
   const t = String(v).trim();
@@ -47,7 +55,7 @@ async function existingColumns(pgClient, tableName) {
   return new Map(r.rows.map((x) => [x.column_name, x]));
 }
 
-function toSqlValueExpr(baseExpr, colMeta) {
+function toSqlValueExpr(baseExpr, colMeta, asJsonArray = false) {
   const dt = colMeta.data_type;
   const udt = colMeta.udt_name;
   if (dt === "integer" || dt === "smallint" || dt === "bigint") {
@@ -65,6 +73,16 @@ function toSqlValueExpr(baseExpr, colMeta) {
     END`;
   }
   if (dt === "json" || dt === "jsonb") {
+    if (asJsonArray) {
+      // ฝั่ง Directus เก็บเป็น json array ต้องมี [] ครอบเสมอ
+      const buildArray =
+        udt === "jsonb" ? "jsonb_build_array" : "json_build_array";
+      return `CASE
+        WHEN ${baseExpr} IS NULL THEN NULL
+        WHEN ${baseExpr} ~ '^-?[0-9]+$' THEN ${buildArray}((${baseExpr})::int)
+        ELSE ${buildArray}(${baseExpr})
+      END`;
+    }
     return `CASE
       WHEN ${baseExpr} IS NULL THEN NULL
       WHEN ${baseExpr} ~ '^-?\\d+$' THEN to_jsonb((${baseExpr})::int)
@@ -161,16 +179,16 @@ export async function runUltrasoundChunkPostLoad(
     cyst_des: "cyst_des",
     num_of_cyst_found: "num_of_cyst_found",
     num_of_cyst_actual_found: "num_of_cyst_actualfound",
-    tissue_composition: "tissuecomposition",
-    tissue_composition_des: "tissuecomposition_des",
+    tissue_pattern: "tissuecomposition",
+    tissue_pattern_des: "tissuecomposition_des",
     r_associated_features: "r_associatedfeatures",
     r_associated_features_des: "r_associatedfeatures_des",
     l_associated_features: "l_associatedfeatures",
     l_associated_features_des: "l_associatedfeatures_des",
-    r_specialcase: "r_specialcase",
-    r_specialcase_des: "r_specialcase_des",
-    l_specialcase: "l_specialcase",
-    l_specialcase_des: "l_specialcase_des",
+    r_special_case: "r_specialcase",
+    r_special_case_des: "r_specialcase_des",
+    l_special_case: "l_specialcase",
+    l_special_case_des: "l_specialcase_des",
     technique: "technique",
     technique_des: "technique_des",
   };
@@ -201,7 +219,7 @@ export async function runUltrasoundChunkPostLoad(
     }
     else if (sourceFieldByTarget[name]) {
       const raw = `NULLIF(btrim(s.${sourceFieldByTarget[name]}), '')`;
-      expr = toSqlValueExpr(raw, meta);
+      expr = toSqlValueExpr(raw, meta, JSON_ARRAY_TARGET_COLUMNS.has(name));
     }
     if (expr) {
       insertColumns.push(name);

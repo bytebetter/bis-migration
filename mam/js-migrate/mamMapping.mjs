@@ -3,6 +3,18 @@ import { ensurePlaceholderPatientInfoFromStaging } from "../../shared/js-migrate
 
 const INT_RE = /^-?\d+$/;
 
+// คอลัมน์ฝั่ง Directus ที่เป็น json แบบ multi-select ต้องมี [] ครอบเสมอ
+const JSON_ARRAY_TARGET_COLUMNS = new Set([
+  "r_asymmetries",
+  "r_asymmetries_des",
+  "l_asymmetries",
+  "l_asymmetries_des",
+  "r_ass_features",
+  "r_ass_features_des",
+  "l_ass_features",
+  "l_ass_features_des",
+]);
+
 function nullIfTrimEmpty(v) {
   if (v == null) return null;
   const t = String(v).trim();
@@ -48,7 +60,7 @@ async function existingColumns(pgClient, tableName) {
   return new Map(r.rows.map((x) => [x.column_name, x]));
 }
 
-function toSqlValueExpr(baseExpr, colMeta) {
+function toSqlValueExpr(baseExpr, colMeta, asJsonArray = false) {
   const dt = colMeta.data_type;
   const udt = colMeta.udt_name;
   if (dt === "integer" || dt === "smallint" || dt === "bigint") {
@@ -66,6 +78,16 @@ function toSqlValueExpr(baseExpr, colMeta) {
     END`;
   }
   if (dt === "json" || dt === "jsonb") {
+    if (asJsonArray) {
+      // ฝั่ง Directus เก็บเป็น json array ต้องมี [] ครอบเสมอ
+      const buildArray =
+        udt === "jsonb" ? "jsonb_build_array" : "json_build_array";
+      return `CASE
+        WHEN ${baseExpr} IS NULL THEN NULL
+        WHEN ${baseExpr} ~ '^-?[0-9]+$' THEN ${buildArray}((${baseExpr})::int)
+        ELSE ${buildArray}(${baseExpr})
+      END`;
+    }
     return `CASE
       WHEN ${baseExpr} IS NULL THEN NULL
       WHEN ${baseExpr} ~ '^-?\\d+$' THEN to_jsonb((${baseExpr})::int)
@@ -198,14 +220,14 @@ export async function runMamChunkPostLoad(
     cal: "cal",
     cal_des: "cal_des",
     num_of_cal_actual_found: "num_of_cal_actualfound",
-    r_specialcase: "r_specialcase",
-    r_specialcase_des: "r_specialcase_des",
-    l_specialcase: "l_specialcase",
-    l_specialcase_des: "l_specialcase_des",
-    r_ass_finding: "r_assfinding",
-    r_ass_finding_des: "r_assfinding_des",
-    l_ass_finding: "l_assfinding",
-    l_ass_finding_des: "l_assfinding_des",
+    r_asymmetries: "r_specialcase",
+    r_asymmetries_des: "r_specialcase_des",
+    l_asymmetries: "l_specialcase",
+    l_asymmetries_des: "l_specialcase_des",
+    r_ass_features: "r_assfinding",
+    r_ass_features_des: "r_assfinding_des",
+    l_ass_features: "l_assfinding",
+    l_ass_features_des: "l_assfinding_des",
     is_convert_from_old_system: "isconvertfromoldsystem",
     l_implant: "l_implant",
     l_implant_des: "l_implant_des",
@@ -254,7 +276,7 @@ export async function runMamChunkPostLoad(
           : `'1'`;
     } else if (sourceFieldByTarget[name]) {
       const raw = `NULLIF(btrim(s.${sourceFieldByTarget[name]}), '')`;
-      expr = toSqlValueExpr(raw, meta);
+      expr = toSqlValueExpr(raw, meta, JSON_ARRAY_TARGET_COLUMNS.has(name));
     }
     if (expr) {
       insertColumns.push(name);
