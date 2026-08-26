@@ -258,7 +258,9 @@ export async function runExaminationGeneralChunkPostLoad(
     r_palpable_des: "r_palpable_des",
     l_palpable_des: "l_palpable_des",
     l_palpable: "l_palpable",
-    cosign: "cosign",
+    // Cosign ฝั่ง MSSQL เก็บเป็นชื่อคน แต่ public.examination_general.cosign
+    // เป็น uuid FK -> directus_users จึงลงชื่อไว้ที่ cosign_text แทน
+    cosign_text: "cosign",
   };
 
   const insertColumns = [];
