@@ -47,6 +47,36 @@ async function existingColumns(pgClient, tableName) {
   return new Map(r.rows.map((x) => [x.column_name, x]));
 }
 
+/**
+ * Recommendation_Des (text) ของ MSSQL → JSON array ตามรูปแบบฝั่ง Directus
+ *   ว่าง / NULL → []
+ *   มีค่า        → ["<text>"]
+ * เคส BIRADS 4/5 ที่เป็น array ของ object จะถูก UPDATE ทับทีหลังโดย migrate
+ * exam_recommend_birads45 (step 7 ใน run-migrate-all.ps1)
+ */
+function toJsonTextArrayExpr(rawTextExpr, colMeta) {
+  const dt = colMeta.data_type;
+  if (dt === "jsonb") {
+    return `CASE
+      WHEN ${rawTextExpr} IS NULL THEN '[]'::jsonb
+      ELSE jsonb_build_array(${rawTextExpr})
+    END`;
+  }
+  if (dt === "json") {
+    return `CASE
+      WHEN ${rawTextExpr} IS NULL THEN '[]'::json
+      ELSE json_build_array(${rawTextExpr})
+    END`;
+  }
+  if (dt === "text" || dt === "character varying" || dt === "character") {
+    return `CASE
+      WHEN ${rawTextExpr} IS NULL THEN '[]'
+      ELSE json_build_array(${rawTextExpr})::text
+    END`;
+  }
+  return null;
+}
+
 function toSqlValueExpr(baseExpr, colMeta) {
   const dt = colMeta.data_type;
   const udt = colMeta.udt_name;
@@ -248,7 +278,12 @@ export async function runExaminationGeneralChunkPostLoad(
       expr = toSqlValueExpr(rawExamId, meta) ?? `${rawExamId}::bigint`;
     } else if (name === "patient") expr = "p.id";
     else if (name === "payload") expr = "'{}'::jsonb";
-    else if (sourceFieldByTarget[name]) {
+    else if (name === "recommendation_des") {
+      expr = toJsonTextArrayExpr(
+        "NULLIF(btrim(s.recommendation_des_text), '')",
+        meta,
+      );
+    } else if (sourceFieldByTarget[name]) {
       const raw = `NULLIF(btrim(s.${sourceFieldByTarget[name]}), '')`;
       expr = toSqlValueExpr(raw, meta);
     }
