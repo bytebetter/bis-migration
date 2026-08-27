@@ -14,6 +14,18 @@ function toStrictInt(v) {
   return Number.parseInt(t, 10);
 }
 
+// ระบบเก่า: 1=Screening, 2=Breast Cancer Follow-up, 3=Diagnostic
+// ระบบใหม่:  1=Screening, 2=Diagnostic,             3=Breast Cancer Follow-up
+// -> สลับค่า 2 กับ 3 เท่านั้น (patientexamtype_des เป็น text label ตรงตัวอยู่แล้ว ไม่ต้องแก้)
+const PATIENTEXAMTYPE_OLD_TO_NEW = { 2: 3, 3: 2 };
+function remapPatientExamType(v) {
+  const t = nullIfTrimEmpty(v);
+  if (t == null || !INT_RE.test(t)) return t;
+  const n = Number.parseInt(t, 10);
+  const mapped = PATIENTEXAMTYPE_OLD_TO_NEW[n];
+  return mapped == null ? t : String(mapped);
+}
+
 function toPgTimestamp(v) {
   const t = nullIfTrimEmpty(v);
   if (t == null || t.length < 10 || t[4] !== "-") return null;
@@ -343,7 +355,7 @@ export function normalizeMssqlRow(raw) {
     exam_id: String(examId),
     exam_date: toPgTimestamp(raw?.exam_date) ?? "",
     pid: nullIfTrimEmpty(raw?.pid) ?? "",
-    patientexamtype: nullIfTrimEmpty(raw?.patientexamtype) ?? "",
+    patientexamtype: remapPatientExamType(raw?.patientexamtype) ?? "",
     patientexamtype_des: nullIfTrimEmpty(raw?.patientexamtype_des) ?? "",
     screening: nullIfTrimEmpty(raw?.screening) ?? "",
     screening_des: nullIfTrimEmpty(raw?.screening_des) ?? "",

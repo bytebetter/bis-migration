@@ -102,6 +102,12 @@ export const APPOINTMENT_STATUS_NOT_YET = "ยังไม่ถึงเวล�
 export const APPOINTMENT_STATUS_COMPLETED = "เสร็จสิ้น";
 
 /**
+ * MSSQL schedule ไม่มีคอลัมน์ต้นทางสำหรับช่องทางการนัดหมาย
+ * จึงกำหนดค่า default เป็น "มานัดด้วยตนเอง" ให้ทุกแถวที่ migrate
+ */
+export const APPOINTMENT_CHANNEL_WALK_IN = "มานัดด้วยตนเอง";
+
+/**
  * เวลาปัจจุบันโซน Asia/Bangkok (UTC+7 คงที่ ไม่มี DST) รูปแบบ "YYYY-MM-DDTHH:mm:ss"
  * ให้เทียบ string กับผลของ toDirectusDateTime ได้ตรง ๆ
  */
@@ -198,6 +204,7 @@ export function mapScheduleRowToAppointment(
     have_cd: toInt(getField(row, "have_cd")),
     right_id: toInt(getField(row, "Right_ID")),
     location: toInt(getField(row, "Location_ID")),
+    appointment_channels: APPOINTMENT_CHANNEL_WALK_IN,
     time_slot: null,
     patient: null,
     /** Directus มักเก็บ old_db_id เป็น string (varchar) */
@@ -491,6 +498,7 @@ function buildAppointmentColumnArrays(payloads, patientColumn) {
     have_cd: [],
     right_id: [],
     location: [],
+    appointment_channels: [],
     time_slot: [],
     old_db_id: [],
   };
@@ -522,6 +530,9 @@ function buildAppointmentColumnArrays(payloads, patientColumn) {
     arrays.have_cd.push(item.have_cd);
     arrays.right_id.push(item.right_id);
     arrays.location.push(item.location);
+    arrays.appointment_channels.push(
+      item.appointment_channels ?? APPOINTMENT_CHANNEL_WALK_IN,
+    );
     arrays.time_slot.push(item.time_slot ?? null);
     if (patientColumn) arrays[patientColumn].push(item[patientColumn] ?? null);
     arrays.old_db_id.push(item.old_db_id);
@@ -554,6 +565,7 @@ function buildAppointmentInsertDefs(arrays, patientColumn) {
     ["have_cd", "int4[]", arrays.have_cd],
     ["right_id", "int4[]", arrays.right_id],
     ["location", "int4[]", arrays.location],
+    ["appointment_channels", "text[]", arrays.appointment_channels],
     ["time_slot", "int4[]", arrays.time_slot],
     ...(patientColumn
       ? [[patientColumn, "int4[]", arrays[patientColumn]]]
@@ -638,7 +650,11 @@ async function bulkUpdateAppointmentsByOldDbId(pgClient, insertDefs) {
              WHEN a.appointment_status = '${APPOINTMENT_STATUS_NOT_YET}' THEN v.${col}
              ELSE a.appointment_status
            END`
-        : `${col} = v.${col}`,
+        : // อย่าทับ appointment_channels ที่เจ้าหน้าที่เคยเลือกไว้เองใน Directus
+          // ใส่ default ให้เฉพาะแถวที่ยังเป็น NULL เท่านั้น
+          col === "appointment_channels"
+          ? `${col} = COALESCE(a.appointment_channels, v.${col})`
+          : `${col} = v.${col}`,
     )
     .join(", ");
   const unnestList = insertDefs
@@ -1133,4 +1149,5 @@ export const SCHEDULE_TO_APPOINTMENT_FIELD_MAP = [
   ["Location_ID", "location"],
   ["PID", "patient"],
   ["Schedule_ID", "old_db_id"],
+  ["(fixed default: \"มานัดด้วยตนเอง\")", "appointment_channels"],
 ];
