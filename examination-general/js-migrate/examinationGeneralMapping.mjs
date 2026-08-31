@@ -60,11 +60,12 @@ async function existingColumns(pgClient, tableName) {
 }
 
 /**
- * Recommendation_Des (text) ของ MSSQL → JSON array ตามรูปแบบฝั่ง Directus
+ * แปลงค่า text เดี่ยวจาก MSSQL → JSON array ตามรูปแบบฝั่ง Directus (interface: Code)
  *   ว่าง / NULL → []
  *   มีค่า        → ["<text>"]
- * เคส BIRADS 4/5 ที่เป็น array ของ object จะถูก UPDATE ทับทีหลังโดย migrate
- * exam_recommend_birads45 (step 7 ใน run-migrate-all.ps1)
+ * ใช้กับ recommendation_des, impression, impression_des
+ * (recommendation_des เคส BIRADS 4/5 ที่เป็น array ของ object จะถูก UPDATE ทับทีหลัง
+ * โดย migrate exam_recommend_birads45 — step 7 ใน run-migrate-all.ps1)
  */
 function toJsonTextArrayExpr(rawTextExpr, colMeta) {
   const dt = colMeta.data_type;
@@ -295,6 +296,11 @@ export async function runExaminationGeneralChunkPostLoad(
     else if (name === "recommendation_des") {
       expr = toJsonTextArrayExpr(
         "NULLIF(btrim(s.recommendation_des_text), '')",
+        meta,
+      );
+    } else if (name === "impression" || name === "impression_des") {
+      expr = toJsonTextArrayExpr(
+        `NULLIF(btrim(s.${sourceFieldByTarget[name]}), '')`,
         meta,
       );
     } else if (sourceFieldByTarget[name]) {
