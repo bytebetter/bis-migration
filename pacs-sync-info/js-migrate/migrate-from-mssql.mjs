@@ -66,7 +66,6 @@ import {
   shouldMarkMigrateCheckpointComplete,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
-import { clampMssqlIdChunkSize } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import { REPAIR_SPEC_PACS_SYNC_INFO } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
   batchIds,
@@ -531,14 +530,11 @@ async function main() {
   let useOffsetPagination = mssqlPagination === "offset";
   const useKeysetPlusNull = mssqlPagination === "keyset_plus_null";
 
-  /** clamp ด้วยเพดาน parameter ของ MSSQL — 1 accession key = 1 parameter ใน IN (...) */
-  const mssqlDetailInChunkSize = clampMssqlIdChunkSize(
-    Math.max(
-      50,
-      Math.min(
-        batchSize,
-        Number(config?.migration?.mssqlDetailInChunkSize ?? batchSize),
-      ),
+  const mssqlDetailInChunkSize = Math.max(
+    50,
+    Math.min(
+      batchSize,
+      Number(config?.migration?.mssqlDetailInChunkSize ?? batchSize),
     ),
   );
 
