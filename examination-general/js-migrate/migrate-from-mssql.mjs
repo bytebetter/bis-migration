@@ -552,18 +552,13 @@ async function main() {
           }
           if (ids.length === 0) break;
 
-          const idPlaceholders = ids.map((_, i) => `@id${i}`).join(", ");
-          const detailSql = detailSqlTemplate.replace(
-            "{{idPlaceholders}}",
-            idPlaceholders,
-          );
-          const detailReq = pool.request();
-          ids.forEach((id, i) => detailReq.input(`id${i}`, sql.BigInt, id));
           const detailStartedAt = Date.now();
-          const detailRes = await detailReq.query(detailSql);
+          rows = await fetchMssqlRowsByIds(pool, sql, {
+            ids,
+            detailSqlTemplate,
+          });
           detailMs = Date.now() - detailStartedAt;
           fetchMs = probeMs + detailMs;
-          rows = detailRes.recordset || [];
         }
         if (debugLogs && !singleLineUi) {
           writeOutLine(
