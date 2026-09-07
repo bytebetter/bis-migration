@@ -44,6 +44,26 @@ const BIRADS_DES_TO_NEW = new Map([
   ["BI-RADS Category 6 : Known biopsy proven malignancy", "7"],
 ]);
 
+// ข้อความ des ฝั่งปลายทางสะกดต่างจากต้นทาง 2 เคส (suspicious -> suspicioun)
+// จึงต้องแปลงข้อความ assessment_birads_des ตอน migrate ด้วย
+const BIRADS_DES_TEXT_TO_NEW = new Map([
+  [
+    "BI-RADS Category 4A : Low suspicious for malignancy",
+    "BI-RADS Category 4A : Low suspicioun for malignancy",
+  ],
+  [
+    "BI-RADS Category 4B : Intermediate suspicious of malignancy",
+    "BI-RADS Category 4B : Intermediate suspicioun of malignancy",
+  ],
+]);
+
+/** แปลงข้อความ assessment_birads_des ให้ตรงกับฝั่งปลายทาง (นอกตารางส่งผ่านตามเดิม) */
+function remapAssessmentBiradsDes(desValue) {
+  const des = nullIfTrimEmpty(desValue);
+  if (des == null) return null;
+  return BIRADS_DES_TEXT_TO_NEW.get(des) ?? des;
+}
+
 /**
  * เช็ค assessment_birads_des ก่อน ถ้าตรงเงื่อนไขจึงใส่ค่า assessment_birads ของระบบใหม่
  * ไม่ตรงเงื่อนไข -> ไม่ใส่ค่า (ไม่เอา Assessment_BIRADS ของต้นทางมาใช้)
@@ -405,7 +425,8 @@ export function normalizeMssqlRow(raw) {
     l_palpable: nullIfTrimEmpty(raw?.l_palpable) ?? "",
     l_palpable_des: nullIfTrimEmpty(raw?.l_palpable_des) ?? "",
     assessment_birads: remapAssessmentBirads(raw?.assessment_birads_des) ?? "",
-    assessment_birads_des: nullIfTrimEmpty(raw?.assessment_birads_des) ?? "",
+    assessment_birads_des:
+      remapAssessmentBiradsDes(raw?.assessment_birads_des) ?? "",
     recommendation: nullIfTrimEmpty(raw?.recommendation) ?? "",
     recommendation_des_text:
       nullIfTrimEmpty(raw?.recommendation_des_text) ?? "",
