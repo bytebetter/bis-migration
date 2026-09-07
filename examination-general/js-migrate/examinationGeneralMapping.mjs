@@ -26,6 +26,33 @@ function remapPatientExamType(v) {
   return mapped == null ? t : String(mapped);
 }
 
+// ระบบใหม่: assessment_birads เป็น select-radio ค่า 1..7 — ให้เช็ค assessment_birads_des
+// ที่มาจาก MSSQL ก่อน แล้วค่อยใส่ค่า assessment_birads ตามตารางนี้
+const BIRADS_DES_TO_NEW = new Map([
+  ["BI-RADS Category 0 : Incomplete", "1"],
+  ["BI-RADS Category 1 : Negative", "2"],
+  ["BI-RADS Category 2 : Benign", "3"],
+  ["BI-RADS Category 3 : Probably benign", "4"],
+  ["BI-RADS Category 4 : Suspicious abnormality", "5"],
+  ["BI-RADS Category 4A : Low suspicious for malignancy", "5"],
+  ["BI-RADS Category 4B : Intermediate suspicious of malignancy", "5"],
+  [
+    "BI-RADS Category 4C : Moderate concern, but not classic of malignancy",
+    "5",
+  ],
+  ["BI-RADS Category 5 : Highly suggestive of malignancy", "6"],
+  ["BI-RADS Category 6 : Known biopsy proven malignancy", "7"],
+]);
+
+/**
+ * เช็ค assessment_birads_des ก่อน ถ้าตรงเงื่อนไขจึงใส่ค่า assessment_birads ของระบบใหม่
+ * ไม่ตรงเงื่อนไข -> ไม่ใส่ค่า (ไม่เอา Assessment_BIRADS ของต้นทางมาใช้)
+ */
+function remapAssessmentBirads(desValue) {
+  const des = nullIfTrimEmpty(desValue);
+  return des == null ? null : (BIRADS_DES_TO_NEW.get(des) ?? null);
+}
+
 function toPgTimestamp(v) {
   const t = nullIfTrimEmpty(v);
   if (t == null || t.length < 10 || t[4] !== "-") return null;
@@ -377,7 +404,7 @@ export function normalizeMssqlRow(raw) {
     r_palpable_des: nullIfTrimEmpty(raw?.r_palpable_des) ?? "",
     l_palpable: nullIfTrimEmpty(raw?.l_palpable) ?? "",
     l_palpable_des: nullIfTrimEmpty(raw?.l_palpable_des) ?? "",
-    assessment_birads: nullIfTrimEmpty(raw?.assessment_birads) ?? "",
+    assessment_birads: remapAssessmentBirads(raw?.assessment_birads_des) ?? "",
     assessment_birads_des: nullIfTrimEmpty(raw?.assessment_birads_des) ?? "",
     recommendation: nullIfTrimEmpty(raw?.recommendation) ?? "",
     recommendation_des_text:
