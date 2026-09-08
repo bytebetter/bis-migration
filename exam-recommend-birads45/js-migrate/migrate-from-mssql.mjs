@@ -266,7 +266,7 @@ async function main() {
       await ensureExamRecommendBirads45PipelineDdl(client);
       console.error(`>>> [${KEY}] source: ${sourceObject}`);
       console.error(
-        `>>> [${KEY}] target: ${config.target.postgresDatabase} public.examination_general.recommendation_des (update-only, batchSize=${batchSize})`,
+        `>>> [${KEY}] target: ${config.target.postgresDatabase} public.examination_general.recommendation_des + detail (update-only, batchSize=${batchSize})`,
       );
 
       const keysetState = initCreatedDateKeysetState(

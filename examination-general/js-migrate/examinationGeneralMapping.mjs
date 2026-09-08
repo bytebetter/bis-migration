@@ -321,6 +321,9 @@ export async function runExaminationGeneralChunkPostLoad(
     // Cosign ฝั่ง MSSQL เก็บเป็นชื่อคน แต่ public.examination_general.cosign
     // เป็น uuid FK -> directus_users จึงลงชื่อไว้ที่ cosign_text แทน
     cosign_text: "cosign",
+    // detail = ข้อความดิบของ Recommendation_Des (string ธรรมดา ไม่ครอบ array)
+    // เคส BIRADS 4/5 จะถูกเคลียร์เป็น string ว่างทีหลังโดย migrate exam_recommend_birads45 (step 7)
+    detail: "recommendation_des_text",
   };
 
   const insertColumns = [];

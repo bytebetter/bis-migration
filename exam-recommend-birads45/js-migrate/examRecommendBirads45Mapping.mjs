@@ -175,7 +175,9 @@ SELECT * FROM unnest(${castArgs});
 }
 
 /**
- * รวมแถว staging ตาม exam_id แล้ว UPDATE public.examination_general.recommendation_des เท่านั้น
+ * รวมแถว staging ตาม exam_id แล้ว UPDATE public.examination_general
+ * เฉพาะ recommendation_des (array ของ object) และเคลียร์ detail เป็น string ว่าง
+ * เพราะข้อความ Recommendation_Des เดิมถูกแทนที่ด้วยรายการ procedure แล้ว
  */
 export async function runExamRecommendBirads45ChunkPostLoad(
   pgClient,
@@ -218,7 +220,8 @@ ORDER BY exam_id::bigint, recommend_id::int
   const upd = await pgClient.query(
     `
 UPDATE public.examination_general AS t
-SET recommendation_des = src.payload::json
+SET recommendation_des = src.payload::json,
+    detail = ''
 FROM unnest($1::text[], $2::text[]) AS src(exam_id, payload)
 WHERE t.old_exam_id::text = src.exam_id
 `.trim(),

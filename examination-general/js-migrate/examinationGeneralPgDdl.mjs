@@ -84,5 +84,23 @@ BEGIN
   END IF;
 END $$;
 `.trim());
+
+  // MSSQL Recommendation_Des ยาวได้ — ขยาย public.examination_general.detail
+  // จาก varchar(255) เป็น text กัน LEFT() ตัดข้อความทิ้งตอน map
+  await pgClient.query(`
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'examination_general'
+      AND column_name = 'detail'
+      AND data_type <> 'text'
+  ) THEN
+    ALTER TABLE public.examination_general
+      ALTER COLUMN detail TYPE text;
+  END IF;
+END $$;
+`.trim());
 }
 
