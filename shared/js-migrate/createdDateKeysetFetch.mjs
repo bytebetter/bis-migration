@@ -317,7 +317,9 @@ export function buildCreatedDateCheckpointFields(
     return {
       ...base,
       mssqlKeysetAfter: mssqlKeysetAfter ?? "",
-      afterExamId,
+      // composite = ที่คั่นหน้าจริงของโหมด CreatedDate — param afterExamId (default 0) ต้องไม่ทับ
+      // ไม่งั้น resume ได้ Exam_ID > 0 = อ่านซ้ำ/เริ่ม bucket NULL ใหม่ทั้งหมด
+      afterExamId: composite != null ? compositeExtra.afterExamId : afterExamId,
     };
   }
   if (afterScheduleId != null) {
