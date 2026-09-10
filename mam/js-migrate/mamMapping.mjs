@@ -268,12 +268,14 @@ export async function runMamChunkPostLoad(
     else if (name === "payload") expr = "'{}'::jsonb";
     else if (name === "state") {
       // 0=Draft, 1=Report, 2=undefined, 3=Sign to PACs (choices ฝั่ง Directus)
-      expr =
+      // s.pacs_signed = '1' -> report ถูก sync ขึ้น PACS แล้ว (PACS_EXPORT_PDF)
+      const isIntCol =
         meta.data_type === "integer" ||
         meta.data_type === "smallint" ||
-        meta.data_type === "bigint"
-          ? "1"
-          : `'1'`;
+        meta.data_type === "bigint";
+      expr = isIntCol
+        ? "CASE WHEN btrim(s.pacs_signed) = '1' THEN 3 ELSE 1 END"
+        : `CASE WHEN btrim(s.pacs_signed) = '1' THEN '3' ELSE '1' END`;
     } else if (sourceFieldByTarget[name]) {
       const raw = `NULLIF(btrim(s.${sourceFieldByTarget[name]}), '')`;
       expr = toSqlValueExpr(raw, meta, JSON_ARRAY_TARGET_COLUMNS.has(name));
@@ -366,6 +368,8 @@ export const MAM_STAGING_COLUMNS = [
   "l_implant_des",
   "l_implant_finding",
   "l_implant_finding_des",
+  // '1' = เจอใน PACS_EXPORT_PDF (RPT_TYPE=2 + Is_LatestRPT_Synced=1) -> state '3'
+  "pacs_signed",
 ];
 
 export function summarizeMamMassFromChildCount(count) {

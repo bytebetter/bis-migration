@@ -210,12 +210,14 @@ export async function runUltrasoundChunkPostLoad(
     else if (name === "payload") expr = "'{}'::jsonb";
     else if (name === "state") {
       // 0=Draft, 1=Report, 2=undefined, 3=Sign to PACs (choices ฝั่ง Directus)
-      expr =
+      // s.pacs_signed = '1' -> report ถูก sync ขึ้น PACS แล้ว (PACS_EXPORT_PDF)
+      const isIntCol =
         meta.data_type === "integer" ||
         meta.data_type === "smallint" ||
-        meta.data_type === "bigint"
-          ? "1"
-          : `'1'`;
+        meta.data_type === "bigint";
+      expr = isIntCol
+        ? "CASE WHEN btrim(s.pacs_signed) = '1' THEN 3 ELSE 1 END"
+        : `CASE WHEN btrim(s.pacs_signed) = '1' THEN '3' ELSE '1' END`;
     }
     else if (sourceFieldByTarget[name]) {
       const raw = `NULLIF(btrim(s.${sourceFieldByTarget[name]}), '')`;
@@ -292,5 +294,7 @@ export function normalizeMssqlRow(raw) {
     l_specialcase_des: nullIfTrimEmpty(raw?.l_specialcase_des) ?? "",
     technique: nullIfTrimEmpty(raw?.technique) ?? "",
     technique_des: nullIfTrimEmpty(raw?.technique_des) ?? "",
+    // เติมทีหลังจาก PACS_EXPORT_PDF ต่อ chunk (pacsSignedFlag)
+    pacs_signed: "0",
   };
 }

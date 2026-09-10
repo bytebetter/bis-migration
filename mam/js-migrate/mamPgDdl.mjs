@@ -44,7 +44,8 @@ CREATE TABLE migrate_stg.mam_mssql (
   l_implant TEXT,
   l_implant_des TEXT,
   l_implant_finding TEXT,
-  l_implant_finding_des TEXT
+  l_implant_finding_des TEXT,
+  pacs_signed TEXT
 );
 `.trim();
 

@@ -23,7 +23,8 @@ CREATE TABLE migrate_stg.ultrasound_mssql (
   l_specialcase TEXT,
   l_specialcase_des TEXT,
   technique TEXT,
-  technique_des TEXT
+  technique_des TEXT,
+  pacs_signed TEXT
 );
 `.trim();
 

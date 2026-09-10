@@ -285,7 +285,10 @@ export function mapBiopsyRowToProcedure(row, examPgId) {
     finding: nullIfTrimEmpty(getField(row, "finding")),
     biopsy_proc: toInt(getField(row, "biopsy_proc")),
     biopsy_proc_des: nullIfTrimEmpty(getField(row, "biopsy_proc_des")),
-    state: "0",
+    // choices ของ procedure.state คนละชุดกับ mammogram/ultrasound
+    // 0=Draft, 1=Report, 2=Sign to PACS (ไม่มีค่า 3)
+    // pacs_signed = '1' -> เจอใน PACS_EXPORT_PDF (RPT_TYPE ไม่ใช่ 2 + Is_LatestRPT_Synced = 1)
+    state: nullIfTrimEmpty(getField(row, "pacs_signed")) === "1" ? "2" : "1",
 
     location: toInt(getField(row, "location")),
     assessment_others: toInt(getField(row, "assessment_others")),

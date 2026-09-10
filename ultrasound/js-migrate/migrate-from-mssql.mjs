@@ -16,6 +16,11 @@ import {
 } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import { ensureUltrasoundPipelineDdl } from "./ultrasoundPgDdl.mjs";
 import {
+  fetchPacsSignedExamIds,
+  pacsExportTableNoLock,
+  pacsSignedFlag,
+} from "../../shared/js-migrate/pacsExportSign.mjs";
+import {
   normalizeMssqlRow,
   runUltrasoundChunkPostLoad,
 } from "./ultrasoundMapping.mjs";
@@ -203,6 +208,7 @@ async function loadChunkToStaging(pgClient, normalizedRows) {
     "l_specialcase_des",
     "technique",
     "technique_des",
+    "pacs_signed",
   ];
   const arrays = cols.map(() => []);
   for (const r of normalizedRows) {
@@ -236,6 +242,7 @@ async function main() {
   const sourceTable = config.source?.table ?? "ultrasound";
   const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
   const sourceObjectNoLock = `${sourceObject} WITH (NOLOCK)`;
+  const pacsTableNoLock = pacsExportTableNoLock(config.source);
 
   const migration = mergeMigrationWithCli(config?.migration, "ultrasound");
   const batchSize = Math.max(
@@ -548,8 +555,22 @@ async function main() {
         if (rows.length === 0) break;
         if (ids.length > rows.length) ids = ids.slice(0, rows.length);
 
+        // state '3' (Sign to PACs) — report ที่ sync ขึ้น PACS แล้ว (RPT_TYPE=2)
+        const pacsSignedExamIds = await fetchPacsSignedExamIds(
+          pool,
+          { pacsTableNoLock, rptTypeMode: "mam_us" },
+          ids,
+        );
+
         chunkIndex += 1;
-        const normalized = rows.map(normalizeMssqlRow).filter(Boolean);
+        const normalized = rows
+          .map((raw) => {
+            const row = normalizeMssqlRow(raw);
+            if (!row) return null;
+            row.pacs_signed = pacsSignedFlag(pacsSignedExamIds, row.exam_id);
+            return row;
+          })
+          .filter(Boolean);
         const skipped = rows.length - normalized.length;
 
         let step = "begin";

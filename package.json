@@ -8,6 +8,9 @@
   },
   "scripts": {
     "migrate:all": "node ./scripts/run-migrate-all-cli.mjs",
+    "ensure:indexes": "node ./scripts/ensure-migrate-indexes.mjs",
+    "ensure:indexes:check": "node ./scripts/ensure-migrate-indexes.mjs --check-only",
+    "ensure:pacs-index": "node ./scripts/ensure-migrate-indexes.mjs --only pacs_export_pdf",
     "migrate:patient_info": "node ./scripts/run-migrate-table-cli.mjs patient_info",
     "migrate:appointment": "node ./scripts/run-migrate-table-cli.mjs appointment",
     "migrate:appointment_reschedules": "node ./scripts/run-migrate-table-cli.mjs appointment_reschedules",

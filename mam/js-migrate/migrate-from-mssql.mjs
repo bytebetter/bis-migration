@@ -16,6 +16,11 @@ import {
 } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import { ensureMamPipelineDdl } from "./mamPgDdl.mjs";
 import {
+  fetchPacsSignedExamIds,
+  pacsExportTableNoLock,
+  pacsSignedFlag,
+} from "../../shared/js-migrate/pacsExportSign.mjs";
+import {
   applyMamSummaryFromChildCounts,
   fetchMamChildCountsByExamIds,
   MAM_STAGING_COLUMNS,
@@ -222,6 +227,7 @@ async function main() {
   const calSourceTable = config.source?.calTable ?? "mammogram_cal";
   const massSourceObjectNoLock = `${bracketIdent(sourceSchema)}.${bracketIdent(massSourceTable)} WITH (NOLOCK)`;
   const calSourceObjectNoLock = `${bracketIdent(sourceSchema)}.${bracketIdent(calSourceTable)} WITH (NOLOCK)`;
+  const pacsTableNoLock = pacsExportTableNoLock(config.source);
 
   const batchSize = Math.max(
     100,
@@ -537,12 +543,20 @@ async function main() {
           ids,
         );
 
+        // state '3' (Sign to PACs) — report ที่ sync ขึ้น PACS แล้ว (RPT_TYPE=2)
+        const pacsSignedExamIds = await fetchPacsSignedExamIds(
+          pool,
+          { pacsTableNoLock, rptTypeMode: "mam_us" },
+          ids,
+        );
+
         chunkIndex += 1;
         const normalized = rows
           .map((raw) => {
             const row = normalizeMssqlRow(raw);
             if (!row) return null;
             const examId = Number.parseInt(row.exam_id, 10);
+            row.pacs_signed = pacsSignedFlag(pacsSignedExamIds, examId);
             return applyMamSummaryFromChildCounts(row, {
               massCount: childCounts.massCounts.get(examId) ?? 0,
               calCount: childCounts.calCounts.get(examId) ?? 0,

@@ -12,6 +12,11 @@ import { setupCreatedDateMigrationSort } from "../../shared/js-migrate/setupCrea
 import { ensureProcedurePipelineDdl } from "./procedurePgDdl.mjs";
 import { runProcedureChunkPostLoad } from "./procedureMapping.mjs";
 import {
+  fetchPacsSignedExamIds,
+  pacsExportTableNoLock,
+  pacsSignedFlag,
+} from "../../shared/js-migrate/pacsExportSign.mjs";
+import {
   buildFieldIssueLogPayload,
   createFieldIssueAccumulator,
   mergeFieldIssueChunk,
@@ -348,6 +353,7 @@ async function runProcedureTableJob({
   const sourceSchema = source?.schema ?? "dbo";
   const sourceTable = source?.table ?? "biopsy";
   const sourceObject = `${bracketIdent(sourceSchema)}.${bracketIdent(sourceTable)}`;
+  const pacsTableNoLock = pacsExportTableNoLock(source);
   const sortBundle = await setupCreatedDateMigrationSort(mssqlPool, {
     migrationConfig,
     sourceSchema,
@@ -554,6 +560,20 @@ async function runProcedureTableJob({
       idx.indexLimited,
     );
     if (rows.length === 0) break;
+
+    // state '3' (Sign to PACs) — report ที่ sync ขึ้น PACS แล้ว (RPT_TYPE ไม่ใช่ 2)
+    const pacsSignedExamIds = await fetchPacsSignedExamIds(
+      mssqlPool,
+      { pacsTableNoLock, rptTypeMode: "procedure" },
+      rows.map((r) => r?.exam_id ?? r?.Exam_ID),
+    );
+    for (const row of rows) {
+      if (!row) continue;
+      row.pacs_signed = pacsSignedFlag(
+        pacsSignedExamIds,
+        row.exam_id ?? row.Exam_ID,
+      );
+    }
 
     const n = rows.length;
     chunkIndex += 1;
