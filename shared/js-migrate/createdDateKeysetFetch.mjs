@@ -2,7 +2,12 @@ import {
   CREATED_DATE_SORT_KEY_VERSION,
   LEGACY_SORT_KEY_VERSION,
 } from "./mssqlCreatedDateSort.mjs";
-import { bindMigrateSrcNumericRange } from "./migrateCliArgs.mjs";
+import { examIdOnlyCreatedDateWhereClause } from "./mssqlCreatedDateCompositeKeyset.mjs";
+import {
+  bindMigrateSrcNumericRange,
+  readNumericSourceKeyBounds,
+} from "./migrateCliArgs.mjs";
+import { readSourceCountCap } from "./sourceIndexRange.mjs";
 
 const COMPOSITE_START = Object.freeze({
   afterNullBucket: -1,
@@ -11,12 +16,17 @@ const COMPOSITE_START = Object.freeze({
   afterChildId: 0,
 });
 
-function parseCreatedDateForBind(cd) {
-  if (cd == null || String(cd).trim() === "") {
-    return new Date("1900-01-01");
-  }
-  const d = new Date(String(cd));
-  return Number.isNaN(d.getTime()) ? new Date("1900-01-01") : d;
+const CREATED_DATE_BIND_FLOOR = "1900-01-01T00:00:00";
+
+/**
+ * ค่า CreatedDate ของที่คั่นหน้า = ข้อความ ISO (style 126) ตามที่ SQL ส่งมา — ส่งกลับเป็นข้อความ
+ * ให้ SQL แปลงเป็นชนิดของคอลัมน์เอง (param แปลง ไม่ใช่คอลัมน์ → ยังใช้ index ได้)
+ * ห้ามผ่าน JS Date: ตีความเป็นเวลาเครื่อง (เพี้ยนตาม TZ) และ ms 3 หลักไม่ตรงกับ datetime (1/300 วินาที)
+ * → เคยทำให้อ่านแถวรอยต่อหน้าซ้ำ (นับเกิน → cap ตัดท้าย) หรือข้ามแถวที่ CreatedDate เท่ากัน
+ */
+function createdDateBindValue(cd) {
+  const s = cd == null ? "" : String(cd).trim();
+  return s === "" ? CREATED_DATE_BIND_FLOOR : s;
 }
 
 /** @param {Record<string, unknown>} checkpoint @param {boolean} checkpointEnabled @param {boolean} sortKeyVersionUpgraded */
@@ -46,8 +56,8 @@ export function bindExamChildCompositeKeyset(req, sqlLib, state) {
     .input("afterNullBucket", sqlLib.Int, state.afterNullBucket ?? -1)
     .input(
       "afterCreatedDate",
-      sqlLib.DateTime2,
-      parseCreatedDateForBind(state.afterCreatedDate),
+      sqlLib.NVarChar(40),
+      createdDateBindValue(state.afterCreatedDate),
     )
     .input("afterExamId", sqlLib.BigInt, state.afterExamId ?? 0)
     .input("afterChildId", sqlLib.Int, state.afterChildId ?? 0);
@@ -59,10 +69,55 @@ export function bindExamIdCompositeKeyset(req, sqlLib, state) {
     .input("afterNullBucket", sqlLib.Int, state.afterNullBucket ?? -1)
     .input(
       "afterCreatedDate",
-      sqlLib.DateTime2,
-      parseCreatedDateForBind(state.afterCreatedDate),
+      sqlLib.NVarChar(40),
+      createdDateBindValue(state.afterCreatedDate),
     )
     .input("afterExamId", sqlLib.BigInt, state.afterExamId ?? 0);
+}
+
+/**
+ * resume ผ่าน migrate:all (มี sourceCountCap): แผน = cap − offset แต่ offset ใน checkpoint เป็นตัวนับสะสม
+ * ที่เพี้ยนได้ (เคยนับแถวที่อ่านซ้ำ / ต้นทางลบแถว) → cap ตัดแถวใหม่ท้ายตารางทุกรอบ
+ * นับตำแหน่งจริงของที่คั่นหน้าจากต้นทาง (จำนวนแถวที่อยู่ก่อน/ที่ checkpoint) แล้วใช้ค่าที่น้อยกว่า
+ * → แผนมีแต่เท่าเดิมหรือมากขึ้น ไม่มีทางอ่านน้อยลงกว่าเดิม
+ * 1 query ต่อรอบ เฉพาะตอนมี cap + resume ในโหมด CreatedDate (query รายหน้าไม่เปลี่ยน)
+ * @param {import("mssql").ConnectionPool} pool
+ * @param {typeof import("mssql")} sqlLib
+ * @param {{ tableLabel: string, sourceObjectNoLock: string, sortBundle: object, composite: object | null, offset: number, migrationConfig: object, indexLimited?: boolean }} p
+ * @returns {Promise<number>}
+ */
+export async function reconcileCappedResumeOffset(pool, sqlLib, p) {
+  const {
+    tableLabel,
+    sourceObjectNoLock,
+    sortBundle,
+    composite,
+    offset,
+    migrationConfig,
+    indexLimited = false,
+  } = p;
+  if (!sortBundle?.createdDateColumn || composite == null) return offset;
+  if (readSourceCountCap(migrationConfig) == null) return offset;
+  const kb = readNumericSourceKeyBounds(migrationConfig);
+  if (indexLimited || kb.min != null || kb.max != null) return offset;
+  if (!(offset > 0) || !(Number(composite.afterNullBucket) >= 0)) return offset;
+
+  const req = pool.request();
+  bindExamIdCompositeKeyset(req, sqlLib, composite);
+  const res = await req.query(`
+SELECT
+  COUNT_BIG(1) AS total_n,
+  SUM(CASE WHEN ${examIdOnlyCreatedDateWhereClause(sortBundle.createdDateColumn)} THEN 1 ELSE 0 END) AS after_n
+FROM ${sourceObjectNoLock};`);
+  const total = Number(res.recordset?.[0]?.total_n);
+  const after = Number(res.recordset?.[0]?.after_n ?? 0);
+  if (!Number.isFinite(total) || !Number.isFinite(after)) return offset;
+  const position = Math.max(0, total - after);
+  if (position >= offset) return offset;
+  console.error(
+    `>>> [${tableLabel}] ปรับ offset ตามตำแหน่ง checkpoint ในต้นทาง: ${offset} → ${position} (กัน cap ตัดแถวใหม่ท้ายตาราง)`,
+  );
+  return position;
 }
 
 /**

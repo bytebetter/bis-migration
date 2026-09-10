@@ -13,6 +13,7 @@ import {
   advanceCreatedDateKeysetFromProbe,
   buildCreatedDateCheckpointFields,
   initExamChildCompositeKeysetFromCheckpoint,
+  reconcileCappedResumeOffset,
 } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import { ensureExaminationGeneralPipelineDdl } from "./examinationGeneralPgDdl.mjs";
 import {
@@ -438,6 +439,15 @@ async function main() {
           sourceRowCountTotal = null;
         }
       }
+      offset = await reconcileCappedResumeOffset(pool, sql, {
+        tableLabel: KEY,
+        sourceObjectNoLock,
+        sortBundle,
+        composite: compositeKs,
+        offset,
+        migrationConfig: migration,
+        indexLimited: idx.indexLimited,
+      });
       let plannedRows = prepareMigrateRowPlan({
         migrationConfig: migration,
         sourceRowCountTotal,

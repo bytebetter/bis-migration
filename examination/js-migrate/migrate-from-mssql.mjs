@@ -16,6 +16,7 @@ import {
   buildCreatedDateCheckpointFields,
   initExamChildCompositeKeysetFromCheckpoint,
   advanceExamIdCompositeKeyset,
+  reconcileCappedResumeOffset,
 } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import {
   initCreatedDateKeysetState,
@@ -761,6 +762,15 @@ async function runTableJob({
       sourceRowCountTotal = null;
     }
   }
+  offset = await reconcileCappedResumeOffset(mssqlPool, sql, {
+    tableLabel: key,
+    sourceObjectNoLock,
+    sortBundle: examinationSortBundle,
+    composite: useCreatedDateKeyset ? compositeKs : null,
+    offset,
+    migrationConfig,
+    indexLimited: idx.indexLimited,
+  });
   const plannedRows = prepareMigrateRowPlan({
         migrationConfig: migrationConfig,
         sourceRowCountTotal,
