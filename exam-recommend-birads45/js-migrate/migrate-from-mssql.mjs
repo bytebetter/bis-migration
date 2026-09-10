@@ -3,16 +3,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sql from "mssql";
 import pg from "pg";
-import { createMssqlExamRecommendBirads45SelectBundle } from "./mssqlExamRecommendBirads45Select.mjs";
 import {
-  setupCreatedDateMigrationSort,
-  initCreatedDateKeysetState,
-} from "../../shared/js-migrate/setupCreatedDateMigrationSort.mjs";
-import {
-  bindCreatedDateOrNumericKeyset,
-  advanceCreatedDateKeysetFromProbe,
-  buildCreatedDateCheckpointFields,
-} from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
+  MSSQL_EXAM_RECOMMEND_BIRADS45_DETAIL_BY_IDS_SELECT,
+  MSSQL_EXAM_RECOMMEND_BIRADS45_ID_SELECT,
+} from "./mssqlExamRecommendBirads45Select.mjs";
 import { ensureExamRecommendBirads45PipelineDdl } from "./examRecommendBirads45PgDdl.mjs";
 import {
   loadChunkToStaging,
@@ -30,16 +24,11 @@ import { mergeMigrationWithCli } from "../../shared/js-migrate/mergeMigrationCon
 import { bindMigrateSrcNumericRange } from "../../shared/js-migrate/migrateCliArgs.mjs";
 import {
   applySourceIndexToMigrateJob,
-  buildIndexCheckpointSuffix,
-  isIndexWindowComplete,
-  narrowPlannedRowsForIndex,
   resolvePageSize,
   plannedRowsForPageSize,
-  trimRowsToMigrateCap,
   capAdvanceToMigratePlan,
   shouldStopMigratePagination,
   rowsDoneInMigrateRun,
-  shouldMarkMigrateCheckpointComplete,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
@@ -169,20 +158,17 @@ function bracketIdent(value) {
   return `[${String(value).replace(/]/g, "]]")}]`;
 }
 
-function readJsonIfExists(filePath, fallbackValue) {
-  if (!fs.existsSync(filePath)) return fallbackValue;
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
-}
-
-function writeJson(filePath, value) {
-  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
-
 async function main() {
   const configPath = path.resolve(process.cwd(), getConfigPath());
   const rawConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
   const config = resolveRuntimeConfig(rawConfig, KEY);
-  const migration = mergeMigrationWithCli(config?.migration, KEY);
+  // ตารางเล็ก + update-only (UPDATE ทับทั้ง array ต่อ exam) → ไล่ครบทุก exam ทุกรอบ
+  // ไม่ resume จาก checkpoint และไม่ใช้ sourceCountCap ของ migrate:all (snapshot นับเป็นแถว
+  // แต่ตารางนี้เดินทีละ exam จนหมด) — exam ใหม่ / แถวแทรกกลาง / แก้ไขในต้นทาง ถูกเก็บทุกรอบ
+  const migration = {
+    ...mergeMigrationWithCli(config?.migration, KEY),
+    sourceCountCap: null,
+  };
   if (config.__profileName) {
     console.error(`>>> using config profile: ${config.__profileName}`);
   }
@@ -226,40 +212,19 @@ async function main() {
     error: null,
   };
   const chunkLog = createChunkResultsLogger(migration);
-  const checkpointEnabled = migration.enableCheckpoint !== false;
-  const checkpointDir = path.resolve(
-    __dirname,
-    migration.checkpointDir ?? "./checkpoints",
-  );
-  fs.mkdirSync(checkpointDir, { recursive: true });
-  const indexCkSuffix = buildIndexCheckpointSuffix(migration);
-  const checkpointPath = path.join(checkpointDir, `${KEY}${indexCkSuffix}.json`);
-  const checkpoint = readJsonIfExists(checkpointPath, {
-    key: KEY,
-    offset: 0,
-    afterExamId: 0,
-    completed: false,
-    updatedAt: null,
-  });
 
   const mssqlConfig = buildMssqlConfig(config.source);
   const pool = await sql.connect(mssqlConfig);
   try {
-    const sortBundle = await setupCreatedDateMigrationSort(pool, {
-      migrationConfig: migration,
-      sourceSchema,
-      sourceTable,
-      tableLabel: KEY,
-      createSelectBundle: createMssqlExamRecommendBirads45SelectBundle,
-    });
-    const probeSql = sortBundle.idProbeSql.replaceAll(
+    const probeSql = MSSQL_EXAM_RECOMMEND_BIRADS45_ID_SELECT.replaceAll(
       "{{sourceObject}}",
       sourceObjectNoLock,
     );
-    const detailSqlTemplate = sortBundle.detailByIdsSql.replaceAll(
-      "{{sourceObject}}",
-      sourceObjectNoLock,
-    );
+    const detailSqlTemplate =
+      MSSQL_EXAM_RECOMMEND_BIRADS45_DETAIL_BY_IDS_SELECT.replaceAll(
+        "{{sourceObject}}",
+        sourceObjectNoLock,
+      );
 
     const client = await pgPool.connect();
     try {
@@ -269,34 +234,18 @@ async function main() {
         `>>> [${KEY}] target: ${config.target.postgresDatabase} public.examination_general.recommendation_des + detail (update-only, batchSize=${batchSize})`,
       );
 
-      const keysetState = initCreatedDateKeysetState(
-        checkpoint,
-        checkpointEnabled,
-        sortBundle,
-      );
-      let offset = keysetState.offset;
-      let afterExamId = keysetState.numericAfter;
-      let mssqlKeysetAfter = keysetState.mssqlKeysetAfter;
-      if (keysetState.sortKeyVersionUpgraded && checkpointEnabled) {
-        writeJson(
-          checkpointPath,
-          buildCreatedDateCheckpointFields(sortBundle, {
-            offset: 0,
-            mssqlKeysetAfter: "",
-            afterExamId: 0,
-            completed: false,
-            extra: { key: KEY },
-          }),
-        );
-      }
       const idx = applySourceIndexToMigrateJob({
         key: KEY,
         migrationConfig: migration,
-        checkpointEnabled,
-        offset,
+        checkpointEnabled: false,
+        offset: 0,
         useMssqlKeyset: true,
       });
-      offset = idx.offset;
+      let offset = idx.offset;
+      let afterExamId = -1;
+      console.error(
+        `>>> [${KEY}] full pass: ไล่ทุก exam ตาม Exam_ID ทุกรอบ (ไม่ใช้ checkpoint / sourceCountCap)`,
+      );
 
       const fieldIssueAcc = createFieldIssueAccumulator("exam_id");
       const fieldIssueLogPath = path.join(
@@ -316,7 +265,7 @@ FROM ${sourceObjectNoLock};`);
           sourceRowCountTotal = null;
         }
       }
-      const plannedRows = prepareMigrateRowPlan({
+      let plannedRows = prepareMigrateRowPlan({
         migrationConfig: migration,
         sourceRowCountTotal,
         offset,
@@ -389,27 +338,17 @@ FROM ${sourceObjectNoLock};`);
           const probeStartedAt = Date.now();
           const probeReq = pool.request();
           bindMigrateSrcNumericRange(probeReq, migration, sql);
-          bindCreatedDateOrNumericKeyset(probeReq, sql, sortBundle, {
-            mssqlKeysetAfter,
-            numericAfter: afterExamId,
-          });
           const idRes = await probeReq
+            .input("afterExamId", sql.BigInt, afterExamId)
             .input("page", sql.Int, pageSize)
             .query(probeSql);
           const probeMs = Date.now() - probeStartedAt;
-          const idRows = idRes.recordset || [];
-          const advanced = advanceCreatedDateKeysetFromProbe(
-            idRows,
-            sortBundle,
-            { numericAfter: afterExamId, mssqlKeysetAfter },
-          );
-          afterExamId = advanced.numericAfter;
-          mssqlKeysetAfter = advanced.mssqlKeysetAfter;
-          ids = idRows
+          ids = (idRes.recordset || [])
             .map((r) => Number.parseInt(r?.exam_id ?? "", 10))
             .filter((v) => Number.isFinite(v))
             .map(String);
           if (ids.length === 0) break;
+          afterExamId = Number(ids[ids.length - 1]);
 
           const idPlaceholders = ids.map((_, i) => `@id${i}`).join(", ");
           const detailSql = detailSqlTemplate.replace(
@@ -424,16 +363,6 @@ FROM ${sourceObjectNoLock};`);
           rows = detailRes.recordset || [];
         }
         if (rows.length === 0) break;
-
-        rows = trimRowsToMigrateCap(
-          rows,
-          rowsDoneThisRun,
-          plannedRows,
-          migration,
-          idx.indexLimited,
-        );
-        if (rows.length === 0) break;
-        if (ids.length > rows.length) ids = ids.slice(0, rows.length);
 
         chunkIndex += 1;
         const normalized = rows.map(normalizeMssqlRow).filter(Boolean);
@@ -508,18 +437,6 @@ FROM ${sourceObjectNoLock};`);
         if (!repairRun.active) {
           offset += keysetAdvance;
         }
-        if (checkpointEnabled && !repairRun.active) {
-          writeJson(
-            checkpointPath,
-            buildCreatedDateCheckpointFields(sortBundle, {
-              offset,
-              mssqlKeysetAfter,
-              afterExamId,
-              completed: false,
-              extra: { key: KEY },
-            }),
-          );
-        }
         if (debugLogs && !singleLineUi) {
           writeOutLine(
             `>>> [${KEY}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(
@@ -555,24 +472,6 @@ FROM ${sourceObjectNoLock};`);
         }
       }
 
-      if (checkpointEnabled) {
-        writeJson(
-          checkpointPath,
-          buildCreatedDateCheckpointFields(sortBundle, {
-            offset,
-            mssqlKeysetAfter,
-            afterExamId,
-            completed: shouldMarkMigrateCheckpointComplete({
-              migrationConfig: migration,
-              indexLimited: idx.indexLimited,
-              runStartOffset,
-              currentOffset: offset,
-              plannedRows,
-            }),
-            extra: { key: KEY },
-          }),
-        );
-      }
       if (progressEnabled) endProgress(uiState);
 
       let fieldIssueLogWritten = null;

@@ -4,7 +4,6 @@ import {
   MSSQL_EXAM_ID_SORT_KEY_EXPR,
   mssqlExamIdWithIntColumnOrderBy,
   mssqlExamIdWithIntColumnSortKeyExpr,
-  mssqlIntColumnSortKeyExpr,
   bracketMssqlIdent,
 } from "./mssqlCreatedDateSort.mjs";
 
@@ -154,56 +153,5 @@ ORDER BY ${sort.orderBy}`.trim();
     ...sort,
     keysetSql: useCreatedDate ? keysetCreatedDate : keysetLegacy,
     detailByExamIdsSql: detailByExamIds,
-  };
-}
-
-/** Exam_ID + Recommend_ID */
-export function buildExamRecommendSelectBundle({
-  createdDateColumn,
-  detailColumns,
-  keyRangeWhere = "",
-}) {
-  const recommendSortKey = `CONCAT(${MSSQL_EXAM_ID_SORT_KEY_EXPR}, N'_', ${mssqlIntColumnSortKeyExpr("[Recommend_ID]")})`;
-  const sort = buildCreatedDateSortExprs({
-    createdDateColumn,
-    tiebreakerOrderBy: "[Exam_ID] ASC, [Recommend_ID] ASC",
-    tiebreakerSortKeyExpr: recommendSortKey,
-  });
-
-  const keyRangeClause = keyRangeWhere
-    ? `\n  AND (${keyRangeWhere.trim()})`
-    : "";
-
-  const idProbeLegacy = `
-SELECT CAST(s.[Exam_ID] AS BIGINT) AS exam_id
-FROM (
-  SELECT TOP (@page)
-    [Exam_ID]
-  FROM {{sourceObject}}
-  WHERE [Exam_ID] > @afterExamId${keyRangeClause}
-  ORDER BY [Exam_ID] ASC
-) s`.trim();
-
-  const idProbeCreatedDate = `
-SELECT TOP (@page)
-  CAST([Exam_ID] AS BIGINT) AS exam_id,
-  ${createdDateSelectExpr(sort.createdDateColumn)}
-FROM {{sourceObject}}
-WHERE ${examIdOnlyCreatedDateWhereClause(sort.createdDateColumn)}${keyRangeClause}
-ORDER BY ${examIdOnlyCreatedDateOrderBy(sort.createdDateColumn)}`.trim();
-
-  const detailByIds = `
-SELECT
-${detailColumns}
-FROM {{sourceObject}}
-WHERE CAST([Exam_ID] AS BIGINT) IN ({{idPlaceholders}})
-ORDER BY ${sort.orderBy}`.trim();
-
-  const useCreatedDate = sort.createdDateColumn != null;
-
-  return {
-    ...sort,
-    idProbeSql: useCreatedDate ? idProbeCreatedDate : idProbeLegacy,
-    detailByIdsSql: detailByIds,
   };
 }

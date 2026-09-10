@@ -1,4 +1,9 @@
-import { buildExamRecommendSelectBundle } from "../../shared/js-migrate/mssqlExamTwoStepSelect.mjs";
+/**
+ * dbo.EXAM_Recommend_BIRADS45 — 1 exam มีได้หลายแถว (Recommend_ID)
+ * probe ดึง Exam_ID ไม่ซ้ำเรียงตามเลข → detail ดึงทุกแถวของ exam เหล่านั้น
+ * (ใช้ expression เดียวกันทั้ง WHERE / GROUP BY / ORDER BY ให้ keyset ไม่ข้ามแถว)
+ */
+const EXAM_ID_EXPR = "CAST([Exam_ID] AS BIGINT)";
 
 const EXAM_RECOMMEND_BIRADS45_COLUMNS = `
   CAST(CAST([Exam_ID] AS BIGINT) AS NVARCHAR(MAX)) AS exam_id,
@@ -10,23 +15,22 @@ const EXAM_RECOMMEND_BIRADS45_COLUMNS = `
   CAST([Location] AS NVARCHAR(MAX)) AS location
 `.trim();
 
-const EXAM_RECOMMEND_KEY_RANGE = `
-(@migrateSrcKeyMin IS NULL OR CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
-  AND (@migrateSrcKeyMax IS NULL OR CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)`;
+/** หน้า Exam_ID ถัดจาก @afterExamId — GROUP BY ให้ 1 แถวต่อ exam (ตัวนับ/แผน = จำนวน exam) */
+export const MSSQL_EXAM_RECOMMEND_BIRADS45_ID_SELECT = `
+SELECT TOP (@page)
+  ${EXAM_ID_EXPR} AS exam_id
+FROM {{sourceObject}}
+WHERE ${EXAM_ID_EXPR} > @afterExamId
+  AND (@migrateSrcKeyMin IS NULL OR ${EXAM_ID_EXPR} >= @migrateSrcKeyMin)
+  AND (@migrateSrcKeyMax IS NULL OR ${EXAM_ID_EXPR} <= @migrateSrcKeyMax)
+GROUP BY ${EXAM_ID_EXPR}
+ORDER BY ${EXAM_ID_EXPR} ASC
+`.trim();
 
-/** @param {string | null | undefined} createdDateColumn */
-export function createMssqlExamRecommendBirads45SelectBundle(createdDateColumn) {
-  return buildExamRecommendSelectBundle({
-    createdDateColumn,
-    detailColumns: EXAM_RECOMMEND_BIRADS45_COLUMNS,
-    keyRangeWhere: EXAM_RECOMMEND_KEY_RANGE,
-  });
-}
-
-export const defaultMssqlExamRecommendBirads45SelectBundle =
-  createMssqlExamRecommendBirads45SelectBundle("CreatedDate");
-
-export const MSSQL_EXAM_RECOMMEND_BIRADS45_ID_SELECT =
-  defaultMssqlExamRecommendBirads45SelectBundle.idProbeSql;
-export const MSSQL_EXAM_RECOMMEND_BIRADS45_DETAIL_BY_IDS_SELECT =
-  defaultMssqlExamRecommendBirads45SelectBundle.detailByIdsSql;
+export const MSSQL_EXAM_RECOMMEND_BIRADS45_DETAIL_BY_IDS_SELECT = `
+SELECT
+  ${EXAM_RECOMMEND_BIRADS45_COLUMNS}
+FROM {{sourceObject}}
+WHERE ${EXAM_ID_EXPR} IN ({{idPlaceholders}})
+ORDER BY ${EXAM_ID_EXPR} ASC, [Recommend_ID] ASC
+`.trim();
