@@ -9,8 +9,11 @@
  * choices ฝั่ง Directus ไม่เหมือนกันทั้ง 3 ตาราง — ค่า Sign to PACs ต่างกัน:
  *   mammogram / ultrasound : 0=Draft, 1=Report, 2=undefined, 3=Sign to PACs
  *   procedure              : 0=Draft, 1=Report, 2=Sign to PACS (ไม่มีค่า 3)
+ *
+ * ห้าม import "mssql" ในไฟล์นี้ — shared/ จะ resolve ไปที่ node_modules ของ root
+ * ซึ่งเป็นคนละ instance กับของแต่ละตาราง -> sql.BigInt ไม่ตรง type ของ pool
+ * แล้ว tedious พัง "parameter.type.validate is not a function" — ให้ caller ส่ง sqlPkg มา
  */
-import sql from "mssql";
 
 /** RPT_TYPE ของ report ฝั่ง mammogram / ultrasound */
 export const PACS_RPT_TYPE_MAM_US = 2;
@@ -36,12 +39,14 @@ export function pacsExportTableNoLock(source) {
  * Exam_ID ที่ควรได้ state = '3' (Sign to PACs) ของ chunk นี้
  *
  * @param {import("mssql").ConnectionPool} mssqlPool
+ * @param {typeof import("mssql")} sqlPkg mssql ตัวเดียวกับที่สร้าง mssqlPool
  * @param {{ pacsTableNoLock: string, rptTypeMode: "mam_us" | "procedure" }} options
  * @param {Array<string | number>} examIds
  * @returns {Promise<Set<number>>}
  */
 export async function fetchPacsSignedExamIds(
   mssqlPool,
+  sqlPkg,
   { pacsTableNoLock, rptTypeMode },
   examIds,
 ) {
@@ -66,7 +71,7 @@ export async function fetchPacsSignedExamIds(
     if (batch.length === 0) continue;
     const placeholders = batch.map((_, idx) => `@e${idx}`).join(", ");
     const req = mssqlPool.request();
-    batch.forEach((id, idx) => req.input(`e${idx}`, sql.BigInt, id));
+    batch.forEach((id, idx) => req.input(`e${idx}`, sqlPkg.BigInt, id));
     const res = await req.query(
       `SELECT DISTINCT CAST([Exam_ID] AS BIGINT) AS exam_id
        FROM ${pacsTableNoLock}

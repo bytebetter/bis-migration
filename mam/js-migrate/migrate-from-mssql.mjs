@@ -546,6 +546,7 @@ async function main() {
         // state '3' (Sign to PACs) — report ที่ sync ขึ้น PACS แล้ว (RPT_TYPE=2)
         const pacsSignedExamIds = await fetchPacsSignedExamIds(
           pool,
+          sql,
           { pacsTableNoLock, rptTypeMode: "mam_us" },
           ids,
         );

@@ -564,6 +564,7 @@ async function runProcedureTableJob({
     // state '3' (Sign to PACs) — report ที่ sync ขึ้น PACS แล้ว (RPT_TYPE ไม่ใช่ 2)
     const pacsSignedExamIds = await fetchPacsSignedExamIds(
       mssqlPool,
+      sql,
       { pacsTableNoLock, rptTypeMode: "procedure" },
       rows.map((r) => r?.exam_id ?? r?.Exam_ID),
     );
