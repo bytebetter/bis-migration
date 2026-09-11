@@ -110,28 +110,33 @@ async function existingColumns(pgClient, tableName) {
  * แปลงค่า text เดี่ยวจาก MSSQL → JSON array ตามรูปแบบฝั่ง Directus (interface: Code)
  *   ว่าง / NULL → []
  *   มีค่า        → ["<text>"]
+ *   numericAsInt และค่าเป็นเลขจำนวนเต็ม → [<int>] (เช่น impression "0" → [0])
  * ใช้กับ recommendation_des, impression, impression_des
  * (recommendation_des เคส BIRADS 4/5 ที่เป็น array ของ object จะถูก UPDATE ทับทีหลัง
  * โดย migrate exam_recommend_birads45 — step 7 ใน run-migrate-all.ps1)
  */
-function toJsonTextArrayExpr(rawTextExpr, colMeta) {
+function toJsonTextArrayExpr(rawTextExpr, colMeta, numericAsInt = false) {
   const dt = colMeta.data_type;
+  const intWhen = (buildArray, suffix = "") =>
+    numericAsInt
+      ? `WHEN ${rawTextExpr} ~ '^-?[0-9]+$' THEN ${buildArray}((${rawTextExpr})::int)${suffix}\n      `
+      : "";
   if (dt === "jsonb") {
     return `CASE
       WHEN ${rawTextExpr} IS NULL THEN '[]'::jsonb
-      ELSE jsonb_build_array(${rawTextExpr})
+      ${intWhen("jsonb_build_array")}ELSE jsonb_build_array(${rawTextExpr})
     END`;
   }
   if (dt === "json") {
     return `CASE
       WHEN ${rawTextExpr} IS NULL THEN '[]'::json
-      ELSE json_build_array(${rawTextExpr})
+      ${intWhen("json_build_array")}ELSE json_build_array(${rawTextExpr})
     END`;
   }
   if (dt === "text" || dt === "character varying" || dt === "character") {
     return `CASE
       WHEN ${rawTextExpr} IS NULL THEN '[]'
-      ELSE json_build_array(${rawTextExpr})::text
+      ${intWhen("json_build_array", "::text")}ELSE json_build_array(${rawTextExpr})::text
     END`;
   }
   return null;
@@ -349,9 +354,11 @@ export async function runExaminationGeneralChunkPostLoad(
         meta,
       );
     } else if (name === "impression" || name === "impression_des") {
+      // impression เป็นรหัสตัวเลข → [0]; impression_des เป็นข้อความ → ["..."]
       expr = toJsonTextArrayExpr(
         `NULLIF(btrim(s.${sourceFieldByTarget[name]}), '')`,
         meta,
+        name === "impression",
       );
     } else if (sourceFieldByTarget[name]) {
       const raw = `NULLIF(btrim(s.${sourceFieldByTarget[name]}), '')`;
