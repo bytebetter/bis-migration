@@ -52,6 +52,7 @@ const PROFILE_DIR = {
   exam_recommend_birads45: "exam-recommend-birads45",
   billing: "billing",
   pacs_sync_info: "pacs-sync-info",
+  pacs_sync_patient: "pacs-sync-patient",
   procedure: "procedure",
   ultrasound: "ultrasound",
   mam: "mam",
@@ -59,6 +60,7 @@ const PROFILE_DIR = {
   mam_mass: "mam-mass",
   ultrasound_cyst: "ultrasound-cyst",
   ultrasound_mass: "ultrasound-mass",
+  birads_mass_cyst: "birads-mass-cyst",
 };
 
 const profile = process.argv[2];

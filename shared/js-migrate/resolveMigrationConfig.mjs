@@ -56,6 +56,7 @@ export const DEFAULT_MSSQL_SOURCE_TABLE = {
   examination_general: "examination_general",
   exam_recommend_birads45: "EXAM_Recommend_BIRADS45",
   pacs_sync_info: "pacs_sync_info",
+  pacs_sync_patient: "PACS_SYNC_PATIENT",
   procedure: "biopsy",
   ultrasound: "ultrasound",
   mam: "mammogram",

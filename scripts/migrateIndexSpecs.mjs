@@ -49,6 +49,13 @@ export const MIGRATE_INDEX_SPECS = [
   { key: "schedule_id", table: "schedule", keys: ["Schedule_ID"], note: "keyset + detail IN (...) step 2 appointment" },
   { key: "pacs_sync_accession", table: "pacs_sync_info", keys: ["Accession_ID"], note: "keyset + detail IN (...) step 8" },
   {
+    key: "pacs_sync_patient_keyset",
+    table: "PACS_SYNC_PATIENT",
+    keys: ["UpdateTime", "PID"],
+    optional: true,
+    note: "step 17 — ORDER BY เป็น COALESCE/CAST + %%physloc%% ยังต้อง sort อยู่ดี index ช่วยแค่ scan แคบลง",
+  },
+  {
     key: "schedule_log_activity",
     table: "SCHEDULE_LOG",
     keys: ["Activity"],

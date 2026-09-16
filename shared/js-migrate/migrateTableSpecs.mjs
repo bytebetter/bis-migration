@@ -112,6 +112,22 @@ export const REPAIR_SPEC_PACS_SYNC_INFO = {
 };
 
 /** @type {RepairSpec} */
+export const REPAIR_SPEC_PACS_SYNC_PATIENT = {
+  tableLabel: "pacs_sync_patient",
+  recordIdLabel: "log_key",
+  runLogPattern: /^migrate-.*\.json$/i,
+  fieldIssuePattern: /^migration-field-issues-pacs_sync_patient-.*\.json$/i,
+  collectIdsFromRunLog(runLog, idSet) {
+    collectIdsFromRunLogCommon(runLog, idSet, {
+      failedChunkIdFields: ["firstKey", "lastKey"],
+    });
+  },
+  collectIdsFromFieldIssueLog(payload, idSet) {
+    collectIdsFromFieldIssueLogCommon(payload, idSet, "log_key");
+  },
+};
+
+/** @type {RepairSpec} */
 export const REPAIR_SPEC_PROCEDURE = {
   tableLabel: "procedure",
   recordIdLabel: "old_db_id",
@@ -285,6 +301,7 @@ export const REPAIR_SPEC_BY_PROFILE = {
   exam_recommend_birads45: REPAIR_SPEC_EXAM_RECOMMEND_BIRADS45,
   billing: REPAIR_SPEC_BILLING,
   pacs_sync_info: REPAIR_SPEC_PACS_SYNC_INFO,
+  pacs_sync_patient: REPAIR_SPEC_PACS_SYNC_PATIENT,
   procedure: REPAIR_SPEC_PROCEDURE,
   ultrasound: REPAIR_SPEC_ULTRASOUND,
   mam: REPAIR_SPEC_MAM,

@@ -26,6 +26,8 @@ const UNSUPPORTED_REASON = {
     "Accession_ID เป็น varchar — ใช้ --source-index-range สำหรับลำดับแถวแทน",
   appointment_reschedules:
     "SCHEDULE_LOG ไม่มี PK ตัวเลข — ใช้ --source-index-range สำหรับลำดับแถวแทน",
+  pacs_sync_patient:
+    "PACS_SYNC_PATIENT ไม่มี PK ตัวเลข — ใช้ --source-index-range สำหรับลำดับแถวแทน",
 };
 
 function supportedProfileList() {

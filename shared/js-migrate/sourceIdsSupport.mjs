@@ -75,6 +75,8 @@ export const SOURCE_IDS_PK_PROFILES = {
 const UNSUPPORTED_REASON = {
   appointment_reschedules:
     "SCHEDULE_LOG ไม่มี PK — ใช้ --source-index-range แทน",
+  pacs_sync_patient:
+    "PACS_SYNC_PATIENT ไม่มี PK — ใช้ --source-index-range แทน",
 };
 
 /**

@@ -121,7 +121,11 @@ $steps = @(
   @{ N = 12; Table = "mammogram_cal";       Profile = "mam_cal";             Script = "mam-cal/js-migrate/run-migrate.ps1" },
   @{ N = 13; Table = "mammogram_mass";      Profile = "mam_mass";            Script = "mam-mass/js-migrate/run-migrate.ps1" },
   @{ N = 14; Table = "ultrasound_cyst";     Profile = "ultrasound_cyst";     Script = "ultrasound-cyst/js-migrate/run-migrate.ps1" },
-  @{ N = 15; Table = "ultrasound_mass";     Profile = "ultrasound_mass";     Script = "ultrasound-mass/js-migrate/run-migrate.ps1" }
+  @{ N = 15; Table = "ultrasound_mass";     Profile = "ultrasound_mass";     Script = "ultrasound-mass/js-migrate/run-migrate.ps1" },
+  # อ่าน Postgres ล้วน (ultrasound + examination_general ที่ migrate แล้ว) → ไม่มี source count จาก MSSQL
+  @{ N = 16; Table = "birads_mass_cyst";    Profile = "birads_mass_cyst";    Script = "birads-mass-cyst/js-migrate/run-migrate.ps1"; NoSourceCount = $true },
+  # ตาราง log ไม่มี PK — ต้องการแค่ patient_info (step 1) จึงต่อท้ายได้ ไม่ต้องเลื่อนเลข step เดิม
+  @{ N = 17; Table = "pacs_sync_patient";   Profile = "pacs_sync_patient";   Script = "pacs-sync-patient/js-migrate/run-migrate.ps1" }
 )
 
 $tableFilter = foreach ($t in $Tables) {
@@ -189,6 +193,7 @@ if ($doSnapshot) {
   foreach ($step in $steps) {
     if ($step.N -lt $StartFrom) { continue }
     if (-not $runAllTables -and ($tableFilter -notcontains $step.Table.ToLowerInvariant())) { continue }
+    if ($step.NoSourceCount) { continue }
     $c = Get-SourceCount -Config $ConfigPath -Profile $step.Profile -RepoRoot $repoRoot
     if ($null -ne $c) {
       $countSnapshot[$step.Table] = $c

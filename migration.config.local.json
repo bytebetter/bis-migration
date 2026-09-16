@@ -57,6 +57,11 @@
         "mssqlPagination": "keyset_plus_null"
       }
     },
+    "pacs_sync_patient": {
+      "migration": {
+        "batchSize": 10000
+      }
+    },
     "ultrasound": {},
     "ultrasound_mass": {},
     "ultrasound_cyst": {},
