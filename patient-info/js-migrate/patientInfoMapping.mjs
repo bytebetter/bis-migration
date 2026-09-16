@@ -1,5 +1,10 @@
 import { isPlaceholderPatientRow } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
 import { PATIENT_INFO_MIGRATE_PLACEHOLDER_LOGIC_ENABLED } from "../../shared/js-migrate/placeholderMigrateFlags.mjs";
+import {
+  ensurePatientInfoPidCiIndexes,
+  patientPidInArraySql,
+  pidMatchKey,
+} from "../../shared/js-migrate/patientPidMatch.mjs";
 
 /**
  * แมป staging row / แถวจาก MSSQL → public.patient_info + public.address
@@ -412,17 +417,19 @@ function collectPatientInfoFieldIssues(row, mapped) {
 }
 
 /**
- * @returns {Map<string, { id: number, isPlaceholder: boolean }>}
+ * แถวเดิมใน public.patient_info ตาม PID แบบไม่สนตัวพิมพ์ (m1175 = M1175)
+ * @returns {Map<string, { id: number, isPlaceholder: boolean }>} key = pidMatchKey(pid)
  */
 async function loadExistingPatientMetaByNpid(pgClient, npids) {
   if (npids.length === 0) return new Map();
+  await ensurePatientInfoPidCiIndexes(pgClient);
   const { rows } = await pgClient.query(
     `
-    SELECT id, migrate_stg.norm_pid(pid::text) AS npid, first_name_th
-    FROM public.patient_info
-    WHERE migrate_stg.norm_pid(pid::text) = ANY($1::text[])
+    SELECT pi.id, lower(pi.pid::text) AS npid, pi.first_name_th
+    FROM public.patient_info pi
+    WHERE ${patientPidInArraySql("pi", "$1", { includeOldDbId: false })}
     `,
-    [npids],
+    [[...new Set(npids.map((p) => pidMatchKey(p)))]],
   );
   /** @type {Map<string, { id: number, isPlaceholder: boolean }>} */
   const map = new Map();
@@ -805,8 +812,9 @@ async function insertAddressesForItems(pgClient, items, idByNpid) {
 /**
  * แมป chunk → patient_info + address
  * - insert-only (resume): เพิ่มเฉพาะ PID ใหม่ ไม่แตะแถวจริงเดิม
- *   (แถว placeholder "ไม่ทราบชื่อ" จากตารางอื่นยังคงไว้ — INSERT แถว MSSQL เพิ่มได้)
+ *   (PID ที่มีแค่ placeholder "ไม่ทราบชื่อ" → UPDATE placeholder นั้นเป็นข้อมูลจริง ไม่สร้างแถวซ้ำ)
  * - overwrite: UPDATE แถวเดิมตาม id + INSERT PID ใหม่ (ที่อยู่ลบแล้วใส่ใหม่)
+ * จับคู่ PID แบบไม่สนตัวพิมพ์ ตาม MSSQL (m1175 = M1175)
  *
  * @param {import("pg").PoolClient} pgClient
  * @param {object[]} mssqlRows
@@ -886,29 +894,27 @@ export async function runPatientInfoChunkPostLoad(
   /** @type {{ row: object, mapped: ReturnType<typeof mapPatientInfoRow>, patientInfoId: number }[]} */
   const toUpdate = [];
 
+  /** key = item.mapped.pid (ตัวพิมพ์ตามต้นทาง) */
+  const idByNpid = new Map();
   for (const item of mappedItems) {
     const np = item.mapped.pid;
-    const existing = existingMetaByNpid.get(np);
+    const existing = existingMetaByNpid.get(pidMatchKey(np));
     if (existing != null) {
-      if (insertOnly) {
-        if (
-          !PATIENT_INFO_MIGRATE_PLACEHOLDER_LOGIC_ENABLED ||
-          !existing.isPlaceholder
-        ) {
-          continue;
-        }
-        toInsert.push(item);
-      } else {
-        toUpdate.push({ ...item, patientInfoId: existing.id });
+      idByNpid.set(np, existing.id);
+      if (
+        insertOnly &&
+        (!PATIENT_INFO_MIGRATE_PLACEHOLDER_LOGIC_ENABLED ||
+          !existing.isPlaceholder)
+      ) {
+        continue;
       }
+      // overwrite หรือ placeholder (insert-only): UPDATE แถวเดิม — ข้อมูลลูกที่ผูก placeholder ไว้ได้คนไข้จริงด้วย
+      toUpdate.push({ ...item, patientInfoId: existing.id });
     } else {
       toInsert.push(item);
     }
   }
 
-  const idByNpid = new Map(
-    [...existingMetaByNpid.entries()].map(([np, meta]) => [np, meta.id]),
-  );
   let patientRowsInserted = 0;
   let patientRowsUpdated = 0;
   let addressRowsInserted = 0;
@@ -964,7 +970,7 @@ export async function runPatientInfoChunkPostLoad(
   }
 
   for (const np of npids) {
-    const existing = existingMetaByNpid.get(np);
+    const existing = existingMetaByNpid.get(pidMatchKey(np));
     if (
       insertOnly &&
       existing != null &&

@@ -3,6 +3,7 @@
  */
 
 import { sourceRawNonempty } from "../../shared/js-migrate/fieldIssueLog.mjs";
+import { PLACEHOLDER_APPOINTMENT_FIRST_NAME } from "../../shared/js-migrate/ensurePlaceholderAppointment.mjs";
 
 function getField(row, key) {
   return row[key] ?? row[key.toLowerCase()] ?? row[key.toUpperCase()];
@@ -142,17 +143,21 @@ async function getSlotIdByClock(pgClient) {
   return cachedSlotIdByClock;
 }
 
+/** old_db_id เดียวกันอาจมีทั้ง placeholder และนัดจริง — เลือกนัดจริงก่อน แล้ว id น้อยสุด */
 async function loadAppointmentIdByOldDbId(pgClient) {
-  const { rows } = await pgClient.query(`
+  const { rows } = await pgClient.query(
+    `
     SELECT id, btrim(old_db_id::text) AS k
     FROM public.appointment
     WHERE old_db_id IS NOT NULL AND btrim(old_db_id::text) <> ''
-  `);
+    ORDER BY CASE WHEN COALESCE(first_name, '') = $1 THEN 1 ELSE 0 END, id
+    `,
+    [PLACEHOLDER_APPOINTMENT_FIRST_NAME],
+  );
   const map = new Map();
   for (const row of rows) {
-    if (row.k == null) continue;
-    const prev = map.get(row.k);
-    if (prev == null || row.id < prev) map.set(row.k, Number(row.id));
+    if (row.k == null || map.has(row.k)) continue;
+    map.set(row.k, Number(row.id));
   }
   return map;
 }

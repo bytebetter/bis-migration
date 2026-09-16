@@ -1,5 +1,10 @@
 import { normPid } from "../../patient-info/js-migrate/patientInfoMapping.mjs";
 import { ENSURE_PLACEHOLDER_PATIENT_INFO_ENABLED } from "./placeholderMigrateFlags.mjs";
+import {
+  ensurePatientInfoPidCiIndexes,
+  patientPidMatchSql,
+  pidMatchKey,
+} from "./patientPidMatch.mjs";
 
 /** ชื่อจริงใน public.patient_info */
 export const PLACEHOLDER_FIRST_NAME_TH = "ไม่ทราบชื่อ";
@@ -42,30 +47,39 @@ export function placeholderLastNameTh(pid) {
 }
 
 /**
- * สร้าง public.patient_info ชั่วคราวสำหรับ pid ที่ยังไม่มี (จับคู่ทั้ง pid และ old_db_id)
+ * สร้าง public.patient_info ชั่วคราวสำหรับ pid ที่ยังไม่มี
+ * (จับคู่ทั้ง pid และ old_db_id แบบไม่สนตัวพิมพ์ — m1175 กับ M1175 คือคนเดียวกัน)
  * @returns {{ inserted: number }}
  */
 export async function ensurePlaceholderPatientInfo(pgClient, rawPids) {
   if (!ENSURE_PLACEHOLDER_PATIENT_INFO_ENABLED) return { inserted: 0 };
 
-  const pids = [
-    ...new Set((rawPids ?? []).map((p) => normPid(p)).filter((p) => p !== "")),
-  ];
-  if (pids.length === 0) return { inserted: 0 };
+  /** key ไม่สนตัวพิมพ์ → PID ตัวแรกที่เจอ (ใช้เป็นค่าใน placeholder) */
+  const pidByKey = new Map();
+  for (const raw of rawPids ?? []) {
+    const p = normPid(raw);
+    if (p === "") continue;
+    const k = pidMatchKey(p);
+    if (!pidByKey.has(k)) pidByKey.set(k, p);
+  }
+  if (pidByKey.size === 0) return { inserted: 0 };
 
+  await ensurePatientInfoPidCiIndexes(pgClient);
   const { rows: found } = await pgClient.query(
     `
     SELECT DISTINCT u.k
     FROM unnest($1::text[]) AS u(k)
     WHERE EXISTS (
       SELECT 1 FROM public.patient_info pi
-      WHERE pi.pid::text = u.k OR pi.old_db_id::text = u.k
+      WHERE ${patientPidMatchSql("pi", "u.k")}
     )
     `,
-    [pids],
+    [[...pidByKey.keys()]],
   );
   const foundSet = new Set(found.map((r) => r.k));
-  const missing = pids.filter((p) => !foundSet.has(p));
+  const missing = [...pidByKey]
+    .filter(([k]) => !foundSet.has(k))
+    .map(([, p]) => p);
   if (missing.length === 0) return { inserted: 0 };
 
   const aOld = [];

@@ -1,4 +1,8 @@
 import { ensurePlaceholderPatientInfoFromStaging } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
+import {
+  patientPidMatchSql,
+  patientPidPreferenceOrderSql,
+} from "../../shared/js-migrate/patientPidMatch.mjs";
 
 const INT_RE = /^-?\d+$/;
 
@@ -400,8 +404,8 @@ LEFT JOIN LATERAL (
   SELECT p2.id
   FROM public.patient_info p2
   WHERE NULLIF(btrim(s.pid), '') IS NOT NULL
-    AND p2.pid::text = NULLIF(btrim(s.pid), '')
-  ORDER BY p2.id
+    AND ${patientPidMatchSql("p2", "NULLIF(btrim(s.pid), '')", { includeOldDbId: false })}
+  ORDER BY ${patientPidPreferenceOrderSql("p2", "NULLIF(btrim(s.pid), '')")}
   LIMIT 1
 ) p ON TRUE
 ${idKeepJoin}

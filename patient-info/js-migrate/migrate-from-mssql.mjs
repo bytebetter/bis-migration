@@ -20,6 +20,11 @@ import {
 } from "../../shared/js-migrate/fieldIssueLog.mjs";
 import { PLACEHOLDER_FIRST_NAME_TH } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
 import {
+  patientIsPlaceholderSql,
+  patientPidMatchSql,
+  pidMatchKey,
+} from "../../shared/js-migrate/patientPidMatch.mjs";
+import {
   distinctOnNormPid,
   normPid,
   runPatientInfoChunkPostLoad,
@@ -1186,20 +1191,21 @@ async function runTableJob({
         ];
         let missingPids = probePids;
         if (probePids.length > 0 && !dailyTailUpsert) {
+          // ไม่สนตัวพิมพ์ + placeholder ไม่นับว่ามีแล้ว (ต้องดึงมา UPDATE เป็นข้อมูลจริง)
           const { rows: found } = await pgClient.query(
             `
             SELECT DISTINCT u.k
             FROM unnest($1::text[]) AS u(k)
             WHERE EXISTS (
               SELECT 1 FROM public.patient_info pi
-              WHERE migrate_stg.norm_pid(pi.pid::text) = u.k
-                 OR migrate_stg.norm_pid(pi.old_db_id::text) = u.k
+              WHERE ${patientPidMatchSql("pi", "u.k")}
+                AND NOT ${patientIsPlaceholderSql("pi")}
             )
             `,
-            [probePids],
+            [[...new Set(probePids.map((p) => pidMatchKey(p)))]],
           );
           const foundSet = new Set(found.map((r) => r.k));
-          missingPids = probePids.filter((p) => !foundSet.has(p));
+          missingPids = probePids.filter((p) => !foundSet.has(pidMatchKey(p)));
         }
 
         const pidsToFetch = dailyTailUpsert ? probePids : missingPids;
@@ -1362,15 +1368,15 @@ WITH src AS (
   WHERE migrate_stg.norm_pid(pid) <> ''
 ),
 matched AS (
-  SELECT DISTINCT migrate_stg.norm_pid(p.pid::text) AS npid
+  SELECT DISTINCT s.npid
   FROM public.patient_info p
-  JOIN src s ON s.npid = migrate_stg.norm_pid(p.pid::text)
+  JOIN src s ON lower(p.pid::text) = lower(s.npid)
 ),
 addr AS (
   SELECT COUNT(*)::int AS cnt
   FROM public.address a
   JOIN public.patient_info p ON p.id = a.patient_info
-  JOIN src s ON s.npid = migrate_stg.norm_pid(p.pid::text)
+  JOIN src s ON lower(p.pid::text) = lower(s.npid)
 )
 SELECT
   (SELECT COUNT(*)::int FROM src) AS source_cases,
@@ -1386,9 +1392,9 @@ WITH src AS (
   WHERE migrate_stg.norm_pid(pid) <> ''
 ),
 matched AS (
-  SELECT DISTINCT migrate_stg.norm_pid(p.pid::text) AS npid
+  SELECT DISTINCT s.npid
   FROM public.patient_info p
-  JOIN src s ON s.npid = migrate_stg.norm_pid(p.pid::text)
+  JOIN src s ON lower(p.pid::text) = lower(s.npid)
 )
 SELECT s.npid AS pid
 FROM src s

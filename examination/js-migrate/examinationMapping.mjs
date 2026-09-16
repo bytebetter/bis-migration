@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  PLACEHOLDER_APPOINTMENT_FIRST_NAME,
   ensurePlaceholderAppointment,
 } from "../../shared/js-migrate/ensurePlaceholderAppointment.mjs";
 import {
@@ -11,8 +12,15 @@ import {
   ensureReferringMdByFullnames,
   referringMdMatchKey,
 } from "../../shared/js-migrate/referringMdResolve.mjs";
+import {
+  patientPidMatchSql,
+  patientPidPreferenceOrderSql,
+} from "../../shared/js-migrate/patientPidMatch.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/** PID จาก staging (examination_mssql alias s) หลัง normalize */
+const STG_NORM_PID_SQL = "NULLIF(migrate_stg.norm_pid(s.pid), '')";
 
 /**
  * แมปแถว examination จาก MSSQL -> public.examination (เทียบ logic เดิมจาก SQL)
@@ -1004,8 +1012,13 @@ export async function runExaminationChunkPostLoad(
      INNER JOIN ${stg} s
        ON NULLIF(migrate_stg.norm_exam_id(m.u::text), '')::text
           = NULLIF(migrate_stg.norm_exam_id(s.exam_id::text), '')::text
-     LEFT JOIN public.patient_info p
-       ON migrate_stg.norm_pid(p.pid::text) = migrate_stg.norm_pid(s.pid)
+     LEFT JOIN LATERAL (
+       SELECT p.id
+       FROM public.patient_info p
+       WHERE ${patientPidMatchSql("p", STG_NORM_PID_SQL, { includeOldDbId: false })}
+       ORDER BY ${patientPidPreferenceOrderSql("p", STG_NORM_PID_SQL)}
+       LIMIT 1
+     ) p ON TRUE
      WHERE NULLIF(migrate_stg.norm_exam_id(m.u::text), '')::text ~ '^[0-9]+$'
      ORDER BY m.u, s.exam_id`,
     [mssqlExamU],
@@ -1048,15 +1061,18 @@ export async function runExaminationChunkPostLoad(
 
   const scheduleKeyToAppointmentId = new Map();
   if (scheduleKeys.length > 0) {
+    // old_db_id เดียวกันอาจมีทั้ง placeholder และนัดจริง (ข้อมูลเก่า) — เลือกนัดจริงก่อน แล้ว id น้อยสุด
     const { rows: apptRows } = await pgClient.query(
       `SELECT id, btrim(old_db_id::text) AS k
        FROM public.appointment
-       WHERE btrim(old_db_id::text) = ANY($1::text[])`,
-      [scheduleKeys],
+       WHERE btrim(old_db_id::text) = ANY($1::text[])
+       ORDER BY CASE WHEN COALESCE(first_name, '') = $2 THEN 1 ELSE 0 END, id`,
+      [scheduleKeys, PLACEHOLDER_APPOINTMENT_FIRST_NAME],
     );
     for (const r of apptRows) {
-      if (r.k != null && r.k !== "")
-        scheduleKeyToAppointmentId.set(String(r.k), r.id);
+      const k = r.k == null ? "" : String(r.k);
+      if (k !== "" && !scheduleKeyToAppointmentId.has(k))
+        scheduleKeyToAppointmentId.set(k, r.id);
     }
   }
 

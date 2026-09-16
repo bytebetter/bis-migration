@@ -1,5 +1,9 @@
 import crypto from "node:crypto";
 import { ensurePlaceholderPatientInfoFromStaging } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
+import {
+  patientPidMatchSql,
+  patientPidPreferenceOrderSql,
+} from "../../shared/js-migrate/patientPidMatch.mjs";
 
 const INT_RE = /^-?\d+$/;
 
@@ -275,14 +279,8 @@ LEFT JOIN LATERAL (
   SELECT pi.id
   FROM public.patient_info pi
   WHERE NULLIF(btrim(s.pid::text), '') IS NOT NULL
-    AND (
-      pi.pid::text = NULLIF(btrim(s.pid::text), '')
-      OR pi.old_db_id::text = NULLIF(btrim(s.pid::text), '')
-    )
-  ORDER BY CASE
-    WHEN pi.pid::text = NULLIF(btrim(s.pid::text), '') THEN 0
-    ELSE 1
-  END
+    AND ${patientPidMatchSql("pi", "NULLIF(btrim(s.pid::text), '')")}
+  ORDER BY ${patientPidPreferenceOrderSql("pi", "NULLIF(btrim(s.pid::text), '')")}
   LIMIT 1
 ) pat ON TRUE
 LEFT JOIN LATERAL (

@@ -1,4 +1,5 @@
 import { sourceRawNonempty } from "./fieldIssueLog.mjs";
+import { patientPidMatchSql } from "./patientPidMatch.mjs";
 
 const INT_RE = /^-?\d+$/;
 
@@ -229,11 +230,12 @@ export async function verifyExamKeyedStagingChunk(pgClient, options) {
       `
       SELECT ${stgExam} AS exam_id, ${stgPid} AS pid
       FROM ${stagingFromClause} s
-      LEFT JOIN public.patient_info p
-        ON p.pid::text = ${stgPid}
       WHERE ${stgPid} IS NOT NULL
         AND ${stgExam} ~ '^[0-9]+$'
-        AND p.id IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM public.patient_info p
+          WHERE ${patientPidMatchSql("p", stgPid, { includeOldDbId: false })}
+        )
       `,
     );
     for (const r of rows) {
@@ -420,8 +422,7 @@ export async function verifyPacsSyncStagingChunk(pgClient, stagingFromClause) {
     WHERE NULLIF(btrim(s.pid::text), '') IS NOT NULL
       AND NOT EXISTS (
         SELECT 1 FROM public.patient_info pi
-        WHERE pi.pid::text = NULLIF(btrim(s.pid::text), '')
-           OR pi.old_db_id::text = NULLIF(btrim(s.pid::text), '')
+        WHERE ${patientPidMatchSql("pi", "NULLIF(btrim(s.pid::text), '')")}
       )
     `,
   );

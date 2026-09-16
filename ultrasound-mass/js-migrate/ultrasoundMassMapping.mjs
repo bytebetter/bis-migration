@@ -1,4 +1,8 @@
 import { ensurePlaceholderPatientInfoFromStaging } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
+import {
+  patientPidMatchSql,
+  patientPidPreferenceOrderSql,
+} from "../../shared/js-migrate/patientPidMatch.mjs";
 
 const INT_RE = /^-?\d+$/;
 
@@ -288,8 +292,13 @@ export async function runUltrasoundMassChunkPostLoad(
   }
 
   const patientJoin = cols.has("patient")
-    ? `LEFT JOIN public.patient_info p
-  ON p.pid::text = NULLIF(btrim(s.pid), '')`
+    ? `LEFT JOIN LATERAL (
+  SELECT p.id
+  FROM public.patient_info p
+  WHERE ${patientPidMatchSql("p", "NULLIF(btrim(s.pid), '')", { includeOldDbId: false })}
+  ORDER BY ${patientPidPreferenceOrderSql("p", "NULLIF(btrim(s.pid), '')")}
+  LIMIT 1
+) p ON TRUE`
     : "";
   const idKeepJoin = cols.has("id")
     ? `LEFT JOIN ultrasound_mass_keep_id id_keep

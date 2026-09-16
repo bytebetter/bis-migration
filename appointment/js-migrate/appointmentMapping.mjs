@@ -4,6 +4,12 @@
 
 import { isPlaceholderAppointmentRow } from "../../shared/js-migrate/ensurePlaceholderAppointment.mjs";
 import { ensurePlaceholderPatientInfo } from "../../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
+import {
+  ensurePatientInfoPidCiIndexes,
+  patientIsPlaceholderSql,
+  patientPidInArraySql,
+  pidMatchKey,
+} from "../../shared/js-migrate/patientPidMatch.mjs";
 import { APPOINTMENT_MIGRATE_PLACEHOLDER_LOGIC_ENABLED } from "../../shared/js-migrate/placeholderMigrateFlags.mjs";
 
 function getField(row, key) {
@@ -410,27 +416,36 @@ async function resolvePatientIdByPidMap(pgClient, rows) {
   );
   if (pids.length === 0) return new Map();
 
+  await ensurePatientInfoPidCiIndexes(pgClient);
   const res = await pgClient.query(
     `
     SELECT
-      id,
-      NULLIF(btrim(pid::text), '') AS pid_text,
-      NULLIF(btrim(old_db_id::text), '') AS old_db_id_text
-    FROM public.patient_info
-    WHERE pid::text = ANY($1::text[])
-       OR old_db_id::text = ANY($1::text[])
+      pi.id,
+      lower(NULLIF(btrim(pi.pid::text), '')) AS pid_key,
+      lower(NULLIF(btrim(pi.old_db_id::text), '')) AS old_db_id_key
+    FROM public.patient_info pi
+    WHERE ${patientPidInArraySql("pi", "$1")}
+    ORDER BY CASE WHEN ${patientIsPlaceholderSql("pi")} THEN 1 ELSE 0 END, pi.id
     `,
-    [pids],
+    [[...new Set(pids.map((p) => pidMatchKey(p)))]],
   );
 
-  const map = new Map();
+  // ไม่สนตัวพิมพ์ (m1175 = M1175) — แถวจริงมาก่อน placeholder, pid มาก่อน old_db_id
+  const byPid = new Map();
+  const byOldDbId = new Map();
   for (const row of res.rows) {
-    if (row.pid_text != null && !map.has(row.pid_text)) {
-      map.set(row.pid_text, row.id);
+    if (row.pid_key != null && !byPid.has(row.pid_key)) {
+      byPid.set(row.pid_key, row.id);
     }
-    if (row.old_db_id_text != null && !map.has(row.old_db_id_text)) {
-      map.set(row.old_db_id_text, row.id);
+    if (row.old_db_id_key != null && !byOldDbId.has(row.old_db_id_key)) {
+      byOldDbId.set(row.old_db_id_key, row.id);
     }
+  }
+  const map = new Map();
+  for (const pid of pids) {
+    const k = pidMatchKey(pid);
+    const id = byPid.get(k) ?? byOldDbId.get(k);
+    if (id != null) map.set(pid, id);
   }
   return map;
 }
@@ -906,13 +921,12 @@ export async function runAppointmentChunkPostLoad(
       insertPayloads.push(p);
       continue;
     }
-    if (insertOnly) {
-      if (
-        APPOINTMENT_MIGRATE_PLACEHOLDER_LOGIC_ENABLED &&
-        existing.isPlaceholder
-      ) {
-        insertPayloads.push(p);
-      }
+    // insert-only: ข้ามแถวจริงเดิม; ถ้ามีแค่ placeholder → UPDATE placeholder นั้น (ไม่สร้างแถวซ้ำ
+    // examination ที่ผูก placeholder ไว้จะได้นัดจริงด้วย)
+    if (
+      insertOnly &&
+      !(APPOINTMENT_MIGRATE_PLACEHOLDER_LOGIC_ENABLED && existing.isPlaceholder)
+    ) {
       continue;
     }
     updatePayloads.push(p);
@@ -927,7 +941,8 @@ export async function runAppointmentChunkPostLoad(
     const insertDefs = buildAppointmentInsertDefs(insertArrays, patientColumn);
     rowsInserted += await bulkInsertAppointments(pgClient, insertDefs);
   }
-  if (updatePayloads.length > 0 && !insertOnly) {
+  // insert-only: updatePayloads มีแต่ placeholder ที่จะ UPDATE เป็นนัดจริง
+  if (updatePayloads.length > 0) {
     const updateArrays = buildAppointmentColumnArrays(
       updatePayloads,
       patientColumn,

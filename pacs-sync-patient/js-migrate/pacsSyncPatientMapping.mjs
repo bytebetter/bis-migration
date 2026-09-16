@@ -10,6 +10,10 @@
  */
 
 import { createChunkFieldIssueCollector } from "../../shared/js-migrate/stagingFieldIssues.mjs";
+import {
+  patientPidMatchSql,
+  patientPidPreferenceOrderSql,
+} from "../../shared/js-migrate/patientPidMatch.mjs";
 import { PACS_SYNC_PATIENT_STAGING_COLUMNS } from "./pacsSyncPatientPgDdl.mjs";
 
 const STAGING_TABLE = "migrate_stg.pacs_sync_patient_mssql";
@@ -158,8 +162,7 @@ async function collectPatientNotResolvedIssues(pgClient) {
     WHERE NULLIF(btrim(s.old_pid), '') IS NOT NULL
       AND NOT EXISTS (
         SELECT 1 FROM public.patient_info pi
-        WHERE pi.pid::text = NULLIF(btrim(s.old_pid), '')
-           OR pi.old_db_id::text = NULLIF(btrim(s.old_pid), '')
+        WHERE ${patientPidMatchSql("pi", "NULLIF(btrim(s.old_pid), '')")}
       )
     `,
   );
@@ -243,14 +246,8 @@ LEFT JOIN LATERAL (
   SELECT pi.id
   FROM public.patient_info pi
   WHERE NULLIF(btrim(s.old_pid), '') IS NOT NULL
-    AND (
-      pi.pid::text = NULLIF(btrim(s.old_pid), '')
-      OR pi.old_db_id::text = NULLIF(btrim(s.old_pid), '')
-    )
-  ORDER BY CASE
-    WHEN pi.pid::text = NULLIF(btrim(s.old_pid), '') THEN 0
-    ELSE 1
-  END
+    AND ${patientPidMatchSql("pi", "NULLIF(btrim(s.old_pid), '')")}
+  ORDER BY ${patientPidPreferenceOrderSql("pi", "NULLIF(btrim(s.old_pid), '')")}
   LIMIT 1
 ) pat ON TRUE
 `.trim(),

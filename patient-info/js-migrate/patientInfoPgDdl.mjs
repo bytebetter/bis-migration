@@ -1,3 +1,5 @@
+import { ensurePatientInfoPidCiIndexes } from "../../shared/js-migrate/patientPidMatch.mjs";
+
 const NORM_PID_FN = `
 CREATE OR REPLACE FUNCTION migrate_stg.norm_pid(t text)
 RETURNS text
@@ -48,6 +50,7 @@ CREATE TABLE migrate_stg.patient_info_mssql (
 export async function ensurePatientInfoStagingDdl(pgClient) {
   await pgClient.query("CREATE SCHEMA IF NOT EXISTS migrate_stg;");
   await pgClient.query(NORM_PID_FN);
+  await ensurePatientInfoPidCiIndexes(pgClient);
   await pgClient.query("DROP TABLE IF EXISTS migrate_stg.patient_info_mssql;");
   await pgClient.query(CREATE_PATIENT_INFO_STAGING_TABLE);
   await pgClient.query(

@@ -1,3 +1,5 @@
+import { ensurePatientInfoPidCiIndexes } from "../../shared/js-migrate/patientPidMatch.mjs";
+
 export async function ensureBillingPipelineDdl(pgClient) {
   const CREATE_BILLING_STAGING_TABLE = `
 CREATE TABLE migrate_stg.billing_mssql (
@@ -128,4 +130,6 @@ BEGIN
   END IF;
 END $$;
 `.trim());
+  // lookup patient แบบไม่สนตัวพิมพ์ (billingMapping)
+  await ensurePatientInfoPidCiIndexes(pgClient);
 }

@@ -26,6 +26,7 @@ import {
   ensureExaminationOldExamIdIndex,
   ensureExaminationStagingDdl,
 } from "./examinationPgDdl.mjs";
+import { patientPidMatchSql } from "../../shared/js-migrate/patientPidMatch.mjs";
 import {
   buildFieldIssueLogPayload,
   createFieldIssueAccumulator,
@@ -1520,7 +1521,7 @@ FROM (
       WHEN migrate_stg.norm_pid(s.pid) = '' THEN 'empty_pid'
       WHEN NOT EXISTS (
         SELECT 1 FROM public.patient_info p
-        WHERE migrate_stg.norm_pid(p.pid::text) = migrate_stg.norm_pid(s.pid)
+        WHERE ${patientPidMatchSql("p", "NULLIF(migrate_stg.norm_pid(s.pid), '')", { includeOldDbId: false })}
       ) THEN 'patient_not_found'
       ELSE 'unknown'
     END AS reason

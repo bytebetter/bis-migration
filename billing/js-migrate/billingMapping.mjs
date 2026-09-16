@@ -1,3 +1,8 @@
+import {
+  patientPidMatchSql,
+  patientPidPreferenceOrderSql,
+} from "../../shared/js-migrate/patientPidMatch.mjs";
+
 const INT_RE = /^-?\d+$/;
 const STAGING = "migrate_stg.billing_mssql";
 
@@ -432,8 +437,8 @@ LEFT JOIN LATERAL (
 LEFT JOIN LATERAL (
   SELECT p.id
   FROM public.patient_info p
-  WHERE p.pid::text = NULLIF(btrim(s.pid), '')
-  ORDER BY p.id
+  WHERE ${patientPidMatchSql("p", "NULLIF(btrim(s.pid), '')", { includeOldDbId: false })}
+  ORDER BY ${patientPidPreferenceOrderSql("p", "NULLIF(btrim(s.pid), '')")}
   LIMIT 1
 ) p ON TRUE
 ${keepExistingId ? "LEFT JOIN billing_keep_id id_keep\n  ON id_keep.old_exam_id = NULLIF(btrim(s.exam_id), '')" : ""}

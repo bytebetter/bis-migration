@@ -5,6 +5,8 @@
  * ของพวกนี้ไม่อยู่ใน dump ของ Directus จึงหายทุกครั้งที่ restore baseline
  */
 
+import { ensurePatientInfoPidCiIndexes } from "../../shared/js-migrate/patientPidMatch.mjs";
+
 /** คอลัมน์ staging = ชื่อคอลัมน์ปลายทางตรงตัว (ดู alias ใน mssqlPacsSyncPatientSelect.mjs) */
 export const PACS_SYNC_PATIENT_STAGING_COLUMNS = [
   "update_time",
@@ -72,6 +74,8 @@ BEGIN
 END $$;
 `.trim(),
   );
+  // lookup patient แบบไม่สนตัวพิมพ์ (pacsSyncPatientMapping)
+  await ensurePatientInfoPidCiIndexes(pgClient);
 }
 
 /** index ปลายทางสำหรับงานตามหลัง (ค้น log ของคนไข้) — สร้างหลัง migrate จบ */
