@@ -428,7 +428,7 @@ async function main() {
         migrationConfig: migration,
         indexLimited: idx.indexLimited,
       });
-      const plannedRows = prepareMigrateRowPlan({
+      let plannedRows = prepareMigrateRowPlan({
         migrationConfig: migration,
         sourceRowCountTotal,
         offset,
@@ -676,7 +676,7 @@ async function main() {
         }
         if (progressEnabled) {
           renderProgress(
-            offset,
+            rowsDoneInMigrateRun(offset, runStartOffset),
             progressTotal,
             startedAt,
             chunkIndex,

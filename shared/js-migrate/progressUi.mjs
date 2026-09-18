@@ -42,11 +42,16 @@ function formatProgressLine(
   return `[${bar}] ${pct}%  rows ${current}/${total}${eta}  elapsed ${elapsedSec}s  chunk ${chunkLabel}`;
 }
 
+/** ความกว้างสูงสุดของบรรทัด progress — ไม่เกินความกว้างจอ (ล้นจอ = ขึ้นบรรทัดใหม่ทุกครั้งที่อัปเดต) */
+function progressLineWidth() {
+  const cols = process.stdout.isTTY ? Number(process.stdout.columns) : 0;
+  return cols > 1 ? Math.min(cols - 1, PROGRESS_LINE_WIDTH) : PROGRESS_LINE_WIDTH;
+}
+
 function writeProgressLine(line, state) {
-  const clipped =
-    line.length > PROGRESS_LINE_WIDTH
-      ? line.slice(0, PROGRESS_LINE_WIDTH)
-      : line.padEnd(PROGRESS_LINE_WIDTH, " ");
+  // ไม่เติมช่องว่าง: \x1b[2K ล้างบรรทัดเดิมให้แล้ว
+  const width = progressLineWidth();
+  const clipped = line.length > width ? line.slice(0, width) : line;
   if (state?.progressInline) {
     process.stdout.write(`\x1b[2K\r${clipped}`);
   } else {

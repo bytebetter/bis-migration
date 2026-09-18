@@ -1520,8 +1520,8 @@ async function main() {
           if (progressEnabled) {
             renderProgress(
               progressTotal != null
-                ? Math.min(rowsProcessed, progressTotal)
-                : rowsProcessed,
+                ? Math.min(rowsDoneInMigrateRun(offset, runStartOffset), progressTotal)
+                : rowsDoneInMigrateRun(offset, runStartOffset),
               progressTotal,
               startedAt,
               chunkIndex,
@@ -1756,8 +1756,8 @@ async function main() {
           if (progressEnabled) {
             renderProgress(
               progressTotal != null
-                ? Math.min(rowsProcessed, progressTotal)
-                : rowsProcessed,
+                ? Math.min(rowsDoneInMigrateRun(offset, runStartOffset), progressTotal)
+                : rowsDoneInMigrateRun(offset, runStartOffset),
               progressTotal,
               startedAt,
               chunkIndex,

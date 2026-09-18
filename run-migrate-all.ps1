@@ -16,6 +16,9 @@
     ก่อนเริ่มจะตรวจ checkpoint กับตารางปลายทาง (scripts/check-resume-checkpoints.mjs):
     ปลายทางว่างแต่มี checkpoint → ย้าย checkpoint ออก (ตารางนั้นเริ่มใหม่) /
     ปลายทางมีข้อมูลแต่ไม่มี checkpoint → หยุดทั้งรอบ
+    หลังแต่ละตาราง migrate เสร็จ มีขั้น "เก็บตก" (scripts/catch-up-missing-rows.mjs):
+    เทียบ key ต้นทาง ณ snapshot กับ Postgres แล้ว migrate เฉพาะแถวที่ขาด (เช่น CreatedDate ว่าง
+    ที่อยู่ก่อน checkpoint) แบบ insert-only — ล้มเหลวแค่ log FAIL ไม่หยุดรอบ; ปิดด้วย -NoCatchUp
   -MigrateRunMode overwrite = migrate ทั้งชุดจากต้น, เขียนทับข้อมูลเดิม
   -MigrateRunMode repair-from-log = เฉพาะ id ที่มีปัญหา จาก log ล่าสุดใน <ตาราง>/js-migrate/logs
   -SkipInstall = ข้ามการตรวจและรัน npm ที่ root (ต้องมี `node_modules/mssql` และ `pg` ที่ root เองแล้ว)
@@ -33,7 +36,8 @@ param(
   [string] $SourceIndexRange = "",
   [string] $SourceIndexFrom = "",
   [string] $SourceIndexTo = "",
-  [switch] $NoSnapshotCounts
+  [switch] $NoSnapshotCounts,
+  [switch] $NoCatchUp
 )
 
 $ErrorActionPreference = "Stop"
@@ -108,6 +112,44 @@ function Get-SourceCount {
   }
   return $count
 }
+
+# เก็บ key ต้นทาง ณ snapshot ของตารางหนึ่งลงไฟล์ (ใช้ตอนเก็บตกหลังตารางนั้น migrate เสร็จ)
+# คืนจำนวน key หรือ $null เมื่ออ่านไม่สำเร็จ (ไฟล์ถูกลบ → ตารางนั้นไม่เก็บตกรอบนี้)
+function Save-CatchUpKeys {
+  param(
+    [string] $Config,
+    [string] $ProfileName,
+    [string] $RepoRoot,
+    [string] $KeysFile
+  )
+  $script = Join-Path $RepoRoot "scripts/catch-up-missing-rows.mjs"
+  if (Test-Path -LiteralPath $KeysFile) { Remove-Item -LiteralPath $KeysFile -Force }
+  $prevEap = $ErrorActionPreference
+  $count = $null
+  try {
+    $ErrorActionPreference = 'Continue'
+    $lines = & node $script --config $Config --profile $ProfileName --snapshot-keys $KeysFile 2>&1
+    foreach ($line in $lines) {
+      $m = [regex]::Match([string]$line, '##CATCHUP_KEYS##\s+(\d+)')
+      if ($m.Success) { $count = [int64] $m.Groups[1].Value }
+    }
+  }
+  finally {
+    $ErrorActionPreference = $prevEap
+  }
+  if ($null -eq $count -and (Test-Path -LiteralPath $KeysFile)) {
+    Remove-Item -LiteralPath $KeysFile -Force
+  }
+  return $count
+}
+
+# ตารางที่เรียงตาม CreatedDate / Exam_ID แล้วมีแถวไปตกก่อน checkpoint ได้ (ดู scripts/catchUpMissingRows.mjs)
+$catchUpProfiles = @(
+  "patient_info", "examination", "billing", "examination_general", "pacs_sync_info", "procedure",
+  "ultrasound", "mam", "mam_cal", "mam_mass", "ultrasound_cyst", "ultrasound_mass"
+)
+$catchUpDir = Join-Path $logDir "catch-up"
+$catchUpScript = Join-Path $PSScriptRoot "scripts/catch-up-missing-rows.mjs"
 
 $steps = @(
   @{ N = 1;  Table = "patient_info";        Profile = "patient_info";        Script = "patient-info/js-migrate/run-migrate.ps1" },
@@ -228,6 +270,14 @@ elseif ($NoSnapshotCounts) {
   Write-MigrateLog "Snapshot counts: skipped (-NoSnapshotCounts)"
 }
 
+# เก็บตกใช้ key ที่เก็บพร้อม snapshot count — resume เท่านั้น (overwrite อ่านทั้งตารางอยู่แล้ว)
+$doCatchUp = $doSnapshot -and ($effectiveRunMode -eq "resume") -and (-not $NoCatchUp)
+$catchUpKeys = @{}
+$catchUpFailed = @()
+if ($effectiveRunMode -eq "resume" -and -not $doCatchUp) {
+  Write-MigrateLog "Catch-up (เก็บตก): skipped"
+}
+
 if ($doSnapshot) {
   Set-MigrateStatus ('RUNNING ; snapshot counts ; 0/{0}' -f $total)
   # นับย้อนลำดับ (ตารางลูก → แม่ → patient_info): ต้นทางที่ยังมีคนใช้งาน แถวลูกที่อยู่ใน cap
@@ -245,6 +295,18 @@ if ($doSnapshot) {
     }
     else {
       Write-MigrateLog ('snapshot count : {0} (n/a)' -f $step.Table) -Level SKIP
+    }
+    # key ต้นทางชุดเดียวกับ count (นับย้อนลำดับเหมือนกัน → ลูกที่อยู่ในไฟล์ มีแม่อยู่ในไฟล์ของแม่)
+    if ($doCatchUp -and $null -ne $c -and ($catchUpProfiles -contains $step.Profile)) {
+      $keysFile = Join-Path $catchUpDir ("{0}.keys.tsv" -f $step.Profile)
+      $k = Save-CatchUpKeys -Config $ConfigPath -ProfileName $step.Profile -RepoRoot $repoRoot -KeysFile $keysFile
+      if ($null -ne $k) {
+        $catchUpKeys[$step.Profile] = $keysFile
+        Write-MigrateLog ('snapshot keys  : {0} {1} (เก็บตก)' -f $step.Table, $k)
+      }
+      else {
+        Write-MigrateLog ('snapshot keys  : {0} อ่านไม่สำเร็จ — ตารางนี้ไม่เก็บตกรอบนี้' -f $step.Table) -Level SKIP
+      }
     }
   }
   $snapshotPath = Join-Path $logDir ("source-count-snapshot-{0}.json" -f (Get-Date -Format "yyyyMMdd-HHmmss"))
@@ -320,8 +382,52 @@ foreach ($step in $steps) {
     Set-MigrateStatus ('FAILED ; {0} ; {1}/{2}' -f $label, $step.N, $total)
     throw "Migration failed at step $($step.N): $($step.Table). See log: $LogPath"
   }
+
+  # เก็บตก: แถวที่อยู่ใน snapshot แต่ Postgres ยังไม่มี (ตกอยู่ก่อน checkpoint) — ล้มเหลวไม่หยุดรอบ
+  if ($catchUpKeys.ContainsKey($step.Profile)) {
+    Set-Location -LiteralPath $repoRoot
+    Set-MigrateStatus ('RUNNING ; {0} catch-up ; {1}/{2}' -f $label, $step.N, $total)
+    $resultFile = Join-Path $catchUpDir ("{0}.result.json" -f $step.Profile)
+    if (Test-Path -LiteralPath $resultFile) { Remove-Item -LiteralPath $resultFile -Force }
+    $prevEap = $ErrorActionPreference
+    try {
+      $ErrorActionPreference = 'Continue'
+      # เรียกตรงๆ ไม่ pipe / ไม่เก็บค่า — ลูกเขียนลงจอเอง แถบ progress จึงอัปเดตในบรรทัดเดียวได้
+      & node $catchUpScript --config $ConfigPath --profile $step.Profile --keys $catchUpKeys[$step.Profile] --result $resultFile
+      $cuExit = $LASTEXITCODE
+    }
+    finally {
+      $ErrorActionPreference = $prevEap
+    }
+    $r = $null
+    if (Test-Path -LiteralPath $resultFile) {
+      try { $r = Get-Content -LiteralPath $resultFile -Raw -Encoding UTF8 | ConvertFrom-Json }
+      catch { $r = $null }
+    }
+    if ($cuExit -eq 0 -and $null -ne $r -and $r.ok) {
+      $msg = if ([int64]$r.missingRows -eq 0) { 'ไม่มีแถวที่ขาด' } else {
+        'ขาด {0} แถว → เติม {1}/{2} id' -f $r.missingRows, ([int64]$r.attempted - [int64]$r.remaining), $r.attempted
+      }
+      if ([int64]$r.partial -gt 0) { $msg += (' ; ข้าม {0} id ที่ Postgres มีบางแถวแล้ว (ไม่เขียนทับ)' -f $r.partial) }
+      if ([int64]$r.unsendable -gt 0) { $msg += (' ; ข้าม {0} id ที่ส่งผ่าน --source-ids ไม่ได้' -f $r.unsendable) }
+      if ([int64]$r.deferred -gt 0) { $msg += (' ; รอรอบหน้า {0} id' -f $r.deferred) }
+      if ([int64]$r.remaining -gt 0) { $msg += (' ; ยังขาด {0} id (ดู field issue log ของตาราง)' -f $r.remaining) }
+      Write-MigrateLog ('{0} - เก็บตก: {1}' -f $label, $msg)
+    }
+    else {
+      $why = if ($null -ne $r -and $r.error) { $r.error } else { "exit code $cuExit" }
+      Write-MigrateLog ('{0} - เก็บตก FAILED ({1}) — ข้ามไป ไม่หยุดรอบนี้' -f $label, $why) -Level FAIL
+      $catchUpFailed += $step.Table
+    }
+    Set-MigrateStatus ('DONE step ; {0} ; {1}/{2}' -f $label, $step.N, $total)
+  }
 }
 
 $elapsed = (Get-Date) - $started
+if ($catchUpFailed.Count -gt 0) {
+  Write-MigrateLog ('เก็บตกล้มเหลว: {0} — migrate ปกติสำเร็จ แต่ตารางเหล่านี้อาจยังขาดแถวที่ตกอยู่ก่อน checkpoint' -f ($catchUpFailed -join ', ')) -Level FAIL
+}
 Write-MigrateLog "=== All migrations completed in $($elapsed.ToString('hh\:mm\:ss')) ===" -Level OK
-Set-MigrateStatus ('ALL DONE ; {0}/{0} tables ; {1}' -f $total, $elapsed.ToString('hh\:mm\:ss'))
+$doneStatus = 'ALL DONE ; {0}/{0} tables ; {1}' -f $total, $elapsed.ToString('hh\:mm\:ss')
+if ($catchUpFailed.Count -gt 0) { $doneStatus += (' ; catch-up FAILED: {0}' -f ($catchUpFailed -join ',')) }
+Set-MigrateStatus $doneStatus

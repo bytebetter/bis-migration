@@ -328,6 +328,13 @@ function toArray(value) {
   return Array.isArray(value) ? value : [value];
 }
 
+/** ค่าน้อยสุดของจำนวนที่รู้ค่า (null = ไม่รู้) */
+function minKnownCount(a, b) {
+  if (a == null) return b;
+  if (b == null) return a;
+  return Math.min(a, b);
+}
+
 function buildTableJobs(config) {
   if (Array.isArray(config.tables) && config.tables.length > 0)
     return config.tables;
@@ -1137,7 +1144,12 @@ async function runTableJob({
     progressTotalFull > 0
       ? Math.ceil(progressTotalFull / batchSize)
       : plannedChunksInitial;
-  const progressDisplayTotal = progressTotalFull ?? plannedRows;
+  // ต่อจาก checkpoint ที่จบแล้ว (daily resume): แถบนับเฉพาะแถวที่ต้องอ่านรอบนี้ (เช่น 57/67) ไม่ใช่ทั้งตาราง
+  const rowsLeftThisRun =
+    progressTotalFull != null ? Math.max(0, progressTotalFull - offset) : null;
+  const progressDisplayTotal = incompleteCheckpointResume
+    ? (progressTotalFull ?? plannedRows)
+    : minKnownCount(plannedRows, rowsLeftThisRun) ?? progressTotalFull;
   const progressRowBase = incompleteCheckpointResume ? offset : 0;
   if (debugLogs && plannedRows != null && plannedChunks != null) {
     writeOutLine(

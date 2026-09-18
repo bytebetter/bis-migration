@@ -550,7 +550,7 @@ async function runAppointmentReschedulesTableJob({
       indexLimited: idx.indexLimited,
     });
   }
-  const plannedRows = prepareMigrateRowPlan({
+  let plannedRows = prepareMigrateRowPlan({
         migrationConfig: migrationConfig,
         sourceRowCountTotal,
         offset,

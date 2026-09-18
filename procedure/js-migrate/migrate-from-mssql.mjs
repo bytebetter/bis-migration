@@ -440,7 +440,7 @@ async function runProcedureTableJob({
   const repairNotFoundInSource =
     repairSourceIds != null ? new Set() : null;
   if (repairSourceIds != null && repairSourceIds.length === 0) {
-    writeOutLine(`>>> [${key}] repair-from-log: ไม่มี id ให้ migrate`, uiState);
+    console.error(`>>> [${key}] repair-from-log: ไม่มี id ให้ migrate`);
     return {
       key,
       totalRowsRead: 0,
@@ -452,21 +452,6 @@ async function runProcedureTableJob({
       chunkResults: [],
     };
   }
-  if (repairSourceIds != null) {
-    const idPlan = plannedProgressForSourceIds(repairSourceIds, batchSize);
-    if (idPlan) {
-      plannedRows = idPlan.plannedRows;
-      plannedChunks = idPlan.plannedChunks;
-      progressTotal = idPlan.plannedRows;
-    }
-    logByIdMigrationRun(
-      key,
-      repairSourceIds.length,
-      "old_db_id",
-      migrationConfig,
-    );
-  }
-
   const chunkLogMode = String(
     migrationConfig.chunkLogMode ?? "full",
   ).toLowerCase();
@@ -537,7 +522,7 @@ async function runProcedureTableJob({
       });
     }
   }
-  const plannedRows = prepareMigrateRowPlan({
+  let plannedRows = prepareMigrateRowPlan({
         migrationConfig: migrationConfig,
         sourceRowCountTotal,
         offset,
@@ -550,6 +535,20 @@ async function runProcedureTableJob({
     plannedRows != null && plannedRows > 0
       ? Math.ceil(plannedRows / batchSize)
       : null;
+  if (repairSourceIds != null) {
+    const idPlan = plannedProgressForSourceIds(repairSourceIds, batchSize);
+    if (idPlan) {
+      plannedRows = idPlan.plannedRows;
+      plannedChunks = idPlan.plannedChunks;
+      progressTotal = idPlan.plannedRows;
+    }
+    logByIdMigrationRun(
+      key,
+      repairSourceIds.length,
+      "old_db_id",
+      migrationConfig,
+    );
+  }
   if (sourceLimit != null) {
     writeOutLine(
       `>>> [${key}] TEMP sourceLimit enabled: ${sourceLimit} records`,

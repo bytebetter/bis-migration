@@ -399,7 +399,7 @@ async function main() {
         migrationConfig: migration,
         indexLimited: idx.indexLimited,
       });
-      const plannedRows = prepareMigrateRowPlan({
+      let plannedRows = prepareMigrateRowPlan({
         migrationConfig: migration,
         sourceRowCountTotal,
         offset,
