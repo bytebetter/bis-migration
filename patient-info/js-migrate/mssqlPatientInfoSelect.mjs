@@ -1,9 +1,11 @@
 import sql from "mssql";
+import { mssqlCreatedDateSortTextExpr } from "../../shared/js-migrate/mssqlCreatedDateSort.mjs";
 
 /**
  * คิวรีอ่าน dbo.patient_info จาก MSSQL แบ่งหน้า
  *
  * มี CreatedDate: NULL ก่อน (ข้อมูลเก่า) แล้วตามวันที่สร้างจากเก่า→ใหม่ + PID tiebreaker
+ * (เรียงด้วย sort key ข้อความ — ตัวเดียวกับที่ใช้เทียบ keyset)
  * ไม่มี CreatedDate: เรียง PID (ตัวเลขก่อน) แบบเดิม
  */
 
@@ -86,20 +88,32 @@ function buildSortExprs(createdDateColumn) {
   THEN CONCAT(N'0', ${MSSQL_PID_SORT_KEY_EXPR})
   ELSE CONCAT(
     N'1',
+    ${mssqlCreatedDateSortTextExpr(cd)},
+    N'_',
+    ${MSSQL_PID_SORT_KEY_EXPR}
+  )
+END`;
+  // v3: ORDER BY ด้วย sort key ตัวเดียวกับ WHERE > @afterSortKey + วันที่มี ms ครบ
+  // (v2 เรียงตามคอลัมน์ แต่เทียบเป็นข้อความที่ตัด .000 → ข้ามแถวในวินาทีเดียวกันได้)
+  const orderBy = `${sortKeyExpr} ASC`;
+  // sort key v2 — ใช้แปลงที่คั่นหน้าของ checkpoint รุ่นเก่าเท่านั้น
+  const legacySortKeyExprV2 = `CASE WHEN ${cd} IS NULL
+  THEN CONCAT(N'0', ${MSSQL_PID_SORT_KEY_EXPR})
+  ELSE CONCAT(
+    N'1',
     CONVERT(VARCHAR(23), ${cd}, 126),
     N'_',
     ${MSSQL_PID_SORT_KEY_EXPR}
   )
 END`;
-  const orderBy = `CASE WHEN ${cd} IS NULL THEN 0 ELSE 1 END ASC, ${cd} ASC, ${MSSQL_PID_SORT_KEY_EXPR} ASC`;
-  const fastOrderBy = `${cd} ASC, [PID] ASC`;
 
   return {
-    sortKeyVersion: 2,
+    sortKeyVersion: 3,
     createdDateColumn: String(createdDateColumn).trim(),
     sortKeyExpr,
+    legacySortKeyExprV2,
     orderBy,
-    fastOrderBy,
+    fastOrderBy: orderBy,
   };
 }
 
@@ -118,25 +132,34 @@ ORDER BY {{orderBy}}
 OFFSET @offset ROWS FETCH NEXT @page ROWS ONLY;
 `.trim();
 
-  const keysetSelect = `
+  // *Floor: ที่คั่นหน้ามีวันที่แล้ว → เพิ่ม [CreatedDate] >= @afterCdFloor (ใช้ index อ่านเฉพาะแถวท้ายตาราง
+  // ไม่ต้องคำนวณ sort key ของทั้งตารางทุกหน้า)
+  const floorPred = sort.createdDateColumn
+    ? `\n  AND ${bracketMssqlIdent(sort.createdDateColumn)} >= @afterCdFloor`
+    : "";
+  const keysetSelectOf = (floor) => `
 SELECT TOP (@page)
   ${MSSQL_PATIENT_INFO_DETAIL_COLUMNS},
   ${sort.sortKeyExpr} AS __mssql_sort_key
 FROM {{sourceObject}}
-WHERE ${sort.sortKeyExpr} > @afterSortKey
+WHERE ${sort.sortKeyExpr} > @afterSortKey${floor}
   AND ${MSSQL_PATIENT_INFO_SRC_WHERE}
 ORDER BY ${sort.orderBy};
 `.trim();
+  const keysetSelect = keysetSelectOf("");
+  const keysetSelectFloor = keysetSelectOf(floorPred);
 
-  const idProbeSelect = `
+  const idProbeSelectOf = (floor) => `
 SELECT TOP (@page)
   CAST([PID] AS NVARCHAR(MAX)) AS pid,
   ${sort.sortKeyExpr} AS __mssql_sort_key
 FROM {{sourceObject}}
-WHERE ${sort.sortKeyExpr} > @afterSortKey
+WHERE ${sort.sortKeyExpr} > @afterSortKey${floor}
   AND ${MSSQL_PATIENT_INFO_SRC_WHERE}
 ORDER BY ${sort.orderBy};
 `.trim();
+  const idProbeSelect = idProbeSelectOf("");
+  const idProbeSelectFloor = idProbeSelectOf(floorPred);
 
   const fingerprintCountSql = `
 SELECT COUNT_BIG(1) AS total_n
@@ -164,7 +187,9 @@ ORDER BY ${sort.orderBy}
     ...sort,
     offsetSelect,
     keysetSelect,
+    keysetSelectFloor,
     idProbeSelect,
+    idProbeSelectFloor,
     fingerprintCountSql,
     fingerprintSql,
     byPidsSelect,

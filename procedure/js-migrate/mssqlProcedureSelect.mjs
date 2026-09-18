@@ -3,9 +3,27 @@ import {
   mssqlExamIdWithIntColumnOrderBy,
   mssqlExamIdWithIntColumnSortKeyExpr,
 } from "../../shared/js-migrate/mssqlCreatedDateSort.mjs";
+import {
+  createdDateSelectExpr,
+  examChildCreatedDateOrderBy,
+  examChildCreatedDateWhereClause,
+  examChildLegacyOrderBy,
+  examChildLegacyWhereClause,
+} from "../../shared/js-migrate/mssqlCreatedDateCompositeKeyset.mjs";
+import { normProcedureDbId } from "./procedureMapping.mjs";
 
 const PROCEDURE_TIEBREAKER_ORDER_BY =
   "CONVERT(BIGINT, [Exam_ID]) ASC, CONVERT(INT, [BiopsyID]) ASC";
+
+/** keyset ใช้ expression เดียวกับ ORDER BY เดิม (ทั้ง WHERE และ ORDER BY) */
+export const PROCEDURE_CHILD_COLUMN = "BiopsyID";
+export const PROCEDURE_KEY_EXPRS = Object.freeze({
+  examIdExpr: "CONVERT(BIGINT, [Exam_ID])",
+  childExpr: "CONVERT(INT, [BiopsyID])",
+});
+
+const PROCEDURE_KEY_RANGE_WHERE = `(@migrateSrcKeyMin IS NULL OR TRY_CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
+  AND (@migrateSrcKeyMax IS NULL OR TRY_CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)`;
 
 /** @param {string | null | undefined} createdDateColumn */
 export function createMssqlProcedureSelectBundle(createdDateColumn) {
@@ -20,11 +38,7 @@ export function createMssqlProcedureSelectBundle(createdDateColumn) {
 export const defaultMssqlProcedureSelectBundle =
   createMssqlProcedureSelectBundle("CreatedDate");
 
-/**
- * คิวรีอ่าน dbo.biopsy จาก MSSQL แบbgแบ่งหน้า
- */
-export const MSSQL_PROCEDURE_SELECT = `
-SELECT
+const PROCEDURE_SELECT_COLUMNS = `
   CAST(CAST([Exam_ID] AS NVARCHAR(50)) AS NVARCHAR(MAX)) AS exam_id,
   CAST(CAST([BiopsyID] AS NVARCHAR(50)) AS NVARCHAR(MAX)) AS biopsy_id,
   CONVERT(VARCHAR(30), [Exam_date], 126) AS exam_date,
@@ -97,12 +111,98 @@ SELECT
   CAST([Location_Left_Other] AS NVARCHAR(MAX)) AS location_left_other,
   CAST([Location_Right_Other] AS NVARCHAR(MAX)) AS location_right_other,
   CAST(CAST([last_exam_id] AS NVARCHAR(50)) AS NVARCHAR(MAX)) AS last_exam_id
+`.trim();
+
+/**
+ * คิวรีอ่าน dbo.biopsy จาก MSSQL แบ่งหน้าด้วย OFFSET — ใช้เฉพาะ --source-index-range ที่เริ่มกลางตาราง
+ */
+export const MSSQL_PROCEDURE_SELECT = `
+SELECT
+  ${PROCEDURE_SELECT_COLUMNS}
 FROM {{sourceObject}}
-WHERE (@migrateSrcKeyMin IS NULL OR TRY_CAST([Exam_ID] AS BIGINT) >= @migrateSrcKeyMin)
-  AND (@migrateSrcKeyMax IS NULL OR TRY_CAST([Exam_ID] AS BIGINT) <= @migrateSrcKeyMax)
+WHERE ${PROCEDURE_KEY_RANGE_WHERE}
 ORDER BY {{orderBy}}
 OFFSET @offset ROWS FETCH NEXT @page ROWS ONLY;
 `.trim();
+
+/**
+ * keyset (CreatedDate NULL ก่อน → CreatedDate → Exam_ID → BiopsyID) — ใช้กับ queryExamChildKeysetPage
+ * @param {{ createdDateColumn?: string | null }} sortBundle
+ */
+export function buildMssqlProcedureKeysetSql(sortBundle) {
+  const cd = sortBundle?.createdDateColumn
+    ? String(sortBundle.createdDateColumn).trim()
+    : null;
+  const where = cd
+    ? examChildCreatedDateWhereClause(cd, PROCEDURE_CHILD_COLUMN, PROCEDURE_KEY_EXPRS)
+    : examChildLegacyWhereClause(PROCEDURE_CHILD_COLUMN, PROCEDURE_KEY_EXPRS);
+  const orderBy = cd
+    ? examChildCreatedDateOrderBy(cd, PROCEDURE_CHILD_COLUMN, PROCEDURE_KEY_EXPRS)
+    : examChildLegacyOrderBy(PROCEDURE_CHILD_COLUMN, PROCEDURE_KEY_EXPRS);
+  return `
+SELECT TOP (@page)
+  ${PROCEDURE_SELECT_COLUMNS}${cd ? `,\n  ${createdDateSelectExpr(cd)}` : ""}
+FROM {{sourceObject}}
+WHERE ${where}
+  AND ${PROCEDURE_KEY_RANGE_WHERE}
+ORDER BY ${orderBy};
+`.trim();
+}
+
+/**
+ * checkpoint รุ่น OFFSET → keyset (ครั้งเดียว)
+ * รอบก่อนอ่านต้นทางตามลำดับ → แถวที่มีใน Postgres เป็นช่วงต้นของลำดับ keyset
+ * ที่คั่นหน้า = แถวสุดท้าย (ตามลำดับ) ที่ old_db_id มีใน Postgres; แถวก่อนหน้านั้นที่ Postgres ไม่มีคืนเป็น gapIds
+ * @param {{ mssqlPool: import("mssql").ConnectionPool, pgClient: import("pg").ClientBase, keyWalkSql: string }} p
+ * @returns {Promise<{ lastRow: object | null, position: number, gapIds: string[] }>}
+ */
+export async function convertProcedureOffsetCheckpoint({
+  mssqlPool,
+  pgClient,
+  keyWalkSql,
+}) {
+  const { rows: pgRows } = await pgClient.query(
+    `SELECT btrim(old_db_id::text) AS k FROM public."procedure" WHERE old_db_id IS NOT NULL`,
+  );
+  const present = new Set(pgRows.map((r) => r.k));
+  const res = await mssqlPool.request().query(keyWalkSql);
+  const keyRows = res.recordset || [];
+  let lastIdx = -1;
+  for (let i = 0; i < keyRows.length; i++) {
+    if (present.has(normProcedureDbId(keyRows[i]))) lastIdx = i;
+  }
+  const gapIds = [];
+  for (let i = 0; i < lastIdx; i++) {
+    const id = normProcedureDbId(keyRows[i]);
+    if (id != null && !present.has(id)) gapIds.push(id);
+  }
+  return {
+    lastRow: lastIdx >= 0 ? keyRows[lastIdx] : null,
+    position: lastIdx + 1,
+    gapIds,
+  };
+}
+
+/**
+ * key ของทุกแถวตามลำดับ keyset — ใช้ครั้งเดียวตอนแปลง checkpoint OFFSET เดิม
+ * exam_id / biopsy_id cast แบบเดียวกับคิวรีหลัก (ต่อเป็น old_db_id ได้ตรงกับ Postgres)
+ * @param {{ createdDateColumn?: string | null }} sortBundle
+ */
+export function buildMssqlProcedureKeyWalkSql(sortBundle) {
+  const cd = sortBundle?.createdDateColumn
+    ? String(sortBundle.createdDateColumn).trim()
+    : null;
+  const orderBy = cd
+    ? examChildCreatedDateOrderBy(cd, PROCEDURE_CHILD_COLUMN, PROCEDURE_KEY_EXPRS)
+    : examChildLegacyOrderBy(PROCEDURE_CHILD_COLUMN, PROCEDURE_KEY_EXPRS);
+  return `
+SELECT
+  CAST(CAST([Exam_ID] AS NVARCHAR(50)) AS NVARCHAR(MAX)) AS exam_id,
+  CAST(CAST([BiopsyID] AS NVARCHAR(50)) AS NVARCHAR(MAX)) AS biopsy_id${cd ? `,\n  ${createdDateSelectExpr(cd)}` : ""}
+FROM {{sourceObject}}
+ORDER BY ${orderBy};
+`.trim();
+}
 
 /** repair-from-log: ดึงตาม old_db_id (Exam_ID + BiopsyID) */
 export const MSSQL_PROCEDURE_BY_OLD_DB_IDS_SELECT = `

@@ -55,6 +55,11 @@ import {
   trimRowsToMigrateCap,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { maybeEmitSourceCount, plannedRowsWithSnapshotCap } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
+import {
+  convertTextSortKeyCheckpoint,
+  createdDateFloorFromSortKey,
+  reconcileResumeOffsetByAfterCount,
+} from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import { fetchMssqlRowsByIds } from "../../shared/js-migrate/fetchMssqlByIds.mjs";
 import { REPAIR_SPEC_PATIENT_INFO } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
@@ -421,16 +426,17 @@ async function queryPatientInfoSourceFingerprint(
 }
 
 /**
- * daily resume หลัง checkpoint completed (เรียง CreatedDate v2)
+ * daily resume หลัง checkpoint completed (เรียง CreatedDate)
  * - catch-up: สแกนตั้งแต่ต้นด้วย id probe เติม PID ที่ขาด (รวมแถวใหม่ CreatedDate NULL ที่ไม่อยู่ท้าย)
  * - forward: probe ท้ายตารางจาก keyset — ไม่ข้าม job แม้ fingerprint เท่าเดิม
+ * ทั้งสองโหมด insert-only: ไม่เขียนทับคนไข้ที่มีใน Postgres แล้ว (ระบบใหม่แก้ข้อมูลได้)
  * @param {{
  *   checkpoint: Record<string, unknown>,
  *   fingerprint: PatientInfoSourceFingerprint,
  *   nonPlaceholderCount: number,
  *   forwardOnly?: boolean,
  * }} p
- * @returns {{ mode: 'catch-up'|'forward', reason: string, tailUpsert: boolean }}
+ * @returns {{ mode: 'catch-up'|'forward', reason: string }}
  */
 function resolvePatientInfoDailyResumeMode(p) {
   const { checkpoint, fingerprint, nonPlaceholderCount, forwardOnly } = p;
@@ -461,7 +467,6 @@ function resolvePatientInfoDailyResumeMode(p) {
             Number.isFinite(ckCount) ? fingerprint.rowCount - ckCount : "?"
           } แถว)`
         : "forward-only: ต่อ checkpoint ที่ท้ายตาราง (ไม่สแกนย้อนต้น)",
-      tailUpsert: hasNewTailRows,
     };
   }
 
@@ -478,15 +483,13 @@ function resolvePatientInfoDailyResumeMode(p) {
     return {
       mode: "catch-up",
       reason: `เติมแถวที่ขาด — ${parts.join(", ")}`,
-      tailUpsert: false,
     };
   }
 
   if (maxSortKeyAdvanced) {
     return {
       mode: "forward",
-      reason: "maxSortKey ใหม่ — sync ท้ายตาราง (upsert แถวที่ดึง)",
-      tailUpsert: true,
+      reason: "maxSortKey ใหม่ — sync ท้ายตาราง",
     };
   }
 
@@ -494,14 +497,12 @@ function resolvePatientInfoDailyResumeMode(p) {
     return {
       mode: "forward",
       reason: "ยังไม่มี fingerprint — probe ท้ายจาก checkpoint",
-      tailUpsert: false,
     };
   }
 
   return {
     mode: "forward",
     reason: "daily probe ท้ายตาราง (ไม่ข้าม job)",
-    tailUpsert: false,
   };
 }
 
@@ -623,9 +624,20 @@ async function runTableJob({
   const keysetSelectSql = (
     patientInfoSelectBundle?.keysetSelect ?? ""
   ).replaceAll("{{sourceObject}}", sourceObject);
+  const keysetSelectFloorSql = (
+    patientInfoSelectBundle?.keysetSelectFloor ?? ""
+  ).replaceAll("{{sourceObject}}", sourceObject);
   const idProbeSelectSql = (
     patientInfoSelectBundle?.idProbeSelect ?? ""
   ).replaceAll("{{sourceObject}}", sourceObject);
+  const idProbeSelectFloorSql = (
+    patientInfoSelectBundle?.idProbeSelectFloor ?? ""
+  ).replaceAll("{{sourceObject}}", sourceObject);
+  /** วันที่ของที่คั่นหน้า (sort v3) → ใช้ query ที่กรอง CreatedDate >= วันนั้น; null = ใช้ query เต็ม */
+  const keysetFloorOf = (after) =>
+    patientInfoSelectBundle?.createdDateColumn
+      ? createdDateFloorFromSortKey(after)
+      : null;
   const fingerprintSql = (
     patientInfoSelectBundle?.fingerprintSql ?? ""
   ).replaceAll("{{sourceObject}}", sourceObject);
@@ -674,10 +686,15 @@ async function runTableJob({
   const checkpointHasKeysetCursor =
     checkpoint.mssqlKeysetAfter != null &&
     String(checkpoint.mssqlKeysetAfter).trim() !== "";
+  const checkpointSortKeyVersion = Number(checkpoint.sortKeyVersion ?? 1);
   let legacyCatchUpFromStart = false;
   if (useMssqlKeyset && offset > 0 && !checkpointHasKeysetCursor) {
+    // checkpoint OFFSET จากโค้ดเก่าที่เรียงคนละแบบ — ต่อ OFFSET ด้วยลำดับใหม่จะข้าม/ซ้ำแถว
+    const offsetOrderChanged =
+      isPatientInfoBuiltin &&
+      checkpointSortKeyVersion < patientInfoSortKeyVersion;
     if (
-      checkpoint.completed === true &&
+      (checkpoint.completed === true || offsetOrderChanged) &&
       isResumeRun &&
       insertOnly &&
       !isRepairFromLogRun
@@ -686,7 +703,7 @@ async function runTableJob({
       mssqlKeysetAfter = "";
       offset = 0;
       console.error(
-        `>>> [${key}] resume: checkpoint เก่า (OFFSET) ที่ completed แล้ว → สแกน MSSQL ใหม่ด้วย keyset ตั้งแต่ต้น`,
+        `>>> [${key}] resume: checkpoint เก่า (OFFSET${checkpoint.completed === true ? " ที่ completed แล้ว" : " ลำดับเดิม"}) → สแกน MSSQL ใหม่ด้วย keyset ตั้งแต่ต้น (insert-only ข้าม PID ที่มีแล้ว)`,
       );
     } else {
       useMssqlKeyset = false;
@@ -709,7 +726,6 @@ async function runTableJob({
 
   if (!useMssqlKeyset) mssqlKeysetAfter = null;
 
-  const checkpointSortKeyVersion = Number(checkpoint.sortKeyVersion ?? 1);
   let sortKeyVersionUpgraded = false;
   if (
     isPatientInfoBuiltin &&
@@ -718,12 +734,36 @@ async function runTableJob({
     mssqlKeysetAfter != null &&
     String(mssqlKeysetAfter).trim() !== ""
   ) {
-    sortKeyVersionUpgraded = true;
-    mssqlKeysetAfter = "";
-    offset = 0;
-    console.error(
-      `>>> [${key}] sort key เปลี่ยน (v${checkpointSortKeyVersion}→v${patientInfoSortKeyVersion}) — รีเซ็ต keyset; insert-only ข้ามแถวที่มีใน Postgres`,
-    );
+    // v2 → v3: แปลงที่คั่นหน้าตรงตัว (ไม่ต้องไล่ทั้งตาราง) — แปลงไม่ได้ค่อยรีเซ็ต
+    const converted =
+      checkpointSortKeyVersion === 2 &&
+      patientInfoSelectBundle?.legacySortKeyExprV2 &&
+      !isRepairFromLogRun
+        ? await convertTextSortKeyCheckpoint(() => mssqlPool.request(), sql, {
+            fromSql: `${sourceObject} WITH (NOLOCK)`,
+            createdDateColumn: patientInfoSelectBundle.createdDateColumn,
+            oldKeyExpr: patientInfoSelectBundle.legacySortKeyExprV2,
+            newKeyExpr: patientInfoSelectBundle.sortKeyExpr,
+            oldKey: String(mssqlKeysetAfter),
+          })
+        : null;
+    if (converted) {
+      console.error(
+        `>>> [${key}] sort key v${checkpointSortKeyVersion}→v${patientInfoSortKeyVersion}: แปลงที่คั่นหน้า ${JSON.stringify(mssqlKeysetAfter)} → ${JSON.stringify(converted.key)}${converted.exact ? "" : " (ถอยเล็กน้อย — แถวที่อ่านซ้ำถูกข้ามเพราะ insert-only)"}`,
+      );
+      mssqlKeysetAfter = converted.key;
+      // ให้ขั้นถัดไป (daily resume) ใช้ที่คั่นหน้ารุ่นใหม่
+      checkpoint.mssqlKeysetAfter = converted.key;
+      checkpoint.sortKeyVersion = patientInfoSortKeyVersion;
+      delete checkpoint.sourceMaxSortKey;
+    } else {
+      sortKeyVersionUpgraded = true;
+      mssqlKeysetAfter = "";
+      offset = 0;
+      console.error(
+        `>>> [${key}] sort key เปลี่ยน (v${checkpointSortKeyVersion}→v${patientInfoSortKeyVersion}) — รีเซ็ต keyset; insert-only ข้ามแถวที่มีใน Postgres`,
+      );
+    }
   }
 
   /**
@@ -747,8 +787,6 @@ async function runTableJob({
   /** @type {'normal'|'forward'|'catch-up'} */
   let resumeCatchUpMode = "normal";
   let resumeCatchUpReason = "";
-  /** resume รายวัน: upsert แถวท้ายตารางที่ดึงจาก MSSQL (ไม่ใช่ insert-only) */
-  let dailyTailUpsert = false;
 
   let targetRowCount = 0;
   let nonPlaceholderCount = 0;
@@ -904,12 +942,10 @@ async function runTableJob({
     });
     resumeCatchUpMode = decision.mode;
     resumeCatchUpReason = decision.reason;
-    dailyTailUpsert = decision.tailUpsert;
 
     if (decision.mode === "catch-up") {
       mssqlKeysetAfter = "";
       offset = 0;
-      dailyTailUpsert = false;
       console.error(`>>> [${key}] daily catch-up: ${decision.reason}`);
     } else {
       mssqlKeysetAfter =
@@ -919,7 +955,7 @@ async function runTableJob({
       offset = Number(checkpoint.offset ?? 0);
       if (!Number.isFinite(offset) || offset < 0) offset = 0;
       console.error(
-        `>>> [${key}] daily resume: ${decision.reason} (keysetAfter=${JSON.stringify(mssqlKeysetAfter)}, tailUpsert=${dailyTailUpsert})`,
+        `>>> [${key}] daily resume: ${decision.reason} (keysetAfter=${JSON.stringify(mssqlKeysetAfter)})`,
       );
     }
   } else if (
@@ -948,9 +984,13 @@ async function runTableJob({
     console.error(`>>> [${key}] resume: ${resumeCatchUpReason}`);
   }
 
-  /** Postgres ว่าง → OFFSET + ORDER BY [PID] อัตโนมัติ; มีข้อมูลแล้ว → keyset/smart resume */
+  /**
+   * Postgres ว่าง + ไม่มี CreatedDate → OFFSET + ORDER BY [PID]; มี CreatedDate → keyset ตั้งแต่แถวแรก
+   * (checkpoint ได้ที่คั่นหน้าตั้งแต่ chunk แรก — รอบแรกที่ค้างกลางทางต่อด้วย keyset ลำดับเดียวกัน)
+   */
   const useBulkOffsetFetch =
     isPatientInfoBuiltin &&
+    patientInfoSelectBundle?.createdDateColumn == null &&
     !isRepairFromLogRun &&
     targetRowCount === 0 &&
     offset === 0 &&
@@ -988,6 +1028,41 @@ async function runTableJob({
   ) {
     console.error(
       `>>> [${key}] id probe: ดึงเฉพาะ PID ที่ยังไม่มีใน Postgres (ข้าม chunk ที่มีครบแล้ว)`,
+    );
+  }
+
+  if (
+    isPatientInfoBuiltin &&
+    patientInfoSelectBundle &&
+    !fetchUsesOffset &&
+    !isRepairFromLogRun &&
+    String(mssqlKeysetAfter ?? "").trim() !== ""
+  ) {
+    const cdFloor = keysetFloorOf(mssqlKeysetAfter);
+    offset = await reconcileResumeOffsetByAfterCount(
+      () => mssqlPool.request(),
+      {
+        tableLabel: key,
+        fromSql: `${sourceObject} WITH (NOLOCK)`,
+        afterPredicate: `${patientInfoSelectBundle.sortKeyExpr} > @afterSortKey`,
+        afterGuard:
+          cdFloor != null
+            ? `${bracketIdent(patientInfoSelectBundle.createdDateColumn)} >= @afterCdFloor`
+            : "",
+        bind: (req) => {
+          req.input(
+            "afterSortKey",
+            sql.NVarChar(sql.MAX),
+            String(mssqlKeysetAfter),
+          );
+          if (cdFloor != null) {
+            req.input("afterCdFloor", sql.NVarChar(40), cdFloor);
+          }
+        },
+        offset,
+        migrationConfig,
+        indexLimited,
+      },
     );
   }
 
@@ -1171,10 +1246,14 @@ async function runTableJob({
       if (!fetchUsesOffset && useIdProbe) {
         const probeReq = mssqlPool.request();
         bindMigrateSrcNumericRange(probeReq, migrationConfig, sql);
+        const cdFloor = keysetFloorOf(mssqlKeysetAfter);
+        if (cdFloor != null) {
+          probeReq.input("afterCdFloor", sql.NVarChar(40), cdFloor);
+        }
         const probeRes = await probeReq
           .input("afterSortKey", sql.NVarChar(sql.MAX), mssqlKeysetAfter ?? "")
           .input("page", sql.Int, fetchPageSize)
-          .query(idProbeSelectSql);
+          .query(cdFloor != null ? idProbeSelectFloorSql : idProbeSelectSql);
         const probeRows = probeRes.recordset || [];
         if (probeRows.length === 0) break;
 
@@ -1190,7 +1269,7 @@ async function runTableJob({
           ),
         ];
         let missingPids = probePids;
-        if (probePids.length > 0 && !dailyTailUpsert) {
+        if (probePids.length > 0) {
           // ไม่สนตัวพิมพ์ + placeholder ไม่นับว่ามีแล้ว (ต้องดึงมา UPDATE เป็นข้อมูลจริง)
           const { rows: found } = await pgClient.query(
             `
@@ -1208,10 +1287,9 @@ async function runTableJob({
           missingPids = probePids.filter((p) => !foundSet.has(pidMatchKey(p)));
         }
 
-        const pidsToFetch = dailyTailUpsert ? probePids : missingPids;
-        if (pidsToFetch.length > 0) {
+        if (missingPids.length > 0) {
           rows = await fetchMssqlRowsByIds(mssqlPool, sql, {
-            ids: pidsToFetch,
+            ids: missingPids,
             detailSqlTemplate: pidDetailTemplate,
             idType: "nvarchar",
             nvarcharLength: 50,
@@ -1226,10 +1304,14 @@ async function runTableJob({
       } else if (!fetchUsesOffset) {
         const req = mssqlPool.request();
         bindMigrateSrcNumericRange(req, migrationConfig, sql);
+        const cdFloor = keysetFloorOf(mssqlKeysetAfter);
+        if (cdFloor != null) {
+          req.input("afterCdFloor", sql.NVarChar(40), cdFloor);
+        }
         const r = await req
           .input("afterSortKey", sql.NVarChar(sql.MAX), mssqlKeysetAfter ?? "")
           .input("page", sql.Int, fetchPageSize)
-          .query(keysetSelectSql);
+          .query(cdFloor != null ? keysetSelectFloorSql : keysetSelectSql);
         rows = r.recordset || [];
         rowsScanned = rows.length;
         if (rows.length > 0) {
@@ -1349,10 +1431,7 @@ async function runTableJob({
           {
             migrationKey: key,
             chunkIndex,
-            migrateRowMode:
-              dailyTailUpsert && insertOnly
-                ? "overwrite"
-                : (migrationConfig.migrateRowMode ?? "overwrite"),
+            migrateRowMode: migrationConfig.migrateRowMode ?? "overwrite",
           },
         );
         mergeFieldIssueChunk(fieldIssueAcc, postLoadResult);
@@ -1580,21 +1659,23 @@ LIMIT 200;
     let endFingerprint = null;
     if (isPatientInfoBuiltin && (useMssqlKeyset || useBulkOffsetFetch)) {
       try {
+        // forward-only ใช้แค่ COUNT (MAX sort key ต้องคำนวณ key ทั้งตาราง และไม่ได้ใช้ตัดสินใจแล้ว)
         endFingerprint = await queryPatientInfoSourceFingerprint(
           mssqlPool,
           migrationConfig,
           sourceObject,
-          fingerprintSql,
+          forwardOnlyResume && fingerprintCountSql.trim() !== ""
+            ? fingerprintCountSql
+            : fingerprintSql,
         );
       } catch {
         endFingerprint = null;
       }
     }
+    // keyset: ที่คั่นหน้า = แถวสุดท้ายที่อ่านจริง ไม่ใช่ MAX ทั้งตาราง
+    // (แถวที่ cap ตัดไว้ / เกิดระหว่างรัน ต้องถูกอ่านรอบหน้า)
     const finalKeysetAfter = useMssqlKeyset
-      ? endFingerprint?.maxSortKey != null &&
-        String(endFingerprint.maxSortKey).trim() !== ""
-        ? String(endFingerprint.maxSortKey)
-        : mssqlKeysetAfter
+      ? mssqlKeysetAfter
       : useBulkOffsetFetch && endFingerprint?.maxSortKey
         ? String(endFingerprint.maxSortKey)
         : null;
@@ -1607,11 +1688,9 @@ LIMIT 200;
       sortKeyVersion: patientInfoSortKeyVersion,
       completed: true,
       updatedAt: new Date().toISOString(),
-      ...(endFingerprint
-        ? {
-            sourceRowCount: endFingerprint.rowCount,
-            sourceMaxSortKey: endFingerprint.maxSortKey,
-          }
+      ...(endFingerprint ? { sourceRowCount: endFingerprint.rowCount } : {}),
+      ...(endFingerprint?.maxSortKey
+        ? { sourceMaxSortKey: endFingerprint.maxSortKey }
         : {}),
     });
   }
@@ -1661,7 +1740,6 @@ LIMIT 200;
     repairSummary,
     resumeCatchUpMode,
     resumeCatchUpReason,
-    dailyTailUpsert,
     interruptedGapHeal,
   };
 

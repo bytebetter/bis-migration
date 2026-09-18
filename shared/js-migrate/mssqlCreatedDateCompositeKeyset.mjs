@@ -1,16 +1,34 @@
 import { bracketMssqlIdent } from "./mssqlCreatedDateSort.mjs";
 
-/** composite column keyset — ใช้ index ได้ ไม่ scan ด้วย sortKeyExpr ใน WHERE */
-export function examChildCreatedDateOrderBy(createdDateColumn, childColumn) {
-  const cd = bracketMssqlIdent(createdDateColumn);
-  const child = bracketMssqlIdent(childColumn);
-  const bucket = `CASE WHEN ${cd} IS NULL THEN 0 ELSE 1 END`;
-  return `${bucket} ASC, ${cd} ASC, [Exam_ID] ASC, ${child} ASC`;
+/**
+ * examIdExpr / childExpr: ใช้ expression แทนคอลัมน์ได้ (เช่น CONVERT(BIGINT, [Exam_ID]))
+ * — ต้องเป็นตัวเดียวกันทั้ง ORDER BY และ WHERE
+ * @typedef {{ examIdExpr?: string, childExpr?: string }} ExamChildKeyExprs
+ */
+
+/** @param {string} childColumn @param {ExamChildKeyExprs} [opts] */
+function examChildKeyExprs(childColumn, opts = {}) {
+  return {
+    examId: opts.examIdExpr ?? "[Exam_ID]",
+    child: opts.childExpr ?? bracketMssqlIdent(childColumn),
+  };
 }
 
-export function examChildCreatedDateWhereClause(createdDateColumn, childColumn) {
+/**
+ * composite column keyset — ใช้ index ได้ ไม่ scan ด้วย sortKeyExpr ใน WHERE
+ * @param {string} createdDateColumn @param {string} childColumn @param {ExamChildKeyExprs} [opts]
+ */
+export function examChildCreatedDateOrderBy(createdDateColumn, childColumn, opts) {
   const cd = bracketMssqlIdent(createdDateColumn);
-  const child = bracketMssqlIdent(childColumn);
+  const { examId, child } = examChildKeyExprs(childColumn, opts);
+  const bucket = `CASE WHEN ${cd} IS NULL THEN 0 ELSE 1 END`;
+  return `${bucket} ASC, ${cd} ASC, ${examId} ASC, ${child} ASC`;
+}
+
+/** @param {string} createdDateColumn @param {string} childColumn @param {ExamChildKeyExprs} [opts] */
+export function examChildCreatedDateWhereClause(createdDateColumn, childColumn, opts) {
+  const cd = bracketMssqlIdent(createdDateColumn);
+  const { examId, child } = examChildKeyExprs(childColumn, opts);
   const bucket = `CASE WHEN ${cd} IS NULL THEN 0 ELSE 1 END`;
   // แยก bucket ชัดเจน — ห้ามใช้ bucket > @afterNullBucket ตอน afterNullBucket=0
   // (เคยดึงแถว bucket=1 ปนก่อนจบ bucket=0 แล้วข้ามแถวที่เหลือ)
@@ -20,8 +38,8 @@ export function examChildCreatedDateWhereClause(createdDateColumn, childColumn) 
     @afterNullBucket = 0
     AND ${bucket} = 0
     AND (
-      [Exam_ID] > @afterExamId
-      OR ([Exam_ID] = @afterExamId AND ${child} > @afterChildId)
+      ${examId} > @afterExamId
+      OR (${examId} = @afterExamId AND ${child} > @afterChildId)
     )
   )
   OR (
@@ -29,11 +47,23 @@ export function examChildCreatedDateWhereClause(createdDateColumn, childColumn) 
     AND ${bucket} = 1
     AND (
       ${cd} > @afterCreatedDate
-      OR (${cd} = @afterCreatedDate AND [Exam_ID] > @afterExamId)
-      OR (${cd} = @afterCreatedDate AND [Exam_ID] = @afterExamId AND ${child} > @afterChildId)
+      OR (${cd} = @afterCreatedDate AND ${examId} > @afterExamId)
+      OR (${cd} = @afterCreatedDate AND ${examId} = @afterExamId AND ${child} > @afterChildId)
     )
   )
 )`.trim();
+}
+
+/** ไม่มี CreatedDate: เรียง (Exam_ID, child) @param {string} childColumn @param {ExamChildKeyExprs} [opts] */
+export function examChildLegacyOrderBy(childColumn, opts) {
+  const { examId, child } = examChildKeyExprs(childColumn, opts);
+  return `${examId} ASC, ${child} ASC`;
+}
+
+/** @param {string} childColumn @param {ExamChildKeyExprs} [opts] */
+export function examChildLegacyWhereClause(childColumn, opts) {
+  const { examId, child } = examChildKeyExprs(childColumn, opts);
+  return `(${examId} > @afterExamId OR (${examId} = @afterExamId AND ${child} > @afterChildId))`;
 }
 
 export function examIdOnlyCreatedDateOrderBy(createdDateColumn) {

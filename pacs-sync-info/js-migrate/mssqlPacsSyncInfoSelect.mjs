@@ -3,7 +3,14 @@
  * A) probe + detail IN (เหมือน examination_general; แนะนำ IN ครั้งเดียวต่อ batch = detailInChunkSize=batchSize)
  * B) คิวรี่เดียวต่อ chunk — TOP + INNER JOIN (เร็วเมื่อเครือข่ายหน่วง; ไม่ส่ง @id หลายพันตัว)
  */
-import { buildCreatedDateSortExprs } from "../../shared/js-migrate/mssqlCreatedDateSort.mjs";
+import {
+  bracketMssqlIdent,
+  buildCreatedDateSortExprs,
+} from "../../shared/js-migrate/mssqlCreatedDateSort.mjs";
+import {
+  convertTextSortKeyCheckpoint,
+  createdDateFloorFromSortKey,
+} from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 
 const PACS_OFFSET_TIEBREAKER_ORDER_BY = `CASE WHEN [Accession_ID] IS NULL THEN 0 ELSE 1 END ASC,
   [Accession_ID] ASC,
@@ -456,21 +463,71 @@ export function buildPacsSyncRowTiebreakerSortKeyExpr() {
 )`;
 }
 
+/**
+ * v4: ORDER BY ด้วย sort key ข้อความตัวเดียวกับ WHERE + วันที่มี ms ครบ
+ * (v3 เรียงตามคอลัมน์ tiebreak คนละชุดกับข้อความ → ข้ามแถว CreatedDate เดียวกันที่รอยต่อหน้าได้)
+ */
+export const PACS_SYNC_INFO_SORT_KEY_VERSION = 4;
+
 /** @param {string | null | undefined} createdDateColumn */
 export function createMssqlPacsSyncInfoSortBundle(createdDateColumn) {
-  return buildCreatedDateSortExprs({
+  const sortOpts = {
     createdDateColumn,
     tiebreakerOrderBy: PACS_OFFSET_TIEBREAKER_ORDER_BY,
     tiebreakerSortKeyExpr: buildPacsSyncRowTiebreakerSortKeyExpr(),
+  };
+  return {
+    ...buildCreatedDateSortExprs({
+      ...sortOpts,
+      // v4 ปิดท้ายด้วย %%physloc%% — แถวที่เหมือนกันทุกคอลัมน์ก็ได้ key ไม่ซ้ำ (keyset ไม่ข้ามตัวซ้ำที่รอยต่อหน้า)
+      tiebreakerSortKeyExpr: `CONCAT(${sortOpts.tiebreakerSortKeyExpr}, N'|L:', CONVERT(VARCHAR(16), %%physloc%%, 2))`,
+      orderBySortKey: true,
+      sortKeyVersion: PACS_SYNC_INFO_SORT_KEY_VERSION,
+    }),
+    // sort key v3 — ใช้แปลงที่คั่นหน้าของ checkpoint รุ่นเก่าเท่านั้น
+    legacySortKeyExprV3: buildCreatedDateSortExprs(sortOpts).sortKeyExpr,
+  };
+}
+
+/**
+ * วันที่ของที่คั่นหน้า (v4) — แถวหลังที่คั่นหน้าทุกแถวมี CreatedDate >= ค่านี้
+ * คืน null เมื่อที่คั่นหน้าอยู่ในกลุ่ม CreatedDate NULL / ว่าง
+ */
+export const pacsSyncInfoCreatedDateFloorFromSortKey = createdDateFloorFromSortKey;
+
+/**
+ * ที่คั่นหน้าจาก sort key v3 (เรียงตามคอลัมน์ + วันที่ style 126) → v4 แบบไม่ข้าม/ไม่อ่านซ้ำ
+ * (convertTextSortKeyCheckpoint) — คืน null เมื่อที่คั่นหน้าเดิมอยู่กลุ่ม CreatedDate NULL (ต้องรีเซ็ต)
+ * completed: checkpoint เดิมจบรอบแล้ว → รอบนั้นอ่านครบทั้งกลุ่ม CreatedDate ของที่คั่นหน้า (v3 เรียง CreatedDate ก่อน)
+ * @param {import("mssql").ConnectionPool} pool
+ * @param {typeof import("mssql")} sqlLib
+ * @param {{ sourceObjectNoLock: string, sortBundle: { createdDateColumn: string, sortKeyExpr: string, legacySortKeyExprV3: string }, oldKey: string, completed?: boolean }} p
+ * @returns {Promise<{ key: string, exact: boolean } | null>}
+ */
+export function convertPacsSyncInfoSortKeyCheckpoint(
+  pool,
+  sqlLib,
+  { sourceObjectNoLock, sortBundle, oldKey, completed = false },
+) {
+  return convertTextSortKeyCheckpoint(() => pool.request(), sqlLib, {
+    fromSql: sourceObjectNoLock,
+    createdDateColumn: sortBundle.createdDateColumn,
+    oldKeyExpr: sortBundle.legacySortKeyExprV3,
+    newKeyExpr: sortBundle.sortKeyExpr,
+    oldKey,
+    readThroughCreatedDate: completed === true,
   });
 }
 
 /**
  * CreatedDate keyset โหมดเดียว — ทั้งตาราง (รวม Accession NULL) ไม่แยก 2 เฟส
+ * withCreatedDateFloor: เพิ่ม [CreatedDate] >= @afterCdFloor (ใช้ index ได้) เมื่อที่คั่นหน้ามีวันที่แล้ว
+ * — ไม่ต้องคำนวณ sort key (hash) ของแถวเก่าทั้งตารางทุกหน้า
  */
 export function buildMssqlPacsSyncInfoCreatedDateKeysetSql(
   studyDescriptionMaxChars,
   sortBundle,
+  { withCreatedDateFloor = false } = {},
 ) {
   if (!sortBundle?.createdDateColumn) {
     throw new Error(
@@ -478,11 +535,14 @@ export function buildMssqlPacsSyncInfoCreatedDateKeysetSql(
     );
   }
   const cols = buildPacssyncSelectColumnList(studyDescriptionMaxChars);
+  const floor = withCreatedDateFloor
+    ? `\n  AND ${bracketMssqlIdent(sortBundle.createdDateColumn)} >= @afterCdFloor`
+    : "";
   return `
 SELECT TOP (@page)
 ${cols},
   ${sortBundle.sortKeyExpr} AS __mssql_sort_key
 FROM {{sourceObject}}
-WHERE ${sortBundle.sortKeyExpr} > @afterSortKey
+WHERE ${sortBundle.sortKeyExpr} > @afterSortKey${floor}
 ORDER BY ${sortBundle.orderBy}`.trim();
 }

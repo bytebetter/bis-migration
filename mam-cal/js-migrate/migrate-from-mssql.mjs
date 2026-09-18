@@ -14,6 +14,7 @@ import {
   initExamChildCompositeKeysetFromCheckpoint,
   advanceExamChildCompositeKeyset,
   queryExamChildKeysetPage,
+  reconcileExamChildResumeOffset,
   reconcileLegacyExamChildCheckpoint,
 } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import { ensureMamCalPipelineDdl } from "./mamCalPgDdl.mjs";
@@ -416,6 +417,18 @@ async function main() {
           sourceRowCountTotal = null;
         }
       }
+      offset = await reconcileExamChildResumeOffset(pool, sql, {
+        tableLabel: KEY,
+        sourceObjectNoLock,
+        sortBundle,
+        childColumn: "Described_Cal_ID",
+        composite: compositeKs,
+        afterExamId,
+        afterChildId,
+        offset,
+        migrationConfig: migration,
+        indexLimited: idx.indexLimited,
+      });
       const plannedRows = prepareMigrateRowPlan({
         migrationConfig: migration,
         sourceRowCountTotal,

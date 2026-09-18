@@ -178,11 +178,17 @@ SELECT * FROM unnest(${castArgs});
  * รวมแถว staging ตาม exam_id แล้ว UPDATE public.examination_general
  * เฉพาะ recommendation_des (array ของ object) และเคลียร์ detail เป็น string ว่าง
  * เพราะข้อความ Recommendation_Des เดิมถูกแทนที่ด้วยรายการ procedure แล้ว
+ *
+ * insert-only (ค่าเริ่มต้นของ resume): แปลงเฉพาะแถวที่ recommendation_des ยังไม่เป็น array ของ object
+ * — แถวที่แปลงแล้ว/หมอแก้ในระบบใหม่เป็นรายการ procedure แล้วไม่ถูกเขียนทับ; overwrite = ทับทุกแถว
+ * @param {{ migrateRowMode?: "overwrite" | "insert-only" }} [options]
  */
 export async function runExamRecommendBirads45ChunkPostLoad(
   pgClient,
   stagingFromClause = "migrate_stg.exam_recommend_birads45_mssql",
+  options = {},
 ) {
+  const overwrite = (options.migrateRowMode ?? "overwrite") !== "insert-only";
   const stg = await pgClient.query(
     `
 SELECT
@@ -207,7 +213,12 @@ ORDER BY exam_id::bigint, recommend_id::int
   }
 
   if (byExam.size === 0) {
-    return { rowsUpdated: 0, examsProcessed: 0, examsMissingTarget: 0 };
+    return {
+      rowsUpdated: 0,
+      rowsSkippedExisting: 0,
+      examsProcessed: 0,
+      examsMissingTarget: 0,
+    };
   }
 
   const examIds = [];
@@ -217,6 +228,7 @@ ORDER BY exam_id::bigint, recommend_id::int
     payloads.push(JSON.stringify(items));
   }
 
+  // -> 0 คืน NULL เมื่อไม่ใช่ array / array ว่าง (ไม่ error) → แถวข้อความเดิมจาก examination_general ถูกแปลง
   const upd = await pgClient.query(
     `
 UPDATE public.examination_general AS t
@@ -224,22 +236,31 @@ SET recommendation_des = src.payload::json,
     detail = ''
 FROM unnest($1::text[], $2::text[]) AS src(exam_id, payload)
 WHERE t.old_exam_id::text = src.exam_id
+  AND (
+    $3::boolean
+    OR jsonb_typeof((t.recommendation_des::jsonb) -> 0) IS DISTINCT FROM 'object'
+  )
 `.trim(),
-    [examIds, payloads],
+    [examIds, payloads, overwrite],
   );
 
   const found = await pgClient.query(
     `
-SELECT COUNT(DISTINCT t.old_exam_id::text) AS cnt
+SELECT
+  COUNT(DISTINCT t.old_exam_id::text) AS cnt,
+  COUNT(*) AS rows_n
 FROM public.examination_general t
 WHERE t.old_exam_id::text = ANY($1::text[])
 `.trim(),
     [examIds],
   );
   const examsFound = Number(found.rows[0]?.cnt ?? 0);
+  const rowsFound = Number(found.rows[0]?.rows_n ?? 0);
+  const rowsUpdated = upd.rowCount ?? 0;
 
   return {
-    rowsUpdated: upd.rowCount ?? 0,
+    rowsUpdated,
+    rowsSkippedExisting: Math.max(0, rowsFound - rowsUpdated),
     examsProcessed: examIds.length,
     examsMissingTarget: Math.max(0, examIds.length - examsFound),
   };

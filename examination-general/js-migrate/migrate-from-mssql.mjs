@@ -444,6 +444,7 @@ async function main() {
         sourceObjectNoLock,
         sortBundle,
         composite: compositeKs,
+        afterExamId,
         offset,
         migrationConfig: migration,
         indexLimited: idx.indexLimited,

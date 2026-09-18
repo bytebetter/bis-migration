@@ -13,6 +13,9 @@
     .\run-migrate-all.ps1 -SourceIndexFrom 100 -SourceIndexTo 200 -SkipInstall
 
   -MigrateRunMode resume (ดีฟอลต์) = ต่อจาก checkpoint, ไม่ทับแถวที่มีใน Postgres แล้ว
+    ก่อนเริ่มจะตรวจ checkpoint กับตารางปลายทาง (scripts/check-resume-checkpoints.mjs):
+    ปลายทางว่างแต่มี checkpoint → ย้าย checkpoint ออก (ตารางนั้นเริ่มใหม่) /
+    ปลายทางมีข้อมูลแต่ไม่มี checkpoint → หยุดทั้งรอบ
   -MigrateRunMode overwrite = migrate ทั้งชุดจากต้น, เขียนทับข้อมูลเดิม
   -MigrateRunMode repair-from-log = เฉพาะ id ที่มีปัญหา จาก log ล่าสุดใน <ตาราง>/js-migrate/logs
   -SkipInstall = ข้ามการตรวจและรัน npm ที่ root (ต้องมี `node_modules/mssql` และ `pg` ที่ root เองแล้ว)
@@ -167,6 +170,43 @@ if (-not $SkipInstall) {
   Ensure-MigrateNodeModules -RepoRoot $repoRoot
 }
 
+# ── checkpoint ต้องไปด้วยกันกับข้อมูลปลายทาง (resume) ──────────────────────────
+# ปลายทางว่างแต่มี checkpoint → ย้าย checkpoint ออก (ตารางนั้นเริ่มใหม่)
+# ปลายทางมีข้อมูลแต่ไม่มี checkpoint → หยุดทั้งรอบ (กัน insert ซ้ำ / เขียนทับแถวที่แก้ในระบบใหม่)
+$userIndexRangeGiven =
+  (($SourceIndexRange) -and ($SourceIndexRange.Trim() -ne "")) -or
+  (($SourceIndexFrom) -and ($SourceIndexFrom.Trim() -ne "")) -or
+  (($SourceIndexTo) -and ($SourceIndexTo.Trim() -ne ""))
+if ($effectiveRunMode -eq "resume" -and -not $userIndexRangeGiven) {
+  $checkProfiles = @(
+    foreach ($step in $steps) {
+      if ($step.N -lt $StartFrom) { continue }
+      if (-not $runAllTables -and ($tableFilter -notcontains $step.Table.ToLowerInvariant())) { continue }
+      $step.Profile
+    }
+  )
+  if ($checkProfiles.Count -gt 0) {
+    $checkScript = Join-Path $repoRoot "scripts/check-resume-checkpoints.mjs"
+    $prevEap = $ErrorActionPreference
+    try {
+      $ErrorActionPreference = 'Continue'
+      $checkLines = & node $checkScript --config $ConfigPath --tables ($checkProfiles -join ',') 2>&1
+      $checkExit = $LASTEXITCODE
+    }
+    finally {
+      $ErrorActionPreference = $prevEap
+    }
+    foreach ($line in $checkLines) {
+      if ("$line".Trim() -ne "") { Write-MigrateLog ("{0}" -f $line) }
+    }
+    if ($checkExit -ne 0) {
+      Write-MigrateLog "checkpoint ไม่ตรงกับข้อมูลปลายทาง — หยุดก่อนเริ่ม (ดูรายละเอียดด้านบน)" -Level FAIL
+      Set-MigrateStatus 'FAILED ; checkpoint check'
+      throw "checkpoint check failed. See log: $LogPath"
+    }
+  }
+}
+
 # ── Snapshot count ──────────────────────────────────────────────────────────
 # ดึงจำนวนแถวต้นทางของทุกตาราง (ที่จะรัน) ณ ตอนเริ่ม แล้วใช้เป็นเพดาน -SourceIndexTo ต่อตาราง
 # กัน data ที่ไหลเข้ามาระหว่างรันไม่ให้ถูกดึงเข้ามาแบบไม่สม่ำเสมอ (แถวใหม่อยู่ท้าย ORDER BY → ตัดออก)
@@ -190,7 +230,11 @@ elseif ($NoSnapshotCounts) {
 
 if ($doSnapshot) {
   Set-MigrateStatus ('RUNNING ; snapshot counts ; 0/{0}' -f $total)
-  foreach ($step in $steps) {
+  # นับย้อนลำดับ (ตารางลูก → แม่ → patient_info): ต้นทางที่ยังมีคนใช้งาน แถวลูกที่อยู่ใน cap
+  # จะมีแถวแม่อยู่ใน cap ของแม่เสมอ (แม่ถูกนับทีหลัง) — ไม่งั้นลูกได้ FK ว่างถาวร
+  $snapshotSteps = @($steps)
+  [array]::Reverse($snapshotSteps)
+  foreach ($step in $snapshotSteps) {
     if ($step.N -lt $StartFrom) { continue }
     if (-not $runAllTables -and ($tableFilter -notcontains $step.Table.ToLowerInvariant())) { continue }
     if ($step.NoSourceCount) { continue }

@@ -73,6 +73,20 @@ ORDER BY {{orderBy}}
 OFFSET @offset ROWS FETCH NEXT @page ROWS ONLY;
 `.trim();
 
+/** แถวที่อยู่หลังที่คั่นหน้า (@afterUpdateTime, @afterPid, @afterPhysloc) — ใช้ร่วมกับตัวปรับ offset */
+export const MSSQL_PACS_SYNC_PATIENT_KEYSET_AFTER_PREDICATE = `(
+    ${MSSQL_PSP_UPDATE_TIME_ORDER_EXPR} > @afterUpdateTime
+    OR (
+      ${MSSQL_PSP_UPDATE_TIME_ORDER_EXPR} = @afterUpdateTime
+      AND ${MSSQL_PSP_PID_ORDER_EXPR} > @afterPid
+    )
+    OR (
+      ${MSSQL_PSP_UPDATE_TIME_ORDER_EXPR} = @afterUpdateTime
+      AND ${MSSQL_PSP_PID_ORDER_EXPR} = @afterPid
+      AND ${MSSQL_PSP_PHYSLOC_ORDER_EXPR} > @afterPhysloc
+    )
+  )`;
+
 /**
  * Keyset ตาม (UpdateTime, PID, %%physloc%%) ASC — cursor เลื่อนด้วย > (เก่า→ใหม่ แถวใหม่อยู่ท้าย)
  */
@@ -84,18 +98,7 @@ SELECT TOP (@page)
   ${SELECT_COLUMNS}
   ${KEYSET_CURSOR_ANCHOR_COLUMNS}
 FROM {{sourceObject}}
-WHERE (
-    ${MSSQL_PSP_UPDATE_TIME_ORDER_EXPR} > @afterUpdateTime
-    OR (
-      ${MSSQL_PSP_UPDATE_TIME_ORDER_EXPR} = @afterUpdateTime
-      AND ${MSSQL_PSP_PID_ORDER_EXPR} > @afterPid
-    )
-    OR (
-      ${MSSQL_PSP_UPDATE_TIME_ORDER_EXPR} = @afterUpdateTime
-      AND ${MSSQL_PSP_PID_ORDER_EXPR} = @afterPid
-      AND ${MSSQL_PSP_PHYSLOC_ORDER_EXPR} > @afterPhysloc
-    )
-  )
+WHERE ${MSSQL_PACS_SYNC_PATIENT_KEYSET_AFTER_PREDICATE}
 ORDER BY ${orderBy};
 `.trim();
 }

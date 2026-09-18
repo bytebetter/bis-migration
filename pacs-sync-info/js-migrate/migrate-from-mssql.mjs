@@ -15,13 +15,15 @@ import {
   buildMssqlPacsSyncInfoChunkSqlFirstComposite,
   buildMssqlPacsSyncInfoChunkSqlKeysetComposite,
   buildMssqlPacsSyncInfoCreatedDateKeysetSql,
+  convertPacsSyncInfoSortKeyCheckpoint,
   createMssqlPacsSyncInfoSortBundle,
+  PACS_SYNC_INFO_SORT_KEY_VERSION,
   PACSSYNC_ROW_FINGERPRINT_VERSION,
+  pacsSyncInfoCreatedDateFloorFromSortKey,
 } from "./mssqlPacsSyncInfoSelect.mjs";
-import {
-  initCreatedDateKeysetState,
-  setupCreatedDateMigrationSort,
-} from "../../shared/js-migrate/setupCreatedDateMigrationSort.mjs";
+import { setupCreatedDateMigrationSort } from "../../shared/js-migrate/setupCreatedDateMigrationSort.mjs";
+import { reconcileResumeOffsetByAfterCount } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
+import { bracketMssqlIdent } from "../../shared/js-migrate/mssqlCreatedDateSort.mjs";
 import { ensurePacsSyncInfoPipelineDdl } from "./pacsSyncInfoPgDdl.mjs";
 import {
   normalizePacsSyncMssqlRow,
@@ -112,6 +114,7 @@ function getProfileName() {
 function nowStamp() {
   return new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
 }
+
 
 function parseMssqlUrl(rawUrl) {
   const normalized = rawUrl.replace(/^microsoftsqlserver:\/\//i, "mssql://");
@@ -672,10 +675,16 @@ async function main() {
   });
   const useCreatedDateKeyset = pacsSortBundle?.createdDateColumn != null;
   let chunkSqlCreatedDateKeyset = null;
+  let chunkSqlCreatedDateKeysetFloor = null;
   if (useCreatedDateKeyset) {
     chunkSqlCreatedDateKeyset = buildMssqlPacsSyncInfoCreatedDateKeysetSql(
       studyDescriptionMaxChars,
       pacsSortBundle,
+    ).replaceAll("{{sourceObject}}", sourceObjectNoLock);
+    chunkSqlCreatedDateKeysetFloor = buildMssqlPacsSyncInfoCreatedDateKeysetSql(
+      studyDescriptionMaxChars,
+      pacsSortBundle,
+      { withCreatedDateFloor: true },
     ).replaceAll("{{sourceObject}}", sourceObjectNoLock);
     console.error(
       `>>> [${KEY}] CreatedDate keyset โหมดเดียว — NULL ก่อน → วันที่เก่า→ใหม่ (ไม่แยก 2 เฟส acc/null)`,
@@ -946,12 +955,22 @@ async function main() {
       );
       let mssqlKeysetAfter = "";
       if (useCreatedDateKeyset) {
-        const keysetState = initCreatedDateKeysetState(
-          checkpoint,
-          checkpointEnabled,
-          pacsSortBundle,
-        );
-        if (keysetState.sortKeyVersionUpgraded) {
+        const ckKey =
+          checkpointEnabled && checkpoint.mssqlKeysetAfter != null
+            ? String(checkpoint.mssqlKeysetAfter)
+            : "";
+        const ckVersion = Number(checkpoint.sortKeyVersion ?? 0);
+        const conversion =
+          ckKey === "" || ckVersion === PACS_SYNC_INFO_SORT_KEY_VERSION
+            ? { key: ckKey, exact: true }
+            : await convertPacsSyncInfoSortKeyCheckpoint(pool, sql, {
+                sourceObjectNoLock,
+                sortBundle: pacsSortBundle,
+                oldKey: ckKey,
+                completed: checkpoint.completed === true,
+              });
+        const converted = conversion?.key ?? null;
+        if (converted == null) {
           offset = 0;
           rowsProcessed = 0;
           migrationLeg = "created_date";
@@ -960,10 +979,15 @@ async function main() {
           nullTailCursor = null;
           mssqlKeysetAfter = "";
           console.error(
-            `>>> [${KEY}] sort key เปลี่ยน — รีเซ็ต keyset; upsert ตาม accession_id`,
+            `>>> [${KEY}] sort key เปลี่ยน (v${ckVersion}→v${PACS_SYNC_INFO_SORT_KEY_VERSION}) แปลงที่คั่นหน้าไม่ได้ — รีเซ็ต keyset; upsert ตาม accession_id`,
           );
         } else {
-          mssqlKeysetAfter = keysetState.mssqlKeysetAfter ?? "";
+          if (converted !== ckKey) {
+            console.error(
+              `>>> [${KEY}] sort key v${ckVersion}→v${PACS_SYNC_INFO_SORT_KEY_VERSION}: แปลงที่คั่นหน้า ${ckKey.slice(0, 40)}… → ${converted.slice(0, 40)}…${conversion.exact ? " (ตรงตัว)" : " (ถอยเล็กน้อย — แถวในวินาทีของที่คั่นหน้าเดิมบางแถวถูกอ่านซ้ำ)"}`,
+            );
+          }
+          mssqlKeysetAfter = converted;
         }
       }
 
@@ -1056,6 +1080,32 @@ async function main() {
           sourceRowCountTotal = null;
         }
       }
+      if (useCreatedDateKeyset && mssqlKeysetAfter !== "") {
+        const cdFloor =
+          pacsSyncInfoCreatedDateFloorFromSortKey(mssqlKeysetAfter);
+        offset = await reconcileResumeOffsetByAfterCount(
+          () => pool.request(),
+          {
+            tableLabel: KEY,
+            fromSql: sourceObjectNoLock,
+            afterPredicate: `${pacsSortBundle.sortKeyExpr} > @afterSortKey`,
+            afterGuard:
+              cdFloor != null
+                ? `${bracketMssqlIdent(pacsSortBundle.createdDateColumn)} >= @afterCdFloor`
+                : "",
+            bind: (req) => {
+              req.input("afterSortKey", sql.NVarChar(sql.MAX), mssqlKeysetAfter);
+              if (cdFloor != null) {
+                req.input("afterCdFloor", sql.NVarChar(40), cdFloor);
+              }
+            },
+            offset,
+            migrationConfig: migration,
+            indexLimited: idx.indexLimited,
+          },
+        );
+        rowsProcessed = Math.min(rowsProcessed, offset);
+      }
       let plannedRows = prepareMigrateRowPlan({
         migrationConfig: migration,
         sourceRowCountTotal,
@@ -1125,6 +1175,8 @@ async function main() {
           let fetchMs = 0;
 
           if (useCreatedDateKeyset && chunkSqlCreatedDateKeyset) {
+            const cdFloor =
+              pacsSyncInfoCreatedDateFloorFromSortKey(mssqlKeysetAfter);
             const cdReq = pool
               .request()
               .input("page", sql.Int, pageSize)
@@ -1133,9 +1185,16 @@ async function main() {
                 sql.NVarChar(sql.MAX),
                 mssqlKeysetAfter ?? "",
               );
+            if (cdFloor != null) {
+              cdReq.input("afterCdFloor", sql.NVarChar(40), cdFloor);
+            }
             bindMigrateSrcNumericRange(cdReq, migration, sql);
             const tCd = Date.now();
-            const cdRes = await cdReq.query(chunkSqlCreatedDateKeyset);
+            const cdRes = await cdReq.query(
+              cdFloor != null
+                ? chunkSqlCreatedDateKeysetFloor
+                : chunkSqlCreatedDateKeyset,
+            );
             fetchMs = Date.now() - tCd;
             rows = cdRes.recordset || [];
             probeMs = 0;

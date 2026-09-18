@@ -14,6 +14,7 @@ import {
   bindSortKeyExprKeyset,
   advanceSortKeyExprFromRows,
   buildCreatedDateCheckpointFields,
+  reconcileResumeOffsetByAfterCount,
 } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import {
   initCreatedDateKeysetState,
@@ -569,6 +570,24 @@ ORDER BY ${appointmentSortBundle.orderBy}`.trim();
     } catch {
       sourceRowCountTotal = null;
     }
+  }
+  if (useMssqlKeyset && !useCreatedDateKeyset && numericKeysetAfter >= 0n) {
+    const scheduleIdExpr = useNativeKeyset
+      ? MSSQL_SCHEDULE_ID_NATIVE_EXPR
+      : MSSQL_SCHEDULE_ID_NUMERIC_EXPR;
+    offset = await reconcileResumeOffsetByAfterCount(
+      () => mssqlPool.request(),
+      {
+        tableLabel: key,
+        fromSql: sourceObjectNoLock,
+        afterPredicate: `${scheduleIdExpr} > @afterScheduleId`,
+        bind: (req) =>
+          req.input("afterScheduleId", sql.BigInt, numericKeysetAfter),
+        offset,
+        migrationConfig,
+        indexLimited: idx.indexLimited,
+      },
+    );
   }
   const plannedRows = prepareMigrateRowPlan({
         migrationConfig: migrationConfig,

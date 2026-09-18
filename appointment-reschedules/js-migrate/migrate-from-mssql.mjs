@@ -7,9 +7,21 @@ import {
   MSSQL_APPOINTMENT_RESCHEDULES_BY_LOG_KEYS_SELECT,
   MSSQL_APPOINTMENT_RESCHEDULES_OFFSET_ORDER_BY,
   MSSQL_APPOINTMENT_RESCHEDULES_SELECT,
+  MSSQL_RESCHEDULE_KEYSET_AFTER_PREDICATE,
+  RESCHEDULE_ACTIVITY_WHERE,
   buildMssqlAppointmentReschedulesKeysetSelect,
   createMssqlAppointmentReschedulesSortBundle,
 } from "./mssqlAppointmentReschedulesSelect.mjs";
+import {
+  bindRescheduleKeysetInputs,
+  defaultRescheduleKeysetAfter,
+  isLegacyRescheduleKeyset,
+  keysetAfterForPersist,
+  keysetAfterFromRescheduleRow,
+  normalizeRescheduleKeysetAfter,
+  upgradeLegacyRescheduleKeyset,
+} from "./rescheduleKeyset.mjs";
+import { reconcileResumeOffsetByAfterCount } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import { setupCreatedDateMigrationSort } from "../../shared/js-migrate/setupCreatedDateMigrationSort.mjs";
 import {
   ensureAppointmentReschedulesPipelineDdl,
@@ -64,213 +76,6 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KEY = "appointment_reschedules";
-
-const RESCHEDULE_KEYSET_SENTINEL_SCHEDULE_ID_MIN = -9223372036854775808n;
-
-function getRescheduleRowField(row, key) {
-  return row[key] ?? row[key.toLowerCase()] ?? row[key.toUpperCase()];
-}
-
-function rescheduleKeysetMinDate() {
-  return new Date(1753, 0, 1, 0, 0, 0, 0);
-}
-
-/**
- * จุดเริ่ม keyset ASC: cursor exclusive ด้านล่าง (เก่ากว่าทุกแถว)
- * ใช้ปี 1000 ให้ต่ำกว่า COALESCE floor 1753-01-01 ในคิวรี → `> floor` ครอบทุกแถว (รวมแถว LogTime NULL)
- */
-function rescheduleKeysetFloorDate() {
-  return new Date(1000, 0, 1, 0, 0, 0, 0);
-}
-
-/**
- * พาร์ส naive datetime เช่น style 126 เป็น Date โซนในเครื่อง (ให้ตรงกับสิ่งที่ driver มักคืนจาก datetime2 naive)
- */
-function parseNaiveDatetimeToLocalDate(sRaw) {
-  const sTrim = String(sRaw ?? "").trim();
-  if (sTrim === "") return null;
-  const spaced = sTrim
-    .replace(/^(\d{4}-\d{2}-\d{2})\s+/, "$1T")
-    .replace(/Z$/i, "");
-  const m =
-    /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,7}))?$/.exec(
-      spaced,
-    );
-  if (!m) return null;
-  const fracMs = parseFractionalSecsToTruncatedMs(m[7]);
-  const dt = new Date(
-    Number(m[1]),
-    Number(m[2]) - 1,
-    Number(m[3]),
-    Number(m[4]),
-    Number(m[5]),
-    Number(m[6]),
-    fracMs,
-  );
-  return Number.isNaN(dt.getTime()) ? null : dt;
-}
-
-/** เศษส่วนวินาทีจาก CONVERT เช่น "1234567" → millis (truncate) */
-function parseFractionalSecsToTruncatedMs(frag) {
-  if (frag == null || frag === "") return 0;
-  const digitsOnly = String(frag).replace(/\D/g, "").slice(0, 7).padEnd(7, "0");
-  const secFrac = Number(`0.${digitsOnly}`);
-  if (!Number.isFinite(secFrac)) return 0;
-  const ms = Math.floor(secFrac * 1000);
-  return Math.min(999, ms);
-}
-
-/** จับคู่ MSSQL/driver เป็น Date เดียวกับที่ส่งเข้า keyset predicates */
-function rescheduleRowDatetimeForKeyset(raw) {
-  const min = rescheduleKeysetMinDate();
-  if (raw == null) return min;
-  if (raw instanceof Date) {
-    return Number.isNaN(raw.getTime()) ? min : raw;
-  }
-  const parsed = parseNaiveDatetimeToLocalDate(
-    String(raw)
-      .trim()
-      .replace(/^(\d{4}-\d{2}-\d{2})\s+/, "$1T"),
-  );
-  return parsed ?? min;
-}
-
-function defaultRescheduleKeysetAfter() {
-  const floor = rescheduleKeysetFloorDate();
-  return {
-    logTime: floor,
-    scheduleId: RESCHEDULE_KEYSET_SENTINEL_SCHEDULE_ID_MIN.toString(),
-    scheduleDatetime: floor,
-    modifiedDate: floor,
-    oldScheduleDatetime: floor,
-    physloc: reschedulePhyslocFloor(),
-  };
-}
-
-/** %%physloc%% floor = 8 ไบต์ศูนย์ (physloc จริง file:page:slot ไม่มีทางเป็นศูนย์ทั้งหมด → `> floor` ครอบทุกแถว) */
-function reschedulePhyslocFloor() {
-  return Buffer.alloc(8);
-}
-
-/** คืน Buffer(8) จาก physloc ที่อาจเป็น Buffer (จาก driver) หรือ hex string (จาก checkpoint) หรือ null */
-function normalizeReschedulePhysloc(raw) {
-  if (raw == null) return reschedulePhyslocFloor();
-  if (Buffer.isBuffer(raw)) {
-    if (raw.length === 8) return raw;
-    const b = Buffer.alloc(8);
-    raw.copy(b, 0, 0, Math.min(8, raw.length));
-    return b;
-  }
-  const s = String(raw)
-    .trim()
-    .replace(/^0x/i, "");
-  if (/^[0-9a-fA-F]{1,16}$/.test(s)) {
-    return Buffer.from(s.padStart(16, "0").slice(-16), "hex");
-  }
-  return reschedulePhyslocFloor();
-}
-
-function normalizeScheduleIdForKeyset(raw) {
-  if (raw == null || String(raw).trim() === "") {
-    return RESCHEDULE_KEYSET_SENTINEL_SCHEDULE_ID_MIN.toString();
-  }
-  try {
-    return BigInt(String(raw).trim()).toString();
-  } catch {
-    return RESCHEDULE_KEYSET_SENTINEL_SCHEDULE_ID_MIN.toString();
-  }
-}
-
-function normalizeRescheduleKeysetAfter(raw) {
-  if (!raw || typeof raw !== "object") return defaultRescheduleKeysetAfter();
-  const coalescedFloor = rescheduleKeysetFloorDate();
-  return {
-    logTime: rescheduleRowDatetimeForKeyset(raw.logTime),
-    scheduleId: normalizeScheduleIdForKeyset(raw.scheduleId),
-    scheduleDatetime: rescheduleRowDatetimeForKeyset(raw.scheduleDatetime),
-    modifiedDate: rescheduleRowDatetimeForKeyset(raw.modifiedDate),
-    oldScheduleDatetime:
-      raw.oldScheduleDatetime == null
-        ? coalescedFloor
-        : rescheduleRowDatetimeForKeyset(raw.oldScheduleDatetime),
-    physloc: normalizeReschedulePhysloc(raw.physloc),
-  };
-}
-
-function keysetAfterFromRescheduleRow(row) {
-  const lt = getRescheduleRowField(row, "ktv_log_time_ord");
-  const sidOrd = getRescheduleRowField(row, "ktv_schedule_id_ord");
-  const sdtOrd = getRescheduleRowField(row, "ktv_schedule_dt_ord");
-  const modOrd = getRescheduleRowField(row, "ktv_modified_ord");
-  const oldDtOrd = getRescheduleRowField(row, "ktv_old_schedule_dt_ord");
-  const physlocRaw = getRescheduleRowField(row, "ktv_physloc");
-  if (
-    lt !== undefined ||
-    sidOrd !== undefined ||
-    sdtOrd !== undefined ||
-    modOrd !== undefined ||
-    oldDtOrd !== undefined
-  ) {
-    return {
-      logTime: rescheduleRowDatetimeForKeyset(lt),
-      scheduleId: normalizeScheduleIdForKeyset(sidOrd),
-      scheduleDatetime: rescheduleRowDatetimeForKeyset(sdtOrd),
-      modifiedDate: rescheduleRowDatetimeForKeyset(modOrd),
-      oldScheduleDatetime: rescheduleRowDatetimeForKeyset(oldDtOrd),
-      physloc: normalizeReschedulePhysloc(physlocRaw),
-    };
-  }
-  const sidRaw = getRescheduleRowField(row, "schedule_id");
-  return {
-    logTime: rescheduleRowDatetimeForKeyset(
-      getRescheduleRowField(row, "log_time"),
-    ),
-    scheduleId: normalizeScheduleIdForKeyset(sidRaw),
-    scheduleDatetime: rescheduleRowDatetimeForKeyset(
-      getRescheduleRowField(row, "schedule_datetime"),
-    ),
-    modifiedDate: rescheduleRowDatetimeForKeyset(
-      getRescheduleRowField(row, "modified_date"),
-    ),
-    oldScheduleDatetime: rescheduleRowDatetimeForKeyset(
-      getRescheduleRowField(row, "old_schedule_datetime"),
-    ),
-    physloc: normalizeReschedulePhysloc(physlocRaw),
-  };
-}
-
-/** เก็บ checkpoint JSON (ไม่ใช้ ISO ของ Date — ฟอร์แมตเทียบ style 126) */
-function formatKeysetDateForCheckpoint(d) {
-  const x =
-    d instanceof Date && !Number.isNaN(d.getTime())
-      ? d
-      : rescheduleKeysetMinDate();
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}T${pad(x.getHours())}:${pad(x.getMinutes())}:${pad(x.getSeconds())}.${String(x.getMilliseconds()).padStart(3, "0")}`;
-}
-
-function keysetAfterForPersist(k) {
-  const n = normalizeRescheduleKeysetAfter(k);
-  return {
-    logTime: formatKeysetDateForCheckpoint(n.logTime),
-    scheduleDatetime: formatKeysetDateForCheckpoint(n.scheduleDatetime),
-    modifiedDate: formatKeysetDateForCheckpoint(n.modifiedDate),
-    oldScheduleDatetime: formatKeysetDateForCheckpoint(n.oldScheduleDatetime),
-    scheduleId: String(n.scheduleId),
-    physloc: normalizeReschedulePhysloc(n.physloc).toString("hex"),
-  };
-}
-
-/** ส่งเข้า keyset MSSQL — เป็น Date object (ไม่ string จาก String(Date) เพื่อไม่เพี้ยน) */
-function bindRescheduleKeysetInputs(req, keysetAfter) {
-  const k = normalizeRescheduleKeysetAfter(keysetAfter);
-  req.input("afterLogTime", sql.DateTime2, k.logTime);
-  req.input("afterScheduleId", sql.BigInt, BigInt(String(k.scheduleId).trim()));
-  req.input("afterScheduleDatetime", sql.DateTime2, k.scheduleDatetime);
-  req.input("afterModifiedDate", sql.DateTime2, k.modifiedDate);
-  req.input("afterOldScheduleDatetime", sql.DateTime2, k.oldScheduleDatetime);
-  req.input("afterPhysloc", sql.Binary(8), normalizeReschedulePhysloc(k.physloc));
-}
 
 function getConfigPath() {
   const idx = process.argv.indexOf("--config");
@@ -544,11 +349,14 @@ async function runAppointmentReschedulesTableJob({
 
   let mssqlKeysetAfter =
     checkpoint.mssqlKeysetAfter == null ? null : checkpoint.mssqlKeysetAfter;
+  /** แปลงหลังเปิด SNAPSHOT (ต้อง query หาแถวที่คั่นหน้า) */
+  const legacyKeysetCheckpoint =
+    useMssqlKeyset && isLegacyRescheduleKeyset(mssqlKeysetAfter);
   if (!useMssqlKeyset) {
     mssqlKeysetAfter = null;
   } else if (mssqlKeysetAfter == null) {
     mssqlKeysetAfter = defaultRescheduleKeysetAfter();
-  } else {
+  } else if (!legacyKeysetCheckpoint) {
     mssqlKeysetAfter = normalizeRescheduleKeysetAfter(mssqlKeysetAfter);
   }
   const idx = applySourceIndexToMigrateJob({
@@ -691,6 +499,22 @@ async function runAppointmentReschedulesTableJob({
   const rescheduleOrderBy =
     rescheduleSortBundle?.orderBy ?? MSSQL_APPOINTMENT_RESCHEDULES_OFFSET_ORDER_BY;
 
+  if (legacyKeysetCheckpoint) {
+    const upgraded = await upgradeLegacyRescheduleKeyset(
+      mssqlRequest,
+      sql,
+      sourceRef,
+      mssqlKeysetAfter,
+    );
+    mssqlKeysetAfter = upgraded.keyset;
+    writeOutLine(
+      upgraded.exact
+        ? `>>> [${key}] แปลงที่คั่นหน้า checkpoint รุ่นเก่าเป็นความละเอียดเต็ม (หาแถวด้วย %%physloc%%)`
+        : `>>> [${key}] คำเตือน: หาแถวที่คั่นหน้าด้วย %%physloc%% ไม่เจอ — ใช้วันที่ละเอียด ms แทน (แถวสุดท้ายของรอบก่อนอาจถูก insert ซ้ำ ตรวจด้วย verify-migration-parity.mjs)`,
+      uiState,
+    );
+  }
+
   const offsetSelectSql = MSSQL_APPOINTMENT_RESCHEDULES_SELECT.replaceAll(
     "{{sourceObject}}",
     sourceRef,
@@ -713,6 +537,18 @@ async function runAppointmentReschedulesTableJob({
     } catch {
       sourceRowCountTotal = null;
     }
+  }
+  if (useMssqlKeyset && repairSourceIds == null && mssqlKeysetAfter != null) {
+    offset = await reconcileResumeOffsetByAfterCount(mssqlRequest, {
+      tableLabel: key,
+      fromSql: sourceRef,
+      baseWhere: RESCHEDULE_ACTIVITY_WHERE,
+      afterPredicate: MSSQL_RESCHEDULE_KEYSET_AFTER_PREDICATE,
+      bind: (req) => bindRescheduleKeysetInputs(req, sql, mssqlKeysetAfter),
+      offset,
+      migrationConfig,
+      indexLimited: idx.indexLimited,
+    });
   }
   const plannedRows = prepareMigrateRowPlan({
         migrationConfig: migrationConfig,
@@ -825,7 +661,7 @@ async function runAppointmentReschedulesTableJob({
         bindMigrateSrcNumericRange(rq, migrationConfig, sql);
         let r;
         if (useMssqlKeyset) {
-          bindRescheduleKeysetInputs(rq, mssqlKeysetAfter);
+          bindRescheduleKeysetInputs(rq, sql, mssqlKeysetAfter);
           r = await rq.input("page", sql.Int, pageSize).query(keysetSelectSql);
         } else {
           r = await rq

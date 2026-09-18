@@ -47,14 +47,34 @@ export function mssqlExamIdWithIntColumnSortKeyExpr(intColumn) {
 }
 
 /**
+ * วันที่เป็นข้อความความยาวคงที่ 'yyyy-mm-ddThh:mi:ss.mmm' — CONVERT style 126 ตัด '.000' ทิ้ง
+ * ทำให้ข้อความของแถว .000 เรียงสลับกับแถวในวินาทีเดียวกัน ('_' กับ '.') ไม่ตรงลำดับเวลา
+ * @param {string} bracketedColumn
+ */
+export function mssqlCreatedDateSortTextExpr(bracketedColumn) {
+  return `CONCAT(
+    CONVERT(VARCHAR(19), ${bracketedColumn}, 126),
+    '.',
+    RIGHT(CONCAT('00', DATEPART(MILLISECOND, ${bracketedColumn})), 3)
+  )`;
+}
+
+/**
  * CreatedDate NULL ก่อน (ข้อมูลเก่า) → ตามวันที่สร้างเก่า→ใหม่ → tiebreaker
- * @param {{ createdDateColumn?: string | null, tiebreakerOrderBy: string, tiebreakerSortKeyExpr: string, fastOrderBy?: string | null }} opts
+ *
+ * orderBySortKey: ORDER BY ด้วย sort key ข้อความตัวเดียวกับ WHERE `sortKeyExpr > @afterSortKey`
+ * (ลำดับกับการเทียบตรงกันเสมอ → keyset ไม่ข้ามแถวที่รอยต่อหน้า) + วันที่มี ms ครบ;
+ * ต้องส่ง sortKeyVersion ของตารางนั้นเอง — ห้ามขยับ CREATED_DATE_SORT_KEY_VERSION
+ * (ตารางกลุ่ม exam จะรีเซ็ต checkpoint แล้วอ่านทั้งตารางใหม่)
+ * @param {{ createdDateColumn?: string | null, tiebreakerOrderBy: string, tiebreakerSortKeyExpr: string, fastOrderBy?: string | null, orderBySortKey?: boolean, sortKeyVersion?: number }} opts
  */
 export function buildCreatedDateSortExprs({
   createdDateColumn,
   tiebreakerOrderBy,
   tiebreakerSortKeyExpr,
   fastOrderBy = null,
+  orderBySortKey = false,
+  sortKeyVersion = CREATED_DATE_SORT_KEY_VERSION,
 }) {
   if (createdDateColumn == null || String(createdDateColumn).trim() === "") {
     return {
@@ -67,20 +87,27 @@ export function buildCreatedDateSortExprs({
   }
 
   const cd = bracketMssqlIdent(String(createdDateColumn).trim());
+  const dateText = orderBySortKey
+    ? mssqlCreatedDateSortTextExpr(cd)
+    : `CONVERT(VARCHAR(23), ${cd}, 126)`;
   const sortKeyExpr = `CASE WHEN ${cd} IS NULL
   THEN CONCAT(N'0', ${tiebreakerSortKeyExpr})
   ELSE CONCAT(
     N'1',
-    CONVERT(VARCHAR(23), ${cd}, 126),
+    ${dateText},
     N'_',
     ${tiebreakerSortKeyExpr}
   )
 END`;
-  const orderBy = `CASE WHEN ${cd} IS NULL THEN 0 ELSE 1 END ASC, ${cd} ASC, ${tiebreakerOrderBy}`;
-  const resolvedFastOrderBy = fastOrderBy ?? `${cd} ASC, ${tiebreakerOrderBy}`;
+  const orderBy = orderBySortKey
+    ? `${sortKeyExpr} ASC`
+    : `CASE WHEN ${cd} IS NULL THEN 0 ELSE 1 END ASC, ${cd} ASC, ${tiebreakerOrderBy}`;
+  const resolvedFastOrderBy = orderBySortKey
+    ? orderBy
+    : (fastOrderBy ?? `${cd} ASC, ${tiebreakerOrderBy}`);
 
   return {
-    sortKeyVersion: CREATED_DATE_SORT_KEY_VERSION,
+    sortKeyVersion,
     createdDateColumn: String(createdDateColumn).trim(),
     sortKeyExpr,
     orderBy,

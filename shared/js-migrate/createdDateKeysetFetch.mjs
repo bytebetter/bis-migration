@@ -1,8 +1,13 @@
 import {
+  bracketMssqlIdent,
   CREATED_DATE_SORT_KEY_VERSION,
   LEGACY_SORT_KEY_VERSION,
 } from "./mssqlCreatedDateSort.mjs";
-import { examIdOnlyCreatedDateWhereClause } from "./mssqlCreatedDateCompositeKeyset.mjs";
+import {
+  examChildCreatedDateWhereClause,
+  examChildLegacyWhereClause,
+  examIdOnlyCreatedDateWhereClause,
+} from "./mssqlCreatedDateCompositeKeyset.mjs";
 import {
   bindMigrateSrcNumericRange,
   readNumericSourceKeyBounds,
@@ -76,14 +81,189 @@ export function bindExamIdCompositeKeyset(req, sqlLib, state) {
 }
 
 /**
+ * จำนวนแถวทั้งหมด / แถวที่อยู่หลังที่คั่นหน้า (1 query)
+ * แยก 2 query: COUNT ทั้งตาราง (แบบเดียวกับ snapshot count) ก่อน แล้วค่อยนับแถวหลังที่คั่นหน้า
+ * — afterGuard อยู่ใน WHERE (เช่น [CreatedDate] >= @x) ให้ใช้ index อ่านเฉพาะแถวท้ายตาราง
+ * — นับ total ก่อน: แถวที่เข้ามาระหว่างสอง query ทำให้ after มากขึ้น = อ่านเกิน ไม่ใช่อ่านขาด
+ * @param {() => import("mssql").Request} newRequest
+ * @param {{ fromSql: string, baseWhere?: string, afterPredicate: string, afterGuard?: string, bind: (req: import("mssql").Request) => void }} p
+ * @returns {Promise<{ total: number, after: number }>}
+ */
+export async function countRowsAfterCursor(newRequest, p) {
+  const { fromSql, baseWhere = "", afterPredicate, afterGuard = "", bind } = p;
+  const whereOf = (parts) => {
+    const list = parts.map((s) => String(s ?? "").trim()).filter(Boolean);
+    return list.length ? `\nWHERE ${list.map((s) => `(${s})`).join("\n  AND ")}` : "";
+  };
+  const totalRes = await newRequest().query(
+    `SELECT COUNT_BIG(1) AS n FROM ${fromSql}${whereOf([baseWhere])};`,
+  );
+  const req = newRequest();
+  bind(req);
+  const afterRes = await req.query(
+    `SELECT COUNT_BIG(1) AS n FROM ${fromSql}${whereOf([baseWhere, afterGuard, afterPredicate])};`,
+  );
+  return {
+    total: Number(totalRes.recordset?.[0]?.n),
+    after: Number(afterRes.recordset?.[0]?.n ?? 0),
+  };
+}
+
+/**
+ * วันที่ขั้นต่ำของแถวที่อยู่หลังที่คั่นหน้า จาก sort key ข้อความรูปแบบ
+ * '1' + 'yyyy-mm-ddThh:mi:ss.mmm' + '_' (mssqlCreatedDateSortTextExpr)
+ * คืน null เมื่อที่คั่นหน้าอยู่กลุ่ม CreatedDate NULL / ว่าง / รูปแบบเก่า
+ * @param {string | null | undefined} sortKey
+ */
+export function createdDateFloorFromSortKey(sortKey) {
+  const m = /^1(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3})_/.exec(
+    String(sortKey ?? ""),
+  );
+  return m ? m[1] : null;
+}
+
+/**
+ * ที่คั่นหน้า sort key ข้อความรุ่นเก่า (วันที่ style 126 ที่ตัด .000) → รุ่นใหม่ โดยไม่ข้ามและไม่อ่านซ้ำ
+ * "อ่านแล้ว" = แถวที่ key เก่า <= ที่คั่นหน้าเดิม (ตรงกับที่โค้ดเก่าจะอ่านต่อด้วย key เก่า > ที่คั่นหน้า)
+ * แถวอ่านแล้ว/ยังไม่อ่านที่อาจสลับลำดับกันมีได้แค่ในวินาทีของที่คั่นหน้าเป็นต้นไป → นับเฉพาะช่วงนั้น
+ * - ปกติ (แถวยังไม่อ่านทุกแถวอยู่หลังแถวอ่านแล้วตาม key ใหม่) → ที่คั่นหน้าใหม่ = MAX(key ใหม่ ของแถวอ่านแล้ว)
+ * - ถ้าสลับกัน → ถอยที่คั่นหน้ามาก่อนแถวยังไม่อ่านตัวแรก (อ่านซ้ำเฉพาะแถวที่เกินมา)
+ * คืน null เมื่อที่คั่นหน้าเดิมอยู่กลุ่ม CreatedDate NULL (ผู้เรียกต้องเริ่มใหม่)
+ *
+ * readThroughCreatedDate: checkpoint เดิม completed (รอบนั้นอ่านครบทุกแถวในกลุ่ม CreatedDate ของที่คั่นหน้า
+ * เพราะเรียง CreatedDate ก่อน) → "อ่านแล้ว" = CreatedDate <= วันที่ของที่คั่นหน้า (ตรงกับที่รอบนั้นอ่านจริง
+ * แม่นกว่าเทียบ key เก่า ซึ่งลำดับข้อความในกลุ่มเดียวกันไม่ตรง ORDER BY เดิม)
+ * @param {() => import("mssql").Request} newRequest
+ * @param {typeof import("mssql")} sqlLib
+ * @param {{ fromSql: string, createdDateColumn: string, oldKeyExpr: string, newKeyExpr: string, oldKey: string, baseWhere?: string, readThroughCreatedDate?: boolean }} p
+ * @returns {Promise<{ key: string, exact: boolean } | null>}
+ */
+export async function convertTextSortKeyCheckpoint(newRequest, sqlLib, p) {
+  const {
+    fromSql,
+    createdDateColumn,
+    oldKeyExpr,
+    newKeyExpr,
+    oldKey,
+    baseWhere = "",
+    readThroughCreatedDate = false,
+  } = p;
+  const m = /^1((\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d{1,7})?)_/.exec(
+    String(oldKey ?? ""),
+  );
+  if (!m) return null;
+  const cd = bracketMssqlIdent(createdDateColumn);
+  const base = String(baseWhere).trim() ? `(${baseWhere}) AND ` : "";
+  const readPred = readThroughCreatedDate
+    ? `${cd} <= @ckCreatedDate`
+    : `${oldKeyExpr} <= @oldKey`;
+  const unreadPred = readThroughCreatedDate
+    ? `${cd} > @ckCreatedDate`
+    : `${oldKeyExpr} > @oldKey`;
+  const bindAll = (req, extra = {}) => {
+    req
+      .input("oldKey", sqlLib.NVarChar(sqlLib.MAX), String(oldKey))
+      .input("ckCreatedDate", sqlLib.NVarChar(40), m[1])
+      .input("ckSecond", sqlLib.NVarChar(40), m[2]);
+    for (const [k, v] of Object.entries(extra)) {
+      req.input(k, sqlLib.NVarChar(sqlLib.MAX), v);
+    }
+    return req;
+  };
+  // เทียบ max/min ใน SQL (collation เดียวกับ keyset `key > @afterSortKey`)
+  const win = await bindAll(newRequest()).query(`
+SELECT
+  w.max_read,
+  w.min_unread,
+  CASE
+    WHEN w.max_read IS NULL THEN 0
+    WHEN w.min_unread IS NULL OR w.min_unread > w.max_read THEN 1
+    ELSE 0
+  END AS ordered
+FROM (
+  SELECT
+    MAX(CASE WHEN ${readPred} THEN ${newKeyExpr} END) AS max_read,
+    MIN(CASE WHEN ${unreadPred} THEN ${newKeyExpr} END) AS min_unread
+  FROM ${fromSql}
+  WHERE ${base}${cd} >= @ckSecond
+) w;`);
+  const row = win.recordset?.[0] ?? {};
+  const maxRead = row.max_read ?? null;
+  const minUnread = row.min_unread ?? null;
+  if (maxRead != null && Number(row.ordered) === 1) {
+    return { key: String(maxRead), exact: true };
+  }
+  // ถอยมาก่อนแถวยังไม่อ่านตัวแรก / ก่อนวินาทีของที่คั่นหน้า (แถวที่เกินจะถูกอ่านซ้ำ)
+  const prev = await bindAll(newRequest(), {
+    minUnread: minUnread == null ? "" : String(minUnread),
+  }).query(`
+SELECT COALESCE(
+  (SELECT MAX(${newKeyExpr}) FROM ${fromSql}
+   WHERE ${base}${cd} >= @ckSecond AND ${readPred}
+     AND (@minUnread = N'' OR ${newKeyExpr} < @minUnread)),
+  (SELECT MAX(${newKeyExpr}) FROM ${fromSql} WHERE ${base}${cd} < @ckSecond)
+) AS k;`);
+  const k = prev.recordset?.[0]?.k;
+  // ไม่มีแถวก่อนหน้าเลย → เริ่มที่ต้นกลุ่มที่มีวันที่ ('1' น้อยกว่า key ทุกแถวที่มีวันที่)
+  return { key: k == null ? "1" : String(k), exact: false };
+}
+
+/**
  * resume ผ่าน migrate:all (มี sourceCountCap): แผน = cap − offset แต่ offset ใน checkpoint เป็นตัวนับสะสม
  * ที่เพี้ยนได้ (เคยนับแถวที่อ่านซ้ำ / ต้นทางลบแถว) → cap ตัดแถวใหม่ท้ายตารางทุกรอบ
- * นับตำแหน่งจริงของที่คั่นหน้าจากต้นทาง (จำนวนแถวที่อยู่ก่อน/ที่ checkpoint) แล้วใช้ค่าที่น้อยกว่า
+ * นับตำแหน่งจริงของที่คั่นหน้าจากต้นทาง (จำนวนแถวทั้งหมด − แถวที่อยู่หลังที่คั่นหน้า) แล้วใช้ค่าที่น้อยกว่า
  * → แผนมีแต่เท่าเดิมหรือมากขึ้น ไม่มีทางอ่านน้อยลงกว่าเดิม
- * 1 query ต่อรอบ เฉพาะตอนมี cap + resume ในโหมด CreatedDate (query รายหน้าไม่เปลี่ยน)
+ * 1 query ต่อรอบ เฉพาะตอนมี cap + มีที่คั่นหน้า (query รายหน้าไม่เปลี่ยน)
+ *
+ * afterPredicate ต้องเป็นเงื่อนไขเดียวกับ WHERE ของ query keyset ตารางนั้น
+ * baseWhere ต้องตรงกับเงื่อนไขที่ snapshot count ใช้ (migrateSourceCountSql.mjs)
+ * afterGuard (ถ้ามี) = เงื่อนไขถูกๆ ที่แถวหลังที่คั่นหน้าต้องผ่านเสมอ — กันคำนวณ afterPredicate ทั้งตาราง
+ * @param {() => import("mssql").Request} newRequest
+ * @param {{
+ *   tableLabel: string,
+ *   fromSql: string,
+ *   baseWhere?: string,
+ *   afterPredicate: string,
+ *   afterGuard?: string,
+ *   bind: (req: import("mssql").Request) => void,
+ *   offset: number,
+ *   migrationConfig: object,
+ *   indexLimited?: boolean,
+ * }} p
+ * @returns {Promise<number>}
+ */
+export async function reconcileResumeOffsetByAfterCount(newRequest, p) {
+  const { tableLabel, offset, migrationConfig, indexLimited = false } = p;
+  if (!(offset > 0)) return offset;
+  if (readSourceCountCap(migrationConfig) == null) return offset;
+  const kb = readNumericSourceKeyBounds(migrationConfig);
+  if (indexLimited || kb.min != null || kb.max != null) return offset;
+
+  const { total, after } = await countRowsAfterCursor(newRequest, p);
+  if (!Number.isFinite(total) || !Number.isFinite(after)) return offset;
+  const position = Math.max(0, total - after);
+  if (position >= offset) return offset;
+  console.error(
+    `>>> [${tableLabel}] ปรับ offset ตามตำแหน่ง checkpoint ในต้นทาง: ${offset} → ${position} (กัน cap ตัดแถวใหม่ท้ายตาราง)`,
+  );
+  return position;
+}
+
+/**
+ * ที่คั่นหน้าอยู่กลุ่มที่มีวันที่แล้ว → แถวหลังที่คั่นหน้าทุกแถวมี CreatedDate >= วันที่ของที่คั่นหน้า
+ * (กลุ่ม NULL ยังต้องนับทั้งตาราง เพราะแถวที่มีวันที่ทุกแถวอยู่หลังกลุ่ม NULL)
+ */
+function compositeCreatedDateGuard(sortBundle, composite) {
+  if (Number(composite?.afterNullBucket) !== 1) return "";
+  return `${bracketMssqlIdent(sortBundle.createdDateColumn)} >= @afterCreatedDate`;
+}
+
+/**
+ * ตัวปรับ offset ของตารางระดับ exam (examination / billing / examination_general / ultrasound / mammogram)
+ * โหมด CreatedDate ใช้ composite keyset; ไม่มี CreatedDate ใช้ [Exam_ID] > @afterExamId
  * @param {import("mssql").ConnectionPool} pool
  * @param {typeof import("mssql")} sqlLib
- * @param {{ tableLabel: string, sourceObjectNoLock: string, sortBundle: object, composite: object | null, offset: number, migrationConfig: object, indexLimited?: boolean }} p
+ * @param {{ tableLabel: string, sourceObjectNoLock: string, sortBundle: object, composite: object | null, afterExamId?: number | bigint | null, offset: number, migrationConfig: object, indexLimited?: boolean }} p
  * @returns {Promise<number>}
  */
 export async function reconcileCappedResumeOffset(pool, sqlLib, p) {
@@ -92,32 +272,92 @@ export async function reconcileCappedResumeOffset(pool, sqlLib, p) {
     sourceObjectNoLock,
     sortBundle,
     composite,
+    afterExamId = null,
     offset,
     migrationConfig,
     indexLimited = false,
   } = p;
-  if (!sortBundle?.createdDateColumn || composite == null) return offset;
-  if (readSourceCountCap(migrationConfig) == null) return offset;
-  const kb = readNumericSourceKeyBounds(migrationConfig);
-  if (indexLimited || kb.min != null || kb.max != null) return offset;
-  if (!(offset > 0) || !(Number(composite.afterNullBucket) >= 0)) return offset;
+  const common = {
+    tableLabel,
+    fromSql: sourceObjectNoLock,
+    offset,
+    migrationConfig,
+    indexLimited,
+  };
+  if (sortBundle?.createdDateColumn) {
+    if (composite == null || !(Number(composite.afterNullBucket) >= 0)) {
+      return offset;
+    }
+    return reconcileResumeOffsetByAfterCount(() => pool.request(), {
+      ...common,
+      afterPredicate: examIdOnlyCreatedDateWhereClause(
+        sortBundle.createdDateColumn,
+      ),
+      afterGuard: compositeCreatedDateGuard(sortBundle, composite),
+      bind: (req) => bindExamIdCompositeKeyset(req, sqlLib, composite),
+    });
+  }
+  if (afterExamId == null) return offset;
+  const after = BigInt(String(afterExamId));
+  if (after < 0n) return offset;
+  return reconcileResumeOffsetByAfterCount(() => pool.request(), {
+    ...common,
+    afterPredicate: "[Exam_ID] > @afterExamId",
+    bind: (req) => req.input("afterExamId", sqlLib.BigInt, after),
+  });
+}
 
-  const req = pool.request();
-  bindExamIdCompositeKeyset(req, sqlLib, composite);
-  const res = await req.query(`
-SELECT
-  COUNT_BIG(1) AS total_n,
-  SUM(CASE WHEN ${examIdOnlyCreatedDateWhereClause(sortBundle.createdDateColumn)} THEN 1 ELSE 0 END) AS after_n
-FROM ${sourceObjectNoLock};`);
-  const total = Number(res.recordset?.[0]?.total_n);
-  const after = Number(res.recordset?.[0]?.after_n ?? 0);
-  if (!Number.isFinite(total) || !Number.isFinite(after)) return offset;
-  const position = Math.max(0, total - after);
-  if (position >= offset) return offset;
-  console.error(
-    `>>> [${tableLabel}] ปรับ offset ตามตำแหน่ง checkpoint ในต้นทาง: ${offset} → ${position} (กัน cap ตัดแถวใหม่ท้ายตาราง)`,
-  );
-  return position;
+/**
+ * ตัวปรับ offset ของตารางลูก (Exam_ID + child id) — mammogram_cal/mass, ultrasound_cyst/mass, procedure
+ * @param {import("mssql").ConnectionPool} pool
+ * @param {typeof import("mssql")} sqlLib
+ * @param {{ tableLabel: string, sourceObjectNoLock: string, sortBundle: object, childColumn: string, keyExprs?: import("./mssqlCreatedDateCompositeKeyset.mjs").ExamChildKeyExprs, composite: object | null, afterExamId: number, afterChildId: number, offset: number, migrationConfig: object, indexLimited?: boolean }} p
+ * @returns {Promise<number>}
+ */
+export async function reconcileExamChildResumeOffset(pool, sqlLib, p) {
+  const {
+    tableLabel,
+    sourceObjectNoLock,
+    sortBundle,
+    childColumn,
+    keyExprs,
+    composite,
+    afterExamId,
+    afterChildId,
+    offset,
+    migrationConfig,
+    indexLimited = false,
+  } = p;
+  const common = {
+    tableLabel,
+    fromSql: sourceObjectNoLock,
+    offset,
+    migrationConfig,
+    indexLimited,
+  };
+  if (sortBundle?.createdDateColumn) {
+    if (composite == null || !(Number(composite.afterNullBucket) >= 0)) {
+      return offset;
+    }
+    return reconcileResumeOffsetByAfterCount(() => pool.request(), {
+      ...common,
+      afterPredicate: examChildCreatedDateWhereClause(
+        sortBundle.createdDateColumn,
+        childColumn,
+        keyExprs,
+      ),
+      afterGuard: compositeCreatedDateGuard(sortBundle, composite),
+      bind: (req) => bindExamChildCompositeKeyset(req, sqlLib, composite),
+    });
+  }
+  return reconcileResumeOffsetByAfterCount(() => pool.request(), {
+    ...common,
+    afterPredicate: examChildLegacyWhereClause(childColumn, keyExprs),
+    bind: (req) =>
+      req
+        .input("afterExamId", sqlLib.BigInt, afterExamId ?? 0)
+        .input("afterChildId", sqlLib.Int, afterChildId ?? 0),
+  });
 }
 
 /**

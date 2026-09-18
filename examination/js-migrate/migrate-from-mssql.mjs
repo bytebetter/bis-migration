@@ -768,6 +768,8 @@ async function runTableJob({
     sourceObjectNoLock,
     sortBundle: examinationSortBundle,
     composite: useCreatedDateKeyset ? compositeKs : null,
+    afterExamId:
+      useMssqlKeyset && !useCreatedDateKeyset ? numericKeysetAfter : null,
     offset,
     migrationConfig,
     indexLimited: idx.indexLimited,

@@ -11,6 +11,7 @@ import sql from "mssql";
 import pg from "pg";
 import {
   MSSQL_PACS_SYNC_PATIENT_BY_LOG_KEYS_SELECT,
+  MSSQL_PACS_SYNC_PATIENT_KEYSET_AFTER_PREDICATE,
   MSSQL_PACS_SYNC_PATIENT_ORDER_BY,
   MSSQL_PACS_SYNC_PATIENT_SELECT,
   MSSQL_PSP_KEYSET_TEXT_LEN,
@@ -56,6 +57,7 @@ import {
   trimRowsToMigrateCap,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
+import { reconcileResumeOffsetByAfterCount } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import { REPAIR_SPEC_PACS_SYNC_PATIENT } from "../../shared/js-migrate/migrateTableSpecs.mjs";
 import {
   finalizeRepairFromLog,
@@ -511,6 +513,17 @@ async function runPacsSyncPatientTableJob({
     } catch {
       sourceRowCountTotal = null;
     }
+  }
+  if (useMssqlKeyset && repairSourceIds == null) {
+    offset = await reconcileResumeOffsetByAfterCount(mssqlRequest, {
+      tableLabel: key,
+      fromSql: sourceRef,
+      afterPredicate: MSSQL_PACS_SYNC_PATIENT_KEYSET_AFTER_PREDICATE,
+      bind: (req) => bindKeysetInputs(req, mssqlKeysetAfter),
+      offset,
+      migrationConfig,
+      indexLimited: idx.indexLimited,
+    });
   }
   const plannedRows = prepareMigrateRowPlan({
     migrationConfig,

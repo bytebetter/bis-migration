@@ -169,6 +169,8 @@ async function main() {
     ...mergeMigrationWithCli(config?.migration, KEY),
     sourceCountCap: null,
   };
+  const migrateRowMode =
+    migration.migrateRowMode === "insert-only" ? "insert-only" : "overwrite";
   if (config.__profileName) {
     console.error(`>>> using config profile: ${config.__profileName}`);
   }
@@ -206,6 +208,7 @@ async function main() {
     batchSize,
     rowsLoadedToStaging: 0,
     rowsUpdated: 0,
+    rowsSkippedExisting: 0,
     examsProcessed: 0,
     examsMissingTarget: 0,
     skipped: 0,
@@ -232,6 +235,11 @@ async function main() {
       console.error(`>>> [${KEY}] source: ${sourceObject}`);
       console.error(
         `>>> [${KEY}] target: ${config.target.postgresDatabase} public.examination_general.recommendation_des + detail (update-only, batchSize=${batchSize})`,
+      );
+      console.error(
+        migrateRowMode === "insert-only"
+          ? `>>> [${KEY}] migrateRowMode=insert-only: แปลงเฉพาะ exam ที่ recommendation_des ยังไม่เป็นรายการ procedure (ไม่ทับของที่แก้ในระบบใหม่)`
+          : `>>> [${KEY}] migrateRowMode=overwrite: เขียนทับ recommendation_des ทุก exam`,
       );
 
       const idx = applySourceIndexToMigrateJob({
@@ -379,8 +387,13 @@ FROM ${sourceObjectNoLock};`);
           runLog.rowsLoadedToStaging += loaded;
           runLog.skipped += skipped;
           step = "post-load mapping (update recommendation_des)";
-          postResult = await runExamRecommendBirads45ChunkPostLoad(client);
+          postResult = await runExamRecommendBirads45ChunkPostLoad(
+            client,
+            undefined,
+            { migrateRowMode },
+          );
           runLog.rowsUpdated += postResult.rowsUpdated ?? 0;
+          runLog.rowsSkippedExisting += postResult.rowsSkippedExisting ?? 0;
           runLog.examsProcessed += postResult.examsProcessed ?? 0;
           runLog.examsMissingTarget += postResult.examsMissingTarget ?? 0;
           const issueResult = await runExamRecommendBirads45StagingFieldIssuePipeline(
@@ -420,6 +433,7 @@ FROM ${sourceObjectNoLock};`);
           firstExamId: ids[0] ?? null,
           lastExamId: ids.length > 0 ? ids[ids.length - 1] : null,
           rowsUpdated: postResult.rowsUpdated ?? 0,
+          rowsSkippedExisting: postResult.rowsSkippedExisting ?? 0,
           examsProcessed: postResult.examsProcessed ?? 0,
           examsMissingTarget: postResult.examsMissingTarget ?? 0,
           fetchMs,

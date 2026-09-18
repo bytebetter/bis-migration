@@ -6,9 +6,21 @@ import pg from "pg";
 import {
   MSSQL_PROCEDURE_BY_OLD_DB_IDS_SELECT,
   MSSQL_PROCEDURE_SELECT,
+  PROCEDURE_CHILD_COLUMN,
+  PROCEDURE_KEY_EXPRS,
+  buildMssqlProcedureKeysetSql,
+  buildMssqlProcedureKeyWalkSql,
+  convertProcedureOffsetCheckpoint,
   createMssqlProcedureSelectBundle,
 } from "./mssqlProcedureSelect.mjs";
 import { setupCreatedDateMigrationSort } from "../../shared/js-migrate/setupCreatedDateMigrationSort.mjs";
+import {
+  advanceExamChildCompositeKeyset,
+  buildCreatedDateCheckpointFields,
+  initExamChildCompositeKeysetFromCheckpoint,
+  queryExamChildKeysetPage,
+  reconcileExamChildResumeOffset,
+} from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import { ensureProcedurePipelineDdl } from "./procedurePgDdl.mjs";
 import { runProcedureChunkPostLoad } from "./procedureMapping.mjs";
 import {
@@ -43,6 +55,7 @@ import {
   narrowPlannedRowsForIndex,
   resolvePageSize,
   plannedRowsForPageSize,
+  shouldStopMigratePagination,
   trimRowsToMigrateCap,
 } from "../../shared/js-migrate/sourceIndexRange.mjs";
 import { prepareMigrateRowPlan } from "../../shared/js-migrate/sourceCountSnapshot.mjs";
@@ -346,9 +359,11 @@ async function runProcedureTableJob({
     migrationConfig,
     checkpointEnabled,
     offset,
-    useMssqlKeyset: false,
+    useMssqlKeyset: true,
   });
   offset = idx.offset;
+  /** OFFSET เหลือไว้เฉพาะ --source-index-range ที่เริ่มกลางตาราง */
+  const useKeyset = idx.useMssqlKeyset;
 
   const sourceSchema = source?.schema ?? "dbo";
   const sourceTable = source?.table ?? "biopsy";
@@ -371,6 +386,48 @@ async function runProcedureTableJob({
     "{{sourceObject}}",
     sourceObject,
   );
+  const useCreatedDateKeyset = sortBundle.createdDateColumn != null;
+  const keysetMode = useCreatedDateKeyset ? "created_date" : "exam_biopsy";
+  const keysetSql = buildMssqlProcedureKeysetSql(sortBundle).replaceAll(
+    "{{sourceObject}}",
+    sourceObject,
+  );
+  const checkpointKeysetUsable =
+    checkpointEnabled &&
+    checkpoint.pagination === "keyset" &&
+    checkpoint.keysetMode === keysetMode;
+  let compositeKs = initExamChildCompositeKeysetFromCheckpoint(
+    checkpointKeysetUsable ? checkpoint : {},
+    checkpointKeysetUsable,
+    !checkpointKeysetUsable,
+  );
+  let afterExamId = checkpointKeysetUsable
+    ? Number(checkpoint.afterExamId ?? -1)
+    : -1;
+  let afterChildId = checkpointKeysetUsable
+    ? Number(checkpoint.afterChildId ?? 0)
+    : 0;
+  /** old_db_id ที่ต้นทางมีแต่ Postgres ไม่มี และอยู่ก่อนที่คั่นหน้าที่แปลงมาจาก OFFSET */
+  let gapIds = [];
+  const procedureCheckpoint = (completed) => {
+    if (!useKeyset) {
+      return { key, offset, completed, updatedAt: new Date().toISOString() };
+    }
+    const cursor = useCreatedDateKeyset
+      ? buildCreatedDateCheckpointFields(sortBundle, {
+          offset,
+          completed,
+          composite: compositeKs,
+        })
+      : {
+          offset,
+          afterExamId,
+          afterChildId,
+          completed,
+          updatedAt: new Date().toISOString(),
+        };
+    return { key, ...cursor, pagination: "keyset", keysetMode };
+  };
   const logsDir = path.resolve(__dirname, "logs");
   const repairSourceIds = resolveMigrationSourceIds(
     migrationConfig,
@@ -436,6 +493,50 @@ async function runProcedureTableJob({
       sourceRowCountTotal = null;
     }
   }
+  if (useKeyset && repairSourceIds == null && offset > 0) {
+    if (!checkpointKeysetUsable) {
+      // checkpoint เดิมเป็น OFFSET — หาตำแหน่งจริงจาก old_db_id ที่มีใน Postgres
+      const conv = await convertProcedureOffsetCheckpoint({
+        mssqlPool,
+        pgClient,
+        keyWalkSql: buildMssqlProcedureKeyWalkSql(sortBundle).replaceAll(
+          "{{sourceObject}}",
+          sourceObject,
+        ),
+      });
+      if (conv.lastRow != null) {
+        if (useCreatedDateKeyset) {
+          compositeKs = advanceExamChildCompositeKeyset(
+            conv.lastRow,
+            "biopsy_id",
+          );
+        } else {
+          afterExamId = Number.parseInt(String(conv.lastRow.exam_id), 10);
+          afterChildId = Number.parseInt(String(conv.lastRow.biopsy_id), 10);
+        }
+      }
+      gapIds = conv.gapIds;
+      writeOutLine(
+        `>>> [${key}] แปลง checkpoint OFFSET → keyset: offset ${offset} → ${conv.position} (ที่คั่นหน้า ${conv.lastRow ? getExamBiopsyLog(conv.lastRow) : "ต้นตาราง"}), แถวก่อนที่คั่นหน้าที่ Postgres ยังไม่มี ${gapIds.length} แถว`,
+        uiState,
+      );
+      offset = conv.position;
+    } else {
+      offset = await reconcileExamChildResumeOffset(mssqlPool, sql, {
+        tableLabel: key,
+        sourceObjectNoLock: sourceObject,
+        sortBundle,
+        childColumn: PROCEDURE_CHILD_COLUMN,
+        keyExprs: PROCEDURE_KEY_EXPRS,
+        composite: compositeKs,
+        afterExamId,
+        afterChildId,
+        offset,
+        migrationConfig,
+        indexLimited: idx.indexLimited,
+      });
+    }
+  }
   const plannedRows = prepareMigrateRowPlan({
         migrationConfig: migrationConfig,
         sourceRowCountTotal,
@@ -469,9 +570,11 @@ async function runProcedureTableJob({
   }
 
   writeOutLine(
-    `>>> [${key}] start offset: ${offset} (OFFSET เธ•เธฒเธก [Exam_ID],[BiopsyID])`,
+    `>>> [${key}] start offset: ${offset} (${useKeyset ? `keyset ${useCreatedDateKeyset ? "CreatedDate→" : ""}Exam_ID→BiopsyID` : "OFFSET"})`,
     uiState,
   );
+  const gapBatches = [...batchIds(gapIds, batchSize)];
+  let gapBatchIndex = 0;
   await ensureProcedurePipelineDdl(pgClient);
 
   let total = 0;
@@ -488,24 +591,41 @@ async function runProcedureTableJob({
 
   while (true) {
     const chunkT0 = Date.now();
-    const pageSize = resolvePageSize({
-      batchSize,
-      total,
-      sourceLimit,
-      plannedRows: plannedRowsForPageSize(plannedRows, migrationConfig, idx.indexLimited),
-    });
+    // แถวที่ขาดก่อนที่คั่นหน้า (จากการแปลง checkpoint) — ไม่นับในแผน cap และไม่ขยับที่คั่นหน้า
+    const gapBatch =
+      !repairBatches && gapBatchIndex < gapBatches.length
+        ? gapBatches[gapBatchIndex++]
+        : null;
+    const pageSize = gapBatch
+      ? batchSize
+      : resolvePageSize({
+          batchSize,
+          total,
+          sourceLimit,
+          plannedRows: plannedRowsForPageSize(plannedRows, migrationConfig, idx.indexLimited),
+        });
     if (pageSize <= 0) break;
     const nextChunkIndex = chunkIndex + 1;
     if (debugLogs) {
       writeOutLine(
-        `>>> [${key}] fetch chunk ${nextChunkIndex}: offset=${offset} pageSize=${pageSize}`,
+        `>>> [${key}] fetch chunk ${nextChunkIndex}: offset=${offset} pageSize=${pageSize}${gapBatch ? " (แถวที่ขาดก่อนที่คั่นหน้า)" : ""}`,
         uiState,
       );
     }
 
     let rows = [];
     let fetchElapsedMs = 0;
-    if (repairBatches) {
+    if (gapBatch) {
+      const fetchStartedAt = Date.now();
+      rows = await fetchMssqlRowsByIds(mssqlPool, sql, {
+        ids: gapBatch,
+        detailSqlTemplate: repairDetailTemplate,
+        idType: "nvarchar",
+        nvarcharLength: 80,
+      });
+      fetchElapsedMs = Date.now() - fetchStartedAt;
+      if (rows.length === 0) continue;
+    } else if (repairBatches) {
       if (repairBatchIndex >= repairBatches.length) break;
       const idBatch = repairBatches[repairBatchIndex++];
       const fetchStartedAt = Date.now();
@@ -525,6 +645,24 @@ async function runProcedureTableJob({
         );
       }
       if (rows.length === 0) continue;
+    } else if (useKeyset) {
+      const fetchStartedAt = Date.now();
+      const keysetResult = await queryExamChildKeysetPage(
+        mssqlPool,
+        sql,
+        migrationConfig,
+        sortBundle,
+        { keysetSql, compositeKs, afterExamId, afterChildId, pageSize },
+      );
+      fetchElapsedMs = Date.now() - fetchStartedAt;
+      rows = keysetResult.rows;
+      if (useCreatedDateKeyset) compositeKs = keysetResult.compositeKs;
+      if (debugLogs) {
+        writeOutLine(
+          `>>> [${key}] fetched rows: ${rows.length} (chunk ${nextChunkIndex}, mssql_query_ms=${fetchElapsedMs})`,
+          uiState,
+        );
+      }
     } else {
       const fetchStartedAt = Date.now();
       const req = mssqlPool.request();
@@ -545,21 +683,23 @@ async function runProcedureTableJob({
     if (rows.length === 0) {
       if (debugLogs) {
         writeOutLine(
-          `>>> [${key}] no more rows (mssql ${Date.now() - fetchStartedAt}ms); chunk wall ${Date.now() - chunkT0}ms`,
+          `>>> [${key}] no more rows (mssql ${fetchElapsedMs}ms); chunk wall ${Date.now() - chunkT0}ms`,
           uiState,
         );
       }
       break;
     }
 
-    rows = trimRowsToMigrateCap(
-      rows,
-      total,
-      plannedRows,
-      migrationConfig,
-      idx.indexLimited,
-    );
-    if (rows.length === 0) break;
+    if (!gapBatch) {
+      rows = trimRowsToMigrateCap(
+        rows,
+        total,
+        plannedRows,
+        migrationConfig,
+        idx.indexLimited,
+      );
+      if (rows.length === 0) break;
+    }
 
     // state '3' (Sign to PACs) — report ที่ sync ขึ้น PACS แล้ว (RPT_TYPE ไม่ใช่ 2)
     const pacsSignedExamIds = await fetchPacsSignedExamIds(
@@ -656,23 +796,49 @@ async function runProcedureTableJob({
       );
     }
 
-    total += n;
-    if (!repairBatches) offset += n;
-    if (checkpointEnabled && !repairBatches) {
-      writeJson(checkpointPath, {
-        key,
-        offset,
-        completed: false,
-        updatedAt: new Date().toISOString(),
-      });
+    if (gapBatch) {
+      for (let i = 0; i < arrays.length; i++) arrays[i].length = 0;
+      rows.length = 0;
+      continue;
     }
-    const isLastPage =
-      isIndexWindowComplete({
-        indexLimited: idx.indexLimited,
-        migrationConfig,
-        plannedRows,
+
+    total += n;
+    if (!repairBatches) {
+      offset += n;
+      if (useKeyset) {
+        const last = rows[n - 1];
+        if (useCreatedDateKeyset) {
+          compositeKs = advanceExamChildCompositeKeyset(last, "biopsy_id");
+        } else {
+          afterExamId = Number.parseInt(String(last?.exam_id ?? ""), 10);
+          afterChildId = Number.parseInt(String(last?.biopsy_id ?? ""), 10);
+        }
+      }
+    }
+    if (checkpointEnabled && !repairBatches) {
+      writeJson(checkpointPath, procedureCheckpoint(false));
+    }
+    let isLastPage;
+    if (repairBatches) {
+      isLastPage = repairBatchIndex >= repairBatches.length;
+    } else if (useKeyset) {
+      isLastPage = shouldStopMigratePagination({
+        advance: n,
+        pageSize,
         rowsReadInWindow: total,
-      }) || n < pageSize;
+        plannedRows,
+        migrationConfig,
+        indexLimited: idx.indexLimited,
+      });
+    } else {
+      isLastPage =
+        isIndexWindowComplete({
+          indexLimited: idx.indexLimited,
+          migrationConfig,
+          plannedRows,
+          rowsReadInWindow: total,
+        }) || n < pageSize;
+    }
     if (debugLogs) {
       writeOutLine(
         `>>> [${key}] chunk ${chunkIndex}/${plannedChunks ?? "?"} done ${formatSec(
@@ -698,13 +864,8 @@ async function runProcedureTableJob({
 
   if (progressEnabled) endProgress(uiState);
 
-  if (checkpointEnabled) {
-    writeJson(checkpointPath, {
-      key,
-      offset,
-      completed: true,
-      updatedAt: new Date().toISOString(),
-    });
+  if (checkpointEnabled && !repairBatches) {
+    writeJson(checkpointPath, procedureCheckpoint(true));
   }
 
   let fieldIssueLogWritten = null;
