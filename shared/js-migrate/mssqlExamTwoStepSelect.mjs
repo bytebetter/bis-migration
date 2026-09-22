@@ -140,11 +140,13 @@ FROM {{sourceObjectBase}} AS s WITH (NOLOCK)
 WHERE ${examChildCreatedDateWhereClause(String(createdDateColumn).trim(), childColumn)}${keyRangeClause}
 ORDER BY ${examChildCreatedDateOrderBy(String(createdDateColumn).trim(), childColumn)}`.trim();
 
+  // selectColumns อ้าง s.[...] — ต้อง alias ตารางเป็น s เหมือน keyset
+  // (ไม่งั้น MSSQL 4104 "multi-part identifier could not be bound" ตอน --source-ids)
   const detailByExamIds = `
 SELECT
   ${selectColumns}
-FROM {{sourceObject}}
-WHERE [Exam_ID] IN ({{idPlaceholders}})
+FROM {{sourceObjectBase}} AS s WITH (NOLOCK)
+WHERE s.[Exam_ID] IN ({{idPlaceholders}})
 ORDER BY ${sort.orderBy}`.trim();
 
   const useCreatedDate = sort.createdDateColumn != null;
