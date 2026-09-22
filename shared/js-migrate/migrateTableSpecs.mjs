@@ -291,6 +291,22 @@ export const REPAIR_SPEC_APPOINTMENT_RESCHEDULES = {
   },
 };
 
+/** @type {RepairSpec} */
+export const REPAIR_SPEC_MOBILE_LOCATION = {
+  tableLabel: "mobile_location",
+  recordIdLabel: "old_id",
+  runLogPattern: /^migrate-.*\.json$/i,
+  fieldIssuePattern: /^migration-field-issues-mobile_location-.*\.json$/i,
+  collectIdsFromRunLog(runLog, idSet) {
+    collectIdsFromRunLogCommon(runLog, idSet, {
+      failedChunkIdFields: ["firstKey", "lastKey"],
+    });
+  },
+  collectIdsFromFieldIssueLog(payload, idSet) {
+    collectIdsFromFieldIssueLogCommon(payload, idSet, "old_id");
+  },
+};
+
 /** profile → spec (ทุกตารางใน pipeline) */
 export const REPAIR_SPEC_BY_PROFILE = {
   patient_info: REPAIR_SPEC_PATIENT_INFO,
@@ -309,4 +325,5 @@ export const REPAIR_SPEC_BY_PROFILE = {
   mam_mass: REPAIR_SPEC_MAM_MASS,
   ultrasound_cyst: REPAIR_SPEC_ULTRASOUND_CYST,
   ultrasound_mass: REPAIR_SPEC_ULTRASOUND_MASS,
+  mobile_location: REPAIR_SPEC_MOBILE_LOCATION,
 };

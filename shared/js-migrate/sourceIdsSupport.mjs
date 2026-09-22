@@ -70,6 +70,11 @@ export const SOURCE_IDS_PK_PROFILES = {
     table: "dbo.mammogram_cal",
     hint: "Exam_ID — ดึงทุก cal ของ exam",
   },
+  mobile_location: {
+    pkLabel: "ID",
+    table: "dbo.MOBILE_LOCATION",
+    hint: "เลข ID (= old_id ปลายทาง) เช่น 583",
+  },
 };
 
 const UNSUPPORTED_REASON = {

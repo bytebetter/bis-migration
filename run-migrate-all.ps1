@@ -12,6 +12,9 @@
     .\run-migrate-all.ps1 -Tables examination -MigrateRunMode repair-from-log
     .\run-migrate-all.ps1 -SourceIndexFrom 100 -SourceIndexTo 200 -SkipInstall
 
+  -StartFrom ดีฟอลต์ = 0 (เริ่มที่ step 0 mobile_location ซึ่งเป็นตาราง lookup เล็ก รันก่อนทุกตาราง)
+    ใส่ -StartFrom 1 เพื่อข้าม mobile_location แล้วเริ่มที่ patient_info — เลข step ของตารางเดิมไม่เปลี่ยน
+
   -MigrateRunMode resume (ดีฟอลต์) = ต่อจาก checkpoint, ไม่ทับแถวที่มีใน Postgres แล้ว
     ก่อนเริ่มจะตรวจ checkpoint กับตารางปลายทาง (scripts/check-resume-checkpoints.mjs):
     ปลายทางว่างแต่มี checkpoint → ย้าย checkpoint ออก (ตารางนั้นเริ่มใหม่) /
@@ -26,7 +29,7 @@
 
 param(
   [string] $ConfigPath = ".\migration.config.local.json",
-  [int] $StartFrom = 1,
+  [int] $StartFrom = 0,
   [switch] $SkipInstall,
   [string] $LogPath = "",
   [string[]] $Tables = @(),
@@ -152,6 +155,9 @@ $catchUpDir = Join-Path $logDir "catch-up"
 $catchUpScript = Join-Path $PSScriptRoot "scripts/catch-up-missing-rows.mjs"
 
 $steps = @(
+  # ตาราง lookup เล็ก ไม่มีตารางอื่นอ้างถึงตอน migrate — เทียบด้วย old_id ทุกรอบ ไม่ใช้ checkpoint
+  # เป็น step 0 (ไม่ใช่ 1) เพื่อไม่ต้องเลื่อนเลข step เดิมทั้งชุด — -StartFrom 1 = ข้ามตารางนี้
+  @{ N = 0;  Table = "mobile_location";     Profile = "mobile_location";     Script = "mobile-location/js-migrate/run-migrate.ps1" },
   @{ N = 1;  Table = "patient_info";        Profile = "patient_info";        Script = "patient-info/js-migrate/run-migrate.ps1" },
   @{ N = 2;  Table = "appointment";         Profile = "appointment";         Script = "appointment/js-migrate/run-migrate.ps1" },
   @{ N = 3;  Table = "appointment_reschedules"; Profile = "appointment_reschedules"; Script = "appointment-reschedules/js-migrate/run-migrate.ps1" },
@@ -181,6 +187,8 @@ $runAllTables = ($tableFilter.Count -eq 0)
 $repoRoot = $PSScriptRoot
 . (Join-Path $repoRoot "scripts\Get-MigrateNodeCliArgs.ps1")
 $total = $steps.Count
+# ป้ายบอกความคืบหน้าใช้เลข step (เริ่มที่ 0 = mobile_location) ไม่ใช่จำนวนตาราง
+$lastStep = ($steps | ForEach-Object { $_.N } | Measure-Object -Maximum).Maximum
 $started = Get-Date
 $rawRunMode = if ($MigrateRunMode) { $MigrateRunMode.Trim().ToLowerInvariant() } else { "resume" }
 $effectiveRunMode = if ($rawRunMode -eq "full") { "resume" } else { $rawRunMode }
@@ -189,7 +197,7 @@ Write-MigrateLog "=== BIS migrate all started ($total tables) ==="
 Write-MigrateLog "Config: $ConfigPath"
 Write-MigrateLog "Log file: $LogPath"
 Write-MigrateLog "Status file: $statusPath"
-if ($StartFrom -gt 1) { Write-MigrateLog "StartFrom step: $StartFrom" }
+if ($StartFrom -gt 0) { Write-MigrateLog "StartFrom step: $StartFrom" }
 Write-MigrateLog "MigrateRunMode: $effectiveRunMode (resume=checkpoint+skip-existing, overwrite=full-replace, repair-from-log=ids-from-log)"
 $idxRangeLog = if ($SourceIndexRange) { $SourceIndexRange.Trim() } else { "" }
 if ($idxRangeLog -eq "") {
@@ -279,7 +287,7 @@ if ($effectiveRunMode -eq "resume" -and -not $doCatchUp) {
 }
 
 if ($doSnapshot) {
-  Set-MigrateStatus ('RUNNING ; snapshot counts ; 0/{0}' -f $total)
+  Set-MigrateStatus ('RUNNING ; snapshot counts ; 0/{0}' -f $lastStep)
   # นับย้อนลำดับ (ตารางลูก → แม่ → patient_info): ต้นทางที่ยังมีคนใช้งาน แถวลูกที่อยู่ใน cap
   # จะมีแถวแม่อยู่ใน cap ของแม่เสมอ (แม่ถูกนับทีหลัง) — ไม่งั้นลูกได้ FK ว่างถาวร
   $snapshotSteps = @($steps)
@@ -321,25 +329,25 @@ if ($doSnapshot) {
   }
 }
 
-Set-MigrateStatus ('RUNNING ; waiting to start ; 0/{0}' -f $total)
+Set-MigrateStatus ('RUNNING ; waiting to start ; 0/{0}' -f $lastStep)
 
 foreach ($step in $steps) {
   if ($step.N -lt $StartFrom) {
-    Write-MigrateLog "[$($step.N)/$total] $($step.Table) (skipped, StartFrom=$StartFrom)" -Level SKIP
+    Write-MigrateLog "[$($step.N)/$lastStep] $($step.Table) (skipped, StartFrom=$StartFrom)" -Level SKIP
     continue
   }
   if (-not $runAllTables -and ($tableFilter -notcontains $step.Table.ToLowerInvariant())) {
-    Write-MigrateLog "[$($step.N)/$total] $($step.Table) (skipped, not in -Tables)" -Level SKIP
+    Write-MigrateLog "[$($step.N)/$lastStep] $($step.Table) (skipped, not in -Tables)" -Level SKIP
     continue
   }
 
-  $label = "[$($step.N)/$total] $($step.Table)"
+  $label = "[$($step.N)/$lastStep] $($step.Table)"
   $scriptPath = Join-Path $repoRoot $step.Script
   if (-not (Test-Path -LiteralPath $scriptPath)) {
     throw "Migration script not found: $scriptPath"
   }
 
-  Set-MigrateStatus ('RUNNING ; {0} ; {1}/{2}' -f $label, $step.N, $total)
+  Set-MigrateStatus ('RUNNING ; {0} ; {1}/{2}' -f $label, $step.N, $lastStep)
   Write-MigrateLog ('{0} - starting {1}' -f $label, $scriptPath) -Level START
 
   # เดิมให้โฟลเดอร์ที่ 2+ ข้าม npm — ตอนนี้ติดตั้งที่ root แล้วก่อนวนขั้นอยู่ด้านบน → ให้ลูกไม่เรียก npm ซ้ำ
@@ -375,18 +383,18 @@ foreach ($step in $steps) {
     }
     $stepElapsed = (Get-Date) - $stepStarted
     Write-MigrateLog ('{0} - done in {1}' -f $label, $stepElapsed.ToString('hh\:mm\:ss')) -Level OK
-    Set-MigrateStatus ('DONE step ; {0} ; {1}/{2}' -f $label, $step.N, $total)
+    Set-MigrateStatus ('DONE step ; {0} ; {1}/{2}' -f $label, $step.N, $lastStep)
   }
   catch {
     Write-MigrateLog ('{0} - FAILED: {1}' -f $label, $_) -Level FAIL
-    Set-MigrateStatus ('FAILED ; {0} ; {1}/{2}' -f $label, $step.N, $total)
+    Set-MigrateStatus ('FAILED ; {0} ; {1}/{2}' -f $label, $step.N, $lastStep)
     throw "Migration failed at step $($step.N): $($step.Table). See log: $LogPath"
   }
 
   # เก็บตก: แถวที่อยู่ใน snapshot แต่ Postgres ยังไม่มี (ตกอยู่ก่อน checkpoint) — ล้มเหลวไม่หยุดรอบ
   if ($catchUpKeys.ContainsKey($step.Profile)) {
     Set-Location -LiteralPath $repoRoot
-    Set-MigrateStatus ('RUNNING ; {0} catch-up ; {1}/{2}' -f $label, $step.N, $total)
+    Set-MigrateStatus ('RUNNING ; {0} catch-up ; {1}/{2}' -f $label, $step.N, $lastStep)
     $resultFile = Join-Path $catchUpDir ("{0}.result.json" -f $step.Profile)
     if (Test-Path -LiteralPath $resultFile) { Remove-Item -LiteralPath $resultFile -Force }
     $prevEap = $ErrorActionPreference
@@ -419,7 +427,7 @@ foreach ($step in $steps) {
       Write-MigrateLog ('{0} - เก็บตก FAILED ({1}) — ข้ามไป ไม่หยุดรอบนี้' -f $label, $why) -Level FAIL
       $catchUpFailed += $step.Table
     }
-    Set-MigrateStatus ('DONE step ; {0} ; {1}/{2}' -f $label, $step.N, $total)
+    Set-MigrateStatus ('DONE step ; {0} ; {1}/{2}' -f $label, $step.N, $lastStep)
   }
 }
 

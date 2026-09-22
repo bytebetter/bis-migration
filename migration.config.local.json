@@ -67,6 +67,7 @@
     "ultrasound_cyst": {},
     "mam": {},
     "mam_mass": {},
-    "mam_cal": {}
+    "mam_cal": {},
+    "mobile_location": {}
   }
 }

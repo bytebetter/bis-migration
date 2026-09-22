@@ -17,6 +17,7 @@ export const SOURCE_KEY_RANGE_SUPPORTED = {
   mam_mass: { field: "Exam_ID", table: "dbo.mammogram_mass" },
   mam_cal: { field: "Exam_ID", table: "dbo.mammogram_cal" },
   appointment: { field: "Schedule_ID", table: "dbo.schedule" },
+  mobile_location: { field: "ID", table: "dbo.MOBILE_LOCATION" },
 };
 
 const UNSUPPORTED_REASON = {
