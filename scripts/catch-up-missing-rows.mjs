@@ -104,16 +104,22 @@ async function loadSourceUnits(pool, srcObj, spec, keysFile) {
   return units;
 }
 
-/** คืน iterable (ไม่สร้าง array ชุดที่สอง — pacs_sync_info หลักล้านแถว) */
+/**
+ * rowCount = จำนวนแถวจริงใน Postgres (patient_info 1 แถวให้ได้ 2 key: pid + old_db_id)
+ * units = iterable (ไม่สร้าง array ชุดที่สอง — pacs_sync_info หลักล้านแถว)
+ */
 async function loadPgUnits(client, spec) {
   const res = await client.query({
     text: await spec.pgKeysSql(client),
     values: spec.pgParams ?? [],
     rowMode: "array",
   });
-  return (function* units() {
-    for (const row of res.rows) yield* pgUnitsOf(spec, row);
-  })();
+  return {
+    rowCount: res.rows.length,
+    units: (function* units() {
+      for (const row of res.rows) yield* pgUnitsOf(spec, row);
+    })(),
+  };
 }
 
 function runTableMigrate({ spec, profile, configPath, ids }) {
@@ -214,9 +220,11 @@ async function main() {
     });
     await client.connect();
     try {
-      const plan = computeCatchUpPlan(sourceUnits, await loadPgUnits(client, spec), {
+      const pgBefore = await loadPgUnits(client, spec);
+      const plan = computeCatchUpPlan(sourceUnits, pgBefore.units, {
         multiset: spec.multiset,
       });
+      plan.pgRows = pgBefore.rowCount;
       logPlan(tag, plan, dryRun);
       const toSend = plan.sends.slice(0, maxIds);
       Object.assign(result, {
@@ -254,7 +262,7 @@ async function main() {
       }
 
       // ตรวจซ้ำ: id ที่ส่งไปแล้วยังขาดอยู่ = map ไม่ผ่าน / ต้นทางลบไประหว่างนี้ (ดู field issue log ของตาราง)
-      const after = computeCatchUpPlan(sourceUnits, await loadPgUnits(client, spec), {
+      const after = computeCatchUpPlan(sourceUnits, (await loadPgUnits(client, spec)).units, {
         multiset: spec.multiset,
       });
       const sent = new Set(toSend);
