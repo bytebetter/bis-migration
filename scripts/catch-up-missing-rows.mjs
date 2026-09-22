@@ -26,6 +26,7 @@ import {
   resolveMssqlSourceObject,
   resolveRuntimeConfig,
 } from "../shared/js-migrate/resolveMigrationConfig.mjs";
+import { installMigrateLogFilter } from "../shared/js-migrate/migrateLogLevel.mjs";
 import {
   CATCH_UP_SPECS,
   childEnvWithoutNpm,
@@ -183,6 +184,9 @@ async function main() {
   const snapshotFile = argValue("--snapshot-keys");
   const keysFile = argValue("--keys");
   const resultFile = argValue("--result");
+  // ถูกเรียกจาก migrate:all (มี --result) → run-migrate-all.ps1 สรุปผลให้อยู่แล้ว
+  // รันเองจากมือไม่กรอง เพราะบรรทัดของสคริปต์นี้คือผลลัพธ์ที่ต้องการอ่าน
+  if (resultFile) installMigrateLogFilter();
   const dryRun = process.argv.includes("--dry-run");
   const maxIds = positiveInt(argValue("--max-ids"), 20000);
   const chunkSize = positiveInt(argValue("--chunk"), 2000);

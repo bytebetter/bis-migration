@@ -24,6 +24,9 @@
     ที่อยู่ก่อน checkpoint) แบบ insert-only — ล้มเหลวแค่ log FAIL ไม่หยุดรอบ; ปิดด้วย -NoCatchUp
   -MigrateRunMode overwrite = migrate ทั้งชุดจากต้น, เขียนทับข้อมูลเดิม
   -MigrateRunMode repair-from-log = เฉพาะ id ที่มีปัญหา จาก log ล่าสุดใน <ตาราง>/js-migrate/logs
+  -LogLevel quiet (ดีฟอลต์) = จอแสดงเฉพาะจำนวนต้นทาง, ตารางที่กำลังทำ [n/17], แถบ progress,
+    สรุปของแต่ละตาราง และคำเตือน/error — รายละเอียดที่เหลือยังลงไฟล์ log ครบเหมือนเดิม
+    normal = เพิ่มบรรทัดรายละเอียดของทุกขั้น, debug = ทุกอย่าง (รวม warning ของ node)
   -SkipInstall = ข้ามการตรวจและรัน npm ที่ root (ต้องมี `node_modules/mssql` และ `pg` ที่ root เองแล้ว)
 #>
 
@@ -40,11 +43,18 @@ param(
   [string] $SourceIndexFrom = "",
   [string] $SourceIndexTo = "",
   [switch] $NoSnapshotCounts,
-  [switch] $NoCatchUp
+  [switch] $NoCatchUp,
+  [ValidateSet("", "quiet", "normal", "debug")]
+  [string] $LogLevel = ""
 )
 
 $ErrorActionPreference = "Stop"
 Set-Location -LiteralPath $PSScriptRoot
+
+# quiet (ดีฟอลต์) = จอเหลือ จำนวนต้นทาง + ตารางที่กำลังทำ + progress + สรุป/คำเตือน
+# รายละเอียดทั้งหมดยังลงไฟล์ log เสมอ — ดูสดบนจอได้ด้วย -LogLevel normal
+$effectiveLogLevel = if ($LogLevel) { $LogLevel.Trim().ToLowerInvariant() } else { "quiet" }
+$env:MIGRATE_LOG_LEVEL = $effectiveLogLevel
 
 if (-not [System.IO.Path]::IsPathRooted($ConfigPath)) {
   $ConfigPath = Join-Path $PSScriptRoot $ConfigPath
@@ -70,10 +80,13 @@ function Write-MigrateLog {
   param(
     [string] $Message,
     [ValidateSet("INFO", "START", "OK", "FAIL", "SKIP")]
-    [string] $Level = "INFO"
+    [string] $Level = "INFO",
+    # รายละเอียด: เขียนลงไฟล์ log เสมอ แต่ขึ้นจอเฉพาะโหมด normal/debug
+    [switch] $Detail
   )
   $line = "{0:yyyy-MM-dd HH:mm:ss} [{1}] {2}" -f (Get-Date), $Level, $Message
   Add-Content -LiteralPath $LogPath -Value $line -Encoding UTF8
+  if ($Detail -and $effectiveLogLevel -eq "quiet") { return }
   switch ($Level) {
     "FAIL" { Write-Host $line -ForegroundColor Red }
     "OK"   { Write-Host $line -ForegroundColor Green }
@@ -194,9 +207,9 @@ $rawRunMode = if ($MigrateRunMode) { $MigrateRunMode.Trim().ToLowerInvariant() }
 $effectiveRunMode = if ($rawRunMode -eq "full") { "resume" } else { $rawRunMode }
 
 Write-MigrateLog "=== BIS migrate all started ($total tables) ==="
-Write-MigrateLog "Config: $ConfigPath"
+Write-MigrateLog "Config: $ConfigPath" -Detail
 Write-MigrateLog "Log file: $LogPath"
-Write-MigrateLog "Status file: $statusPath"
+Write-MigrateLog "Status file: $statusPath" -Detail
 if ($StartFrom -gt 0) { Write-MigrateLog "StartFrom step: $StartFrom" }
 Write-MigrateLog "MigrateRunMode: $effectiveRunMode (resume=checkpoint+skip-existing, overwrite=full-replace, repair-from-log=ids-from-log)"
 $idxRangeLog = if ($SourceIndexRange) { $SourceIndexRange.Trim() } else { "" }
@@ -310,7 +323,7 @@ if ($doSnapshot) {
       $k = Save-CatchUpKeys -Config $ConfigPath -ProfileName $step.Profile -RepoRoot $repoRoot -KeysFile $keysFile
       if ($null -ne $k) {
         $catchUpKeys[$step.Profile] = $keysFile
-        Write-MigrateLog ('snapshot keys  : {0} {1} (เก็บตก)' -f $step.Table, $k)
+        Write-MigrateLog ('snapshot keys  : {0} {1} (เก็บตก)' -f $step.Table, $k) -Detail
       }
       else {
         Write-MigrateLog ('snapshot keys  : {0} อ่านไม่สำเร็จ — ตารางนี้ไม่เก็บตกรอบนี้' -f $step.Table) -Level SKIP
@@ -348,7 +361,8 @@ foreach ($step in $steps) {
   }
 
   Set-MigrateStatus ('RUNNING ; {0} ; {1}/{2}' -f $label, $step.N, $lastStep)
-  Write-MigrateLog ('{0} - starting {1}' -f $label, $scriptPath) -Level START
+  # path แบบสั้น (เทียบ repo) — path เต็มอยู่ใน $scriptPath ตอน throw ถ้าไม่เจอไฟล์
+  Write-MigrateLog ('{0} - starting {1}' -f $label, $step.Script) -Level START
 
   # เดิมให้โฟลเดอร์ที่ 2+ ข้าม npm — ตอนนี้ติดตั้งที่ root แล้วก่อนวนขั้นอยู่ด้านบน → ให้ลูกไม่เรียก npm ซ้ำ
   $invokeArgs = @{
@@ -369,7 +383,7 @@ foreach ($step in $steps) {
     # เพดานจาก snapshot count — ใช้ sourceCountCap (ไม่เปลี่ยนชื่อ checkpoint ไม่กระทบ resume)
     if ($sf -eq "" -and $st -eq "" -and $countSnapshot.ContainsKey($step.Table)) {
       $invokeArgs.SourceCountCap = "$($countSnapshot[$step.Table])"
-      Write-MigrateLog ('{0} - cap {1} (snapshot)' -f $label, $countSnapshot[$step.Table])
+      Write-MigrateLog ('{0} - cap {1} (snapshot)' -f $label, $countSnapshot[$step.Table]) -Detail
     }
   }
 

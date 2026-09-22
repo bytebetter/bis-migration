@@ -71,3 +71,16 @@ function Get-MigrateNodeCliArgs {
 
   return $extra
 }
+
+# ระดับข้อความบนจอ — ค่าเดียวกับ shared/js-migrate/migrateLogLevel.mjs (ดีฟอลต์ quiet)
+function Get-MigrateLogLevel {
+  $raw = "$env:MIGRATE_LOG_LEVEL".Trim().ToLowerInvariant()
+  if ($raw -eq "normal" -or $raw -eq "debug") { return $raw }
+  return "quiet"
+}
+
+# บรรทัดรายละเอียดของ runner — ซ่อนในโหมด quiet (เหลือเฉพาะ progress + สรุปของตาราง)
+function Write-MigrateDetail {
+  param([string] $Message)
+  if ((Get-MigrateLogLevel) -ne "quiet") { Write-Host $Message }
+}

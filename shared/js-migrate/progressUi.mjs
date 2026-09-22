@@ -1,3 +1,11 @@
+import {
+  installMigrateLogFilter,
+  shouldPrintMigrateLine,
+} from "./migrateLogLevel.mjs";
+
+// ทุก entry ของ migrate import ไฟล์นี้ — ติดตั้งตัวกรองข้อความครั้งเดียวตอนโหลด
+const migrateLogLevel = installMigrateLogFilter();
+
 const PROGRESS_LINE_WIDTH = 200;
 
 export function createUiState() {
@@ -81,6 +89,7 @@ export function renderProgress(
 }
 
 export function writeOutLine(msg, state) {
+  if (!shouldPrintMigrateLine(msg, migrateLogLevel)) return;
   if (state?.progressInline) {
     process.stdout.write("\n");
     state.progressInline = false;
