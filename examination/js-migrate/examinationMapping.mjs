@@ -401,6 +401,8 @@ const INSERT_DEFS = [
     (row) => toMobileUpdatedEpoch(getField(row, "mobile_updated")),
   ],
   ["mobile_loc", "int4", (row) => toStrictInt(getField(row, "mobile_loc"))],
+  // relation -> public.mobile_location: mobile_loc คือ id ระบบเก่า = mobile_location.old_id
+  ["mobile_location", "int4", (_row, ctx) => ctx.mobileLocationId],
   [
     "bct_l_date",
     "timestamp",
@@ -516,6 +518,7 @@ const EXAMINATION_MSSQL_SOURCE = {
   patient: "pid",
   pregnant: "pragnant",
   appointment: "schedule_id",
+  mobile_location: "mobile_loc",
 };
 
 function mssqlSourceKey(pgColumn) {
@@ -581,12 +584,30 @@ function collectExaminationFieldIssues({
     });
   }
 
+  const mobileLocRaw = getField(row, "mobile_loc");
+  const mobileLocInt = toStrictInt(mobileLocRaw);
+  // 0 = ไม่ได้ออกหน่วย (ค่า sentinel ของระบบเก่า) ไม่ใช่ id ที่หาไม่เจอ
+  if (
+    mobileLocInt != null &&
+    mobileLocInt > 0 &&
+    context.mobileLocationId == null
+  ) {
+    issues.push({
+      field: "mobile_location",
+      reason: "mobile_location_not_resolved",
+      message: "มี Mobile_Loc แต่ไม่พบ mobile_location.old_id ที่ตรงกัน",
+      source_raw: mobileLocRaw,
+      mapped: mappedByName.get("mobile_location") ?? null,
+    });
+  }
+
   const skipGeneric = new Set([
     "patient",
     "appointment",
     "referring_md",
     "old_exam_id",
     "old_pid",
+    "mobile_location",
   ]);
 
   for (const [col, pgType] of INSERT_DEFS) {
@@ -836,6 +857,64 @@ export async function syncExaminationIdSequenceOnce(pgClient) {
     )
     WHERE pg_get_serial_sequence('public.examination', 'id') IS NOT NULL;
   `);
+}
+
+/**
+ * id ของ public.mobile_location ต่อ old_id (= [Mobile_Loc] ของ MSSQL)
+ * ตาราง lookup หลักร้อยแถว — โหลดใหม่ทุก chunk ให้ได้แถวที่ step 0 เพิ่งเพิ่มเข้ามาด้วย
+ * ไม่มีตาราง mobile_location (ยังไม่ได้ migrate) = แมปไม่ได้ ปล่อย null ทั้งชุด
+ */
+async function loadMobileLocationIdByOldId(pgClient) {
+  const map = new Map();
+  const exists = await pgClient.query(
+    "SELECT to_regclass('public.mobile_location') IS NOT NULL AS ok",
+  );
+  if (exists.rows[0]?.ok !== true) return map;
+  const { rows } = await pgClient.query(
+    `SELECT id, old_id FROM public.mobile_location WHERE old_id IS NOT NULL ORDER BY id`,
+  );
+  for (const r of rows) {
+    const k = String(r.old_id);
+    if (!map.has(k)) map.set(k, r.id);
+  }
+  return map;
+}
+
+/** [Mobile_Loc] -> mobile_location.id ; 0 / ว่าง / ไม่เจอ = null */
+function resolveMobileLocationId(idByOldId, mobileLocRaw) {
+  const n = toStrictInt(mobileLocRaw);
+  if (n == null || n <= 0) return null;
+  return idByOldId.get(String(n)) ?? null;
+}
+
+/**
+ * เติม examination.mobile_location ให้แถวที่ migrate ไปก่อนหน้า (ตอนยังไม่มีฟิลด์นี้)
+ * เติมเฉพาะแถวที่ยังว่าง — ค่าที่คนตั้งไว้ในระบบใหม่ไม่ถูกแตะ
+ */
+export async function backfillExaminationMobileLocation(pgClient) {
+  const ready = await pgClient.query(`
+    SELECT
+      to_regclass('public.mobile_location') IS NOT NULL AS has_table,
+      EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'examination'
+          AND column_name = 'mobile_location'
+      ) AS has_column
+  `);
+  if (ready.rows[0]?.has_table !== true || ready.rows[0]?.has_column !== true) {
+    return { rowsFilled: 0, skipped: true };
+  }
+  const r = await pgClient.query(`
+    UPDATE public.examination AS t
+    SET mobile_location = m.id
+    FROM public.mobile_location m
+    WHERE t.mobile_location IS NULL
+      AND t.mobile_loc IS NOT NULL
+      AND t.mobile_loc > 0
+      AND m.old_id = t.mobile_loc
+  `);
+  return { rowsFilled: r.rowCount ?? 0, skipped: false };
 }
 
 let cachedAppointmentPatientColForExam;
@@ -1096,6 +1175,9 @@ export async function runExaminationChunkPostLoad(
   );
   let fallbackAppointmentResolved = 0;
 
+  const mobileLocationIdByOldId = await loadMobileLocationIdByOldId(pgClient);
+  let mobileLocationUnresolved = 0;
+
   const arrays = INSERT_DEFS.map(() => []);
   const insertedExamIds = [];
 
@@ -1147,7 +1229,16 @@ export async function runExaminationChunkPostLoad(
         fallbackAppointmentResolved++;
       }
     }
-    const context = { patientId, appointmentId };
+    const mobileLocRawValue = getField(row, "mobile_loc");
+    const mobileLocationId = resolveMobileLocationId(
+      mobileLocationIdByOldId,
+      mobileLocRawValue,
+    );
+    const mobileLocNum = toStrictInt(mobileLocRawValue);
+    if (mobileLocNum != null && mobileLocNum > 0 && mobileLocationId == null) {
+      mobileLocationUnresolved++;
+    }
+    const context = { patientId, appointmentId, mobileLocationId };
     const rowMeta = {
       examIdRaw: u,
       scheduleId,
@@ -1189,6 +1280,12 @@ export async function runExaminationChunkPostLoad(
   if (fallbackAppointmentResolved > 0) {
     log(
       `>>> [examination] post-load: schedule_id เป็น null แต่จับคู่ appointment จาก pid+วันที่(ปี+เดือน+วัน) ได้ ${fallbackAppointmentResolved} ราย`,
+    );
+  }
+
+  if (mobileLocationUnresolved > 0) {
+    log(
+      `>>> [examination] post-load: Mobile_Loc ${mobileLocationUnresolved} แถวไม่พบใน public.mobile_location (mobile_location = null, mobile_loc ยังเก็บเลขเดิมไว้ — ดู field issue log)`,
     );
   }
 

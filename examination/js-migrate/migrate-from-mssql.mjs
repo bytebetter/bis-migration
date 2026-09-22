@@ -23,11 +23,13 @@ import {
   setupCreatedDateMigrationSort,
 } from "../../shared/js-migrate/setupCreatedDateMigrationSort.mjs";
 import {
+  ensureExaminationMobileLocationField,
   ensureExaminationOldExamIdIndex,
   ensureExaminationStagingDdl,
 } from "./examinationPgDdl.mjs";
 import { patientPidMatchSql } from "../../shared/js-migrate/patientPidMatch.mjs";
 import {
+  backfillExaminationMobileLocation,
   buildFieldIssueLogPayload,
   createFieldIssueAccumulator,
   getField,
@@ -699,6 +701,7 @@ async function runTableJob({
     );
     await ensureExaminationStagingDdl(pgClient);
     await ensureExaminationOldExamIdIndex(pgClient);
+    await ensureExaminationMobileLocationField(pgClient);
     await resetExaminationIdSequenceIfEmpty(pgClient);
   }
   for (const sqlFile of toArray(tableJob.preLoadSqlFiles)) {
@@ -1487,6 +1490,17 @@ LIMIT 200;
 
   if (isExaminationBuiltin) {
     await syncExaminationIdSequenceOnce(pgClient);
+    // แถวที่ migrate ไปก่อนมีฟิลด์นี้ (หรือก่อน mobile_location มีแถวนั้น) — เติมให้ครบ
+    const mlBackfill = await backfillExaminationMobileLocation(pgClient);
+    if (mlBackfill.skipped) {
+      console.error(
+        `>>> [${key}] mobile_location: ข้าม backfill (ยังไม่มีตาราง public.mobile_location หรือคอลัมน์ examination.mobile_location)`,
+      );
+    } else if (mlBackfill.rowsFilled > 0) {
+      console.error(
+        `>>> [${key}] mobile_location: เติมย้อนหลัง ${mlBackfill.rowsFilled} แถว (เฉพาะแถวที่ยังว่าง)`,
+      );
+    }
   }
 
   if (checkpointEnabled) {

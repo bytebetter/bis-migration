@@ -141,6 +141,74 @@ export async function ensureExaminationStagingDdl(pgClient) {
   console.error(">>> [examination] ensure: staging DDL done");
 }
 
+/**
+ * ฟิลด์ relation public.examination.mobile_location -> public.mobile_location(id)
+ *
+ * ต้นทางมีแค่ [Mobile_Loc] เป็นเลข id ของระบบเก่า (เก็บดิบไว้ที่คอลัมน์ mobile_loc เหมือนเดิม)
+ * ฟิลด์นี้คือตัวที่ join กับตาราง mobile_location จริง — สร้างเองทุกครั้ง (idempotent)
+ * เพราะของที่ไม่ได้สร้างผ่าน Directus UI จะไม่ติดมากับ dump ตอน restore baseline
+ *
+ * metadata ของ Directus (directus_fields/directus_relations) ใส่ให้ด้วย เพื่อให้ขึ้นเป็น m2o ใน UI
+ * — Directus cache schema ไว้ ต้อง restart หรือล้าง cache 1 ครั้งหลังสร้างครั้งแรก
+ */
+export async function ensureExaminationMobileLocationField(pgClient) {
+  console.error(">>> [examination] ensure: column examination.mobile_location");
+  await pgClient.query(`
+    ALTER TABLE public.examination
+      ADD COLUMN IF NOT EXISTS mobile_location integer;
+  `);
+
+  // FK ตั้งได้เมื่อมีตาราง mobile_location แล้ว (migrate step 0 มาก่อน examination)
+  await pgClient.query(`
+DO $$
+BEGIN
+  IF to_regclass('public.mobile_location') IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM pg_constraint
+       WHERE conname = 'examination_mobile_location_foreign'
+     ) THEN
+    ALTER TABLE public.examination
+      ADD CONSTRAINT examination_mobile_location_foreign
+      FOREIGN KEY (mobile_location) REFERENCES public.mobile_location(id)
+      ON DELETE SET NULL;
+  END IF;
+END $$;
+`.trim());
+
+  await pgClient.query(`
+DO $$
+BEGIN
+  IF to_regclass('public.directus_fields') IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM public.directus_fields
+       WHERE collection = 'examination' AND field = 'mobile_location'
+     ) THEN
+    INSERT INTO public.directus_fields
+      (collection, field, special, interface, options, display, display_options, readonly, hidden, sort, width)
+    VALUES
+      ('examination', 'mobile_location', 'm2o', 'select-dropdown-m2o',
+       '{"template":"{{name}}"}', 'related-values', '{"template":"{{name}}"}',
+       false, false,
+       (SELECT COALESCE(MAX(sort), 0) + 1 FROM public.directus_fields WHERE collection = 'examination'),
+       'half');
+  END IF;
+
+  IF to_regclass('public.directus_relations') IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM public.directus_relations
+       WHERE many_collection = 'examination' AND many_field = 'mobile_location'
+     ) THEN
+    INSERT INTO public.directus_relations
+      (many_collection, many_field, one_collection, one_deselect_action)
+    VALUES ('examination', 'mobile_location', 'mobile_location', 'nullify');
+  END IF;
+END $$;
+`.trim());
+  console.error(
+    ">>> [examination] ensure: mobile_location column + FK + Directus field/relation (ถ้ามีแล้วจะข้าม)",
+  );
+}
+
 /** ลด O(n) ตอน public.examination โต: DELETE/ JOIN stats ตาม old_exam_id */
 export async function ensureExaminationOldExamIdIndex(pgClient) {
   console.error(">>> [examination] ensure: create index idx_examination_old_exam_id");
