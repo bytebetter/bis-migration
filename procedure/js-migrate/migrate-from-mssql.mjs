@@ -922,7 +922,7 @@ async function main() {
   if (!config?.source) throw new Error("Missing source config");
   if (!config?.target) throw new Error("Missing target config");
   if (config.__profileName) {
-    process.stdout.write(`>>> using config profile: ${config.__profileName}\n`);
+    writeOutLine(`>>> using config profile: ${config.__profileName}`);
   }
   assertMssqlSourceReady(config.source);
 
@@ -976,7 +976,7 @@ async function main() {
     runLog.finishedAt = new Date().toISOString();
     const logPath = path.join(logsDir, `migrate-${nowStamp()}.json`);
     fs.writeFileSync(logPath, `${JSON.stringify(runLog, null, 2)}\n`, "utf8");
-    process.stdout.write(`>>> migration log saved: ${logPath}\n`);
+    writeOutLine(`>>> migration log saved: ${logPath}`);
   }
 }
 
