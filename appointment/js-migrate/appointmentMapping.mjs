@@ -192,6 +192,8 @@ export function mapScheduleRowToAppointment(
     is_new_patient: mapSchedulePatientTypeToIsNewPatient(
       getField(row, "Patient_Type"),
     ),
+    /** เก็บ Payment_Type ของ schedule ตามต้นทาง (appointment.payment_type ยังมาจาก billing step) */
+    payment_type_old: toInt(getField(row, "Payment_Type")),
     receive_date: toDirectusDateTime(getField(row, "Receive_Date")),
     old_login_name: nullIfTrimEmpty(getField(row, "LoginName")),
     memo_detail: nullIfTrimEmpty(getField(row, "MemoDetail")),
@@ -227,6 +229,7 @@ export function normScheduleId(v) {
 let cachedAppointmentFkMeta = null;
 let cachedOldDbIdIsTextLike = null;
 let cachedAppointmentPatientColumn = undefined;
+let cachedPaymentTypeOldArrayType = undefined;
 let cachedSlotIdByClock = null;
 const cachedAllowedFkSetByKey = new Map();
 
@@ -487,6 +490,30 @@ async function resolveAppointmentPatientColumn(pgClient) {
   return cachedAppointmentPatientColumn;
 }
 
+/**
+ * ชนิด array สำหรับ unnest ของ appointment.payment_type_old ตามชนิดคอลัมน์ปลายทาง
+ * @returns {Promise<"int4[]" | "text[]" | null>} null = ปลายทางยังไม่มีคอลัมน์นี้ (ข้าม)
+ */
+async function resolvePaymentTypeOldArrayType(pgClient) {
+  if (cachedPaymentTypeOldArrayType !== undefined) {
+    return cachedPaymentTypeOldArrayType;
+  }
+  const r = await pgClient.query(`
+    SELECT data_type
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'appointment'
+      AND column_name = 'payment_type_old'
+    LIMIT 1
+  `);
+  const dt = r.rows?.[0]?.data_type;
+  if (dt == null) cachedPaymentTypeOldArrayType = null;
+  else if (["integer", "smallint", "bigint", "numeric"].includes(dt)) {
+    cachedPaymentTypeOldArrayType = "int4[]";
+  } else cachedPaymentTypeOldArrayType = "text[]";
+  return cachedPaymentTypeOldArrayType;
+}
+
 /** @returns {Record<string, unknown[]>} */
 function buildAppointmentColumnArrays(payloads, patientColumn) {
   const arrays = {
@@ -497,6 +524,7 @@ function buildAppointmentColumnArrays(payloads, patientColumn) {
     first_name: [],
     last_name: [],
     is_new_patient: [],
+    payment_type_old: [],
     receive_date: [],
     old_login_name: [],
     memo_detail: [],
@@ -529,6 +557,7 @@ function buildAppointmentColumnArrays(payloads, patientColumn) {
     arrays.first_name.push(item.first_name);
     arrays.last_name.push(item.last_name);
     arrays.is_new_patient.push(item.is_new_patient ?? null);
+    arrays.payment_type_old.push(item.payment_type_old ?? null);
     arrays.receive_date.push(item.receive_date);
     arrays.old_login_name.push(item.old_login_name);
     arrays.memo_detail.push(item.memo_detail);
@@ -555,7 +584,11 @@ function buildAppointmentColumnArrays(payloads, patientColumn) {
   return arrays;
 }
 
-function buildAppointmentInsertDefs(arrays, patientColumn) {
+function buildAppointmentInsertDefs(
+  arrays,
+  patientColumn,
+  paymentTypeOldArrayType = null,
+) {
   return [
     ["appointment_datetime", "timestamp[]", arrays.appointment_datetime],
     ["appointment_status", "text[]", arrays.appointment_status],
@@ -564,6 +597,9 @@ function buildAppointmentInsertDefs(arrays, patientColumn) {
     ["first_name", "text[]", arrays.first_name],
     ["last_name", "text[]", arrays.last_name],
     ["is_new_patient", "int4[]", arrays.is_new_patient],
+    ...(paymentTypeOldArrayType
+      ? [["payment_type_old", paymentTypeOldArrayType, arrays.payment_type_old]]
+      : []),
     ["receive_date", "timestamp[]", arrays.receive_date],
     ["old_login_name", "text[]", arrays.old_login_name],
     ["memo_detail", "text[]", arrays.memo_detail],
@@ -810,6 +846,7 @@ export async function runAppointmentChunkPostLoad(
 
   const fkMeta = await getAppointmentForeignKeyMeta(pgClient);
   const patientColumn = await resolveAppointmentPatientColumn(pgClient);
+  const paymentTypeOldArrayType = await resolvePaymentTypeOldArrayType(pgClient);
   const slotByClock = await getSlotIdByClock(pgClient);
   const payloads = rows.map((r) => mapScheduleRowToAppointment(r));
   const chunkPids = rows.map((r) => rowPid(r)).filter((p) => p != null);
@@ -938,7 +975,11 @@ export async function runAppointmentChunkPostLoad(
       insertPayloads,
       patientColumn,
     );
-    const insertDefs = buildAppointmentInsertDefs(insertArrays, patientColumn);
+    const insertDefs = buildAppointmentInsertDefs(
+      insertArrays,
+      patientColumn,
+      paymentTypeOldArrayType,
+    );
     rowsInserted += await bulkInsertAppointments(pgClient, insertDefs);
   }
   // insert-only: updatePayloads มีแต่ placeholder ที่จะ UPDATE เป็นนัดจริง
@@ -947,7 +988,11 @@ export async function runAppointmentChunkPostLoad(
       updatePayloads,
       patientColumn,
     );
-    const updateDefs = buildAppointmentInsertDefs(updateArrays, patientColumn);
+    const updateDefs = buildAppointmentInsertDefs(
+      updateArrays,
+      patientColumn,
+      paymentTypeOldArrayType,
+    );
     rowsInserted += await bulkUpdateAppointmentsByOldDbId(pgClient, updateDefs);
   }
 
@@ -1033,6 +1078,7 @@ const APPOINTMENT_MSSQL_SOURCE = {
   prefix: "prefix",
   first_name: "name",
   last_name: "surname",
+  payment_type_old: "payment_type",
   receive_date: "receive_date",
   old_login_name: "login_name",
   memo_detail: "memo_detail",
@@ -1114,6 +1160,7 @@ function collectAppointmentFieldIssues(row, mapped, ctx) {
     if (
       [
         "appointment_no",
+        "payment_type_old",
         "fail",
         "inventional",
         "right_id",
@@ -1146,6 +1193,7 @@ export const SCHEDULE_TO_APPOINTMENT_FIELD_MAP = [
   ["Surname", "last_name"],
   ["Patient_Type", "is_new_patient"],
   ["Patient_Type", "patient_info.patient_category"],
+  ["Payment_Type", "payment_type_old"],
   ["Receive_Date", "receive_date"],
   ["LoginName", "old_login_name"],
   ["MemoDetail", "memo_detail"],

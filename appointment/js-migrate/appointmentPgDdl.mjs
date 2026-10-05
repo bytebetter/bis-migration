@@ -5,6 +5,7 @@ CREATE TABLE migrate_stg.appointment_mssql (
   prefix TEXT,
   name TEXT,
   surname TEXT,
+  payment_type TEXT,
   patient_type TEXT,
   pid TEXT,
   age TEXT,

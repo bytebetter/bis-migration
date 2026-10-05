@@ -89,6 +89,7 @@ const APPOINTMENT_COLUMNS = [
   "prefix",
   "name",
   "surname",
+  "payment_type",
   "patient_type",
   "pid",
   "age",
