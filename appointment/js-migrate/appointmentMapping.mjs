@@ -106,6 +106,7 @@ function toDirectusDateTime(value) {
 /** ค่า default ของคอลัมน์ appointment_status ใน public.appointment */
 export const APPOINTMENT_STATUS_NOT_YET = "ยังไม่ถึงเวลานัด/ยังไม่มา";
 export const APPOINTMENT_STATUS_COMPLETED = "เสร็จสิ้น";
+export const APPOINTMENT_STATUS_NO_SHOW = "ไม่มาตามนัด";
 
 /**
  * MSSQL schedule ไม่มีคอลัมน์ต้นทางสำหรับช่องทางการนัดหมาย
@@ -121,8 +122,12 @@ function bangkokNowDirectusDateTime() {
   return new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 19);
 }
 
-/** นัดที่เวลาผ่านมาแล้ว = เสร็จสิ้น, นอกนั้นคงค่า default ของคอลัมน์ */
-function mapAppointmentStatus(appointmentDatetime, nowBangkok) {
+/**
+ * schedule.Fail = 1 → ไม่มาตามนัด (มาก่อนเงื่อนไขเวลา)
+ * นัดที่เวลาผ่านมาแล้ว = เสร็จสิ้น, นอกนั้นคงค่า default ของคอลัมน์
+ */
+function mapAppointmentStatus(appointmentDatetime, nowBangkok, fail) {
+  if (fail === 1) return APPOINTMENT_STATUS_NO_SHOW;
   if (appointmentDatetime != null && appointmentDatetime < nowBangkok) {
     return APPOINTMENT_STATUS_COMPLETED;
   }
@@ -182,9 +187,14 @@ export function mapScheduleRowToAppointment(
   const appointmentDatetime = toDirectusDateTime(
     getField(row, "Schedule_Datetime"),
   );
+  const fail = toInt(getField(row, "Fail"));
   return {
     appointment_datetime: appointmentDatetime,
-    appointment_status: mapAppointmentStatus(appointmentDatetime, nowBangkok),
+    appointment_status: mapAppointmentStatus(
+      appointmentDatetime,
+      nowBangkok,
+      fail,
+    ),
     appointment_no: toInt(getField(row, "Schedule_Number")),
     prefix: nullIfTrimEmpty(getField(row, "Prefix")),
     first_name: nullIfTrimEmpty(getField(row, "Name")),
@@ -195,17 +205,17 @@ export function mapScheduleRowToAppointment(
     /** เก็บ Payment_Type ของ schedule ตามต้นทาง (appointment.payment_type ยังมาจาก billing step) */
     payment_type_old: toInt(getField(row, "Payment_Type")),
     receive_date: toDirectusDateTime(getField(row, "Receive_Date")),
-    old_login_name: nullIfTrimEmpty(getField(row, "LoginName")),
-    memo_detail: nullIfTrimEmpty(getField(row, "MemoDetail")),
+    old_login_name: nullIfTrimEmpty(getField(row, "login_name")),
+    memo_detail: nullIfTrimEmpty(getField(row, "memo_detail")),
     /** คอลัมน์ fail ในฐานเป็น integer (เช่น 0/1) ไม่ใช่ boolean */
-    fail: toInt(getField(row, "Fail")),
+    fail,
     telephone: nullIfTrimEmpty(getField(row, "Telephone")),
     /** คอลัมน์ inventional ในฐานเป็น integer */
     inventional: toInt(getField(row, "Inventional")),
-    biopsy_proc: nullIfTrimEmpty(getField(row, "BiopsyProc")),
+    biopsy_proc: nullIfTrimEmpty(getField(row, "biopsy_proc")),
     referring_md: nullIfTrimEmpty(getField(row, "referring_md")),
-    biopsy_comment: nullIfTrimEmpty(getField(row, "BiopsyComment")),
-    biopsy_radiologistg: nullIfTrimEmpty(getField(row, "BiopsyRadiologist")),
+    biopsy_comment: nullIfTrimEmpty(getField(row, "biopsy_comment")),
+    biopsy_radiologistg: nullIfTrimEmpty(getField(row, "biopsy_radiologist")),
     mobile: nullIfTrimEmpty(getField(row, "Mobile")),
     is_online: toInt(getField(row, "is_online")),
     have_doc: toInt(getField(row, "have_doc")),
