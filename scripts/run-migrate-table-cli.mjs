@@ -62,6 +62,7 @@ const PROFILE_DIR = {
   ultrasound_mass: "ultrasound-mass",
   birads_mass_cyst: "birads-mass-cyst",
   mobile_location: "mobile-location",
+  surgical_patho: "surgical-patho",
 };
 
 const profile = process.argv[2];

@@ -65,6 +65,7 @@ export const DEFAULT_MSSQL_SOURCE_TABLE = {
   ultrasound_cyst: "ultrasound_cyst",
   ultrasound_mass: "ultrasound_mass",
   mobile_location: "MOBILE_LOCATION",
+  surgical_patho: "SURGICAL_PATHO",
 };
 
 /**

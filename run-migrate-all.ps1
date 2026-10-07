@@ -24,7 +24,7 @@
     ที่อยู่ก่อน checkpoint) แบบ insert-only — ล้มเหลวแค่ log FAIL ไม่หยุดรอบ; ปิดด้วย -NoCatchUp
   -MigrateRunMode overwrite = migrate ทั้งชุดจากต้น, เขียนทับข้อมูลเดิม
   -MigrateRunMode repair-from-log = เฉพาะ id ที่มีปัญหา จาก log ล่าสุดใน <ตาราง>/js-migrate/logs
-  -LogLevel quiet (ดีฟอลต์) = จอแสดงเฉพาะจำนวนต้นทาง, ตารางที่กำลังทำ [n/17], แถบ progress,
+  -LogLevel quiet (ดีฟอลต์) = จอแสดงเฉพาะจำนวนต้นทาง, ตารางที่กำลังทำ [n/18], แถบ progress,
     สรุปของแต่ละตาราง และคำเตือน/error — รายละเอียดที่เหลือยังลงไฟล์ log ครบเหมือนเดิม
     normal = เพิ่มบรรทัดรายละเอียดของทุกขั้น, debug = ทุกอย่าง (รวม warning ของ node)
   -SkipInstall = ข้ามการตรวจและรัน npm ที่ root (ต้องมี `node_modules/mssql` และ `pg` ที่ root เองแล้ว)
@@ -189,7 +189,10 @@ $steps = @(
   # อ่าน Postgres ล้วน (ultrasound + examination_general ที่ migrate แล้ว) → ไม่มี source count จาก MSSQL
   @{ N = 16; Table = "birads_mass_cyst";    Profile = "birads_mass_cyst";    Script = "birads-mass-cyst/js-migrate/run-migrate.ps1"; NoSourceCount = $true },
   # ตาราง log ไม่มี PK — ต้องการแค่ patient_info (step 1) จึงต่อท้ายได้ ไม่ต้องเลื่อนเลข step เดิม
-  @{ N = 17; Table = "pacs_sync_patient";   Profile = "pacs_sync_patient";   Script = "pacs-sync-patient/js-migrate/run-migrate.ps1" }
+  @{ N = 17; Table = "pacs_sync_patient";   Profile = "pacs_sync_patient";   Script = "pacs-sync-patient/js-migrate/run-migrate.ps1" },
+  # relation มาจาก patient_info (1) / examination (4) / procedure (9) — ต่อท้ายได้ ไม่ต้องเลื่อนเลข step เดิม
+  # เทียบด้วย (old_pid, old_surgical_id) ทุกรอบ ไม่ใช้ checkpoint (แบบ mobile_location)
+  @{ N = 18; Table = "surgical_patho";      Profile = "surgical_patho";      Script = "surgical-patho/js-migrate/run-migrate.ps1" }
 )
 
 $tableFilter = foreach ($t in $Tables) {

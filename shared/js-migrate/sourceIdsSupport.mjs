@@ -75,6 +75,11 @@ export const SOURCE_IDS_PK_PROFILES = {
     table: "dbo.MOBILE_LOCATION",
     hint: "เลข ID (= old_id ปลายทาง) เช่น 583",
   },
+  surgical_patho: {
+    pkLabel: "PID|Surgical_ID",
+    table: "dbo.SURGICAL_PATHO",
+    hint: "รูป PID|Surgical_ID เช่น 100067|2",
+  },
 };
 
 const UNSUPPORTED_REASON = {

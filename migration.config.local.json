@@ -68,6 +68,11 @@
     "mam": {},
     "mam_mass": {},
     "mam_cal": {},
-    "mobile_location": {}
+    "mobile_location": {},
+    "surgical_patho": {
+      "migration": {
+        "batchSize": 5000
+      }
+    }
   }
 }

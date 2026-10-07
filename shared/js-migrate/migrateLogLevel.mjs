@@ -9,7 +9,7 @@
  * ที่เหลือ (config profile, source/target, keyset, ensure DDL, chunk ทีละก้อน ฯลฯ) ซ่อนไว้
  * — ดูย้อนหลังได้จาก log JSON ของแต่ละตารางใน <ตาราง>/js-migrate/logs/
  *
- * ส่วน "ถึงตารางไหนแล้ว" มาจาก run-migrate-all.ps1 ([START]/[OK] [n/17] <ตาราง>)
+ * ส่วน "ถึงตารางไหนแล้ว" มาจาก run-migrate-all.ps1 ([START]/[OK] [n/18] <ตาราง>)
  *
  * เปลี่ยนระดับ: env MIGRATE_LOG_LEVEL=normal|debug หรือ run-migrate-all.ps1 -LogLevel normal
  */
