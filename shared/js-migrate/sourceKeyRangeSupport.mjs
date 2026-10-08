@@ -31,6 +31,8 @@ const UNSUPPORTED_REASON = {
     "PACS_SYNC_PATIENT ไม่มี PK ตัวเลข — ใช้ --source-index-range สำหรับลำดับแถวแทน",
   surgical_patho:
     "SURGICAL_PATHO คีย์เป็น PID (varchar) + Surgical_ID — ใช้ --source-ids \"PID|Surgical_ID\" หรือ --source-index-range แทน",
+  special_case:
+    "SPECIAL_CASE คีย์เป็น PID (varchar) + Sequence — ใช้ --source-ids \"PID|Sequence\" หรือ --source-index-range แทน",
 };
 
 function supportedProfileList() {

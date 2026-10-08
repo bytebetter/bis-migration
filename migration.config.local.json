@@ -73,6 +73,11 @@
       "migration": {
         "batchSize": 5000
       }
+    },
+    "special_case": {
+      "migration": {
+        "batchSize": 5000
+      }
     }
   }
 }

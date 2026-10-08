@@ -24,7 +24,7 @@
     ที่อยู่ก่อน checkpoint, นัดที่ต้นทางเติม PID ทีหลัง) แบบ insert-only — ล้มเหลวแค่ log FAIL ไม่หยุดรอบ; ปิดด้วย -NoCatchUp
   -MigrateRunMode overwrite = migrate ทั้งชุดจากต้น, เขียนทับข้อมูลเดิม
   -MigrateRunMode repair-from-log = เฉพาะ id ที่มีปัญหา จาก log ล่าสุดใน <ตาราง>/js-migrate/logs
-  -LogLevel quiet (ดีฟอลต์) = จอแสดงเฉพาะจำนวนต้นทาง, ตารางที่กำลังทำ [n/18], แถบ progress,
+  -LogLevel quiet (ดีฟอลต์) = จอแสดงเฉพาะจำนวนต้นทาง, ตารางที่กำลังทำ [n/19], แถบ progress,
     สรุปของแต่ละตาราง และคำเตือน/error — รายละเอียดที่เหลือยังลงไฟล์ log ครบเหมือนเดิม
     normal = เพิ่มบรรทัดรายละเอียดของทุกขั้น, debug = ทุกอย่าง (รวม warning ของ node)
   -SkipInstall = ข้ามการตรวจและรัน npm ที่ root (ต้องมี `node_modules/mssql` และ `pg` ที่ root เองแล้ว)
@@ -193,7 +193,9 @@ $steps = @(
   @{ N = 17; Table = "pacs_sync_patient";   Profile = "pacs_sync_patient";   Script = "pacs-sync-patient/js-migrate/run-migrate.ps1" },
   # relation มาจาก patient_info (1) / examination (4) / procedure (9) — ต่อท้ายได้ ไม่ต้องเลื่อนเลข step เดิม
   # เทียบด้วย (old_pid, old_surgical_id) ทุกรอบ ไม่ใช้ checkpoint (แบบ mobile_location)
-  @{ N = 18; Table = "surgical_patho";      Profile = "surgical_patho";      Script = "surgical-patho/js-migrate/run-migrate.ps1" }
+  @{ N = 18; Table = "surgical_patho";      Profile = "surgical_patho";      Script = "surgical-patho/js-migrate/run-migrate.ps1" },
+  # relation มาจาก patient_info (1) เท่านั้น — เทียบด้วย (old_pid, sequence) ตาม PK ต้นทางทุกรอบ ไม่ใช้ checkpoint
+  @{ N = 19; Table = "special_case";        Profile = "special_case";        Script = "special-case/js-migrate/run-migrate.ps1" }
 )
 
 $tableFilter = foreach ($t in $Tables) {

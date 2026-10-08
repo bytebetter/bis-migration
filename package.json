@@ -32,7 +32,8 @@
     "migrate:ultrasound_mass": "node ./scripts/run-migrate-table-cli.mjs ultrasound_mass",
     "migrate:birads_mass_cyst": "node ./scripts/run-migrate-table-cli.mjs birads_mass_cyst",
     "migrate:mobile_location": "node ./scripts/run-migrate-table-cli.mjs mobile_location",
-    "migrate:surgical_patho": "node ./scripts/run-migrate-table-cli.mjs surgical_patho"
+    "migrate:surgical_patho": "node ./scripts/run-migrate-table-cli.mjs surgical_patho",
+    "migrate:special_case": "node ./scripts/run-migrate-table-cli.mjs special_case"
   },
   "dependencies": {
     "mssql": "^11.0.1",

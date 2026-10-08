@@ -80,6 +80,11 @@ export const SOURCE_IDS_PK_PROFILES = {
     table: "dbo.SURGICAL_PATHO",
     hint: "รูป PID|Surgical_ID เช่น 100067|2",
   },
+  special_case: {
+    pkLabel: "PID|Sequence",
+    table: "dbo.SPECIAL_CASE",
+    hint: "รูป PID|Sequence เช่น 100025|0",
+  },
 };
 
 const UNSUPPORTED_REASON = {

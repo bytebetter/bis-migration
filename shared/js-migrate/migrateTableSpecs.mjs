@@ -328,6 +328,27 @@ export const REPAIR_SPEC_SURGICAL_PATHO = {
   },
 };
 
+/**
+ * คีย์เป็นข้อความ "PID|Sequence" — ขยายช่วง first..last แบบเลขไม่ได้
+ * chunk ที่ล้มจึงเก็บคีย์ทั้งก้อนไว้ใน failedKeys ของ run log
+ * @type {RepairSpec}
+ */
+export const REPAIR_SPEC_SPECIAL_CASE = {
+  tableLabel: "special_case",
+  recordIdLabel: "special_case_key",
+  runLogPattern: /^migrate-.*.json$/i,
+  fieldIssuePattern: /^migration-field-issues-special_case-.*.json$/i,
+  collectIdsFromRunLog(runLog, idSet) {
+    collectIdsFromRunLogCommon(runLog, idSet, {
+      failedChunkIdFields: ["firstKey", "lastKey"],
+      listIdFields: ["failedKeys"],
+    });
+  },
+  collectIdsFromFieldIssueLog(payload, idSet) {
+    collectIdsFromFieldIssueLogCommon(payload, idSet, "special_case_key");
+  },
+};
+
 /** profile → spec (ทุกตารางใน pipeline) */
 export const REPAIR_SPEC_BY_PROFILE = {
   patient_info: REPAIR_SPEC_PATIENT_INFO,
@@ -348,4 +369,5 @@ export const REPAIR_SPEC_BY_PROFILE = {
   ultrasound_mass: REPAIR_SPEC_ULTRASOUND_MASS,
   mobile_location: REPAIR_SPEC_MOBILE_LOCATION,
   surgical_patho: REPAIR_SPEC_SURGICAL_PATHO,
+  special_case: REPAIR_SPEC_SPECIAL_CASE,
 };
