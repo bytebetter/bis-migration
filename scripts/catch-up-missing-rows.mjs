@@ -36,6 +36,7 @@ import {
   pgUnitsOf,
   readKeyFile,
 } from "./catchUpMissingRows.mjs";
+import { relinkRenamedPatients } from "./catchUpRenamedPatients.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -169,6 +170,17 @@ function logPlan(tag, plan, dryRun) {
   }
 }
 
+/** ตาราง log การเปลี่ยน PID (PACS_SYNC_PATIENT) ตาม profile pacs_sync_patient — ไม่มี profile ใช้ค่าดีฟอลต์ */
+function pacsSyncPatientSourceObject(rawConfig) {
+  let source = {};
+  try {
+    source = resolveRuntimeConfig(rawConfig, "pacs_sync_patient").source ?? {};
+  } catch {
+    /* ไม่มี profile pacs_sync_patient */
+  }
+  return resolveMssqlSourceObject("pacs_sync_patient", { schema: source.schema, table: source.table });
+}
+
 async function main() {
   const profile = String(argValue("--profile") ?? "").trim();
   const spec = CATCH_UP_SPECS[profile];
@@ -192,10 +204,8 @@ async function main() {
   const chunkSize = positiveInt(argValue("--chunk"), 2000);
   const tag = `>>> [catch-up:${profile}]`;
 
-  const config = resolveRuntimeConfig(
-    JSON.parse(fs.readFileSync(configPath, "utf8")),
-    profile,
-  );
+  const rawConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  const config = resolveRuntimeConfig(rawConfig, profile);
   const { schema, table } = resolveMssqlSourceObject(profile, config.source);
   const srcObj = `${bracketMssqlIdent(schema)}.${bracketMssqlIdent(table)} WITH (NOLOCK)`;
 
@@ -230,7 +240,7 @@ async function main() {
       });
       plan.pgRows = pgBefore.rowCount;
       logPlan(tag, plan, dryRun);
-      const toSend = plan.sends.slice(0, maxIds);
+      let toSend = plan.sends.slice(0, maxIds);
       Object.assign(result, {
         sourceRows: plan.sourceRows,
         pgRows: plan.pgRows,
@@ -240,7 +250,27 @@ async function main() {
         deferred: plan.sends.length - toSend.length,
         attempted: 0,
         remaining: 0,
+        relinked: 0,
       });
+      if (spec.relinkRenamedPids && toSend.length > 0) {
+        const renameLogSrc = pacsSyncPatientSourceObject(rawConfig);
+        const { relinked, reinsertPids } = await relinkRenamedPatients({
+          pool,
+          sqlPkg: sql,
+          client,
+          srcObj,
+          renameLogObj: `${bracketMssqlIdent(renameLogSrc.schema)}.${bracketMssqlIdent(renameLogSrc.table)} WITH (NOLOCK)`,
+          sourceKeys: new Set(sourceUnits.map((u) => u.key)),
+          missingPids: toSend,
+          dryRun,
+          log: (line) => console.log(`${tag} ${line}`),
+        });
+        result.relinked = relinked.length;
+        result.reinserted = reinsertPids.length;
+        const done = new Set(relinked);
+        // เลขเดิมที่ต้นทางให้คนใหม่แล้ว: แถวเดิมเพิ่งเปลี่ยน PID ไป → คนใหม่ยังไม่มีใน Postgres
+        toSend = [...new Set([...toSend.filter((id) => !done.has(id)), ...reinsertPids])];
+      }
       if (result.deferred > 0) {
         console.log(
           `${tag} เกินเพดาน ${fmt(maxIds)} id ต่อรอบ — เติม ${fmt(toSend.length)} id ก่อน ที่เหลือ ${fmt(result.deferred)} id รอรอบถัดไป`,

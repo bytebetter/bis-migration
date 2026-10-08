@@ -252,6 +252,21 @@ function issueTextTruncated(pgField, srcRaw, mapped) {
   };
 }
 
+/**
+ * ค่าที่ใช้ระบุตัวคนไข้ แปลงแบบเดียวกับตอน insert — เก็บตกใช้จับคู่แถวเดิมเมื่อต้นทางเปลี่ยน PID
+ * (แถวจาก MSSQL ต้องมี alias pid, name, surname, date_of_birth_be, soc_id)
+ */
+export function mapPatientInfoIdentity(row) {
+  const { pid, patient } = mapPatientInfoRow(row);
+  return {
+    pid,
+    first_name_th: patient.first_name_th,
+    last_name_th: patient.last_name_th,
+    date_of_birth: patient.date_of_birth,
+    soc_id: patient.soc_id,
+  };
+}
+
 /** แมปแถว MSSQL → ค่าที่จะ insert (ใช้ทั้ง insert และตรวจ field issues) */
 function mapPatientInfoRow(row) {
   const np = normPid(getField(row, "pid"));

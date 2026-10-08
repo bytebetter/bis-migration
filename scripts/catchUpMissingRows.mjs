@@ -3,6 +3,7 @@
  *
  * ทำไมต้องมี: การ resume อ่านเฉพาะแถวที่อยู่หลัง checkpoint ตามลำดับ (CreatedDate ว่างก่อน → วันที่ → id)
  * แถวใหม่ที่ CreatedDate ว่าง / วันที่ย้อนหลัง / ตารางลูกที่เพิ่มให้ exam เก่า จะไปอยู่ก่อน checkpoint → ไม่ถูกอ่านอีกเลย
+ * นัดที่ตอนอ่าน PID ยังว่างแล้วต้นทางเติมทีหลัง ก็เหมือนกัน (Schedule_ID อยู่ก่อน checkpoint)
  *
  * วิธี: ตอน snapshot count (ต้นรอบ, นับย้อนลำดับ ลูก → แม่) เก็บรายการ key ต้นทางไว้ในไฟล์
  * หลังตารางนั้น migrate ตามปกติเสร็จ เทียบ key ในไฟล์กับ Postgres → ส่ง id ที่ขาดให้ migrate ตาราง
@@ -14,6 +15,7 @@
 import fs from "node:fs";
 import readline from "node:readline";
 import { PLACEHOLDER_FIRST_NAME_TH } from "../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
+import { PLACEHOLDER_APPOINTMENT_FIRST_NAME } from "../shared/js-migrate/ensurePlaceholderAppointment.mjs";
 
 /** ตัด BOM + ช่องว่าง, ตัวเลขล้วนตัด 0 นำหน้า — ค่าว่างคืน null */
 export function normKeyPart(v) {
@@ -84,8 +86,10 @@ function examChildSpec(dir, pgTable, childColumn) {
  */
 export const CATCH_UP_SPECS = {
   // PID ไม่สนตัวพิมพ์ (ตาม patientPidMatch) — placeholder ถือว่ายังขาด → --source-ids อัปเกรดเป็นข้อมูลจริง
+  // ต้นทางเปลี่ยน PID ในแถวเดิม (T… → เลขจริง) → เปลี่ยน PID แถวเดิมแทน insert (scripts/catchUpRenamedPatients.mjs)
   patient_info: {
     dir: "patient-info",
+    relinkRenamedPids: true,
     sourceKeysSql: (src) =>
       `SELECT CONVERT(NVARCHAR(256), [PID]) AS k FROM ${src} WHERE [PID] IS NOT NULL`,
     toSourceUnit: (r) => {
@@ -102,6 +106,28 @@ export const CATCH_UP_SPECS = {
       [r[0], r[1]]
         .filter((v) => v != null && v !== "")
         .map((k) => ({ key: k, send: null })),
+  },
+  // คนไข้ใหม่จองนัดไว้ก่อนมี PID → รอบที่อ่านข้ามไป (partitionAppointmentRowsByPid) แล้ววันนัดเจ้าหน้าที่ค่อยเติม PID
+  // placeholder ที่ examination สร้าง (last_name "Schedule ID x") ถือว่ายังขาด → --source-ids อัปเกรดเป็นนัดจริง (คง id)
+  // แถวจริงที่ชื่อ "ไม่ทราบชื่อ" จากต้นทางนับว่ามีแล้ว ไม่งั้นถูกส่งซ้ำทุกคืน
+  appointment: {
+    dir: "appointment",
+    sourceKeysSql: (src) =>
+      `SELECT CONVERT(NVARCHAR(40), TRY_CAST([Schedule_ID] AS BIGINT)) AS k, CONVERT(NVARCHAR(100), [PID]) AS p
+       FROM ${src} WHERE TRY_CAST([Schedule_ID] AS BIGINT) IS NOT NULL AND [PID] IS NOT NULL`,
+    toSourceUnit: (r) => {
+      const k = normKeyPart(r.k);
+      return k == null || normPid(r.p) == null ? null : { key: k, send: k };
+    },
+    pgKeysSql: async () =>
+      `SELECT old_db_id::text AS k FROM public.appointment
+       WHERE old_db_id IS NOT NULL
+         AND NOT (COALESCE(first_name, '') = $1 AND COALESCE(last_name, '') LIKE 'Schedule ID %')`,
+    pgParams: [PLACEHOLDER_APPOINTMENT_FIRST_NAME],
+    toPgUnit: (r) => {
+      const k = normKeyPart(r[0]);
+      return k == null ? null : { key: k, send: k };
+    },
   },
   examination: examKeyedSpec("examination", "examination"),
   billing: examKeyedSpec("billing", "billing"),

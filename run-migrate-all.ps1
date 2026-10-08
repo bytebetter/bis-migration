@@ -21,7 +21,7 @@
     ปลายทางมีข้อมูลแต่ไม่มี checkpoint → หยุดทั้งรอบ
     หลังแต่ละตาราง migrate เสร็จ มีขั้น "เก็บตก" (scripts/catch-up-missing-rows.mjs):
     เทียบ key ต้นทาง ณ snapshot กับ Postgres แล้ว migrate เฉพาะแถวที่ขาด (เช่น CreatedDate ว่าง
-    ที่อยู่ก่อน checkpoint) แบบ insert-only — ล้มเหลวแค่ log FAIL ไม่หยุดรอบ; ปิดด้วย -NoCatchUp
+    ที่อยู่ก่อน checkpoint, นัดที่ต้นทางเติม PID ทีหลัง) แบบ insert-only — ล้มเหลวแค่ log FAIL ไม่หยุดรอบ; ปิดด้วย -NoCatchUp
   -MigrateRunMode overwrite = migrate ทั้งชุดจากต้น, เขียนทับข้อมูลเดิม
   -MigrateRunMode repair-from-log = เฉพาะ id ที่มีปัญหา จาก log ล่าสุดใน <ตาราง>/js-migrate/logs
   -LogLevel quiet (ดีฟอลต์) = จอแสดงเฉพาะจำนวนต้นทาง, ตารางที่กำลังทำ [n/18], แถบ progress,
@@ -160,8 +160,9 @@ function Save-CatchUpKeys {
 }
 
 # ตารางที่เรียงตาม CreatedDate / Exam_ID แล้วมีแถวไปตกก่อน checkpoint ได้ (ดู scripts/catchUpMissingRows.mjs)
+# appointment: นัดที่ตอนอ่าน PID ว่าง แล้วต้นทางเติม PID ทีหลัง
 $catchUpProfiles = @(
-  "patient_info", "examination", "billing", "examination_general", "pacs_sync_info", "procedure",
+  "patient_info", "appointment", "examination", "billing", "examination_general", "pacs_sync_info", "procedure",
   "ultrasound", "mam", "mam_cal", "mam_mass", "ultrasound_cyst", "ultrasound_mass"
 )
 $catchUpDir = Join-Path $logDir "catch-up"
@@ -433,6 +434,8 @@ foreach ($step in $steps) {
       $msg = if ([int64]$r.missingRows -eq 0) { 'ไม่มีแถวที่ขาด' } else {
         'ขาด {0} แถว → เติม {1}/{2} id' -f $r.missingRows, ([int64]$r.attempted - [int64]$r.remaining), $r.attempted
       }
+      if ([int64]$r.relinked -gt 0) { $msg += (' ; ต้นทางเปลี่ยน PID {0} คน → เปลี่ยน PID แถวเดิม (ไม่สร้างคนซ้ำ)' -f $r.relinked) }
+      if ([int64]$r.reinserted -gt 0) { $msg += (' ; เลข PID เดิมถูกให้คนใหม่ {0} เลข → เติมคนใหม่' -f $r.reinserted) }
       if ([int64]$r.partial -gt 0) { $msg += (' ; ข้าม {0} id ที่ Postgres มีบางแถวแล้ว (ไม่เขียนทับ)' -f $r.partial) }
       if ([int64]$r.unsendable -gt 0) { $msg += (' ; ข้าม {0} id ที่ส่งผ่าน --source-ids ไม่ได้' -f $r.unsendable) }
       if ([int64]$r.deferred -gt 0) { $msg += (' ; รอรอบหน้า {0} id' -f $r.deferred) }
