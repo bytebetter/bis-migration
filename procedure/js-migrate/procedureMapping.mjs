@@ -128,6 +128,31 @@ function valueInFkSet(set, v) {
 let cachedExamMap = null;
 let cachedProcedureFkSets = null;
 let cachedProcedureVarcharLimits = null;
+let cachedDoctorTextColumns = null;
+let cachedSummaryDoctorIsText = null;
+
+/**
+ * ชื่อหมอจากระบบเก่า (ข้อความ) — ระบบเก่าไม่มี uuid ของ directus_users ให้ map
+ * pathocode_fillby (uuid) จึงว่าง ชื่อลงฟิลด์ข้อความเหล่านี้แทน
+ * คีย์ = คอลัมน์ปลายทาง, ค่า = alias ใน mssqlProcedureSelect
+ */
+const PROCEDURE_DOCTOR_TEXT_SOURCE = {
+  radiologist: "radiologist",
+  summary_doctor_name: "summary_doctor_name",
+  pathocode_fillby_text: "patho_code_fill_by",
+};
+
+/** คอลัมน์ที่ fillProcedureDoctorTextFromSource เติมได้ (summary_doctor เฉพาะตอนเป็น string) */
+const PROCEDURE_FILL_SOURCE = {
+  ...PROCEDURE_DOCTOR_TEXT_SOURCE,
+  summary_doctor: "summary_doctor",
+};
+
+/** ฟิลด์ uuid -> ฟิลด์ข้อความที่รับชื่อแทน */
+const PROCEDURE_DOCTOR_UUID_TEXT_FIELD = {
+  summary_doctor: "summary_doctor_name",
+  pathocode_fillby: "pathocode_fillby_text",
+};
 
 async function loadOldExamToPgExamId(pgClient) {
   const res = await pgClient.query(
@@ -247,6 +272,50 @@ async function getProcedureVarcharLimits(pgClient) {
   return cachedProcedureVarcharLimits;
 }
 
+/**
+ * คอลัมน์ชื่อหมอ (PROCEDURE_DOCTOR_TEXT_SOURCE) ที่ปลายทางมีจริงและเป็นข้อความ
+ * ปลายทางที่ยังไม่ได้เพิ่มฟิลด์ = ข้ามเงียบ ไม่ทำให้ migrate ล้ม
+ * @returns {Promise<string[]>}
+ */
+async function getProcedureDoctorTextColumns(pgClient) {
+  if (cachedDoctorTextColumns) return cachedDoctorTextColumns;
+  const res = await pgClient.query(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'procedure'
+      AND column_name = ANY($1::text[])
+      AND data_type IN ('character varying', 'text')
+    `,
+    [Object.keys(PROCEDURE_DOCTOR_TEXT_SOURCE)],
+  );
+  const present = new Set(res.rows.map((r) => String(r.column_name)));
+  cachedDoctorTextColumns = Object.keys(PROCEDURE_DOCTOR_TEXT_SOURCE).filter(
+    (c) => present.has(c),
+  );
+  return cachedDoctorTextColumns;
+}
+
+/**
+ * procedure.summary_doctor ปลายทางแปลงจาก uuid (m2o directus_users) เป็น string แล้ว
+ * = เก็บ Summary_Doctor ของต้นทางตรงๆ (เช่น "3"); ยังเป็น uuid = ลง NULL แบบเดิม
+ */
+async function getSummaryDoctorIsText(pgClient) {
+  if (cachedSummaryDoctorIsText != null) return cachedSummaryDoctorIsText;
+  const res = await pgClient.query(`
+    SELECT data_type
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'procedure'
+      AND column_name = 'summary_doctor'
+  `);
+  cachedSummaryDoctorIsText = ["character varying", "text"].includes(
+    res.rows[0]?.data_type,
+  );
+  return cachedSummaryDoctorIsText;
+}
+
 function nullOutInvalidForeignKeys(mapped, colToSet) {
   for (const [col, set] of colToSet) {
     if (!Object.hasOwn(mapped, col)) continue;
@@ -270,7 +339,11 @@ function trimValuesToVarcharLimit(mapped, varcharLimits, trimStats) {
 /**
  * แถวจาก MSSQL (staging/recordset) -> payload ที่สอดคล้องกับฟิลด์ Directus ในตาราง procedure
  */
-export function mapBiopsyRowToProcedure(row, examPgId) {
+export function mapBiopsyRowToProcedure(
+  row,
+  examPgId,
+  { summaryDoctorAsText = false } = {},
+) {
   const clinical = nullIfTrimEmpty(getField(row, "clinical"));
 
   const payload = {
@@ -301,7 +374,9 @@ export function mapBiopsyRowToProcedure(row, examPgId) {
     remark: toInt(getField(row, "remark")),
     remark_other: nullIfTrimEmpty(getField(row, "remark_other")),
     remark_text: nullIfTrimEmpty(getField(row, "remark_text")),
-    summary_doctor: toUuidOrNull(getField(row, "summary_doctor")),
+    summary_doctor: summaryDoctorAsText
+      ? nullIfTrimEmpty(getField(row, "summary_doctor"))
+      : toUuidOrNull(getField(row, "summary_doctor")),
     recommend: toMaybeBigInt(getField(row, "recommend")),
     recommend_des: nullIfTrimEmpty(getField(row, "recommend_des")),
     recommend_benign: toMaybeBigInt(getField(row, "recommend_benign")),
@@ -386,6 +461,11 @@ export function mapBiopsyRowToProcedure(row, examPgId) {
     ),
     location_left_other: nullIfTrimEmpty(getField(row, "location_left_other")),
   };
+  for (const [pgField, mssqlKey] of Object.entries(
+    PROCEDURE_DOCTOR_TEXT_SOURCE,
+  )) {
+    payload[pgField] = nullIfTrimEmpty(getField(row, mssqlKey));
+  }
 
   return payload;
 }
@@ -527,7 +607,9 @@ function collectProcedureFieldIssues(row, mapped) {
         source_raw: srcRaw,
         mapped: null,
       });
-    } else if (pgField === "summary_doctor" || pgField === "pathocode_fillby") {
+    } else if (Object.hasOwn(PROCEDURE_DOCTOR_UUID_TEXT_FIELD, pgField)) {
+      // ชื่อลงฟิลด์ข้อความแล้ว ไม่นับว่าข้อมูลหาย
+      if (mapped[PROCEDURE_DOCTOR_UUID_TEXT_FIELD[pgField]] != null) continue;
       issues.push({
         field: pgField,
         reason: "uuid_parse_failed",
@@ -633,10 +715,15 @@ export async function runProcedureChunkPostLoad(pgClient, mssqlRows) {
 
   const fkSets = await getProcedureForeignKeyAllowedSets(pgClient);
   const varcharLimits = await getProcedureVarcharLimits(pgClient);
+  const doctorTextCols = await getProcedureDoctorTextColumns(pgClient);
+  const summaryDoctorAsText = await getSummaryDoctorIsText(pgClient);
   const trimStats = new Map();
   const payloads = [];
   for (const { raw, examPgId } of rowsIn) {
-    const m = mapBiopsyRowToProcedure(raw, examPgId);
+    const m = mapBiopsyRowToProcedure(raw, examPgId, { summaryDoctorAsText });
+    for (const col of Object.keys(PROCEDURE_DOCTOR_TEXT_SOURCE)) {
+      if (!doctorTextCols.includes(col)) delete m[col];
+    }
     const oldDbId = m.old_db_id;
     const meta = {
       exam_id: normExamId(getField(raw, "exam_id")) || null,
@@ -750,7 +837,7 @@ export async function runProcedureChunkPostLoad(pgClient, mssqlRows) {
       spontaneous_discharge,
       needleno,
       location_right_other,
-      location_left_other
+      location_left_other${doctorTextCols.map((c) => `,\n      ${c}`).join("")}
     )
     SELECT * FROM unnest(
       $1::text[],
@@ -771,7 +858,7 @@ export async function runProcedureChunkPostLoad(pgClient, mssqlRows) {
       $16::int4[],
       $17::text[],
       $18::text[],
-      $19::uuid[],
+      $19::${summaryDoctorAsText ? "text" : "uuid"}[],
       $20::bigint[],
       $21::text[],
       $22::bigint[],
@@ -814,7 +901,7 @@ export async function runProcedureChunkPostLoad(pgClient, mssqlRows) {
       $59::boolean[],
       $60::int4[],
       $61::text[],
-      $62::text[]
+      $62::text[]${doctorTextCols.map((_, i) => `,\n      $${63 + i}::text[]`).join("")}
     )
     `,
     [
@@ -880,6 +967,7 @@ export async function runProcedureChunkPostLoad(pgClient, mssqlRows) {
       A.map((p) => p.needleno),
       A.map((p) => p.location_right_other),
       A.map((p) => p.location_left_other),
+      ...doctorTextCols.map((c) => A.map((p) => p[c])),
     ],
   );
 
@@ -933,6 +1021,67 @@ function buildProcedureChunkFieldIssueResult(
   };
 }
 
+/**
+ * เติม radiologist / summary_doctor_name / pathocode_fillby_text (+ summary_doctor ถ้าเป็น string)
+ * ให้แถวที่มีอยู่แล้ว (migrate ไปก่อนปลายทางมีฟิลด์เหล่านี้ หรือต้นทางเพิ่งกรอกชื่อทีหลัง)
+ * — รอบทุกคืน insert เฉพาะแถวใหม่; เติมเฉพาะช่องที่ยังว่าง ค่าที่แก้ในระบบใหม่ไม่ถูกแตะ
+ * @param {object[]} sourceRows แถวจาก MSSQL_PROCEDURE_DOCTOR_TEXT_SELECT
+ * @returns {Promise<{ skipped: boolean, rowsFilled: number, columns: string[] }>}
+ */
+export async function fillProcedureDoctorTextFromSource(
+  pgClient,
+  sourceRows,
+  batchSize = 2000,
+) {
+  const cols = [...(await getProcedureDoctorTextColumns(pgClient))];
+  if (await getSummaryDoctorIsText(pgClient)) cols.push("summary_doctor");
+  if (cols.length === 0) return { skipped: true, rowsFilled: 0, columns: [] };
+  const varcharLimits = await getProcedureVarcharLimits(pgClient);
+
+  const items = [];
+  for (const row of sourceRows) {
+    const oldDbId = normProcedureDbId(row);
+    if (oldDbId == null) continue;
+    const item = { old_db_id: oldDbId };
+    let hasValue = false;
+    for (const col of cols) {
+      let v = nullIfTrimEmpty(getField(row, PROCEDURE_FILL_SOURCE[col]));
+      const maxLen = varcharLimits.get(col);
+      if (v != null && maxLen != null && v.length > maxLen) {
+        v = v.slice(0, maxLen);
+      }
+      item[col] = v;
+      if (v != null) hasValue = true;
+    }
+    if (hasValue) items.push(item);
+  }
+
+  const setSql = cols.map((c) => `${c} = COALESCE(t.${c}, s.${c})`).join(", ");
+  const needFillSql = cols
+    .map((c) => `(t.${c} IS NULL AND s.${c} IS NOT NULL)`)
+    .join(" OR ");
+  const unnestArgs = ["$1::text[]", ...cols.map((_, i) => `$${i + 2}::text[]`)];
+  let rowsFilled = 0;
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const r = await pgClient.query(
+      `
+      UPDATE public."procedure" AS t
+      SET ${setSql}
+      FROM unnest(${unnestArgs.join(", ")}) AS s(old_db_id, ${cols.join(", ")})
+      WHERE t.old_db_id::text = s.old_db_id
+        AND (${needFillSql})
+      `,
+      [
+        batch.map((x) => x.old_db_id),
+        ...cols.map((c) => batch.map((x) => x[c])),
+      ],
+    );
+    rowsFilled += r.rowCount ?? 0;
+  }
+  return { skipped: false, rowsFilled, columns: cols };
+}
+
 export const MSSQL_PROCEDURE_DEST_FIELD_PAIRS = [
   ["exam_id", "(join) exam via public.examination.old_exam_id"],
   ["biopsy_id", "old_db_id composite"],
@@ -952,6 +1101,9 @@ export const MSSQL_PROCEDURE_DEST_FIELD_PAIRS = [
   ["Remark_Other", "remark_other"],
   ["Remark_Text", "remark_text"],
   ["Summary_Doctor", "summary_doctor"],
+  ["Radiologist", "radiologist"],
+  ["Summary_Doctor_Name", "summary_doctor_name"],
+  ["PathoCode_FillBy", "pathocode_fillby_text"],
   ["Recommend*", "recommend_*"],
   ["Technique", "technique"],
   ["PatientPos", "patient_pos"],

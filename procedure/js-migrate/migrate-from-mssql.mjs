@@ -5,6 +5,7 @@ import sql from "mssql";
 import pg from "pg";
 import {
   MSSQL_PROCEDURE_BY_OLD_DB_IDS_SELECT,
+  MSSQL_PROCEDURE_DOCTOR_TEXT_SELECT,
   MSSQL_PROCEDURE_SELECT,
   PROCEDURE_CHILD_COLUMN,
   PROCEDURE_KEY_EXPRS,
@@ -22,7 +23,10 @@ import {
   reconcileExamChildResumeOffset,
 } from "../../shared/js-migrate/createdDateKeysetFetch.mjs";
 import { ensureProcedurePipelineDdl } from "./procedurePgDdl.mjs";
-import { runProcedureChunkPostLoad } from "./procedureMapping.mjs";
+import {
+  fillProcedureDoctorTextFromSource,
+  runProcedureChunkPostLoad,
+} from "./procedureMapping.mjs";
 import {
   fetchPacsSignedExamIds,
   pacsExportTableNoLock,
@@ -867,6 +871,30 @@ async function runProcedureTableJob({
     writeJson(checkpointPath, procedureCheckpoint(true));
   }
 
+  // รอบ resume insert เฉพาะแถวใหม่ — แถวเดิมเติมชื่อหมอที่ยังว่างจากต้นทาง
+  let doctorTextFill = null;
+  if (!repairBatches && sourceLimit == null && !idx.indexLimited) {
+    const req = mssqlPool.request();
+    bindMigrateSrcNumericRange(req, migrationConfig, sql);
+    const res = await req.query(
+      MSSQL_PROCEDURE_DOCTOR_TEXT_SELECT.replaceAll(
+        "{{sourceObject}}",
+        sourceObject,
+      ),
+    );
+    doctorTextFill = await fillProcedureDoctorTextFromSource(
+      pgClient,
+      res.recordset || [],
+      batchSize,
+    );
+    writeOutLine(
+      doctorTextFill.skipped
+        ? `>>> [${key}] ชื่อหมอ: ข้ามการเติม (ปลายทางยังไม่มีคอลัมน์ radiologist / summary_doctor_name / pathocode_fillby_text)`
+        : `>>> [${key}] ${doctorTextFill.columns.join(" / ")}: เติมแถวเดิม ${doctorTextFill.rowsFilled} แถว (เฉพาะช่องที่ยังว่าง)`,
+      uiState,
+    );
+  }
+
   let fieldIssueLogWritten = null;
   if (fieldIssueAcc.totalFieldIssueCount > 0) {
     const payload = buildFieldIssueLogPayload(fieldIssueAcc, {
@@ -905,6 +933,7 @@ async function runProcedureTableJob({
     chunkSampleEvery,
     chunkResults,
     repairSummary,
+    doctorTextFill,
   };
   writeOutLine(`>>> [${key}] done, total rows read: ${total}`, uiState);
   return summary;

@@ -126,6 +126,26 @@ OFFSET @offset ROWS FETCH NEXT @page ROWS ONLY;
 `.trim();
 
 /**
+ * หมอ (Radiologist / Summary_Doctor / Summary_Doctor_Name / PathoCode_FillBy) ทุกแถวที่มีค่า
+ * ใช้เติมฟิลด์เหล่านี้ให้แถวที่ migrate ไปแล้ว — ช่องว่างล้วนกรองทิ้งฝั่ง JS
+ */
+export const MSSQL_PROCEDURE_DOCTOR_TEXT_SELECT = `
+SELECT
+  CAST(CAST([Exam_ID] AS NVARCHAR(50)) AS NVARCHAR(MAX)) AS exam_id,
+  CAST(CAST([BiopsyID] AS NVARCHAR(50)) AS NVARCHAR(MAX)) AS biopsy_id,
+  CAST([Radiologist] AS NVARCHAR(MAX)) AS radiologist,
+  CAST([Summary_Doctor] AS NVARCHAR(MAX)) AS summary_doctor,
+  CAST([Summary_Doctor_Name] AS NVARCHAR(MAX)) AS summary_doctor_name,
+  CAST([PathoCode_FillBy] AS NVARCHAR(MAX)) AS patho_code_fill_by
+FROM {{sourceObject}}
+WHERE ([Radiologist] IS NOT NULL
+    OR [Summary_Doctor] IS NOT NULL
+    OR [Summary_Doctor_Name] IS NOT NULL
+    OR [PathoCode_FillBy] IS NOT NULL)
+  AND ${PROCEDURE_KEY_RANGE_WHERE};
+`.trim();
+
+/**
  * keyset (CreatedDate NULL ก่อน → CreatedDate → Exam_ID → BiopsyID) — ใช้กับ queryExamChildKeysetPage
  * @param {{ createdDateColumn?: string | null }} sortBundle
  */
