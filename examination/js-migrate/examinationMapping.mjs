@@ -16,6 +16,7 @@ import {
   patientPidMatchSql,
   patientPidPreferenceOrderSql,
 } from "../../shared/js-migrate/patientPidMatch.mjs";
+import { relinkAppointmentsFromMigrationK } from "../../shared/js-migrate/scheduleKPatient.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1180,6 +1181,10 @@ export async function runExaminationChunkPostLoad(
 
   const arrays = INSERT_DEFS.map(() => []);
   const insertedExamIds = [];
+  /** นัดที่ exam ชี้ + คนไข้ของ exam — นัดที่ยังผูกคนไข้ K ย้ายไปคนไข้จริงหลังเขียน exam */
+  const appointmentPatientPairs = [];
+  // ประกาศก่อน return แรก — buildChunkFieldIssueResult อ่านค่านี้
+  let kRelink = { relinked: 0, kIds: [] };
 
   for (const row of rows) {
     const examId = normExamId(getField(row, "exam_id"));
@@ -1239,6 +1244,9 @@ export async function runExaminationChunkPostLoad(
       mobileLocationUnresolved++;
     }
     const context = { patientId, appointmentId, mobileLocationId };
+    if (appointmentId != null && patientId != null) {
+      appointmentPatientPairs.push({ appointmentId, patientId });
+    }
     const rowMeta = {
       examIdRaw: u,
       scheduleId,
@@ -1349,6 +1357,17 @@ export async function runExaminationChunkPostLoad(
     await syncExaminationIdSequenceOnce(pgClient);
   }
 
+  // นัดที่ PID ว่าง (ผูกคนไข้ K ตอน migrate appointment) แต่ exam ของนัดนั้นมีคนไข้จริง → ย้ายนัดไปคนไข้จริง
+  // K ที่หลุดออกส่งให้ job ลบท้ายรอบ (ถ้าไม่มีอะไรอ้างถึงแล้ว)
+  const apptPatientCol = await resolveAppointmentPatientColumn(pgClient);
+  if (apptPatientCol != null && appointmentPatientPairs.length > 0) {
+    kRelink = await relinkAppointmentsFromMigrationK(
+      pgClient,
+      apptPatientCol,
+      appointmentPatientPairs,
+    );
+  }
+
   // หลัง migrate: ตรวจว่าแถวที่ควร insert มีจริงใน PG (เปิดเมื่อ debug/verbose เท่านั้น — ช้า)
   if (options.verifyInsert === true && insertedExamIds.length > 0) {
     const { rows: pgRows } = await pgClient.query(
@@ -1386,6 +1405,8 @@ export async function runExaminationChunkPostLoad(
     const hasIssues = totalFieldIssueCount > 0;
     return {
       failedExamIds,
+      relinkedFromK: kRelink.relinked,
+      kCandidateIds: kRelink.kIds,
       fieldIssues: hasIssues
         ? {
             totalFieldIssueCount,

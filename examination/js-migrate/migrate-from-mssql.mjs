@@ -41,6 +41,7 @@ import {
   syncExaminationIdSequenceOnce,
   writeFieldIssueLogFile,
 } from "./examinationMapping.mjs";
+import { deleteOrphanMigrationKPatients } from "../../shared/js-migrate/scheduleKPatient.mjs";
 import {
   createUiState,
   endProgress,
@@ -714,6 +715,9 @@ async function runTableJob({
   let examinationSuccessCases = 0;
   let examinationFailCases = 0;
   const failedExamIdSet = new Set();
+  /** นัดที่ย้ายจากคนไข้ K ไปคนไข้ของ exam + K ที่หลุดออก (ลบท้าย job ถ้าไม่มีอะไรอ้างถึงแล้ว) */
+  let relinkedFromK = 0;
+  const kCandidateIds = new Set();
   const fieldIssueAcc = isExaminationBuiltin
     ? createFieldIssueAccumulator()
     : null;
@@ -1262,6 +1266,8 @@ async function runTableJob({
         mergeFieldIssueChunk(fieldIssueAcc, postLoadResult);
         for (const eid of postLoadResult?.failedExamIds ?? [])
           failedExamIdSet.add(eid);
+        relinkedFromK += postLoadResult?.relinkedFromK ?? 0;
+        for (const id of postLoadResult?.kCandidateIds ?? []) kCandidateIds.add(id);
         postLoadMs = Date.now() - postLoadStartedAt;
       }
 
@@ -1488,6 +1494,16 @@ LIMIT 200;
     );
   }
 
+  let kPatientsDeleted = 0;
+  if (kCandidateIds.size > 0) {
+    kPatientsDeleted = await deleteOrphanMigrationKPatients(pgClient, kCandidateIds);
+  }
+  if (relinkedFromK > 0 || kPatientsDeleted > 0) {
+    console.error(
+      `>>> [${key}] หมายเหตุ: นัดที่ผูกคนไข้ K แต่ exam มีคนไข้จริง ย้ายนัด ${relinkedFromK} แถว, ลบ K ที่ไม่มีอะไรอ้างถึง ${kPatientsDeleted} คน`,
+    );
+  }
+
   if (isExaminationBuiltin) {
     await syncExaminationIdSequenceOnce(pgClient);
     // แถวที่ migrate ไปก่อนมีฟิลด์นี้ (หรือก่อน mobile_location มีแถวนั้น) — เติมให้ครบ
@@ -1583,6 +1599,8 @@ ORDER BY reason;
     examination_success_cases: examinationSuccessCases,
     examination_fail_cases: examinationFailCases,
     failedExamIds: Array.from(failedExamIdSet),
+    relinkedFromK,
+    kPatientsDeleted,
     fieldIssueLogPath: fieldIssueLogWritten,
     missingByReason: missingByReason.rows,
     checkpointPath: checkpointEnabled ? checkpointPath : null,

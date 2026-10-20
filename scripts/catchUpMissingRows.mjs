@@ -16,6 +16,7 @@ import fs from "node:fs";
 import readline from "node:readline";
 import { PLACEHOLDER_FIRST_NAME_TH } from "../shared/js-migrate/ensurePlaceholderPatientInfo.mjs";
 import { PLACEHOLDER_APPOINTMENT_FIRST_NAME } from "../shared/js-migrate/ensurePlaceholderAppointment.mjs";
+import { migrationKPatientSql } from "../shared/js-migrate/scheduleKPatient.mjs";
 
 /** ตัด BOM + ช่องว่าง, ตัวเลขล้วนตัด 0 นำหน้า — ค่าว่างคืน null */
 export function normKeyPart(v) {
@@ -107,8 +108,9 @@ export const CATCH_UP_SPECS = {
         .filter((v) => v != null && v !== "")
         .map((k) => ({ key: k, send: null })),
   },
-  // คนไข้ใหม่จองนัดไว้ก่อนมี PID → รอบที่อ่านข้ามไป (partitionAppointmentRowsByPid) แล้ววันนัดเจ้าหน้าที่ค่อยเติม PID
+  // คนไข้ใหม่จองนัดไว้ก่อนมี PID → รอบที่อ่านผูกคนไข้ K แล้ววันนัดเจ้าหน้าที่ค่อยเติม PID
   // placeholder ที่ examination สร้าง (last_name "Schedule ID x") ถือว่ายังขาด → --source-ids อัปเกรดเป็นนัดจริง (คง id)
+  // นัดที่ยังผูก K ที่ migration สร้าง ถือว่ายังขาดเมื่อต้นทางมี PID แล้ว → --source-ids ย้ายไปคนไข้จริง (แก้แค่ patient)
   // แถวจริงที่ชื่อ "ไม่ทราบชื่อ" จากต้นทางนับว่ามีแล้ว ไม่งั้นถูกส่งซ้ำทุกคืน
   appointment: {
     dir: "appointment",
@@ -119,10 +121,21 @@ export const CATCH_UP_SPECS = {
       const k = normKeyPart(r.k);
       return k == null || normPid(r.p) == null ? null : { key: k, send: k };
     },
-    pgKeysSql: async () =>
-      `SELECT old_db_id::text AS k FROM public.appointment
-       WHERE old_db_id IS NOT NULL
-         AND NOT (COALESCE(first_name, '') = $1 AND COALESCE(last_name, '') LIKE 'Schedule ID %')`,
+    pgKeysSql: async (client) => {
+      const { rows } = await client.query(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'appointment'
+           AND column_name IN ('patient_info', 'patient', 'patient_id')
+         ORDER BY CASE column_name WHEN 'patient_info' THEN 0 WHEN 'patient' THEN 1 ELSE 2 END
+         LIMIT 1`,
+      );
+      const col = rows[0]?.column_name;
+      return `SELECT a.old_db_id::text AS k FROM public.appointment a
+       ${col ? `LEFT JOIN public.patient_info pk ON pk.id = a."${col}"` : ""}
+       WHERE a.old_db_id IS NOT NULL
+         AND NOT (COALESCE(a.first_name, '') = $1 AND COALESCE(a.last_name, '') LIKE 'Schedule ID %')
+         ${col ? `AND NOT COALESCE(${migrationKPatientSql("pk")}, false)` : ""}`;
+    },
     pgParams: [PLACEHOLDER_APPOINTMENT_FIRST_NAME],
     toPgUnit: (r) => {
       const k = normKeyPart(r[0]);

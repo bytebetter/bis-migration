@@ -32,6 +32,7 @@ import {
   runAppointmentChunkPostLoad,
   syncAppointmentIdSequence,
 } from "./appointmentMapping.mjs";
+import { deleteOrphanMigrationKPatients } from "../../shared/js-migrate/scheduleKPatient.mjs";
 import {
   createUiState,
   endProgress,
@@ -643,10 +644,17 @@ END $$;
   `);
 
   let total = 0;
-  /** แถว MSSQL ที่ PID ว่าง — ข้าม ไม่ sync เข้า public.appointment */
-  let skippedNoPidRows = 0;
-  const skippedNoPidSampleIds = [];
-  const SKIPPED_NO_PID_SAMPLE_MAX = 100;
+  /** นัดที่ PID ว่าง → ผูกคนไข้ K (scheduleKPatient.mjs) */
+  const kTotals = {
+    kLinkedRows: 0,
+    kPatientsCreated: 0,
+    kPatientsReused: 0,
+    kFromExamRows: 0,
+    relinkedFromK: 0,
+    kPatientsDeleted: 0,
+  };
+  /** K ที่นัดย้ายไปคนไข้จริงแล้ว — ลบครั้งเดียวท้าย job (เช็คการอ้างถึงต้องสแกนหลายตาราง) */
+  const kCandidateIds = new Set();
   const failedScheduleIdSet = new Set();
   const fieldIssueAcc = createFieldIssueAccumulator("schedule_id");
   const fieldIssueLogPath = path.join(
@@ -870,11 +878,10 @@ END $$;
       mergeFieldIssueChunk(fieldIssueAcc, postLoadResult);
       for (const sid of postLoadResult?.failedScheduleIds ?? [])
         failedScheduleIdSet.add(sid);
-      skippedNoPidRows += postLoadResult?.skippedNoPidCount ?? 0;
-      for (const sid of postLoadResult?.skippedNoPidScheduleIds ?? []) {
-        if (skippedNoPidSampleIds.length >= SKIPPED_NO_PID_SAMPLE_MAX) break;
-        skippedNoPidSampleIds.push(sid);
+      for (const k of Object.keys(kTotals)) {
+        kTotals[k] += postLoadResult?.[k] ?? 0;
       }
+      for (const id of postLoadResult?.kCandidateIds ?? []) kCandidateIds.add(id);
       postLoadMs = Date.now() - postLoadStartedAt;
       await pgClient.query("COMMIT");
       lastChunkProcessMs = Date.now() - chunkStartedAt;
@@ -886,8 +893,11 @@ END $$;
         sourceOffsetEnd,
         rowCount: advance,
         ...optionalDetailRowCount(advance, n),
-        ...(postLoadResult?.skippedNoPidCount
-          ? { skippedNoPidRows: postLoadResult.skippedNoPidCount }
+        ...(postLoadResult?.kLinkedRows
+          ? {
+              kLinkedRows: postLoadResult.kLinkedRows,
+              kPatientsCreated: postLoadResult.kPatientsCreated,
+            }
           : {}),
         firstScheduleId,
         lastScheduleId,
@@ -1027,6 +1037,12 @@ END $$;
   if (progressEnabled) endProgress(uiState);
 
   await syncAppointmentIdSequence(pgClient);
+  if (kCandidateIds.size > 0) {
+    kTotals.kPatientsDeleted = await deleteOrphanMigrationKPatients(
+      pgClient,
+      kCandidateIds,
+    );
+  }
 
   if (checkpointEnabled) {
     writeJson(
@@ -1052,11 +1068,7 @@ END $$;
     );
   }
 
-  if (skippedNoPidRows > 0) {
-    fieldIssueAcc.summaryExtras.skippedNoPidRows = skippedNoPidRows;
-    fieldIssueAcc.summaryExtras.skippedNoPidScheduleIdSample =
-      skippedNoPidSampleIds;
-  }
+  Object.assign(fieldIssueAcc.summaryExtras, kTotals);
 
   let fieldIssueLogWritten = null;
   if (fieldIssueAcc.totalFieldIssueCount > 0) {
@@ -1088,8 +1100,7 @@ END $$;
   const summary = {
     key,
     totalRowsRead: total,
-    skippedNoPidRows,
-    skippedNoPidScheduleIdSample: skippedNoPidSampleIds,
+    ...kTotals,
     fieldIssueLogPath: fieldIssueLogWritten,
     checkpointPath: checkpointEnabled ? checkpointPath : null,
     chunkCount: chunkIndex,
@@ -1100,9 +1111,14 @@ END $$;
     chunkResults,
     repairSummary,
   };
-  if (skippedNoPidRows > 0) {
+  if (kTotals.kLinkedRows > 0 || kTotals.kFromExamRows > 0) {
     console.error(
-      `>>> [${key}] ข้าม ${skippedNoPidRows} แถวที่ PID ว่างจาก MSSQL (ไม่ sync เข้า public.appointment)`,
+      `>>> [${key}] หมายเหตุ: นัดที่ PID ว่าง ผูกคนไข้ K ${kTotals.kLinkedRows} แถว (สร้าง K ใหม่ ${kTotals.kPatientsCreated}, ใช้ K เดิมที่ชื่อ+นามสกุล+เบอร์ตรง ${kTotals.kPatientsReused}), ผูกคนไข้จาก exam ${kTotals.kFromExamRows} แถว`,
+    );
+  }
+  if (kTotals.relinkedFromK > 0 || kTotals.kPatientsDeleted > 0) {
+    console.error(
+      `>>> [${key}] หมายเหตุ: ต้นทางเติม PID แล้ว ย้ายนัดจาก K ไปคนไข้จริง ${kTotals.relinkedFromK} แถว, ลบ K ที่ไม่มีอะไรอ้างถึง ${kTotals.kPatientsDeleted} คน`,
     );
   }
   console.error(`>>> [${key}] done, total rows read: ${total}`);
