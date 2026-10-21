@@ -28,6 +28,7 @@ import {
   writeFieldIssueLogFile,
 } from "../../shared/js-migrate/fieldIssueLog.mjs";
 import {
+  relinkKAppointmentsByName,
   resetAppointmentIdSequenceIfEmpty,
   runAppointmentChunkPostLoad,
   syncAppointmentIdSequence,
@@ -644,13 +645,16 @@ END $$;
   `);
 
   let total = 0;
-  /** นัดที่ PID ว่าง → ผูกคนไข้ K (scheduleKPatient.mjs) */
+  /** นัดที่ PID ว่าง → คนไข้จริงที่ชื่อ + นามสกุลตรง หรือคนไข้ K (scheduleKPatient.mjs) */
   const kTotals = {
     kLinkedRows: 0,
     kPatientsCreated: 0,
     kPatientsReused: 0,
     kFromExamRows: 0,
+    nameMatchedRows: 0,
+    nameAmbiguousRows: 0,
     relinkedFromK: 0,
+    relinkedFromKByName: 0,
     kPatientsDeleted: 0,
   };
   /** K ที่นัดย้ายไปคนไข้จริงแล้ว — ลบครั้งเดียวท้าย job (เช็คการอ้างถึงต้องสแกนหลายตาราง) */
@@ -899,6 +903,9 @@ END $$;
               kPatientsCreated: postLoadResult.kPatientsCreated,
             }
           : {}),
+        ...(postLoadResult?.nameMatchedRows
+          ? { nameMatchedRows: postLoadResult.nameMatchedRows }
+          : {}),
         firstScheduleId,
         lastScheduleId,
         mssqlFetchMs: fetchElapsedMs,
@@ -1037,6 +1044,10 @@ END $$;
   if (progressEnabled) endProgress(uiState);
 
   await syncAppointmentIdSequence(pgClient);
+  // K จากรอบก่อนที่ตอนนี้มีคนไข้จริงชื่อ + นามสกุลตรง (เช่น ไม่มาตามนัดแรก ไปลงทะเบียนตอนนัดถัดไป)
+  const byName = await relinkKAppointmentsByName(pgClient);
+  kTotals.relinkedFromKByName = byName.relinked;
+  for (const id of byName.kIds) kCandidateIds.add(id);
   if (kCandidateIds.size > 0) {
     kTotals.kPatientsDeleted = await deleteOrphanMigrationKPatients(
       pgClient,
@@ -1111,14 +1122,22 @@ END $$;
     chunkResults,
     repairSummary,
   };
-  if (kTotals.kLinkedRows > 0 || kTotals.kFromExamRows > 0) {
+  if (
+    kTotals.kLinkedRows > 0 ||
+    kTotals.kFromExamRows > 0 ||
+    kTotals.nameMatchedRows > 0
+  ) {
     console.error(
-      `>>> [${key}] หมายเหตุ: นัดที่ PID ว่าง ผูกคนไข้ K ${kTotals.kLinkedRows} แถว (สร้าง K ใหม่ ${kTotals.kPatientsCreated}, ใช้ K เดิมที่ชื่อ+นามสกุล+เบอร์ตรง ${kTotals.kPatientsReused}), ผูกคนไข้จาก exam ${kTotals.kFromExamRows} แถว`,
+      `>>> [${key}] หมายเหตุ: นัดที่ PID ว่าง ผูกคนไข้จริงที่ชื่อ+นามสกุลตรง ${kTotals.nameMatchedRows} แถว (ชื่อซ้ำหลายคน เบอร์ตัดสินไม่ได้ ${kTotals.nameAmbiguousRows} แถว), ผูกคนไข้ K ${kTotals.kLinkedRows} แถว (สร้าง K ใหม่ ${kTotals.kPatientsCreated}, ใช้ K เดิมที่ชื่อ+นามสกุล+เบอร์ตรง ${kTotals.kPatientsReused}), ผูกคนไข้จาก exam ${kTotals.kFromExamRows} แถว`,
     );
   }
-  if (kTotals.relinkedFromK > 0 || kTotals.kPatientsDeleted > 0) {
+  if (
+    kTotals.relinkedFromK > 0 ||
+    kTotals.relinkedFromKByName > 0 ||
+    kTotals.kPatientsDeleted > 0
+  ) {
     console.error(
-      `>>> [${key}] หมายเหตุ: ต้นทางเติม PID แล้ว ย้ายนัดจาก K ไปคนไข้จริง ${kTotals.relinkedFromK} แถว, ลบ K ที่ไม่มีอะไรอ้างถึง ${kTotals.kPatientsDeleted} คน`,
+      `>>> [${key}] หมายเหตุ: ย้ายนัดจาก K ไปคนไข้จริง — ต้นทางเติม PID ${kTotals.relinkedFromK} แถว, มีคนไข้จริงชื่อ+นามสกุลตรงแล้ว ${kTotals.relinkedFromKByName} แถว; ลบ K ที่ไม่มีอะไรอ้างถึง ${kTotals.kPatientsDeleted} คน`,
     );
   }
   console.error(`>>> [${key}] done, total rows read: ${total}`);

@@ -13,9 +13,11 @@ import {
 import { APPOINTMENT_MIGRATE_PLACEHOLDER_LOGIC_ENABLED } from "../../shared/js-migrate/placeholderMigrateFlags.mjs";
 import {
   ensureScheduleKPatients,
+  findRealPatientIdsByName,
   mapScheduleRowToKPatient,
   migrationKPatientSql,
   relinkAppointmentsFromMigrationK,
+  relinkMigrationKAppointmentsByName,
 } from "../../shared/js-migrate/scheduleKPatient.mjs";
 
 function getField(row, key) {
@@ -830,14 +832,18 @@ async function loadExamPatientByAppointmentId(pgClient, appointmentIds) {
  * - นัดที่มีอยู่แล้วและผูกคนไข้อยู่ → ใช้คนเดิม (รันซ้ำไม่สร้าง K เพิ่ม, คนจริงที่ย้ายไปแล้วไม่ถูกดึงกลับ)
  * - insert-only + นัดจริงที่มีอยู่แล้ว → แถวถูกข้ามอยู่แล้ว ไม่สร้าง K ทิ้งไว้
  * - placeholder ที่ examination สร้าง → ใช้คนไข้ของ exam นั้นถ้าชี้คนเดียว
+ * - มีชื่อ + นามสกุลตรงคนไข้จริงใน patient_info (ชื่อซ้ำใช้เบอร์ตัดสิน) → ใช้คนไข้จริง
  * - นอกนั้น → คนไข้ K (ชื่อ+นามสกุล+เบอร์ตรงกันใช้ตัวเดิม)
- * @returns {Promise<Map<number, number>>}
+ * @returns {Promise<{ patientIdByRow: Map<number, number>, kLinkedRows: Set<number> }>}
+ *   kLinkedRows = index ที่ผูกคนไข้ K — นัดที่ไม่มี PID ใช้ Patient_Type ทับ patient_category ได้แค่ของ K
+ *   (คนไข้จริงที่ได้จากชื่อ / exam หลักฐานไม่พอจะทับสถานะระดับคนไข้)
  */
 async function resolveKPatientIdsForRows(pgClient, rows, payloads, ctx) {
   const { existingMetaByOldDbId, insertOnly, fkMeta, patientColumn, kStats } =
     ctx;
   /** @type {Map<number, number>} */
   const out = new Map();
+  const kLinkedRows = new Set();
   const placeholderIdx = [];
   const needK = [];
   for (let i = 0; i < rows.length; i++) {
@@ -845,6 +851,7 @@ async function resolveKPatientIdsForRows(pgClient, rows, payloads, ctx) {
     const existing = existingMetaByOldDbId.get(String(payloads[i].old_db_id));
     if (existing?.patientId != null) {
       out.set(i, existing.patientId);
+      if (existing.patientIsK) kLinkedRows.add(i);
     } else if (existing?.isPlaceholder) {
       placeholderIdx.push(i);
     } else if (existing == null || !insertOnly) {
@@ -870,26 +877,53 @@ async function resolveKPatientIdsForRows(pgClient, rows, payloads, ctx) {
     }
   }
 
-  if (needK.length > 0) {
+  const mapped = needK.map((i) =>
+    mapScheduleRowToKPatient({
+      prefix: getField(rows[i], "prefix"),
+      name: getField(rows[i], "name"),
+      surname: getField(rows[i], "surname"),
+      mobile: getField(rows[i], "mobile"),
+      telephone: getField(rows[i], "telephone"),
+    }),
+  );
+  const { ids: realIds, ambiguous } = await findRealPatientIdsByName(
+    pgClient,
+    mapped,
+  );
+  kStats.nameAmbiguousRows += ambiguous;
+  /** index ใน needK ที่ยังไม่เจอคนไข้จริง → สร้าง/ใช้ K */
+  const stillK = [];
+  needK.forEach((i, j) => {
+    if (realIds[j] == null) stillK.push(j);
+    else out.set(i, realIds[j]);
+  });
+  kStats.nameMatchedRows += needK.length - stillK.length;
+
+  if (stillK.length > 0) {
     const { ids, created, reused } = await ensureScheduleKPatients(
       pgClient,
-      needK.map((i) =>
-        mapScheduleRowToKPatient({
-          prefix: getField(rows[i], "prefix"),
-          name: getField(rows[i], "name"),
-          surname: getField(rows[i], "surname"),
-          mobile: getField(rows[i], "mobile"),
-          telephone: getField(rows[i], "telephone"),
-        }),
-      ),
+      stillK.map((j) => mapped[j]),
     );
-    needK.forEach((i, j) => out.set(i, ids[j]));
+    stillK.forEach((j, n) => {
+      out.set(needK[j], ids[n]);
+      kLinkedRows.add(needK[j]);
+    });
     addToCachedAllowedFkSet(fkMeta, patientColumn, ids);
-    kStats.kLinkedRows += needK.length;
+    kStats.kLinkedRows += stillK.length;
     kStats.kPatientsCreated += created;
     kStats.kPatientsReused += reused;
   }
-  return out;
+  return { patientIdByRow: out, kLinkedRows };
+}
+
+/**
+ * ท้าย job: นัดที่ยังผูก K แต่ตอนนี้มีคนไข้จริงชื่อ + นามสกุลตรงแล้ว → ย้ายไปคนไข้จริง
+ * @returns {Promise<{ relinked: number, kIds: number[] }>} kIds ส่งต่อ deleteOrphanMigrationKPatients
+ */
+export async function relinkKAppointmentsByName(pgClient) {
+  const patientColumn = await resolveAppointmentPatientColumn(pgClient);
+  if (patientColumn == null) return { relinked: 0, kIds: [] };
+  return relinkMigrationKAppointmentsByName(pgClient, patientColumn);
 }
 
 /**
@@ -924,11 +958,11 @@ function collectPatientTypeFieldIssues(row) {
 /**
  * upsert ตาม old_db_id — UPDATE แถวเดิม (คง id) / INSERT เฉพาะแถวใหม่
  * ลดช่องว่างใน id จากการรัน migrate ซ้ำ (เดิม DELETE แล้ว INSERT ใหม่)
- * แถวที่ PID ว่าง (รวมวันหยุด/กันช่อง) → ผูกคนไข้ K (สร้างใหม่หรือใช้ของเดิม)
+ * แถวที่ PID ว่าง (รวมวันหยุด/กันช่อง) → ชื่อ + นามสกุลตรงคนไข้จริงใช้คนนั้น ไม่งั้นผูกคนไข้ K (สร้างใหม่หรือใช้ของเดิม)
  * นัดที่ผูก K อยู่แล้วต้นทางเติม PID → ย้ายไปผูกคนไข้จริง (insert-only แก้แค่คอลัมน์ patient)
  * @returns {{ failedScheduleIds: string[], fieldIssues: object|null,
  *   kLinkedRows: number, kPatientsCreated: number, kPatientsReused: number, kFromExamRows: number,
- *   relinkedFromK: number, kCandidateIds: number[] }}
+ *   nameMatchedRows: number, nameAmbiguousRows: number, relinkedFromK: number, kCandidateIds: number[] }}
  *   kCandidateIds = K ที่นัดเพิ่งย้ายออก → ผู้เรียกลบท้าย job ถ้าไม่มีอะไรอ้างถึงแล้ว
  */
 export async function runAppointmentChunkPostLoad(
@@ -943,6 +977,8 @@ export async function runAppointmentChunkPostLoad(
     kPatientsCreated: 0,
     kPatientsReused: 0,
     kFromExamRows: 0,
+    nameMatchedRows: 0,
+    nameAmbiguousRows: 0,
     relinkedFromK: 0,
     kCandidateIds: [],
   };
@@ -1006,7 +1042,7 @@ export async function runAppointmentChunkPostLoad(
     }
   }
   const patientIdByPid = await resolvePatientIdByPidMap(pgClient, rows);
-  const kPatientIdByRow = patientColumn
+  const { patientIdByRow: kPatientIdByRow, kLinkedRows } = patientColumn
     ? await resolveKPatientIdsForRows(pgClient, rows, payloads, {
         existingMetaByOldDbId,
         insertOnly,
@@ -1014,7 +1050,7 @@ export async function runAppointmentChunkPostLoad(
         patientColumn,
         kStats,
       })
-    : new Map();
+    : { patientIdByRow: new Map(), kLinkedRows: new Set() };
   /** @type {{ patientInfoId: number, patientCategory: string }[]} */
   const patientCategoryUpdates = [];
 
@@ -1050,7 +1086,11 @@ export async function runAppointmentChunkPostLoad(
       ...collectPatientTypeFieldIssues(row),
     ]);
 
-    if (patientId != null && patientCategory != null) {
+    if (
+      patientId != null &&
+      patientCategory != null &&
+      (pid != null || kLinkedRows.has(i))
+    ) {
       patientCategoryUpdates.push({
         patientInfoId: Number(patientId),
         patientCategory,

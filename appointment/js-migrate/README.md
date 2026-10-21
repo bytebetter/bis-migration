@@ -78,15 +78,20 @@ node appointment/js-migrate/migrate-from-mssql.mjs --config ./migration.config.l
 - ไม่ล้าง `public.appointment` ทั้งตารางอัตโนมัติ — upsert ตาม `old_db_id` (UPDATE คง `id` / INSERT แถวใหม่) เพื่อไม่ให้ `id` กระโดดเมื่อรัน migrate ซ้ำ
 - **แถวที่ `PID` ว่าง (NULL / `''` / เว้นวรรค)** แยกใน `partitionAppointmentRowsByPid` ก่อนแมป:
   - **ทุกแถว** (รวมวันหยุด/กันช่อง เช่น `วันหยุด ...`, `-`, `OFF` — ไม่กรอง ตามที่ตกลง 2026-10-20) → ผูกคนไข้ K (`shared/js-migrate/scheduleKPatient.mjs`) แบบเดียวกับ flow [id-36] ของระบบใหม่: `pid` = `K` + `patient_info.id`, `created_by_queue_type` = `K`, ชื่อ/นามสกุล/คำนำหน้าจากนัด, `Mobile` → `mobile_phone`, `Telephone` → `phone_home`
+    - **ก่อนสร้าง K** นัดที่มีทั้งชื่อและนามสกุล → หาคนไข้จริงใน `public.patient_info` ด้วยชื่อ + นามสกุล (ตัด BOM / ยุบช่องว่างทั้งสองฝั่ง; ไม่นับคนไข้ K `pid = 'K' || id` และ placeholder `ไม่ทราบชื่อ`) — ตกลง 2026-10-21
+      - ตรงคนเดียว → ผูกคนนั้นเลย
+      - ตรงหลายคน → เบอร์ของนัด (`Mobile` / `Telephone`) ต้องตรง `mobile_phone` / `phone_home` / `phone_biz` (ช่องเดียวหลายเบอร์ได้, `+66` = `0`) เหลือคนเดียวจึงผูก; ไม่มีเบอร์ / ยังหลายคน → สร้าง K (นับใน `nameAmbiguousRows`)
+      - นัดที่ไม่มี PID ใช้ `Patient_Type` ทับ `patient_info.patient_category` ได้เฉพาะเมื่อผูก K — คนไข้จริงที่ได้จากชื่อ / exam ไม่ถูกทับ
     - K ที่ migration สร้างระบุได้ด้วย `pid = 'K' || id AND old_db_id = pid` (K ที่ระบบใหม่สร้างเอง `old_db_id` ว่าง — ไม่ถูกจับคู่/ลบ)
     - ชื่อ + นามสกุล (ว่างได้) + เบอร์ (ตัวเลข ≥ 9 หลัก มือถือก่อน ไม่มีใช้เบอร์บ้าน) ตรงกัน = คนเดียวกัน ใช้ K เดิม; ไม่มีชื่อหรือไม่มีเบอร์ → สร้าง K ใหม่ทุกนัด
     - placeholder ที่ examination สร้างไว้และ exam ชี้คนไข้คนเดียว → ใช้คนไข้ของ exam แทนการสร้าง K
     - นัดที่มีอยู่แล้วและผูกคนไข้อยู่ → ใช้คนเดิม (รันซ้ำไม่สร้าง K เพิ่ม)
   - ต้นทางเติม PID ให้นัดที่ผูก K ทีหลัง (คนไข้ใหม่มาลงทะเบียนวันนัด) → เก็บตก (`catchUpMissingRows.mjs`) ถือว่านัดนั้นยังขาด → `--source-ids` ย้ายนัดไปคนไข้จริง (insert-only แก้แค่คอลัมน์ patient)
   - exam ของนัดที่ผูก K มีคนไข้จริง → step examination ย้ายนัดไปคนไข้ของ exam (exam ใน chunk ชี้หลายคน = ไม่ย้าย)
+  - ท้าย job appointment ทุกรอบ: K จากรอบก่อนที่ตอนนี้มีคนไข้จริงชื่อ + นามสกุลตรง (กติกาเดียวกับด้านบน) → ย้ายนัดที่มาจาก migration (`old_db_id` ไม่ว่าง) ไปคนไข้จริง เช่น ไม่มาตามนัดแรกแล้วไปลงทะเบียนตอนนัดถัดไป — K ที่ `user_updated` ไม่ว่าง (แก้ในระบบใหม่แล้ว) ไม่แตะ
   - K ที่นัดย้ายออกแล้ว ลบท้าย job ถ้าไม่มีตารางไหนอ้างถึง (FK + `directus_relations`) และ `user_updated` ว่าง — FK ทุกตัวเป็น `ON DELETE SET NULL` จึงต้องเช็คก่อนลบ
-  - สรุปต่อรอบ: `kLinkedRows`, `kPatientsCreated`, `kPatientsReused`, `kFromExamRows`, `relinkedFromK`, `kPatientsDeleted` ใน `logs/migrate-*.json`
+  - สรุปต่อรอบ: `nameMatchedRows`, `nameAmbiguousRows`, `kLinkedRows`, `kPatientsCreated`, `kPatientsReused`, `kFromExamRows`, `relinkedFromK`, `relinkedFromKByName`, `kPatientsDeleted` ใน `logs/migrate-*.json`
   - `Schedule_ID` เดียวกันที่มีทั้งแถว PID ว่างและแถวที่มี PID จะใช้แถวที่มี PID
-  - `public.patient_info` มีแถวมากกว่า `dbo.patient_info` เท่าจำนวน K; `public.appointment` มีทุก `Schedule_ID` แล้ว (ไม่ต้องหักแถว PID ว่างตอนเทียบจำนวนอีก)
+  - `public.patient_info` มีแถวมากกว่า `dbo.patient_info` เท่าจำนวน K (นัดที่ผูกคนไข้จริงจากชื่อไม่สร้าง K); `public.appointment` มีทุก `Schedule_ID` แล้ว (ไม่ต้องหักแถว PID ว่างตอนเทียบจำนวนอีก)
   - แถวที่มี PID แต่หาไม่เจอใน `public.patient_info` **ไม่ถูกข้าม** — ยัง insert โดย `patient` = NULL และลง log เป็น `patient_not_resolved` เหมือนเดิม
   - `examination` ยังสร้าง appointment placeholder (`ไม่ทราบชื่อ` / `Schedule ID <id>`) ให้ `Schedule_ID` ที่อ้างถึงแต่ไม่มีใน `public.appointment` ตาม `ENSURE_PLACEHOLDER_APPOINTMENT_ENABLED`

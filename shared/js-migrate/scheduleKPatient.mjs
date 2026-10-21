@@ -7,17 +7,27 @@
  * ตัวระบุว่าเป็น K ที่ migration สร้าง: pid = 'K' || id และ old_db_id = pid
  * (แถวที่ระบบใหม่สร้างเอง old_db_id ว่าง → ไม่ถูกจับคู่ซ้ำ / ไม่ถูกลบ)
  *
+ * - นัดที่มีชื่อ + นามสกุล → หาคนไข้จริงใน patient_info ก่อน (findRealPatientIdsByName) เจอใช้คนนั้น ไม่เจอค่อยสร้าง K
+ *   (user สั่ง 2026-10-21: ชื่อซ้ำหลายคนใช้เบอร์ตัดสิน, ไม่นับ K/placeholder, K เดิมย้ายไปคนไข้จริงทุกคืน)
  * - ทุกนัดที่ PID ว่างได้ K รวมแถววันหยุด/กันช่อง ("วันหยุด ...", "-", "OFF") — user สั่งไม่กรอง (2026-10-20)
  *   เพราะแยกวันหยุดออกจากคนจริงด้วยชื่อไม่ได้แน่นอน (พิมพ์วันหยุดลงช่อง prefix/ชื่อ/นามสกุลปนกัน)
  * - ชื่อ + นามสกุล + เบอร์ตรงกัน = คนเดียวกัน ใช้ K เดียวกัน (ไม่มีเบอร์ → สร้างใหม่ทุกนัด)
- * - ต้นทางเติม PID ทีหลัง / exam ของนัดนั้นมีคนไข้จริง → ย้ายนัดไปผูกคนไข้จริง แล้วลบ K ที่ไม่มีอะไรอ้างถึง
+ * - ต้นทางเติม PID ทีหลัง / exam ของนัดนั้นมีคนไข้จริง / มีคนไข้จริงชื่อ + นามสกุลตรงเข้ามาทีหลัง
+ *   → ย้ายนัดไปผูกคนไข้จริง แล้วลบ K ที่ไม่มีอะไรอ้างถึง
  */
+import { patientIsPlaceholderSql } from "./patientPidMatch.mjs";
+
 /** เบอร์สั้นกว่านี้ (บ้าน 9 หลัก / มือถือ 10 หลัก) ไม่ใช้ระบุตัวคน */
 const MIN_PHONE_DIGITS = 9;
 
 /** SQL boolean: แถว patient_info (alias) เป็นคนไข้ K ที่ migration สร้างจากนัด */
 export function migrationKPatientSql(alias) {
   return `(${alias}.pid::text = 'K' || ${alias}.id::text AND ${alias}.old_db_id::text = ${alias}.pid::text)`;
+}
+
+/** SQL: ชื่อแบบเดียวกับ cleanPersonName (ตัด BOM + ยุบช่องว่าง + trim) — ว่างเป็น NULL */
+function cleanPersonNameSql(expr) {
+  return `NULLIF(btrim(regexp_replace(replace(${expr}::text, chr(65279), ''), '\\s+', ' ', 'g')), '')`;
 }
 
 /** ตัด BOM + ช่องว่างหัวท้าย + ยุบช่องว่างซ้อน — ว่างคืน null */
@@ -40,6 +50,20 @@ function clampText255(v) {
 function phoneDigits(v) {
   const d = v == null ? "" : String(v).replace(/\D/g, "");
   return d.length >= MIN_PHONE_DIGITS ? d : null;
+}
+
+/** เบอร์ทุกเบอร์จากหลายช่อง (ช่องเดียวมีหลายเบอร์คั่น , / ; |) เป็นตัวเลขล้วน — +66 แปลงเป็น 0 */
+function phoneDigitSet(...values) {
+  const out = new Set();
+  for (const v of values) {
+    if (v == null) continue;
+    for (const part of String(v).split(/[,/;|]/)) {
+      let d = part.replace(/\D/g, "");
+      if (d.startsWith("66") && (d.length === 10 || d.length === 11)) d = `0${d.slice(2)}`;
+      if (d.length >= MIN_PHONE_DIGITS) out.add(d);
+    }
+  }
+  return out;
 }
 
 /**
@@ -66,6 +90,83 @@ export function mapScheduleRowToKPatient({ prefix, name, surname, mobile, teleph
     mobile_phone: clampText255(mobile),
     phone_home: clampText255(telephone),
   };
+}
+
+/** ชื่อที่ไม่มีตัวอักษรเลย ("-", ".", "0") ไม่ใช้ค้นคนไข้จริง — กันนัดกันช่องไปจับแถวขยะใน patient_info */
+const HAS_LETTER = /\p{L}/u;
+
+function isNameSearchable(p) {
+  return (
+    p.first_name_th != null &&
+    p.last_name_th != null &&
+    HAS_LETTER.test(p.first_name_th) &&
+    HAS_LETTER.test(p.last_name_th)
+  );
+}
+
+/**
+ * หาคนไข้จริงใน patient_info ที่ชื่อ + นามสกุลตรงกับนัด (ไม่นับคนไข้ K pid = 'K' + id และ placeholder)
+ * - ตรงคนเดียว → ใช้คนนั้น
+ * - ตรงหลายคน → เบอร์ของนัดต้องตรง mobile_phone / phone_home / phone_biz เหลือคนเดียวจึงใช้
+ * - ไม่มีชื่อหรือนามสกุล (หรือไม่มีตัวอักษร) / ไม่เจอ / ยังกำกวม → null (ผู้เรียกสร้าง K)
+ * ชื่อฝั่ง patient_info ไม่มี index ที่ใช้ได้ → สแกนทั้งตารางครั้งละ chunk (ห้ามสร้าง index บน prod)
+ * @param {import("pg").PoolClient} pgClient
+ * @param {ReturnType<typeof mapScheduleRowToKPatient>[]} patients ชื่อต้องผ่าน cleanPersonName แล้ว
+ * @returns {Promise<{ ids: (number | null)[], ambiguous: number }>} ids ลำดับเดียวกับ patients,
+ *   ambiguous = จำนวนที่ชื่อตรงหลายคนแต่เบอร์ตัดสินไม่ได้
+ */
+export async function findRealPatientIdsByName(pgClient, patients) {
+  const ids = new Array(patients.length).fill(null);
+  const nameKey = (f, l) => `${f}\u0001${l}`;
+  /** @type {Map<string, [string, string]>} */
+  const names = new Map();
+  for (const p of patients) {
+    if (!isNameSearchable(p)) continue;
+    names.set(nameKey(p.first_name_th, p.last_name_th), [p.first_name_th, p.last_name_th]);
+  }
+  if (names.size === 0) return { ids, ambiguous: 0 };
+
+  const { rows } = await pgClient.query(
+    `WITH q AS (
+       SELECT * FROM unnest($1::text[], $2::text[]) AS q(f, l)
+     )
+     SELECT p.id, q.f, q.l, p.mobile_phone, p.phone_home, p.phone_biz
+     FROM public.patient_info p
+     JOIN q ON ${cleanPersonNameSql("p.first_name_th")} = q.f
+           AND ${cleanPersonNameSql("p.last_name_th")} = q.l
+     WHERE p.first_name_th IS NOT NULL AND p.last_name_th IS NOT NULL
+       AND p.pid::text IS DISTINCT FROM 'K' || p.id::text
+       AND NOT ${patientIsPlaceholderSql("p")}
+     ORDER BY p.id`,
+    [[...names.values()].map((v) => v[0]), [...names.values()].map((v) => v[1])],
+  );
+  /** @type {Map<string, { id: number, phones: Set<string> }[]>} */
+  const candidatesByName = new Map();
+  for (const r of rows) {
+    const key = nameKey(r.f, r.l);
+    if (!candidatesByName.has(key)) candidatesByName.set(key, []);
+    candidatesByName.get(key).push({
+      id: Number(r.id),
+      phones: phoneDigitSet(r.mobile_phone, r.phone_home, r.phone_biz),
+    });
+  }
+
+  let ambiguous = 0;
+  for (let i = 0; i < patients.length; i++) {
+    const p = patients[i];
+    if (!isNameSearchable(p)) continue;
+    const candidates = candidatesByName.get(nameKey(p.first_name_th, p.last_name_th));
+    if (candidates == null) continue;
+    if (candidates.length === 1) {
+      ids[i] = candidates[0].id;
+      continue;
+    }
+    const phones = phoneDigitSet(p.mobile_phone, p.phone_home);
+    const byPhone = candidates.filter((c) => [...phones].some((d) => c.phones.has(d)));
+    if (byPhone.length === 1) ids[i] = byPhone[0].id;
+    else ambiguous++;
+  }
+  return { ids, ambiguous };
 }
 
 let cachedHasQueueTypeColumn;
@@ -217,6 +318,62 @@ export async function relinkAppointmentsFromMigrationK(pgClient, patientColumn, 
     relinked: rows.length,
     kIds: [...new Set(rows.map((r) => Number(r.k_id)))],
   };
+}
+
+const RELINK_BY_NAME_BATCH = 5000;
+
+/**
+ * K ที่ migration สร้างไว้รอบก่อน แล้วตอนนี้ patient_info มีคนไข้จริงชื่อ + นามสกุลตรง (กติกาเดียวกับ findRealPatientIdsByName)
+ * → ย้ายนัด (เฉพาะนัดจาก migration — old_db_id ไม่ว่าง) ไปคนไข้จริง
+ * เช่น นัดแรกยังไม่มี PID ได้ K แล้วคนไข้ไม่มา ไปลงทะเบียนตอนนัดถัดไป — นัดแรกไม่มีวันได้ PID/exam
+ * K ที่แก้ในระบบใหม่แล้ว (user_updated) ไม่แตะ — เรียกท้าย job appointment ทุกรอบ
+ * @param {import("pg").PoolClient} pgClient
+ * @param {string} patientColumn คอลัมน์ patient ของ public.appointment
+ * @returns {Promise<{ relinked: number, kIds: number[] }>} kIds ส่งต่อ deleteOrphanMigrationKPatients
+ */
+export async function relinkMigrationKAppointmentsByName(pgClient, patientColumn) {
+  const { rows: ks } = await pgClient.query(
+    `SELECT k.id, k.first_name_th, k.last_name_th, k.mobile_phone, k.phone_home
+     FROM public.patient_info k
+     WHERE ${migrationKPatientSql("k")} AND k.user_updated IS NULL
+       AND k.first_name_th IS NOT NULL AND k.last_name_th IS NOT NULL
+     ORDER BY k.id`,
+  );
+  let relinked = 0;
+  const kIds = new Set();
+  const col = `"${patientColumn}"`;
+  for (let s = 0; s < ks.length; s += RELINK_BY_NAME_BATCH) {
+    const batch = ks.slice(s, s + RELINK_BY_NAME_BATCH);
+    const { ids } = await findRealPatientIdsByName(
+      pgClient,
+      batch.map((k) => ({
+        first_name_th: cleanPersonName(k.first_name_th),
+        last_name_th: cleanPersonName(k.last_name_th),
+        mobile_phone: k.mobile_phone,
+        phone_home: k.phone_home,
+      })),
+    );
+    /** @type {Map<number, number>} K → คนไข้จริง */
+    const realByK = new Map();
+    batch.forEach((k, j) => {
+      if (ids[j] != null) realByK.set(Number(k.id), ids[j]);
+    });
+    if (realByK.size === 0) continue;
+    const { rows: appts } = await pgClient.query(
+      `SELECT a.id, a.${col}::int AS k_id
+       FROM public.appointment a
+       WHERE a.${col} = ANY($1::int[]) AND a.old_db_id IS NOT NULL`,
+      [[...realByK.keys()]],
+    );
+    const r = await relinkAppointmentsFromMigrationK(
+      pgClient,
+      patientColumn,
+      appts.map((a) => ({ appointmentId: a.id, patientId: realByK.get(Number(a.k_id)) })),
+    );
+    relinked += r.relinked;
+    for (const id of r.kIds) kIds.add(id);
+  }
+  return { relinked, kIds: [...kIds] };
 }
 
 const INT_TYPES = new Set(["integer", "bigint", "smallint"]);
