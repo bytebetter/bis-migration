@@ -358,16 +358,27 @@ async function main() {
   };
   const chunkLog = createChunkResultsLogger(migration);
 
-  // temp table อยู่ใน session เดียว — ใช้ client เดียวตลอดรอบ
-  const client = new pg.Client({
+  const pgConfig = {
     host: config.target.postgresHost,
     port: Number(config.target.postgresPort ?? 5432),
     user: config.target.postgresUser,
     password: config.target.postgresPassword,
     database: config.target.postgresDatabase ?? "bisinfo_dev_clone",
     types: directusLikeTypes(),
-  });
+  };
+  // temp table อยู่ใน session เดียว — ใช้ client เดียวตลอดรอบ
+  const client = new pg.Client(pgConfig);
+  // INSERT ไม่แตะ temp table จึงแยก connection ได้ — อ่าน batch ถัดไประหว่าง Postgres เขียน JSON ก้อนใหญ่
+  const writer = dryRun ? null : new pg.Client(pgConfig);
   await client.connect();
+  await writer?.connect();
+  // ค้างได้ทีละ 1 INSERT — ได้ Error แทน reject เพราะระหว่างอ่าน batch ถัดไปยังไม่มีใคร await
+  let pendingInsert = null;
+  const settleInsert = async () => {
+    const failure = await pendingInsert;
+    pendingInsert = null;
+    if (failure) throw failure;
+  };
   try {
     console.error(
       `>>> [${KEY}] target: ${config.target.postgresDatabase} public.history_report (batchSize=${batchSize}${cap != null ? `, cap=${cap}` : ""}${dryRun ? ", DRY RUN" : ""})`,
@@ -448,8 +459,15 @@ async function main() {
           signedAts.push(resolveSignedAt(previousData));
         }
         if (!dryRun) {
-          await client.query(insertSql, [generalIds, payloads, signedAts]);
-          runLog.rowsInserted += targets.length;
+          await settleInsert();
+          const insertLabel = `INSERT chunk ${chunkIndex + 1} (exam id > ${afterId})`;
+          pendingInsert = writer.query(insertSql, [generalIds, payloads, signedAts]).then(
+            () => {
+              runLog.rowsInserted += targets.length;
+              return null;
+            },
+            (err) => new Error(`${insertLabel}: ${err.message}`),
+          );
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -482,6 +500,7 @@ async function main() {
       afterId = lastId;
       if (targets.length < batchSize) break;
     }
+    await settleInsert();
     if (progressEnabled) endProgress(uiState);
 
     const avgKb = done > 0 ? (runLog.snapshotBytes / done / 1024).toFixed(1) : "0";
@@ -495,7 +514,9 @@ async function main() {
     runLog.error = err instanceof Error ? err.message : String(err);
     throw err;
   } finally {
+    await pendingInsert;
     await client.end();
+    await writer?.end();
     runLog.finishedAt = new Date().toISOString();
     chunkLog.attachTo(runLog);
     fs.writeFileSync(logPath, `${JSON.stringify(runLog, null, 2)}\n`, "utf8");
