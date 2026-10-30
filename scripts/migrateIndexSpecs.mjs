@@ -13,7 +13,7 @@ export const MIGRATE_INDEX_SPECS = [
     table: "PACS_EXPORT_PDF",
     keys: ["Exam_ID"],
     includes: ["RPT_TYPE", "Is_LatestRPT_Synced"],
-    note: "lookup Sign to PACs — pacsExportSign.mjs ยิงต่อ chunk",
+    note: "lookup Sign to PACs — pacsExportSign.mjs ยิงต่อ chunk + history_report อ่านทั้งตารางทุกรอบ",
   },
 
   // ── ตารางหลัก: keyset CreatedDate → Exam_ID ─────────────────────────────

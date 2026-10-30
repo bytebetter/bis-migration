@@ -64,6 +64,7 @@ const PROFILE_DIR = {
   mobile_location: "mobile-location",
   surgical_patho: "surgical-patho",
   special_case: "special-case",
+  history_report: "history-report",
 };
 
 const profile = process.argv[2];
@@ -323,6 +324,10 @@ function normalizeForwardedArgs(args, profileKey = null, fullArgv = []) {
     const a = pass1[pi];
     if (a.startsWith("--")) {
       out.push(a);
+      // ค่าของ flag นี้เป็นตัวเลขล้วน — ไม่ข้ามจะถูกแปลงเป็น --source-index-range ด้านล่าง
+      if (a.toLowerCase() === "--source-count-cap" && pass1[pi + 1] != null) {
+        out.push(pass1[++pi]);
+      }
       continue;
     }
 

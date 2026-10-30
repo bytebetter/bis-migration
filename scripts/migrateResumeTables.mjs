@@ -1,7 +1,7 @@
 /**
  * ตารางที่ migrate:all (resume) ใช้ checkpoint — profile → โฟลเดอร์ / ไฟล์ checkpoint / ตารางปลายทาง
  * ชื่อไฟล์ checkpoint = ของโหมด resume (migrateRowMode insert-only): appointment / examination มี -ins ต่อท้าย
- * (exam_recommend_birads45, birads_mass_cyst ไม่ใช้ checkpoint — อ่าน/คำนวณใหม่ทุกรอบ)
+ * (exam_recommend_birads45, birads_mass_cyst, history_report ไม่ใช้ checkpoint — อ่าน/คำนวณใหม่ทุกรอบ)
  */
 import fs from "node:fs";
 import path from "node:path";

@@ -86,6 +86,29 @@ export async function fetchPacsSignedExamIds(
   return signed;
 }
 
+/**
+ * Exam_ID ทั้งหมดที่ต้นทาง sign report ของ mammogram / ultrasound แล้ว ณ ตอนนี้
+ * กติกาเดียวกับ fetchPacsSignedExamIds แต่อ่านทั้งตาราง — history_report ต้องเห็นเคสที่ sign
+ * หลังแถว mam/us เข้า Postgres ไปแล้ว ซึ่ง state ใน Postgres ไม่ถูกอัปเดตตาม (resume = insert-only)
+ *
+ * @param {import("mssql").ConnectionPool} mssqlPool
+ * @param {{ pacsTableNoLock: string }} options
+ * @returns {Promise<string[]>}
+ */
+export async function fetchAllPacsSignedMamUsExamIds(
+  mssqlPool,
+  { pacsTableNoLock },
+) {
+  const res = await mssqlPool.request().query(
+    `SELECT DISTINCT TRY_CAST([Exam_ID] AS BIGINT) AS exam_id
+     FROM ${pacsTableNoLock}
+     WHERE TRY_CAST([Exam_ID] AS BIGINT) IS NOT NULL
+       AND TRY_CAST([Is_LatestRPT_Synced] AS INT) = 1
+       AND TRY_CAST([RPT_TYPE] AS INT) = ${PACS_RPT_TYPE_MAM_US}`,
+  );
+  return (res.recordset ?? []).map((row) => String(row.exam_id));
+}
+
 /** ค่าที่เก็บลงคอลัมน์ pacs_signed ของ staging ('1' = Sign to PACs) */
 export function pacsSignedFlag(signedExamIds, examId) {
   const n = Number.parseInt(String(examId), 10);
