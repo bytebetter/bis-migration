@@ -333,8 +333,10 @@ export async function runExaminationGeneralChunkPostLoad(
     } else if (name === "patient") expr = "p.id";
     else if (name === "payload") expr = "'{}'::jsonb";
     else if (name === "recommendation_des") {
+      // ระบบเก่าแยกข้อความ follow up เป็น 2 ช่อง ("Follow up 6 months with" + "spot ...")
+      // PDF อ่านแค่ recommendation_des จึงต้องต่อท้ายให้ครบ — concat_ws ข้าม NULL, ว่างทั้งคู่ได้ [] เหมือนเดิม
       expr = toJsonTextArrayExpr(
-        "NULLIF(btrim(s.recommendation_des_text), '')",
+        `NULLIF(concat_ws(' ', NULLIF(btrim(s.recommendation_des_text), ''), NULLIF(btrim(s.recommendation_followup_with), '')), '')`,
         meta,
       );
     } else if (name === "impression" || name === "impression_des") {
