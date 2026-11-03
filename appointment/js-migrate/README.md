@@ -94,4 +94,5 @@ node appointment/js-migrate/migrate-from-mssql.mjs --config ./migration.config.l
   - `Schedule_ID` เดียวกันที่มีทั้งแถว PID ว่างและแถวที่มี PID จะใช้แถวที่มี PID
   - `public.patient_info` มีแถวมากกว่า `dbo.patient_info` เท่าจำนวน K (นัดที่ผูกคนไข้จริงจากชื่อไม่สร้าง K); `public.appointment` มีทุก `Schedule_ID` แล้ว (ไม่ต้องหักแถว PID ว่างตอนเทียบจำนวนอีก)
   - แถวที่มี PID แต่หาไม่เจอใน `public.patient_info` **ไม่ถูกข้าม** — ยัง insert โดย `patient` = NULL และลง log เป็น `patient_not_resolved` เหมือนเดิม
+  - ท้าย job examination ทุกรอบ (รวมเก็บตก): นัดที่มาจาก migration (`old_db_id` ไม่ว่าง) ยังเป็น `ยังไม่ถึงเวลานัด/ยังไม่มา` แต่มี exam ที่ migrate มา (`old_exam_id` ไม่ว่าง) ชี้อยู่ → `เสร็จสิ้น` (นับใน `appointmentsCompleted`) — สถานะอื่นไม่แตะ, นัดที่ไม่มี exam ปล่อยให้ flow `[id-15]<CRONJOB>` ของระบบใหม่ (23:50 น.) เปลี่ยนเป็น `ไม่มาตามนัด` เอง
   - `examination` ยังสร้าง appointment placeholder (`ไม่ทราบชื่อ` / `Schedule ID <id>`) ให้ `Schedule_ID` ที่อ้างถึงแต่ไม่มีใน `public.appointment` ตาม `ENSURE_PLACEHOLDER_APPOINTMENT_ENABLED`

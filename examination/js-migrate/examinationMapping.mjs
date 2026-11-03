@@ -17,6 +17,10 @@ import {
   patientPidPreferenceOrderSql,
 } from "../../shared/js-migrate/patientPidMatch.mjs";
 import { relinkAppointmentsFromMigrationK } from "../../shared/js-migrate/scheduleKPatient.mjs";
+import {
+  APPOINTMENT_STATUS_COMPLETED,
+  APPOINTMENT_STATUS_NOT_YET,
+} from "../../appointment/js-migrate/appointmentMapping.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -916,6 +920,30 @@ export async function backfillExaminationMobileLocation(pgClient) {
       AND m.old_id = t.mobile_loc
   `);
   return { rowsFilled: r.rowCount ?? 0, skipped: false };
+}
+
+/**
+ * ท้าย job: นัดที่ migrate แล้วยังเป็น "ยังไม่ถึงเวลานัด/ยังไม่มา" แต่ต้นทางมี exam ของนัดนั้นแล้ว → "เสร็จสิ้น"
+ * (นัดที่ migrate ตอนยังไม่ถึงวัน แล้วรอบถัดไปมี exam) — สถานะอื่นไม่แตะ
+ * นัดที่ไม่มี exam ปล่อยให้ flow ไม่มาตามนัดของระบบใหม่จัดการเอง
+ * @returns {Promise<number>} จำนวนนัดที่เปลี่ยนสถานะ
+ */
+export async function completeAppointmentsWithMigratedExam(pgClient) {
+  const upd = await pgClient.query(
+    `
+    UPDATE public.appointment AS a
+    SET appointment_status = $1
+    WHERE a.appointment_status = $2
+      AND a.old_db_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM public.examination e
+        WHERE e.appointment = a.id
+          AND e.old_exam_id IS NOT NULL
+      )
+    `,
+    [APPOINTMENT_STATUS_COMPLETED, APPOINTMENT_STATUS_NOT_YET],
+  );
+  return upd.rowCount ?? 0;
 }
 
 let cachedAppointmentPatientColForExam;

@@ -31,6 +31,7 @@ import { patientPidMatchSql } from "../../shared/js-migrate/patientPidMatch.mjs"
 import {
   backfillExaminationMobileLocation,
   buildFieldIssueLogPayload,
+  completeAppointmentsWithMigratedExam,
   createFieldIssueAccumulator,
   getField,
   mergeFieldIssueChunk,
@@ -1504,6 +1505,7 @@ LIMIT 200;
     );
   }
 
+  let appointmentsCompleted = 0;
   if (isExaminationBuiltin) {
     await syncExaminationIdSequenceOnce(pgClient);
     // แถวที่ migrate ไปก่อนมีฟิลด์นี้ (หรือก่อน mobile_location มีแถวนั้น) — เติมให้ครบ
@@ -1515,6 +1517,12 @@ LIMIT 200;
     } else if (mlBackfill.rowsFilled > 0) {
       console.error(
         `>>> [${key}] mobile_location: เติมย้อนหลัง ${mlBackfill.rowsFilled} แถว (เฉพาะแถวที่ยังว่าง)`,
+      );
+    }
+    appointmentsCompleted = await completeAppointmentsWithMigratedExam(pgClient);
+    if (appointmentsCompleted > 0) {
+      console.error(
+        `>>> [${key}] หมายเหตุ: นัดที่ยังไม่ถึงเวลานัด/ยังไม่มา แต่มี exam แล้ว → เสร็จสิ้น ${appointmentsCompleted} แถว`,
       );
     }
   }
@@ -1601,6 +1609,7 @@ ORDER BY reason;
     failedExamIds: Array.from(failedExamIdSet),
     relinkedFromK,
     kPatientsDeleted,
+    appointmentsCompleted,
     fieldIssueLogPath: fieldIssueLogWritten,
     missingByReason: missingByReason.rows,
     checkpointPath: checkpointEnabled ? checkpointPath : null,
