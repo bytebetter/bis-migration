@@ -122,6 +122,9 @@ export const APPOINTMENT_STATUS_NO_SHOW = "ไม่มาตามนัด";
  */
 export const APPOINTMENT_CHANNEL_WALK_IN = "มานัดด้วยตนเอง";
 
+/** schedule.Inventional = 1 → appointment.request = "bx" (choice "BX" ของ request ใน Directus) */
+export const APPOINTMENT_REQUEST_BX = "bx";
+
 /**
  * เวลาปัจจุบันโซน Asia/Bangkok (UTC+7 คงที่ ไม่มี DST) รูปแบบ "YYYY-MM-DDTHH:mm:ss"
  * ให้เทียบ string กับผลของ toDirectusDateTime ได้ตรง ๆ
@@ -196,6 +199,7 @@ export function mapScheduleRowToAppointment(
     getField(row, "Schedule_Datetime"),
   );
   const fail = toInt(getField(row, "Fail"));
+  const inventional = toInt(getField(row, "Inventional"));
   return {
     appointment_datetime: appointmentDatetime,
     appointment_status: mapAppointmentStatus(
@@ -219,7 +223,8 @@ export function mapScheduleRowToAppointment(
     fail,
     telephone: nullIfTrimEmpty(getField(row, "Telephone")),
     /** คอลัมน์ inventional ในฐานเป็น integer */
-    inventional: toInt(getField(row, "Inventional")),
+    inventional,
+    request: inventional === 1 ? APPOINTMENT_REQUEST_BX : null,
     biopsy_proc: nullIfTrimEmpty(getField(row, "biopsy_proc")),
     referring_md: nullIfTrimEmpty(getField(row, "referring_md")),
     biopsy_comment: nullIfTrimEmpty(getField(row, "biopsy_comment")),
@@ -561,6 +566,7 @@ function buildAppointmentColumnArrays(payloads, patientColumn) {
     fail: [],
     telephone: [],
     inventional: [],
+    request: [],
     biopsy_proc: [],
     referring_md: [],
     biopsy_comment: [],
@@ -594,6 +600,7 @@ function buildAppointmentColumnArrays(payloads, patientColumn) {
     arrays.fail.push(item.fail);
     arrays.telephone.push(item.telephone);
     arrays.inventional.push(item.inventional);
+    arrays.request.push(item.request ?? null);
     arrays.biopsy_proc.push(item.biopsy_proc);
     arrays.referring_md.push(item.referring_md);
     arrays.biopsy_comment.push(item.biopsy_comment);
@@ -636,6 +643,7 @@ function buildAppointmentInsertDefs(
     ["fail", "int4[]", arrays.fail],
     ["telephone", "text[]", arrays.telephone],
     ["inventional", "int4[]", arrays.inventional],
+    ["request", "text[]", arrays.request],
     ["biopsy_proc", "text[]", arrays.biopsy_proc],
     ["referring_md", "text[]", arrays.referring_md],
     ["biopsy_comment", "text[]", arrays.biopsy_comment],
@@ -741,10 +749,10 @@ async function bulkUpdateAppointmentsByOldDbId(pgClient, insertDefs) {
              WHEN a.appointment_status = '${APPOINTMENT_STATUS_NOT_YET}' THEN v.${col}
              ELSE a.appointment_status
            END`
-        : // อย่าทับ appointment_channels ที่เจ้าหน้าที่เคยเลือกไว้เองใน Directus
-          // ใส่ default ให้เฉพาะแถวที่ยังเป็น NULL เท่านั้น
-          col === "appointment_channels"
-          ? `${col} = COALESCE(a.appointment_channels, v.${col})`
+        : // อย่าทับ appointment_channels / request ที่เจ้าหน้าที่เคยเลือกไว้เองใน Directus
+          // ใส่ค่าให้เฉพาะแถวที่ยังเป็น NULL เท่านั้น
+          col === "appointment_channels" || col === "request"
+          ? `${col} = COALESCE(a.${col}, v.${col})`
           : `${col} = v.${col}`,
     )
     .join(", ");
@@ -924,6 +932,26 @@ export async function relinkKAppointmentsByName(pgClient) {
   const patientColumn = await resolveAppointmentPatientColumn(pgClient);
   if (patientColumn == null) return { relinked: 0, kIds: [] };
   return relinkMigrationKAppointmentsByName(pgClient, patientColumn);
+}
+
+/**
+ * ท้าย job: นัดที่ migrate แล้ว inventional = 1 แต่ request ยังว่าง → "bx"
+ * รอบ insert-only ข้ามแถวเดิม (รวมแถวที่ migrate ก่อนมีกติกานี้) จึงเติมตรงนี้
+ * request ที่มีค่าอยู่แล้ว (เจ้าหน้าที่เลือกใน Directus) ไม่ทับ
+ * @returns {Promise<number>} จำนวนแถวที่เติม
+ */
+export async function fillAppointmentRequestBxFromInventional(pgClient) {
+  const upd = await pgClient.query(
+    `
+    UPDATE public.appointment
+    SET request = $1
+    WHERE inventional = 1
+      AND request IS NULL
+      AND old_db_id IS NOT NULL
+    `,
+    [APPOINTMENT_REQUEST_BX],
+  );
+  return upd.rowCount ?? 0;
 }
 
 /**
@@ -1427,6 +1455,7 @@ export const SCHEDULE_TO_APPOINTMENT_FIELD_MAP = [
   ["Fail", "fail"],
   ["Telephone", "telephone"],
   ["Inventional", "inventional"],
+  ["Inventional (= 1 → \"bx\")", "request"],
   ["BiopsyProc", "biopsy_proc"],
   ["ReferringMD", "referring_md"],
   ["BiopsyComment", "biopsy_comment"],

@@ -28,6 +28,7 @@ import {
   writeFieldIssueLogFile,
 } from "../../shared/js-migrate/fieldIssueLog.mjs";
 import {
+  fillAppointmentRequestBxFromInventional,
   relinkKAppointmentsByName,
   resetAppointmentIdSequenceIfEmpty,
   runAppointmentChunkPostLoad,
@@ -1054,6 +1055,7 @@ END $$;
       kCandidateIds,
     );
   }
+  const requestBxFilled = await fillAppointmentRequestBxFromInventional(pgClient);
 
   if (checkpointEnabled) {
     writeJson(
@@ -1112,6 +1114,7 @@ END $$;
     key,
     totalRowsRead: total,
     ...kTotals,
+    requestBxFilled,
     fieldIssueLogPath: fieldIssueLogWritten,
     checkpointPath: checkpointEnabled ? checkpointPath : null,
     chunkCount: chunkIndex,
@@ -1138,6 +1141,11 @@ END $$;
   ) {
     console.error(
       `>>> [${key}] หมายเหตุ: ย้ายนัดจาก K ไปคนไข้จริง — ต้นทางเติม PID ${kTotals.relinkedFromK} แถว, มีคนไข้จริงชื่อ+นามสกุลตรงแล้ว ${kTotals.relinkedFromKByName} แถว; ลบ K ที่ไม่มีอะไรอ้างถึง ${kTotals.kPatientsDeleted} คน`,
+    );
+  }
+  if (requestBxFilled > 0) {
+    console.error(
+      `>>> [${key}] หมายเหตุ: นัดเดิมที่ inventional = 1 แต่ request ว่าง → เติม "bx" ${requestBxFilled} แถว`,
     );
   }
   console.error(`>>> [${key}] done, total rows read: ${total}`);
