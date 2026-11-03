@@ -955,6 +955,59 @@ export async function fillAppointmentRequestBxFromInventional(pgClient) {
 }
 
 /**
+ * ท้าย job: old_login_name → ชื่อเต็มจาก dbo.USER ต้นทาง
+ * (UserName → old_login_name_full_th, EngUserName → old_login_name_full_en)
+ * - เทียบ LoginName ไม่สนตัวพิมพ์ / ช่องว่างหัวท้าย (ให้ตรงกับ collation ต้นทาง)
+ * - ทับเมื่อต่างจากต้นทาง (ต้นทางแก้ชื่อ user → รอบถัดไปตาม); รอบปกติแตะแค่นัดใหม่
+ * - login ที่ไม่มีใน dbo.USER ไม่แตะ (user ถูกลบที่ต้นทางก็ไม่ล้างชื่อในนัดเก่า)
+ * @param {{ login_name: unknown, user_name: unknown, eng_user_name: unknown }[]} userRows
+ * @returns {Promise<number | null>} จำนวนแถวที่เติม/แก้, null = ปลายทางยังไม่มีคอลัมน์ (ข้าม)
+ */
+export async function fillAppointmentOldLoginNameFull(pgClient, userRows) {
+  const cols = await pgClient.query(`
+    SELECT count(*)::int AS c
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'appointment'
+      AND column_name IN ('old_login_name_full_th', 'old_login_name_full_en')
+  `);
+  if ((cols.rows?.[0]?.c ?? 0) < 2) return null;
+
+  /** @type {Map<string, { th: string | null, en: string | null }>} */
+  const byLogin = new Map();
+  for (const row of userRows) {
+    const login = nullIfTrimEmpty(row.login_name)?.toLowerCase();
+    if (login == null || byLogin.has(login)) continue;
+    byLogin.set(login, {
+      th: nullIfTrimEmpty(row.user_name),
+      en: nullIfTrimEmpty(row.eng_user_name),
+    });
+  }
+  if (byLogin.size === 0) return 0;
+
+  const logins = [...byLogin.keys()];
+  const upd = await pgClient.query(
+    `
+    UPDATE public.appointment AS a
+    SET old_login_name_full_th = v.th,
+        old_login_name_full_en = v.en
+    FROM unnest($1::text[], $2::text[], $3::text[]) AS v(login, th, en)
+    WHERE lower(btrim(a.old_login_name::text)) = v.login
+      AND (
+        a.old_login_name_full_th IS DISTINCT FROM v.th
+        OR a.old_login_name_full_en IS DISTINCT FROM v.en
+      )
+    `,
+    [
+      logins,
+      logins.map((k) => byLogin.get(k).th),
+      logins.map((k) => byLogin.get(k).en),
+    ],
+  );
+  return upd.rowCount ?? 0;
+}
+
+/**
  * Patient_Type ตัวเดียวป้อน 2 ปลายทาง (is_new_patient + patient_category)
  * แปลงไม่ผ่าน = พังทั้งคู่ จึง log ครั้งเดียวไม่ให้ยอด issue ซ้ำซ้อน
  */
@@ -1451,6 +1504,8 @@ export const SCHEDULE_TO_APPOINTMENT_FIELD_MAP = [
   ["Payment_Type", "payment_type_old"],
   ["Receive_Date", "receive_date"],
   ["LoginName", "old_login_name"],
+  ["USER.UserName (LoginName ตรง, ท้าย job)", "old_login_name_full_th"],
+  ["USER.EngUserName (LoginName ตรง, ท้าย job)", "old_login_name_full_en"],
   ["MemoDetail", "memo_detail"],
   ["Fail", "fail"],
   ["Telephone", "telephone"],

@@ -102,6 +102,16 @@ WHERE [Schedule_ID] > @afterScheduleId
 ORDER BY [Schedule_ID] ASC
 `.trim();
 
+/** dbo.USER ทั้งตาราง (~200 แถว) — ชื่อเต็มของ schedule.LoginName */
+export const MSSQL_SOURCE_USER_NAME_SELECT = `
+SELECT
+  CONVERT(NVARCHAR(512), [LoginName]) AS login_name,
+  CONVERT(NVARCHAR(4000), [UserName]) AS user_name,
+  CONVERT(NVARCHAR(4000), [EngUserName]) AS eng_user_name
+FROM [dbo].[USER] WITH (NOLOCK)
+ORDER BY [LoginName] ASC
+`.trim();
+
 export const MSSQL_APPOINTMENT_DETAIL_BY_IDS_SELECT = `
 SELECT
   ${APPOINTMENT_SELECT_COLUMNS}

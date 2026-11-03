@@ -8,6 +8,7 @@ import {
   MSSQL_APPOINTMENT_ID_SELECT,
   MSSQL_APPOINTMENT_SCHEDULE_DATETIME_FILTER,
   MSSQL_APPOINTMENT_SELECT,
+  MSSQL_SOURCE_USER_NAME_SELECT,
   createMssqlAppointmentSelectBundle,
 } from "./mssqlAppointmentSelect.mjs";
 import {
@@ -28,6 +29,7 @@ import {
   writeFieldIssueLogFile,
 } from "../../shared/js-migrate/fieldIssueLog.mjs";
 import {
+  fillAppointmentOldLoginNameFull,
   fillAppointmentRequestBxFromInventional,
   relinkKAppointmentsByName,
   resetAppointmentIdSequenceIfEmpty,
@@ -1056,6 +1058,18 @@ END $$;
     );
   }
   const requestBxFilled = await fillAppointmentRequestBxFromInventional(pgClient);
+  // ชื่อเต็มของ LoginName — อ่าน dbo.USER ไม่ได้ (เช่น ไม่มีสิทธิ์) ไม่ให้ทั้ง job ล้ม รอบหน้าค่อยเติม
+  let loginNameFullFilled = null;
+  let loginNameFullError = null;
+  try {
+    const users = await mssqlPool.request().query(MSSQL_SOURCE_USER_NAME_SELECT);
+    loginNameFullFilled = await fillAppointmentOldLoginNameFull(
+      pgClient,
+      users.recordset ?? [],
+    );
+  } catch (err) {
+    loginNameFullError = err instanceof Error ? err.message : String(err);
+  }
 
   if (checkpointEnabled) {
     writeJson(
@@ -1115,6 +1129,8 @@ END $$;
     totalRowsRead: total,
     ...kTotals,
     requestBxFilled,
+    loginNameFullFilled,
+    loginNameFullError,
     fieldIssueLogPath: fieldIssueLogWritten,
     checkpointPath: checkpointEnabled ? checkpointPath : null,
     chunkCount: chunkIndex,
@@ -1146,6 +1162,19 @@ END $$;
   if (requestBxFilled > 0) {
     console.error(
       `>>> [${key}] หมายเหตุ: นัดเดิมที่ inventional = 1 แต่ request ว่าง → เติม "bx" ${requestBxFilled} แถว`,
+    );
+  }
+  if (loginNameFullError != null) {
+    console.error(
+      `>>> [${key}] คำเตือน: เติม old_login_name_full_th/en ไม่สำเร็จ (ข้ามไปก่อน) — ${loginNameFullError}`,
+    );
+  } else if (loginNameFullFilled == null) {
+    console.error(
+      `>>> [${key}] หมายเหตุ: public.appointment ยังไม่มีคอลัมน์ old_login_name_full_th / old_login_name_full_en — ข้ามการเติมชื่อเต็มของ LoginName`,
+    );
+  } else if (loginNameFullFilled > 0) {
+    console.error(
+      `>>> [${key}] หมายเหตุ: เติมชื่อเต็มของ LoginName จาก dbo.USER (old_login_name_full_th/en) ${loginNameFullFilled} แถว`,
     );
   }
   console.error(`>>> [${key}] done, total rows read: ${total}`);
