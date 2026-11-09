@@ -30,6 +30,50 @@ function remapPatientExamType(v) {
   return mapped == null ? t : String(mapped);
 }
 
+// ไส้ของแต่ละ exam type: ตัวเลือก "Other" ของระบบใหม่คือ 20
+//   Screening (1)  -> Screening            : 6 -> 20
+//   Diagnostic (3) -> r_/l_ProblemIndicated : 6 -> 20
+//   Follow-up (2)  -> r_/l_Followup         : 4 -> 20
+// (*_des เป็น text label ตรงตัวอยู่แล้ว ไม่ต้องแก้)
+const SCREENING_OLD_TO_NEW = { 6: 20 };
+const PROBLEMINDICATED_OLD_TO_NEW = { 6: 20 };
+const FOLLOWUP_OLD_TO_NEW = { 4: 20 };
+// รองรับทั้งค่าเดี่ยว "6", หลายค่า "1,6" / "1|6" / "1;6" และ JSON array "[1,6]" / '["1","6"]'
+const CODE_LIST_RE = /^[\d\s,;|[\]"-]+$/;
+
+/**
+ * ฟิลด์ json (input-code) ฝั่งใหม่เก็บเป็น array ของ int เช่น [20], [1,20]
+ * คืนค่าเป็น JSON text เพื่อพักใน staging — ว่าง/NULL → "" (SQL จะลงเป็น [])
+ * ค่าที่ไม่ใช่รหัสตัวเลข (ข้อความอิสระ) → ["<text>"] ไม่ทิ้งข้อมูล
+ */
+function toCodeArrayJson(v, map) {
+  const t = nullIfTrimEmpty(v);
+  if (t == null) return "";
+  if (!CODE_LIST_RE.test(t)) return JSON.stringify([t]);
+  const codes = (t.match(/-?\d+/g) ?? []).map((m) => {
+    const n = Number.parseInt(m, 10);
+    return map[n] ?? n;
+  });
+  return JSON.stringify(codes);
+}
+const JSON_CODE_ARRAY_COLUMNS = new Set([
+  "screening",
+  "r_problemindicated",
+  "l_problemindicated",
+  "r_followup",
+  "l_followup",
+]);
+
+function toJsonArrayFromStagingExpr(rawJsonTextExpr, colMeta) {
+  const dt = colMeta.data_type;
+  if (dt === "jsonb") return `COALESCE((${rawJsonTextExpr})::jsonb, '[]'::jsonb)`;
+  if (dt === "json") return `COALESCE((${rawJsonTextExpr})::json, '[]'::json)`;
+  if (dt === "text" || dt === "character varying") {
+    return `COALESCE(${rawJsonTextExpr}, '[]')`;
+  }
+  return null;
+}
+
 // ระบบใหม่: assessment_birads เป็น select-radio ค่า 1..7 — ให้เช็ค assessment_birads_des
 // ที่มาจาก MSSQL ก่อน แล้วค่อยใส่ค่า assessment_birads ตามตารางนี้
 const BIRADS_DES_TO_NEW = new Map([
@@ -346,6 +390,12 @@ export async function runExaminationGeneralChunkPostLoad(
         meta,
         name === "impression",
       );
+    } else if (JSON_CODE_ARRAY_COLUMNS.has(name)) {
+      // staging เก็บเป็น JSON text แล้ว (toCodeArrayJson) → [20], [1,20]; ว่าง → []
+      expr = toJsonArrayFromStagingExpr(
+        `NULLIF(btrim(s.${sourceFieldByTarget[name]}), '')`,
+        meta,
+      );
     } else if (sourceFieldByTarget[name]) {
       const raw = `NULLIF(btrim(s.${sourceFieldByTarget[name]}), '')`;
       expr = toSqlValueExpr(raw, meta);
@@ -406,13 +456,19 @@ export function normalizeMssqlRow(raw) {
     pid: nullIfTrimEmpty(raw?.pid) ?? "",
     patientexamtype: remapPatientExamType(raw?.patientexamtype) ?? "",
     patientexamtype_des: nullIfTrimEmpty(raw?.patientexamtype_des) ?? "",
-    screening: nullIfTrimEmpty(raw?.screening) ?? "",
+    screening: toCodeArrayJson(raw?.screening, SCREENING_OLD_TO_NEW),
     screening_des: nullIfTrimEmpty(raw?.screening_des) ?? "",
     followup: nullIfTrimEmpty(raw?.followup) ?? "",
     followup_des: nullIfTrimEmpty(raw?.followup_des) ?? "",
-    r_problemindicated: nullIfTrimEmpty(raw?.r_problemindicated) ?? "",
+    r_problemindicated: toCodeArrayJson(
+      raw?.r_problemindicated,
+      PROBLEMINDICATED_OLD_TO_NEW,
+    ),
     r_problemindicated_des: nullIfTrimEmpty(raw?.r_problemindicated_des) ?? "",
-    l_problemindicated: nullIfTrimEmpty(raw?.l_problemindicated) ?? "",
+    l_problemindicated: toCodeArrayJson(
+      raw?.l_problemindicated,
+      PROBLEMINDICATED_OLD_TO_NEW,
+    ),
     l_problemindicated_des: nullIfTrimEmpty(raw?.l_problemindicated_des) ?? "",
     pe: nullIfTrimEmpty(raw?.pe) ?? "",
     pe_des: nullIfTrimEmpty(raw?.pe_des) ?? "",
@@ -468,9 +524,9 @@ export function normalizeMssqlRow(raw) {
     followup_date: toPgTimestamp(raw?.followup_date) ?? "",
     corrected: nullIfTrimEmpty(raw?.corrected) ?? "",
     correcteddate: toPgTimestamp(raw?.correcteddate) ?? "",
-    r_followup: nullIfTrimEmpty(raw?.r_followup) ?? "",
+    r_followup: toCodeArrayJson(raw?.r_followup, FOLLOWUP_OLD_TO_NEW),
     r_followup_des: nullIfTrimEmpty(raw?.r_followup_des) ?? "",
-    l_followup: nullIfTrimEmpty(raw?.l_followup) ?? "",
+    l_followup: toCodeArrayJson(raw?.l_followup, FOLLOWUP_OLD_TO_NEW),
     l_followup_des: nullIfTrimEmpty(raw?.l_followup_des) ?? "",
     cosign: nullIfTrimEmpty(raw?.cosign) ?? "",
   };
