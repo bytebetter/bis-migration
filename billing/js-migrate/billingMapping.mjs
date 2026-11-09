@@ -142,10 +142,109 @@ export function resetBillingTargetColumnCache() {
   billingTargetColumnsCache = null;
   appointmentTargetColumnsCache = null;
   billingPostLoadSqlCache = null;
+  billingFinanceWorkSqlCache = undefined;
 }
 
-/** @type {{ mode: string, idMapSql: string | null, deleteSql: string | null, insertSql: string, examMapSql: string, updateAppointmentSql: string | null } | null} */
+/** @type {{ mode: string, idMapSql: string | null, deleteSql: string | null, insertSql: string, examMapSql: string, updateAppointmentSql: string | null, relinkFinanceWorkSql: string | null, createFinanceWorkSql: string | null } | null} */
 let billingPostLoadSqlCache = null;
+
+/**
+ * finance_work ของบิลจาก DB เก่า — ระบบใหม่ flow สร้าง finance_work คู่กับ billing เสมอ
+ * บิลที่ย้ายมาจึงต้องมีด้วย ไม่งั้นหน้าที่อ่านสถานะผ่าน billing.finance_work ไม่เห็นเคสเก่า
+ *
+ * - status "3" = ชำระเงินแล้ว
+ * - location = examination.location ของ exam ที่บิลผูก (exam ย้ายมา = 1 TYR จาก default) ไม่เจอ exam = 1
+ * - date_created ว่างเหมือน billing — ไม่ให้บิลเก่าโผล่ในแท็บประวัติ/รายงานรายรับของหน้าการเงิน (กรองด้วย date_created)
+ * - ไม่มี queue (DB เก่าไม่มีคิว)
+ * - ผูก 2 ทาง: finance_work.billing + billing.finance_work
+ */
+const FINANCE_WORK_PAID_STATUS = "3";
+const FINANCE_WORK_DEFAULT_LOCATION = 1;
+const FINANCE_WORK_BACKFILL_BATCH = 20000;
+
+/** @type {{ build: (tgtSql: string) => string } | null | undefined} undefined = ยังไม่ได้เช็ค, null = ปลายทางไม่พร้อม */
+let billingFinanceWorkSqlCache = undefined;
+
+/**
+ * เตรียมตัวสร้าง SQL "สร้าง finance_work ให้บิลที่ยังไม่มี"
+ * @returns {Promise<{ build: (tgtSql: string) => string } | null>} null = ปลายทางยังไม่มีตาราง/คอลัมน์ที่ต้องใช้
+ */
+async function getBillingFinanceWorkSqlBuilder(pgClient) {
+  if (billingFinanceWorkSqlCache !== undefined) return billingFinanceWorkSqlCache;
+
+  const billingCols = await getCachedBillingTargetColumns(pgClient);
+  const fwCols = await existingColumns(pgClient, "finance_work");
+  if (
+    !billingCols.has("finance_work") ||
+    !fwCols.has("billing") ||
+    !fwCols.has("status")
+  ) {
+    billingFinanceWorkSqlCache = null;
+    return null;
+  }
+
+  const examCols = await existingColumns(pgClient, "examination");
+  const { rows: locRows } = await pgClient.query(
+    "SELECT to_regclass('public.locations') IS NOT NULL AS ok",
+  );
+  const hasLocationsTable = locRows[0]?.ok === true;
+  const locationRawExpr = examCols.has("location")
+    ? `COALESCE(e.location, ${FINANCE_WORK_DEFAULT_LOCATION})`
+    : String(FINANCE_WORK_DEFAULT_LOCATION);
+
+  const insertCols = ["billing", "status"];
+  const selectExprs = ["t.billing_id", `'${FINANCE_WORK_PAID_STATUS}'`];
+  if (fwCols.has("exam")) {
+    insertCols.push("exam");
+    selectExprs.push("t.exam");
+  }
+  if (fwCols.has("appointment")) {
+    insertCols.push("appointment");
+    selectExprs.push("t.appointment");
+  }
+  const needLocation = fwCols.has("location");
+  if (needLocation) {
+    insertCols.push("location");
+    // FK → public.locations: id ที่ไม่มีในตาราง = null แทนที่จะทำทั้ง chunk ล้ม
+    selectExprs.push(hasLocationsTable ? "loc.id" : locationRawExpr);
+  }
+  const examJoin = needLocation && examCols.has("location")
+    ? "LEFT JOIN public.examination e ON e.id = t.exam"
+    : "";
+  const locJoin = needLocation && hasLocationsTable
+    ? `LEFT JOIN public.locations loc ON loc.id = ${locationRawExpr}`
+    : "";
+
+  /** tgtSql ต้องคืน billing_id, exam, appointment — 1 แถวต่อ billing ที่ยังไม่มี finance_work */
+  const build = (tgtSql) =>
+    `
+WITH tgt AS (
+${tgtSql}
+),
+ins AS (
+  INSERT INTO public.finance_work (${insertCols.join(", ")})
+  SELECT
+    ${selectExprs.join(",\n    ")}
+  FROM tgt t
+  ${examJoin}
+  ${locJoin}
+  RETURNING id, billing
+),
+upd AS (
+  UPDATE public.billing AS b
+  SET finance_work = ins.id
+  FROM ins
+  WHERE b.id = ins.billing
+  RETURNING b.id
+)
+SELECT
+  (SELECT COUNT(*)::int FROM upd) AS created,
+  (SELECT MAX(billing_id)::bigint FROM tgt) AS max_billing_id;
+`.trim();
+
+  billingFinanceWorkSqlCache = { build };
+  return billingFinanceWorkSqlCache;
+}
 
 const BILLING_DATE_STAGING_COLS = new Set(["exam_date", "schedule_date"]);
 
@@ -352,6 +451,10 @@ export async function prepareBillingPostLoad(
     ? "b.old_exam_id = NULLIF(btrim(s.exam_id), '')::int"
     : "b.old_exam_id::text = NULLIF(btrim(s.exam_id), '')";
 
+  const financeWorkBuilder = await getBillingFinanceWorkSqlBuilder(pgClient);
+  // overwrite: DELETE billing ทำให้ finance_work.billing โดน SET NULL — เก็บ id finance_work เดิมไว้ใส่คืน ไม่สร้างซ้ำ
+  const keepFinanceWork = keepExistingId && financeWorkBuilder != null;
+
   const deleteSql =
     mode === "insert-only"
       ? null
@@ -368,11 +471,12 @@ WHERE ${stgExamJoin}
       : `
 CREATE TEMP TABLE IF NOT EXISTS billing_keep_id (
   old_exam_id TEXT PRIMARY KEY,
-  id BIGINT NOT NULL
+  id BIGINT NOT NULL,
+  finance_work BIGINT
 ) ON COMMIT PRESERVE ROWS;
 TRUNCATE billing_keep_id;
-INSERT INTO billing_keep_id (old_exam_id, id)
-SELECT b.old_exam_id::text, b.id::bigint
+INSERT INTO billing_keep_id (old_exam_id, id, finance_work)
+SELECT b.old_exam_id::text, b.id::bigint, ${keepFinanceWork ? "b.finance_work::bigint" : "NULL"}
 FROM public.billing AS b
 INNER JOIN ${STAGING} AS s
   ON ${stgExamJoin}
@@ -401,6 +505,8 @@ WHERE NULLIF(btrim(s.exam_id), '') ~ '${INT_RE_STAGING}';
       } else {
         expr = "nextval(pg_get_serial_sequence('public.billing', 'id'))";
       }
+    } else if (name === "finance_work") {
+      if (keepFinanceWork) expr = "id_keep.finance_work";
     } else if (name === "exam") expr = "em.exam_id";
     else if (name === "patient") expr = "p.id";
     else if (name === "appointment") expr = "em.appointment";
@@ -503,6 +609,30 @@ WHERE a.id = picked.appointment_id;
 `.trim();
   }
 
+  // overwrite: ใส่ billing.finance_work คืนแล้ว แต่ฝั่ง finance_work.billing ถูก SET NULL ตอน DELETE → ผูกกลับ
+  const relinkFinanceWorkSql = keepFinanceWork
+    ? `
+UPDATE public.finance_work AS fw
+SET billing = b.id
+FROM public.billing AS b
+INNER JOIN ${STAGING} AS s
+  ON ${stgExamJoin}
+WHERE fw.id = b.finance_work
+  AND fw.billing IS DISTINCT FROM b.id
+  AND NULLIF(btrim(s.exam_id), '') ~ '${INT_RE_STAGING}';
+`.trim()
+    : null;
+
+  const createFinanceWorkSql = financeWorkBuilder
+    ? financeWorkBuilder.build(`
+  SELECT b.id AS billing_id, b.exam, b.appointment
+  FROM public.billing AS b
+  INNER JOIN ${STAGING} AS s
+    ON ${stgExamJoin}
+  WHERE b.finance_work IS NULL
+    AND NULLIF(btrim(s.exam_id), '') ~ '${INT_RE_STAGING}'`)
+    : null;
+
   billingPostLoadSqlCache = {
     mode,
     idMapSql,
@@ -510,8 +640,43 @@ WHERE a.id = picked.appointment_id;
     insertSql,
     examMapSql,
     updateAppointmentSql,
+    relinkFinanceWorkSql,
+    createFinanceWorkSql,
   };
   return billingPostLoadSqlCache;
+}
+
+/**
+ * ท้าย job: สร้าง finance_work ให้บิลที่ย้ายมาก่อนหน้า (ตอนยังไม่สร้างคู่กัน) — เฉพาะแถวที่มี old_exam_id
+ * บิลระบบใหม่ไม่มี old_exam_id และ flow สร้าง finance_work ให้อยู่แล้ว จึงไม่ถูกแตะ
+ * ทำเป็นชุดละ FINANCE_WORK_BACKFILL_BATCH แถว commit ทีละชุด — ล้มกลางทาง รอบหน้าทำต่อจากที่เหลือเอง
+ * @returns {Promise<number | null>} จำนวน finance_work ที่สร้าง; null = ปลายทางยังไม่มีตาราง/คอลัมน์ที่ต้องใช้
+ */
+export async function backfillBillingFinanceWork(pgClient) {
+  const builder = await getBillingFinanceWorkSqlBuilder(pgClient);
+  if (!builder) return null;
+  const sqlText = builder.build(`
+  SELECT b.id AS billing_id, b.exam, b.appointment
+  FROM public.billing AS b
+  WHERE b.finance_work IS NULL
+    AND b.old_exam_id IS NOT NULL
+    AND b.id > $1
+  ORDER BY b.id
+  LIMIT $2`);
+  let afterId = 0;
+  let created = 0;
+  while (true) {
+    const { rows } = await pgClient.query(sqlText, [
+      afterId,
+      FINANCE_WORK_BACKFILL_BATCH,
+    ]);
+    const n = Number(rows[0]?.created ?? 0);
+    const maxId = rows[0]?.max_billing_id;
+    if (maxId == null) break;
+    created += n;
+    afterId = Number(maxId);
+  }
+  return created;
 }
 
 /** ตารางว่าง → id ถัดไปเริ่มที่ 1 (แบบ appointment) */
@@ -551,15 +716,22 @@ export async function countBillingTargetRows(pgClient) {
 }
 
 /**
- * @returns {{ mapMs: number, deleteMs: number, insertMs: number, updateAppointmentMs: number, postgresMs: number }}
+ * @returns {{ mapMs: number, deleteMs: number, insertMs: number, updateAppointmentMs: number, financeWorkMs: number, financeWorkCreated: number, postgresMs: number }}
  */
 export async function runBillingChunkPostLoad(
   pgClient,
   migrateRowMode = "overwrite",
 ) {
   const postgresStartedAt = Date.now();
-  const { idMapSql, deleteSql, insertSql, examMapSql, updateAppointmentSql } =
-    await prepareBillingPostLoad(pgClient, migrateRowMode);
+  const {
+    idMapSql,
+    deleteSql,
+    insertSql,
+    examMapSql,
+    updateAppointmentSql,
+    relinkFinanceWorkSql,
+    createFinanceWorkSql,
+  } = await prepareBillingPostLoad(pgClient, migrateRowMode);
 
   const mapStartedAt = Date.now();
   await pgClient.query(examMapSql);
@@ -578,11 +750,22 @@ export async function runBillingChunkPostLoad(
   if (updateAppointmentSql) await pgClient.query(updateAppointmentSql);
   const updateAppointmentMs = Date.now() - updateAppointmentStartedAt;
 
+  const financeWorkStartedAt = Date.now();
+  let financeWorkCreated = 0;
+  if (relinkFinanceWorkSql) await pgClient.query(relinkFinanceWorkSql);
+  if (createFinanceWorkSql) {
+    const { rows } = await pgClient.query(createFinanceWorkSql);
+    financeWorkCreated = Number(rows[0]?.created ?? 0);
+  }
+  const financeWorkMs = Date.now() - financeWorkStartedAt;
+
   return {
     mapMs,
     deleteMs,
     insertMs,
     updateAppointmentMs,
+    financeWorkMs,
+    financeWorkCreated,
     postgresMs: Date.now() - postgresStartedAt,
   };
 }

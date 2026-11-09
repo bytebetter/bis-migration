@@ -19,6 +19,7 @@ import {
 import { ensureBillingPipelineDdl } from "./billingPgDdl.mjs";
 import {
   BILLING_STAGING_COLUMNS,
+  backfillBillingFinanceWork,
   mssqlRowValidForStaging,
   countBillingTargetRows,
   filterBillingFetchRowsInsertOnly,
@@ -270,6 +271,10 @@ async function main() {
     rowsLoadedToStaging: 0,
     rowsUpserted: 0,
     skipped: 0,
+    /** finance_work ที่สร้างคู่บิลใหม่ในรอบนี้ (ทีละ chunk) */
+    financeWorkCreated: 0,
+    /** finance_work ที่เติมท้าย job ให้บิลเดิมที่ยังไม่มี; null = ปลายทางไม่พร้อม */
+    financeWorkBackfilled: null,
     error: null,
   };
   const chunkLog = createChunkResultsLogger(migration);
@@ -692,6 +697,8 @@ async function main() {
           deleteMs: 0,
           insertMs: 0,
           updateAppointmentMs: 0,
+          financeWorkMs: 0,
+          financeWorkCreated: 0,
         };
         try {
           step = "BEGIN";
@@ -726,6 +733,7 @@ async function main() {
           );
           mergeFieldIssueChunk(fieldIssueAcc, issueResult);
           runLog.rowsUpserted += loaded;
+          runLog.financeWorkCreated += pgTimings.financeWorkCreated;
           step = "COMMIT";
           await client.query("COMMIT");
         } catch (err) {
@@ -840,6 +848,25 @@ async function main() {
       if (progressEnabled) endProgress(uiState);
 
       await syncBillingIdSequenceOnce(client);
+
+      // บิลที่ย้ายมาก่อนหน้า (หรือ chunk ที่ข้ามเพราะ insert-only ครบแล้ว) ยังไม่มี finance_work → เติมทุกรอบ
+      runLog.financeWorkBackfilled = await backfillBillingFinanceWork(client);
+      if (runLog.financeWorkBackfilled == null) {
+        console.error(
+          `>>> [${KEY}] หมายเหตุ: ปลายทางยังไม่มี billing.finance_work / finance_work.billing / finance_work.status — ข้ามการสร้าง finance_work`,
+        );
+      } else {
+        if (runLog.financeWorkCreated > 0) {
+          console.error(
+            `>>> [${KEY}] หมายเหตุ: สร้าง finance_work (ชำระเงินแล้ว) คู่บิลใหม่ ${runLog.financeWorkCreated} แถว`,
+          );
+        }
+        if (runLog.financeWorkBackfilled > 0) {
+          console.error(
+            `>>> [${KEY}] หมายเหตุ: บิลเดิมที่ยังไม่มี finance_work → สร้าง (ชำระเงินแล้ว) ${runLog.financeWorkBackfilled} แถว`,
+          );
+        }
+      }
 
       let fieldIssueLogWritten = null;
       if (fieldIssueAcc.totalFieldIssueCount > 0) {
