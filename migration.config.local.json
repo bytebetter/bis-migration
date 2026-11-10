@@ -78,6 +78,11 @@
       "migration": {
         "batchSize": 5000
       }
+    },
+    "center_income": {
+      "migration": {
+        "batchSize": 5000
+      }
     }
   }
 }

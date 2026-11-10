@@ -33,6 +33,8 @@ const UNSUPPORTED_REASON = {
     "SURGICAL_PATHO คีย์เป็น PID (varchar) + Surgical_ID — ใช้ --source-ids \"PID|Surgical_ID\" หรือ --source-index-range แทน",
   special_case:
     "SPECIAL_CASE คีย์เป็น PID (varchar) + Sequence — ใช้ --source-ids \"PID|Sequence\" หรือ --source-index-range แทน",
+  center_income:
+    "income / income2 นับ Income_ID แยกกัน — ใช้ --source-ids \"income:ID\" หรือ --source-index-range แทน",
 };
 
 function supportedProfileList() {

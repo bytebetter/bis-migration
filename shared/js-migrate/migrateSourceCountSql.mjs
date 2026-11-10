@@ -1,4 +1,5 @@
 import { bracketMssqlIdent } from "./mssqlConnectConfig.mjs";
+import { buildCenterIncomeCountSql } from "../../center-income/js-migrate/mssqlCenterIncomeSelect.mjs";
 
 /** ตรงกับ mssqlAppointmentReschedulesSelect.mjs */
 const APPOINTMENT_RESCHEDULE_ACTIVITY = "ย้ายวันนัด";
@@ -18,6 +19,11 @@ export function buildMigrateSourceCountSql(profileName, schema, table) {
 
   if (profileName === "appointment_reschedules") {
     return `SELECT COUNT_BIG(1) AS total FROM ${sourceObject} WHERE [Activity] = ${mssqlStringLiteral(APPOINTMENT_RESCHEDULE_ACTIVITY)}`;
+  }
+
+  // income + income2 (ตัด income2 ที่ซ้ำ income) — ชุดเดียวกับที่ job อ่าน ไม่งั้นเพดาน snapshot ตัดแถวท้ายทิ้ง
+  if (profileName === "center_income") {
+    return buildCenterIncomeCountSql(schema);
   }
 
   return `SELECT COUNT_BIG(1) AS total FROM ${sourceObject}`;

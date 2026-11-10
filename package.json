@@ -34,7 +34,8 @@
     "migrate:mobile_location": "node ./scripts/run-migrate-table-cli.mjs mobile_location",
     "migrate:surgical_patho": "node ./scripts/run-migrate-table-cli.mjs surgical_patho",
     "migrate:special_case": "node ./scripts/run-migrate-table-cli.mjs special_case",
-    "migrate:history_report": "node ./scripts/run-migrate-table-cli.mjs history_report"
+    "migrate:history_report": "node ./scripts/run-migrate-table-cli.mjs history_report",
+    "migrate:center_income": "node ./scripts/run-migrate-table-cli.mjs center_income"
   },
   "dependencies": {
     "mssql": "^11.0.1",

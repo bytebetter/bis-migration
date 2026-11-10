@@ -349,6 +349,27 @@ export const REPAIR_SPEC_SPECIAL_CASE = {
   },
 };
 
+/**
+ * คีย์เป็นข้อความ "income:ID" / "income2:ID" — ขยายช่วง first..last แบบเลขไม่ได้
+ * chunk ที่ล้มจึงเก็บคีย์ทั้งก้อนไว้ใน failedKeys ของ run log
+ * @type {RepairSpec}
+ */
+export const REPAIR_SPEC_CENTER_INCOME = {
+  tableLabel: "center_income",
+  recordIdLabel: "center_income_key",
+  runLogPattern: /^migrate-.*\.json$/i,
+  fieldIssuePattern: /^migration-field-issues-center_income-.*\.json$/i,
+  collectIdsFromRunLog(runLog, idSet) {
+    collectIdsFromRunLogCommon(runLog, idSet, {
+      failedChunkIdFields: ["firstKey", "lastKey"],
+      listIdFields: ["failedKeys"],
+    });
+  },
+  collectIdsFromFieldIssueLog(payload, idSet) {
+    collectIdsFromFieldIssueLogCommon(payload, idSet, "center_income_key");
+  },
+};
+
 /** profile → spec (ทุกตารางใน pipeline) */
 export const REPAIR_SPEC_BY_PROFILE = {
   patient_info: REPAIR_SPEC_PATIENT_INFO,
@@ -370,4 +391,5 @@ export const REPAIR_SPEC_BY_PROFILE = {
   mobile_location: REPAIR_SPEC_MOBILE_LOCATION,
   surgical_patho: REPAIR_SPEC_SURGICAL_PATHO,
   special_case: REPAIR_SPEC_SPECIAL_CASE,
+  center_income: REPAIR_SPEC_CENTER_INCOME,
 };

@@ -65,6 +65,7 @@ const PROFILE_DIR = {
   surgical_patho: "surgical-patho",
   special_case: "special-case",
   history_report: "history-report",
+  center_income: "center-income",
 };
 
 const profile = process.argv[2];

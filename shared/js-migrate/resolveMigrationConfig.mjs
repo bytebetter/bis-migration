@@ -67,6 +67,8 @@ export const DEFAULT_MSSQL_SOURCE_TABLE = {
   mobile_location: "MOBILE_LOCATION",
   surgical_patho: "SURGICAL_PATHO",
   special_case: "SPECIAL_CASE",
+  // อ่านคู่กับ income2 เสมอ (ชื่อตารางตายตัวใน center-income/js-migrate/mssqlCenterIncomeSelect.mjs)
+  center_income: "income",
 };
 
 /**

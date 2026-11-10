@@ -85,6 +85,11 @@ export const SOURCE_IDS_PK_PROFILES = {
     table: "dbo.SPECIAL_CASE",
     hint: "รูป PID|Sequence เช่น 100025|0",
   },
+  center_income: {
+    pkLabel: "ตาราง:Income_ID",
+    table: "dbo.income + dbo.income2",
+    hint: "รูป income:Income_ID หรือ income2:Income_ID เช่น income:339323",
+  },
 };
 
 const UNSUPPORTED_REASON = {
