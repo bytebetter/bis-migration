@@ -19,7 +19,9 @@ import {
 import { ensureBillingPipelineDdl } from "./billingPgDdl.mjs";
 import {
   BILLING_STAGING_COLUMNS,
+  backfillBillingDerivedFields,
   backfillBillingFinanceWork,
+  backfillBillingFinanceWorkDateCreated,
   mssqlRowValidForStaging,
   countBillingTargetRows,
   filterBillingFetchRowsInsertOnly,
@@ -275,6 +277,10 @@ async function main() {
     financeWorkCreated: 0,
     /** finance_work ที่เติมท้าย job ให้บิลเดิมที่ยังไม่มี; null = ปลายทางไม่พร้อม */
     financeWorkBackfilled: null,
+    /** finance_work ของบิลที่ย้ายมาซึ่ง date_created ยังว่าง → เติมวันตรวจท้าย job; null = ปลายทางไม่พร้อม */
+    financeWorkDateCreatedFilled: null,
+    /** บิลย้ายมาที่ช่องตามฟอร์มการเงินยังว่าง (service_total, payment_method ฯลฯ) → เติมท้าย job; null = ไม่มีฟิลด์ให้เติม */
+    billingDerivedFieldsFilled: null,
     error: null,
   };
   const chunkLog = createChunkResultsLogger(migration);
@@ -849,6 +855,14 @@ async function main() {
 
       await syncBillingIdSequenceOnce(client);
 
+      // บิลที่ย้ายมาก่อนเริ่มเติมฟิลด์ตามฟอร์มการเงิน → เติมช่องที่ยังว่าง (ไม่ทับค่าที่มี)
+      runLog.billingDerivedFieldsFilled = await backfillBillingDerivedFields(client);
+      if (runLog.billingDerivedFieldsFilled > 0) {
+        console.error(
+          `>>> [${KEY}] หมายเหตุ: บิลเดิมที่ total_exam/service_total/payment_method/is_overtime/patient_category ว่าง → เติม ${runLog.billingDerivedFieldsFilled} แถว`,
+        );
+      }
+
       // บิลที่ย้ายมาก่อนหน้า (หรือ chunk ที่ข้ามเพราะ insert-only ครบแล้ว) ยังไม่มี finance_work → เติมทุกรอบ
       runLog.financeWorkBackfilled = await backfillBillingFinanceWork(client);
       if (runLog.financeWorkBackfilled == null) {
@@ -864,6 +878,18 @@ async function main() {
         if (runLog.financeWorkBackfilled > 0) {
           console.error(
             `>>> [${KEY}] หมายเหตุ: บิลเดิมที่ยังไม่มี finance_work → สร้าง (ชำระเงินแล้ว) ${runLog.financeWorkBackfilled} แถว`,
+          );
+        }
+        // finance_work ที่สร้างไว้ก่อนเริ่มใส่วันตรวจ → เติม date_created เฉพาะแถวที่ยังว่าง
+        runLog.financeWorkDateCreatedFilled =
+          await backfillBillingFinanceWorkDateCreated(client);
+        if (runLog.financeWorkDateCreatedFilled == null) {
+          console.error(
+            `>>> [${KEY}] หมายเหตุ: ปลายทางยังไม่มี finance_work.date_created หรือคอลัมน์วันตรวจ — ข้ามการเติม date_created`,
+          );
+        } else if (runLog.financeWorkDateCreatedFilled > 0) {
+          console.error(
+            `>>> [${KEY}] หมายเหตุ: finance_work ของบิลเดิมที่ date_created ว่าง → เติมวันตรวจ ${runLog.financeWorkDateCreatedFilled} แถว`,
           );
         }
       }

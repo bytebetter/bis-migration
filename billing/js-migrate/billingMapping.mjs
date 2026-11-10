@@ -143,9 +143,10 @@ export function resetBillingTargetColumnCache() {
   appointmentTargetColumnsCache = null;
   billingPostLoadSqlCache = null;
   billingFinanceWorkSqlCache = undefined;
+  billingDerivedFillSqlCache = undefined;
 }
 
-/** @type {{ mode: string, idMapSql: string | null, deleteSql: string | null, insertSql: string, examMapSql: string, updateAppointmentSql: string | null, relinkFinanceWorkSql: string | null, createFinanceWorkSql: string | null } | null} */
+/** @type {{ mode: string, idMapSql: string | null, deleteSql: string | null, insertSql: string, examMapSql: string, updateAppointmentSql: string | null, fillDerivedSql: string | null, relinkFinanceWorkSql: string | null, createFinanceWorkSql: string | null } | null} */
 let billingPostLoadSqlCache = null;
 
 /**
@@ -154,20 +155,48 @@ let billingPostLoadSqlCache = null;
  *
  * - status "3" = ชำระเงินแล้ว
  * - location = examination.location ของ exam ที่บิลผูก (exam ย้ายมา = 1 TYR จาก default) ไม่เจอ exam = 1
- * - date_created ว่างเหมือน billing — ไม่ให้บิลเก่าโผล่ในแท็บประวัติ/รายงานรายรับของหน้าการเงิน (กรองด้วย date_created)
+ * - date_created = วันตรวจ (examination.exam_date) — หน้าการเงินทุกแท็บ/รายงานกรองวันจากฟิลด์นี้ ต้องเป็นวันรับบริการจริง
+ *   exam ไม่มีวัน → billing.exam_datetime → appointment.appointment_datetime (แบบที่ฟอร์มการเงินใช้แทนเมื่อ exam_date ว่าง)
  * - ไม่มี queue (DB เก่าไม่มีคิว)
  * - ผูก 2 ทาง: finance_work.billing + billing.finance_work
  */
 const FINANCE_WORK_PAID_STATUS = "3";
 const FINANCE_WORK_DEFAULT_LOCATION = 1;
 const FINANCE_WORK_BACKFILL_BATCH = 20000;
+const THAI_TIME_ZONE = "Asia/Bangkok";
 
-/** @type {{ build: (tgtSql: string) => string } | null | undefined} undefined = ยังไม่ได้เช็ค, null = ปลายทางไม่พร้อม */
+/**
+ * วันเวลาจาก DB เก่า (เวลาไทยบนนาฬิกา ไม่มี timezone) → timestamptz ที่ชี้เวลาจริงถูกต้อง
+ * หน้าการเงินกรอง date_created ด้วยต้นวัน/ท้ายวันตามเวลาไทยของ browser ถ้าเพี้ยน 7 ชม. เคสตรวจช่วงเย็นจะไปตกวันถัดไป
+ * @returns {string | null} null = ชนิดคอลัมน์ใช้ไม่ได้
+ */
+function sqlThaiWallClockToTimestamptz(colExpr, colMeta) {
+  const dt = colMeta?.data_type ?? "";
+  if (dt === "timestamp with time zone") {
+    // ค่าที่ migrate ลง timestamptz (เช่น examination.exam_date) ถูกตีความด้วย TimeZone ของ session ตอน insert
+    // แกะกลับเป็นเวลาบนนาฬิกาเดิมก่อน แล้วค่อยตีความเป็นเวลาไทย (session เป็น Asia/Bangkok อยู่แล้ว = ค่าเดิม)
+    return `((${colExpr} AT TIME ZONE current_setting('TimeZone')) AT TIME ZONE '${THAI_TIME_ZONE}')`;
+  }
+  if (dt === "timestamp without time zone" || dt === "date") {
+    return `(${colExpr}::timestamp AT TIME ZONE '${THAI_TIME_ZONE}')`;
+  }
+  return null;
+}
+
+/**
+ * @typedef {{
+ *   tgtSelect: string,
+ *   build: (tgtSql: string) => string,
+ *   fillDateCreatedSql: string | null,
+ * }} BillingFinanceWorkSqlBuilder
+ */
+
+/** @type {BillingFinanceWorkSqlBuilder | null | undefined} undefined = ยังไม่ได้เช็ค, null = ปลายทางไม่พร้อม */
 let billingFinanceWorkSqlCache = undefined;
 
 /**
  * เตรียมตัวสร้าง SQL "สร้าง finance_work ให้บิลที่ยังไม่มี"
- * @returns {Promise<{ build: (tgtSql: string) => string } | null>} null = ปลายทางยังไม่มีตาราง/คอลัมน์ที่ต้องใช้
+ * @returns {Promise<BillingFinanceWorkSqlBuilder | null>} null = ปลายทางยังไม่มีตาราง/คอลัมน์ที่ต้องใช้
  */
 async function getBillingFinanceWorkSqlBuilder(pgClient) {
   if (billingFinanceWorkSqlCache !== undefined) return billingFinanceWorkSqlCache;
@@ -184,6 +213,7 @@ async function getBillingFinanceWorkSqlBuilder(pgClient) {
   }
 
   const examCols = await existingColumns(pgClient, "examination");
+  const aptCols = await getCachedAppointmentTargetColumns(pgClient);
   const { rows: locRows } = await pgClient.query(
     "SELECT to_regclass('public.locations') IS NOT NULL AS ok",
   );
@@ -191,6 +221,38 @@ async function getBillingFinanceWorkSqlBuilder(pgClient) {
   const locationRawExpr = examCols.has("location")
     ? `COALESCE(e.location, ${FINANCE_WORK_DEFAULT_LOCATION})`
     : String(FINANCE_WORK_DEFAULT_LOCATION);
+
+  const hasBillingExamDatetime = billingCols.has("exam_datetime");
+  const tgtSelect = [
+    "b.id AS billing_id",
+    "b.exam",
+    "b.appointment",
+    hasBillingExamDatetime ? "b.exam_datetime" : "NULL::timestamp AS exam_datetime",
+  ].join(", ");
+
+  // date_created: exam_date ของ exam → exam_datetime ของบิล → เวลานัด
+  const examDateExpr = examCols.has("exam_date")
+    ? sqlThaiWallClockToTimestamptz("e.exam_date", examCols.get("exam_date"))
+    : null;
+  const billingExamDateExpr = hasBillingExamDatetime
+    ? sqlThaiWallClockToTimestamptz("t.exam_datetime", billingCols.get("exam_datetime"))
+    : null;
+  const appointmentDateExpr = aptCols.has("appointment_datetime")
+    ? sqlThaiWallClockToTimestamptz("ap.appointment_datetime", aptCols.get("appointment_datetime"))
+    : null;
+  const dateCandidates = [examDateExpr, billingExamDateExpr, appointmentDateExpr].filter(Boolean);
+  const needDateCreated = fwCols.has("date_created") && dateCandidates.length > 0;
+  const dateCreatedExpr = needDateCreated
+    ? `COALESCE(\n      ${dateCandidates.join(",\n      ")}\n    )`
+    : null;
+  const dateUsesExam = needDateCreated && examDateExpr != null;
+  const dateUsesAppointment = needDateCreated && appointmentDateExpr != null;
+  const dateJoins = [
+    dateUsesExam ? "LEFT JOIN public.examination e ON e.id = t.exam" : "",
+    dateUsesAppointment ? "LEFT JOIN public.appointment ap ON ap.id = t.appointment" : "",
+  ]
+    .filter(Boolean)
+    .join("\n  ");
 
   const insertCols = ["billing", "status"];
   const selectExprs = ["t.billing_id", `'${FINANCE_WORK_PAID_STATUS}'`];
@@ -208,14 +270,58 @@ async function getBillingFinanceWorkSqlBuilder(pgClient) {
     // FK → public.locations: id ที่ไม่มีในตาราง = null แทนที่จะทำทั้ง chunk ล้ม
     selectExprs.push(hasLocationsTable ? "loc.id" : locationRawExpr);
   }
-  const examJoin = needLocation && examCols.has("location")
+  if (needDateCreated) {
+    insertCols.push("date_created");
+    selectExprs.push(dateCreatedExpr);
+  }
+  const needExamJoin = (needLocation && examCols.has("location")) || dateUsesExam;
+  const examJoin = needExamJoin
     ? "LEFT JOIN public.examination e ON e.id = t.exam"
+    : "";
+  const aptJoin = dateUsesAppointment
+    ? "LEFT JOIN public.appointment ap ON ap.id = t.appointment"
     : "";
   const locJoin = needLocation && hasLocationsTable
     ? `LEFT JOIN public.locations loc ON loc.id = ${locationRawExpr}`
     : "";
 
-  /** tgtSql ต้องคืน billing_id, exam, appointment — 1 แถวต่อ billing ที่ยังไม่มี finance_work */
+  /**
+   * finance_work ที่ migrate สร้างไว้ก่อนหน้า (ตอน date_created ยังว่าง) → เติมเฉพาะแถวที่ยังว่าง
+   * เฉพาะบิลที่มี old_exam_id (ย้ายมา) — finance_work ของระบบใหม่ไม่ถูกแตะ; $1 = billing.id ล่าสุดที่ทำแล้ว, $2 = ขนาดชุด
+   */
+  const fillDateCreatedSql = needDateCreated
+    ? `
+WITH tgt AS (
+  SELECT ${tgtSelect}, b.finance_work
+  FROM public.billing AS b
+  INNER JOIN public.finance_work fw0 ON fw0.id = b.finance_work
+  WHERE b.old_exam_id IS NOT NULL
+    AND fw0.date_created IS NULL
+    AND b.id > $1
+  ORDER BY b.id
+  LIMIT $2
+),
+picked AS (
+  SELECT t.finance_work, ${dateCreatedExpr} AS date_created
+  FROM tgt t
+  ${dateJoins}
+),
+upd AS (
+  UPDATE public.finance_work AS fw
+  SET date_created = picked.date_created
+  FROM picked
+  WHERE fw.id = picked.finance_work
+    AND fw.date_created IS NULL
+    AND picked.date_created IS NOT NULL
+  RETURNING fw.id
+)
+SELECT
+  (SELECT COUNT(*)::int FROM upd) AS updated,
+  (SELECT MAX(billing_id)::bigint FROM tgt) AS max_billing_id;
+`.trim()
+    : null;
+
+  /** tgtSql ต้อง SELECT ${tgtSelect} จาก public.billing AS b — 1 แถวต่อ billing ที่ยังไม่มี finance_work */
   const build = (tgtSql) =>
     `
 WITH tgt AS (
@@ -227,6 +333,7 @@ ins AS (
     ${selectExprs.join(",\n    ")}
   FROM tgt t
   ${examJoin}
+  ${aptJoin}
   ${locJoin}
   RETURNING id, billing
 ),
@@ -242,8 +349,170 @@ SELECT
   (SELECT MAX(billing_id)::bigint FROM tgt) AS max_billing_id;
 `.trim();
 
-  billingFinanceWorkSqlCache = { build };
+  billingFinanceWorkSqlCache = { tgtSelect, build, fillDateCreatedSql };
   return billingFinanceWorkSqlCache;
+}
+
+/** time_slot id ช่วงเย็นพิเศษนอกเวลาราชการ — ตรงกับ AFTER_HOURS_TIME_SLOT_IDS ของหน้าการเงิน */
+const AFTER_HOURS_TIME_SLOT_IDS = [25, 26, 27, 28];
+const ICS_LOCATION_ID = 3;
+
+/** วันเวลาบนนาฬิกาไทย (timestamp ไม่มี tz) สำหรับดูวันในสัปดาห์ */
+function sqlThaiWallClock(colExpr, colMeta) {
+  const dt = colMeta?.data_type ?? "";
+  if (dt === "timestamp with time zone") return `(${colExpr} AT TIME ZONE '${THAI_TIME_ZONE}')`;
+  if (dt === "timestamp without time zone" || dt === "date") return `(${colExpr}::timestamp)`;
+  return null;
+}
+
+/** @type {{ build: (tgtSql: string) => string, preFilterSql: string } | null | undefined} */
+let billingDerivedFillSqlCache = undefined;
+
+/**
+ * ฟิลด์ billing ที่ระบบใหม่ให้ฟอร์มการเงินตั้งตอนบันทึก — บิลย้ายมาไม่เคยผ่านฟอร์ม จึงเติมด้วยกติกาเดียวกับฟอร์ม
+ * (BIS-Backoffice finance/useFinanceFormLogic.tsx + finance-cost.ts) เติมเฉพาะช่องที่ยังว่าง ไม่ทับค่าที่แก้ในระบบใหม่
+ *
+ * - total_exam / service_total / last_total ว่าง → total (DB เก่ามียอดเดียว)
+ * - payment_method ว่างหรือ "0" → ตาม care_type + payment_type แบบ effect ในฟอร์ม
+ *     สิทธิ 7/24: ผู้ป่วยใน "3" นอกนั้น "2" · ผู้ป่วยใน "3" · อื่นๆ ของศูนย์ "2"
+ *     ผู้ป่วยนอก: สิทธิ 1/2 "1", สิทธิ 3–6 "3" · ที่เหลือ "2" (ค่า default ของฟอร์ม)
+ * - is_invoice_requested ว่าง → payment_method = "3"
+ * - is_overtime ว่าง → นัด time_slot 25–28 หรือวันเสาร์/อาทิตย์ (ไม่ใช่ ICS) — แบบที่ฟอร์มติ๊กให้เองตอนเปิด
+ * - patient_category ว่าง → care_type "3" = "3" (อื่นๆ ของศูนย์), นอกนั้นตาม appointment.is_new_patient (1 ใหม่ / 0,2 เก่า)
+ *
+ * @returns {Promise<{ build: (tgtSql: string) => string, preFilterSql: string } | null>} null = ไม่มีฟิลด์ให้เติม
+ */
+async function getBillingDerivedFillSqlBuilder(pgClient) {
+  if (billingDerivedFillSqlCache !== undefined) return billingDerivedFillSqlCache;
+
+  const cols = await getCachedBillingTargetColumns(pgClient);
+  const aptCols = await getCachedAppointmentTargetColumns(pgClient);
+  const examCols = await existingColumns(pgClient, "examination");
+
+  const careExpr = cols.has("care_type")
+    ? "NULLIF(btrim(b.care_type::text), '')"
+    : "NULL::text";
+  const ptExpr = cols.has("payment_type")
+    ? "NULLIF(btrim(b.payment_type::text), '')"
+    : "NULL::text";
+  const pmCurrentExpr = "NULLIF(NULLIF(btrim(b.payment_method::text), ''), '0')";
+  const pmDerivedExpr = `CASE
+      WHEN ${ptExpr} IN ('7', '24') THEN CASE WHEN ${careExpr} = '2' THEN '3' ELSE '2' END
+      WHEN ${careExpr} = '2' THEN '3'
+      WHEN ${careExpr} = '3' THEN '2'
+      WHEN ${careExpr} = '1' AND ${ptExpr} IN ('1', '2') THEN '1'
+      WHEN ${careExpr} = '1' AND ${ptExpr} IN ('3', '4', '5', '6') THEN '3'
+      ELSE '2'
+    END`;
+  const hasPaymentMethod = cols.has("payment_method");
+  const pmResolvedExpr = hasPaymentMethod
+    ? `COALESCE(${pmCurrentExpr}, ${pmDerivedExpr})`
+    : pmDerivedExpr;
+
+  const hasAptJoin = cols.has("appointment");
+  const slotExpr = hasAptJoin && aptCols.has("time_slot")
+    ? `COALESCE(ap.time_slot IN (${AFTER_HOURS_TIME_SLOT_IDS.join(", ")}), false)`
+    : null;
+  const aptClock = hasAptJoin && aptCols.has("appointment_datetime")
+    ? sqlThaiWallClock("ap.appointment_datetime", aptCols.get("appointment_datetime"))
+    : null;
+  const weekendExpr = aptClock
+    ? `COALESCE(EXTRACT(ISODOW FROM ${aptClock}) IN (6, 7), false)`
+    : null;
+  const examLocationJoin = cols.has("exam") && examCols.has("location");
+  const isIcsExpr = examLocationJoin
+    ? `COALESCE(e.location, ${FINANCE_WORK_DEFAULT_LOCATION}) = ${ICS_LOCATION_ID}`
+    : "false";
+  const overtimeExpr = slotExpr || weekendExpr
+    ? `CASE
+      WHEN ${isIcsExpr} THEN false
+      WHEN ap.id IS NULL THEN NULL
+      ELSE ${[slotExpr, weekendExpr].filter(Boolean).join(" OR ")}
+    END`
+    : null;
+  const newPatientExpr = hasAptJoin && aptCols.has("is_new_patient")
+    ? `WHEN ap.is_new_patient = 1 THEN '1'
+      WHEN ap.is_new_patient IN (0, 2) THEN '2'`
+    : "";
+  const patientCategoryExpr = `CASE
+      WHEN ${careExpr} = '3' THEN '3'
+      ${newPatientExpr}
+      ELSE NULL
+    END`;
+
+  /** [คอลัมน์, ค่าที่เติม (อ้าง p.*), เงื่อนไขว่าต้องเติม (อ้าง b.* + p.*), เงื่อนไขกรองล่วงหน้า (อ้าง b.* เท่านั้น)] */
+  const fields = [];
+  const pickExprs = [];
+  for (const name of ["total_exam", "service_total", "last_total"]) {
+    if (!cols.has(name) || !cols.has("total")) continue;
+    fields.push([name, `COALESCE(b.${name}, b.total)`, `(b.${name} IS NULL AND b.total IS NOT NULL)`, `(b.${name} IS NULL AND b.total IS NOT NULL)`]);
+  }
+  if (hasPaymentMethod) {
+    fields.push(["payment_method", `COALESCE(${pmCurrentExpr}, p.payment_method)`, `(${pmCurrentExpr} IS NULL)`, `(${pmCurrentExpr} IS NULL)`]);
+  }
+  if (cols.has("is_invoice_requested")) {
+    fields.push(["is_invoice_requested", "COALESCE(b.is_invoice_requested, p.is_invoice_requested)", "(b.is_invoice_requested IS NULL)", "(b.is_invoice_requested IS NULL)"]);
+  }
+  pickExprs.push(`${pmResolvedExpr} AS payment_method`);
+  pickExprs.push(`(${pmResolvedExpr}) = '3' AS is_invoice_requested`);
+  if (cols.has("is_overtime") && overtimeExpr) {
+    pickExprs.push(`${overtimeExpr} AS is_overtime`);
+    fields.push(["is_overtime", "COALESCE(b.is_overtime, p.is_overtime)", "(b.is_overtime IS NULL AND p.is_overtime IS NOT NULL)", "(b.is_overtime IS NULL)"]);
+  }
+  if (cols.has("patient_category")) {
+    pickExprs.push(`${patientCategoryExpr} AS patient_category`);
+    fields.push([
+      "patient_category",
+      "COALESCE(NULLIF(btrim(b.patient_category::text), ''), p.patient_category)",
+      "(NULLIF(btrim(b.patient_category::text), '') IS NULL AND p.patient_category IS NOT NULL)",
+      "(NULLIF(btrim(b.patient_category::text), '') IS NULL)",
+    ]);
+  }
+  if (fields.length === 0) {
+    billingDerivedFillSqlCache = null;
+    return null;
+  }
+
+  const joins = [
+    hasAptJoin ? "LEFT JOIN public.appointment ap ON ap.id = b.appointment" : "",
+    examLocationJoin ? "LEFT JOIN public.examination e ON e.id = b.exam" : "",
+  ].filter(Boolean).join("\n  ");
+
+  /** tgtSql คืน billing_id — บิลที่จะเติม */
+  const build = (tgtSql) =>
+    `
+WITH tgt AS (
+${tgtSql}
+),
+picked AS (
+  SELECT
+    b.id,
+    ${pickExprs.join(",\n    ")}
+  FROM tgt t
+  INNER JOIN public.billing AS b ON b.id = t.billing_id
+  ${joins}
+),
+upd AS (
+  UPDATE public.billing AS b
+  SET
+    ${fields.map(([name, value]) => `${name} = ${value}`).join(",\n    ")}
+  FROM picked AS p
+  WHERE b.id = p.id
+    AND (
+      ${fields.map(([, , need]) => need).join("\n      OR ")}
+    )
+  RETURNING b.id
+)
+SELECT
+  (SELECT COUNT(*)::int FROM upd) AS updated,
+  (SELECT MAX(billing_id)::bigint FROM tgt) AS max_billing_id;
+`.trim();
+
+  billingDerivedFillSqlCache = {
+    build,
+    preFilterSql: `(${fields.map(([, , , pre]) => pre).join(" OR ")})`,
+  };
+  return billingDerivedFillSqlCache;
 }
 
 const BILLING_DATE_STAGING_COLS = new Set(["exam_date", "schedule_date"]);
@@ -336,6 +605,11 @@ const SOURCE_FIELD_BY_TARGET = {
   code_no: "codeno",
   note: "note",
   total: "total",
+  // DB เก่ามียอดเดียว (Total) — สเปกการเงิน: ใส่ทั้ง total_exam และ service_total (หน้าจอ/รายงานอ่าน service_total ก่อน)
+  // last_total ระบบเขียนค่าเดียวกับ total ตอนบันทึก
+  total_exam: "total",
+  service_total: "total",
+  last_total: "total",
   receipt: "receipt",
   receipt_no: "receipt_no",
   a: "a",
@@ -625,12 +899,23 @@ WHERE fw.id = b.finance_work
 
   const createFinanceWorkSql = financeWorkBuilder
     ? financeWorkBuilder.build(`
-  SELECT b.id AS billing_id, b.exam, b.appointment
+  SELECT ${financeWorkBuilder.tgtSelect}
   FROM public.billing AS b
   INNER JOIN ${STAGING} AS s
     ON ${stgExamJoin}
   WHERE b.finance_work IS NULL
     AND NULLIF(btrim(s.exam_id), '') ~ '${INT_RE_STAGING}'`)
+    : null;
+
+  const derivedFillBuilder = await getBillingDerivedFillSqlBuilder(pgClient);
+  const fillDerivedSql = derivedFillBuilder
+    ? derivedFillBuilder.build(`
+  SELECT b.id AS billing_id
+  FROM public.billing AS b
+  INNER JOIN ${STAGING} AS s
+    ON ${stgExamJoin}
+  WHERE NULLIF(btrim(s.exam_id), '') ~ '${INT_RE_STAGING}'
+    AND ${derivedFillBuilder.preFilterSql}`)
     : null;
 
   billingPostLoadSqlCache = {
@@ -640,6 +925,7 @@ WHERE fw.id = b.finance_work
     insertSql,
     examMapSql,
     updateAppointmentSql,
+    fillDerivedSql,
     relinkFinanceWorkSql,
     createFinanceWorkSql,
   };
@@ -656,7 +942,7 @@ export async function backfillBillingFinanceWork(pgClient) {
   const builder = await getBillingFinanceWorkSqlBuilder(pgClient);
   if (!builder) return null;
   const sqlText = builder.build(`
-  SELECT b.id AS billing_id, b.exam, b.appointment
+  SELECT ${builder.tgtSelect}
   FROM public.billing AS b
   WHERE b.finance_work IS NULL
     AND b.old_exam_id IS NOT NULL
@@ -677,6 +963,60 @@ export async function backfillBillingFinanceWork(pgClient) {
     afterId = Number(maxId);
   }
   return created;
+}
+
+/**
+ * ท้าย job: บิลที่ย้ายมาก่อนหน้า (ก่อนมีการเติมฟิลด์ตามฟอร์มการเงิน) → เติมช่องที่ยังว่าง
+ * ดูกติกาที่ getBillingDerivedFillSqlBuilder; ชุดละ FINANCE_WORK_BACKFILL_BATCH แถว commit ทีละชุด
+ * @returns {Promise<number | null>} จำนวนบิลที่เติม; null = ปลายทางไม่มีฟิลด์ให้เติม
+ */
+export async function backfillBillingDerivedFields(pgClient) {
+  const builder = await getBillingDerivedFillSqlBuilder(pgClient);
+  if (!builder) return null;
+  const sqlText = builder.build(`
+  SELECT b.id AS billing_id
+  FROM public.billing AS b
+  WHERE b.old_exam_id IS NOT NULL
+    AND b.id > $1
+    AND ${builder.preFilterSql}
+  ORDER BY b.id
+  LIMIT $2`);
+  let afterId = 0;
+  let updated = 0;
+  while (true) {
+    const { rows } = await pgClient.query(sqlText, [
+      afterId,
+      FINANCE_WORK_BACKFILL_BATCH,
+    ]);
+    const maxId = rows[0]?.max_billing_id;
+    if (maxId == null) break;
+    updated += Number(rows[0]?.updated ?? 0);
+    afterId = Number(maxId);
+  }
+  return updated;
+}
+
+/**
+ * ท้าย job: finance_work ของบิลที่ย้ายมาแต่ date_created ยังว่าง (สร้างก่อนเริ่มใส่วันตรวจ) → เติมวันตรวจ
+ * ไม่ทับค่าที่มีอยู่แล้ว; ชุดละ FINANCE_WORK_BACKFILL_BATCH แถว commit ทีละชุด
+ * @returns {Promise<number | null>} จำนวนที่เติม; null = ปลายทางยังไม่มีคอลัมน์ที่ต้องใช้
+ */
+export async function backfillBillingFinanceWorkDateCreated(pgClient) {
+  const builder = await getBillingFinanceWorkSqlBuilder(pgClient);
+  if (!builder?.fillDateCreatedSql) return null;
+  let afterId = 0;
+  let updated = 0;
+  while (true) {
+    const { rows } = await pgClient.query(builder.fillDateCreatedSql, [
+      afterId,
+      FINANCE_WORK_BACKFILL_BATCH,
+    ]);
+    const maxId = rows[0]?.max_billing_id;
+    if (maxId == null) break;
+    updated += Number(rows[0]?.updated ?? 0);
+    afterId = Number(maxId);
+  }
+  return updated;
 }
 
 /** ตารางว่าง → id ถัดไปเริ่มที่ 1 (แบบ appointment) */
@@ -729,6 +1069,7 @@ export async function runBillingChunkPostLoad(
     insertSql,
     examMapSql,
     updateAppointmentSql,
+    fillDerivedSql,
     relinkFinanceWorkSql,
     createFinanceWorkSql,
   } = await prepareBillingPostLoad(pgClient, migrateRowMode);
@@ -748,6 +1089,8 @@ export async function runBillingChunkPostLoad(
 
   const updateAppointmentStartedAt = Date.now();
   if (updateAppointmentSql) await pgClient.query(updateAppointmentSql);
+  // ฟิลด์ที่ฟอร์มการเงินตั้งให้ (payment_method, is_overtime ฯลฯ) — บิลย้ายมาไม่ผ่านฟอร์ม
+  if (fillDerivedSql) await pgClient.query(fillDerivedSql);
   const updateAppointmentMs = Date.now() - updateAppointmentStartedAt;
 
   const financeWorkStartedAt = Date.now();
