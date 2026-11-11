@@ -4,7 +4,7 @@
  * รายรับของศูนย์ที่ไม่ใช่ค่าตรวจ (บริจาค / ขอ Copy CD) หลักหมื่นแถว ไม่มี CreatedDate — เดินครบทุกแถวทุกรอบ ไม่ใช้ checkpoint
  * เทียบด้วย old_db_id ("income:ID" / "income2:ID"): ไม่มีปลายทาง = insert, มีแล้ว = ไม่ทับข้อมูล
  * แต่เติม patient_info ที่ยังว่าง (insert-only) หรือเขียนทับให้ตรงต้นทาง (overwrite) — รันซ้ำได้ ไม่เกิดแถวซ้ำ
- * แถว income2 ที่ income มีซ้ำทั้งแถวถูกตัดทิ้งตั้งแต่ฝั่ง MSSQL (ดู mssqlCenterIncomeSelect.mjs)
+ * แถว income2 ที่มีคู่ก๊อปใน income (Income_ID + 364480) ถูกตัดทิ้งตั้งแต่ฝั่ง MSSQL (ดู mssqlCenterIncomeSelect.mjs)
  * กติกาแปลงค่าดู centerIncomeMapping.mjs
  */
 import fs from "node:fs";
@@ -128,7 +128,7 @@ async function main() {
     sourceObject: `${sourceSchema}.income + ${sourceSchema}.income2`,
     migrateRowMode,
     batchSize,
-    /** income / income2 ทั้งหมด และ income2 ที่เหลือหลังตัดแถวที่ income มีซ้ำ */
+    /** income / income2 ทั้งหมด และ income2 ที่เหลือหลังตัดแถวที่มีคู่ก๊อปใน income */
     sourceBreakdown: null,
     rowsRead: 0,
     rowsLoadedToStaging: 0,
@@ -216,7 +216,7 @@ async function main() {
           };
           console.error(
             `>>> [${KEY}] ต้นทาง: income ${runLog.sourceBreakdown.income} แถว, income2 ${runLog.sourceBreakdown.income2} แถว` +
-              ` (ซ้ำกับ income ${runLog.sourceBreakdown.income2DuplicateOfIncome} → ตัดทิ้ง, เหลือ ${runLog.sourceBreakdown.income2Kept})` +
+              ` (มีคู่ก๊อปใน income ${runLog.sourceBreakdown.income2DuplicateOfIncome} → ตัดทิ้ง, เหลือ ${runLog.sourceBreakdown.income2Kept})` +
               ` → อ่านทั้งหมด ${sourceRowCountTotal} แถว`,
           );
         }

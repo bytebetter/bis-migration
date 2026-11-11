@@ -3,7 +3,7 @@
   รัน migration center_income (MSSQL dbo.income + dbo.income2 -> Postgres / Directus public.center_income)
 
   เดินครบทุกแถวทุกรอบ เทียบด้วย old_db_id ("income:ID" / "income2:ID") — รันซ้ำได้ ไม่เกิดแถวซ้ำ
-  แถว income2 ที่ income มีซ้ำทั้งแถวถูกตัดทิ้ง (เก็บของ income)
+  แถว income2 ที่มีคู่ก๊อปใน income (Income_ID + 364480) ถูกตัดทิ้ง (เก็บของ income)
   ดีฟอลต์ (resume/insert-only) = insert เฉพาะคีย์ใหม่ + เติม patient_info ที่ยังว่าง ไม่ทับข้อมูลที่แก้ในระบบใหม่
   -MigrateRunMode overwrite = เขียนทับแถวเดิมให้ตรงต้นทางด้วย (ไม่แตะ status)
   ต้องรันหลัง patient_info (relation resolve จาก PID)

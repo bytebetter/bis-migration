@@ -5,12 +5,14 @@
  *   Receipt, Receipt_No, Mobile, MobileUpdated, Mobile_Loc, Location_ID
  * แต่ชนิดคอลัมน์ไม่จำเป็นต้องตรงกัน (เช่น ตารางหนึ่งเป็น int อีกตารางเป็น nvarchar ที่เก็บคำว่า 'NULL' เป็นตัวอักษร)
  * — ห้ามเทียบ / UNION คอลัมน์ดิบข้ามตาราง ไม่งั้น SQL Server แปลง 'NULL' เป็น int แล้วพัง (error 245)
- * จึงแปลงทุกคอลัมน์ของแต่ละตารางเป็นข้อความรูปแบบเดียวกันก่อน (CTE n1 / n2) แล้วค่อยตัดซ้ำและรวมแถว
+ * จึงแปลงทุกคอลัมน์ของแต่ละตารางเป็นข้อความรูปแบบเดียวกันก่อน (CTE n1 / n2) แล้วค่อยรวมแถว
  *
- * income มีแถวที่ก๊อปมาจาก income2 ทั้งแถว (Income_ID ใหม่) — ย้ายทั้งสองตารางตรงๆ ยอดจะซ้ำ
- * จึงตัดแถว income2 ที่มีแถวใน income ค่าเหมือนกันทุกช่องข้อมูล (วันที่ ประเภท PID ชื่อ ยอด เลขใบเสร็จ สถานที่)
- * ทิ้ง — เก็บแถวของ income (ตารางที่ใช้งานอยู่) ไว้ ส่วนแถวที่มีแค่ใน income2 ย้ายตามปกติ
- * ไม่เทียบ Mobile / MobileUpdated / Mobile_Loc (สถานะ sync หน่วยเคลื่อนที่ ไม่ใช่ข้อมูลรายรับ)
+ * income2 ทั้งตารางถูกก๊อปไปไว้ใน income โดย Income_ID ใหม่ = Income_ID เดิม + 364480
+ * (ตรวจ 2026-11-11: income2 38,970 แถว มีคู่ใน income 38,969 แถว เหลือแถวเดียวที่ไม่มีคู่)
+ * ย้ายทั้งสองตารางตรงๆ ยอดจะซ้ำ — จึงตัดแถว income2 ที่ income มี Income_ID คู่ทิ้ง เก็บแถวของ income
+ * (ตารางที่ใช้งานอยู่ ข้อมูลที่แก้ทีหลังอยู่ฝั่งนี้) ส่วนแถว income2 ที่ไม่มีคู่ย้ายตามปกติ
+ * ไม่ตัดซ้ำด้วยการเทียบข้อมูลทุกช่อง: คู่ก๊อป ~1,975 คู่ถูกแก้ข้อมูลใน income ทีหลัง เทียบแล้วไม่ตรง
+ * ทำให้ย้ายทั้งสองแถว (นับซ้ำ) — รอบแรก 11-10 ได้ 43,797 แทน 41,822
  *
  * คีย์ประจำแถว (= old_db_id ปลายทาง, ใช้ใน log / --source-ids / repair-from-log): "<ตาราง>:<Income_ID>"
  *   เช่น income:339323, income2:10 — Income_ID สองตารางนับแยกกัน เลขเดียวกันชนกันได้ จึงต้องมีชื่อตาราง
@@ -25,6 +27,9 @@ export const CENTER_INCOME_SOURCE_TABLES = {
   archive: "income2",
 };
 
+/** แถว income2 ID n ถูกก๊อปไปเป็นแถว income ID n + ค่านี้ */
+export const CENTER_INCOME_ARCHIVE_COPY_ID_OFFSET = 364480;
+
 /**
  * ข้อความหลัง trim — ค่าว่าง และคำว่า NULL ที่เก็บเป็นตัวอักษร = NULL จริง
  * @param {string} expr นิพจน์ NVARCHAR
@@ -36,7 +41,7 @@ function cleanText(expr) {
 
 /**
  * คอลัมน์ของตารางหนึ่ง แปลงเป็น NVARCHAR รูปแบบเดียวกันทั้งสองตาราง (ชนิดต้นทางต่างกันได้)
- * collation ของฐานข้อมูลทั้งหมด — INTERSECT / UNION ALL ข้ามตารางที่ collation ต่างกันไม่ได้
+ * collation ของฐานข้อมูลทั้งหมด — UNION ALL ข้ามตารางที่ collation ต่างกันไม่ได้
  * @param {string} alias
  * @param {string} tableLiteral ชื่อตารางในคีย์
  * @param {number} rank ลำดับตารางตอนอ่าน
@@ -83,19 +88,8 @@ const SRC_COLUMNS = [
   "location_id",
 ];
 
-/** คอลัมน์ข้อมูลที่ใช้ตัดสินว่าแถว income2 ซ้ำกับ income (เทียบแบบ NULL = NULL ด้วย INTERSECT; วันที่เทียบแยก) */
-const DEDUPE_COLUMNS = [
-  "income_type",
-  "donate_type",
-  "receipt",
-  "location_id",
-  "pid",
-  "full_name",
-  "receipt_no",
-];
-
 /**
- * ชุดแถวต้นทางทั้งหมด (income2 ที่ไม่ซ้ำ + income) เป็น CTE ชื่อ src
+ * ชุดแถวต้นทางทั้งหมด (income2 ที่ไม่มีคู่ก๊อปใน income + income ทุกแถว) เป็น CTE ชื่อ src
  * @param {string} schema
  */
 function sourceCte(schema) {
@@ -119,8 +113,7 @@ src AS (
   WHERE NOT EXISTS (
     SELECT 1
     FROM n1 b
-    WHERE ISNULL(b.income_date, N'') = ISNULL(a.income_date, N'')
-      AND EXISTS (SELECT ${list("b", DEDUPE_COLUMNS)} INTERSECT SELECT ${list("a", DEDUPE_COLUMNS)})
+    WHERE b.src_id = a.src_id + ${CENTER_INCOME_ARCHIVE_COPY_ID_OFFSET}
   )
   UNION ALL
   SELECT ${list("b", SRC_COLUMNS)}
@@ -146,7 +139,7 @@ OFFSET @offset ROWS FETCH NEXT @page ROWS ONLY;
 `.trim();
 }
 
-/** repair-from-log / --source-ids: ดึงตามคีย์ "income:ID" / "income2:ID" (แถว income2 ที่ซ้ำ income จะไม่ออกมา) */
+/** repair-from-log / --source-ids: ดึงตามคีย์ "income:ID" / "income2:ID" (แถว income2 ที่มีคู่ก๊อปใน income จะไม่ออกมา) */
 export function buildCenterIncomeByKeysSql(schema) {
   return `
 ${sourceCte(schema)}
@@ -157,7 +150,7 @@ ORDER BY ${ORDER_BY};
 `.trim();
 }
 
-/** จำนวนแถวที่ migrate จะอ่านจริง (หลังตัด income2 ที่ซ้ำ) — ใช้ทำแผน + snapshot count ของ migrate:all */
+/** จำนวนแถวที่ migrate จะอ่านจริง (หลังตัด income2 ที่มีคู่ก๊อป) — ใช้ทำแผน + snapshot count ของ migrate:all */
 export function buildCenterIncomeCountSql(schema) {
   return `
 ${sourceCte(schema)}
@@ -165,7 +158,7 @@ SELECT COUNT_BIG(1) AS total FROM src;
 `.trim();
 }
 
-/** แยกจำนวน: income / income2 ทั้งหมด / income2 ที่ตัดทิ้งเพราะซ้ำ — log ตอนเริ่ม job */
+/** แยกจำนวน: income / income2 ทั้งหมด / income2 ที่เหลือหลังตัดแถวที่มีคู่ก๊อป — log ตอนเริ่ม job */
 export function buildCenterIncomeBreakdownSql(schema) {
   const s = `[${String(schema).replace(/]/g, "]]")}]`;
   const { main, archive } = CENTER_INCOME_SOURCE_TABLES;
