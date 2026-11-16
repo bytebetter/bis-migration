@@ -373,6 +373,7 @@ let billingDerivedFillSqlCache = undefined;
  * (BIS-Backoffice finance/useFinanceFormLogic.tsx + finance-cost.ts) เติมเฉพาะช่องที่ยังว่าง ไม่ทับค่าที่แก้ในระบบใหม่
  *
  * - total_exam / service_total / last_total ว่าง → total (DB เก่ามียอดเดียว)
+ * - final_total ว่าง → receipt; receipt ว่าง → total
  * - payment_method ว่างหรือ "0" → ตาม care_type + payment_type แบบ effect ในฟอร์ม
  *     สิทธิ 7/24: ผู้ป่วยใน "3" นอกนั้น "2" · ผู้ป่วยใน "3" · อื่นๆ ของศูนย์ "2"
  *     ผู้ป่วยนอก: สิทธิ 1/2 "1", สิทธิ 3–6 "3" · ที่เหลือ "2" (ค่า default ของฟอร์ม)
@@ -446,6 +447,10 @@ async function getBillingDerivedFillSqlBuilder(pgClient) {
   for (const name of ["total_exam", "service_total", "last_total"]) {
     if (!cols.has(name) || !cols.has("total")) continue;
     fields.push([name, `COALESCE(b.${name}, b.total)`, `(b.${name} IS NULL AND b.total IS NOT NULL)`, `(b.${name} IS NULL AND b.total IS NOT NULL)`]);
+  }
+  if (cols.has("final_total") && cols.has("receipt") && cols.has("total")) {
+    const cond = "(b.final_total IS NULL AND COALESCE(b.receipt, b.total) IS NOT NULL)";
+    fields.push(["final_total", "COALESCE(b.final_total, b.receipt, b.total)", cond, cond]);
   }
   if (hasPaymentMethod) {
     fields.push(["payment_method", `COALESCE(${pmCurrentExpr}, p.payment_method)`, `(${pmCurrentExpr} IS NULL)`, `(${pmCurrentExpr} IS NULL)`]);
@@ -788,6 +793,12 @@ WHERE NULLIF(btrim(s.exam_id), '') ~ '${INT_RE_STAGING}';
       expr = sqlMapMssqlPatientTypeToPaymentType();
     } else if (name === "care_type") {
       expr = sqlCareTypeFromMappedPaymentType();
+    } else if (name === "final_total") {
+      // ยอดสุดท้าย = receipt; receipt ว่าง → total
+      expr = toSqlValueExpr(
+        "COALESCE(NULLIF(btrim(s.receipt), ''), NULLIF(btrim(s.total), ''))",
+        meta,
+      );
     } else if (SOURCE_FIELD_BY_TARGET[name]) {
       const raw = `NULLIF(btrim(s.${SOURCE_FIELD_BY_TARGET[name]}), '')`;
       expr = toSqlValueExpr(raw, meta);
