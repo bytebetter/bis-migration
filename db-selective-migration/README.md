@@ -9,6 +9,7 @@
 - `scripts/db-dump-selective-backup.sh` — สร้างไฟล์ `.sql` สำหรับ restore บนเครื่องอื่น
 - `scripts/refresh-baseline.sh` — อัปเดต `baseline/bisinfo_selective_initial.sql` จาก Supabase (`SOURCE_DATABASE_URL`) หรือจาก Kubernetes pod
 - `scripts/db-flows-sync.sh` — sync Directus flows + operations แบบ git-mediated (export → commit → compare/apply บน prod)
+- `flows.config.example.json` — เทมเพลต JSON สำหรับ source/dest (คัดลอกเป็น `flows.config.json` ที่ gitignore)
 - `exports/directus-flows/` — snapshot ที่ commit สำหรับ sync ไป private prod
 - `docs/db-migration-selective-runbook.md` — คู่มือรันจริงและ restore
 - `docs/directus-flows-sync-runbook.md` — คู่มือ sync flows (สองเครื่องผ่าน git)
@@ -39,11 +40,10 @@ set -a && source .env.supabase && set +a
 # หรือ ./scripts/db-dump-selective-backup.sh
 
 # Flow-only sync via git snapshot (ดู docs/directus-flows-sync-runbook.md)
-cp docker/flows.env.example .env.flows
-# เครื่องที่ถึง source: ใส่ SOURCE_* แล้ว
-set -a && source .env.flows && set +a
+cp flows.config.example.json flows.config.json
+# เครื่องที่ถึง source: ใส่ source.databaseUrl / source.schema แล้ว
 ./scripts/db-flows-sync.sh export
-# commit exports/directus-flows/ แล้ว push — บน prod: pull, ใส่ DEST_* แล้ว compare/apply
+# commit exports/directus-flows/ แล้ว push — บน prod: pull, ใส่ dest.* แล้ว compare/apply
 ```
 
 ## นำไป repo อื่น

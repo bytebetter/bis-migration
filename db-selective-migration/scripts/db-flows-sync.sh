@@ -16,7 +16,7 @@
 #   ./scripts/db-flows-sync.sh restore <backup-name-or-path>
 #   ./scripts/db-flows-sync.sh help
 #
-# Config: copy docker/flows.env.example → .env.flows (gitignored)
+# Config: copy flows.config.example.json → flows.config.json (gitignored)
 # Docs:   docs/directus-flows-sync-runbook.md
 
 set -euo pipefail
@@ -25,7 +25,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=db-flows-common.inc.sh
 source "${SCRIPT_DIR}/db-flows-common.inc.sh"
 
-load_flows_env_file
+load_flows_config
 
 APPROVE=0
 OUT_PATH=""
@@ -37,8 +37,8 @@ usage() {
 db-flows-sync.sh — Directus flows + operations (git-mediated snapshot)
 
 Two-machine flow (primary):
-  export   (needs SOURCE_*)  → commit exports/directus-flows/ → git push
-  on prod: git pull → compare / apply / restore (needs DEST_* only)
+  export   (needs source.*)  → commit exports/directus-flows/ → git push
+  on prod: git pull → compare / apply / restore (needs dest.* only)
 
 Commands:
   export               Dump source DB → exports/directus-flows/ (commit these files)
@@ -52,17 +52,17 @@ Options:
   --approve            Non-interactive approve for apply/restore
   --snapshot DIR       Snapshot directory (default: exports/directus-flows)
   --out DIR            Alias for --snapshot on export
-  --env-file PATH      Load env from PATH instead of .env.flows
+  --config PATH        JSON config (default: flows.config.json)
 
-Environment (see docker/flows.env.example):
-  SOURCE_DATABASE_URL, SOURCE_SCHEMA   — export machine only
-  EXPORT_SCHEMA                        — schema written into snapshot SQL (default: public)
-  DEST_DATABASE_URL, DEST_SCHEMA       — prod server (local Postgres)
-  CONTENT_ONLY=true|false              — fingerprint compare (default true)
+JSON config (see flows.config.example.json):
+  source.databaseUrl, source.schema    — export machine only
+  exportSchema                         — schema written into snapshot SQL (default: public)
+  dest.databaseUrl, dest.schema        — prod server (local Postgres)
+  snapshotDir, contentOnly, pg.*       — optional
 
 Git hygiene:
-  • Commit:   exports/directus-flows/   (intentional snapshot)
-  • Ignore:   backups/flows/ , .env.flows
+  • Commit:   exports/directus-flows/ , flows.config.example.json
+  • Ignore:   backups/flows/ , flows.config.json
 
 Safety:
   • Default is compare / dry-run only
@@ -94,10 +94,15 @@ while [[ $# -gt 0 ]]; do
       FLOWS_SNAPSHOT_DIR="$OUT_PATH"
       shift 2
       ;;
-    --env-file)
-      FLOWS_ENV_FILE="${2:?--env-file needs a path}"
-      load_flows_env_file
+    --config)
+      FLOWS_CONFIG_FILE="${2:?--config needs a path}"
+      load_flows_config
       shift 2
+      ;;
+    --env-file)
+      echo "ERROR: --env-file is removed; use --config PATH (JSON)." >&2
+      echo "See flows.config.example.json" >&2
+      exit 2
       ;;
     *)
       if [[ "$COMMAND" == "restore" && -z "$BACKUP_NAME" ]]; then

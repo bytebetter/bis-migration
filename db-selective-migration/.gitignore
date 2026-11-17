@@ -7,4 +7,5 @@ baseline/*.backup
 .env.directus
 .env.backoffice
 .env.supabase
-.env.flows
+# Directus flows sync secrets (copy from flows.config.example.json)
+flows.config.json

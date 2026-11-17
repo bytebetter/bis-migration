@@ -3,35 +3,76 @@
 ซิงก์เฉพาะ `directus_flows` + `directus_operations` โดย **ไม่ต้อง SSH** ไปหา prod:
 
 1. เครื่องที่เข้าถึง **source** DB ได้ → `export` เป็นไฟล์ใน repo → **commit + push**
-2. บน **private production server** → `git pull` → `compare` / `apply` / `restore` กับ Postgres ท้องถิ่น (DEST เท่านั้น)
+2. บน **private production server** → `git pull` → `compare` / `apply` / `restore` กับ Postgres ท้องถิ่น (`dest` เท่านั้น)
 
 ใช้ DB dump/diff/apply ผ่าน `psql` / `pg_dump` ตามแนว selective migration — **ไม่ได้** พึ่ง `directus-extension-sync`
+
+Connection settings อยู่ใน **JSON** (`flows.config.json`) ไม่ใช่ `.env`
 
 ## ไฟล์ที่เกี่ยวข้อง
 
 | Path | Git? | บทบาท |
 |------|------|--------|
 | `exports/directus-flows/` | **commit** | snapshot จาก source (SQL + fingerprints) |
-| `docker/flows.env.example` | commit | เทมเพลต config |
-| `.env.flows` | **ignore** | secrets จริง |
+| `flows.config.example.json` | commit | เทมเพลต JSON config |
+| `flows.config.json` | **ignore** | secrets จริง |
 | `backups/flows/` | **ignore** | runtime backup ก่อน apply/restore |
 | `scripts/db-flows-sync.sh` | commit | CLI |
+
+## Config shape
+
+คัดลอกแล้วแก้ค่าจริง:
+
+```bash
+cp flows.config.example.json flows.config.json
+```
+
+```json
+{
+  "source": {
+    "databaseUrl": "postgresql://…",
+    "schema": "bis_dev"
+  },
+  "dest": {
+    "databaseUrl": "postgresql://bis:…@127.0.0.1:5432/bisinfo",
+    "schema": "public"
+  },
+  "exportSchema": "public",
+  "snapshotDir": "exports/directus-flows",
+  "contentOnly": true,
+  "pg": {
+    "useDocker": false,
+    "clientImage": "postgres:17-alpine",
+    "dumpMinMajor": 17
+  }
+}
+```
+
+| Field | ใช้ตอน | หมายเหตุ |
+|-------|--------|----------|
+| `source.*` | export | Direct connection (`:5432`) แนะนำ; ไม่ต้องมีบน prod |
+| `dest.*` | compare / apply / restore | Postgres ท้องถิ่นบน server |
+| `exportSchema` | export | schema ใน SQL ที่ commit (มักเป็น `public`) |
+| `snapshotDir` | ทุกคำสั่ง | default `exports/directus-flows` |
+| `contentOnly` | compare | ไม่นับ `date_created` / `user_created` เมื่อ `true` |
+| `pg.*` | optional | บังคับ Docker client / major ของ `pg_dump` |
+
+Override path: `./scripts/db-flows-sync.sh --config /path/to.json compare`
 
 ## Stage A — Export (เครื่องที่ถึง source)
 
 ```bash
 cd db-selective-migration
-cp docker/flows.env.example .env.flows
-# ใส่ SOURCE_DATABASE_URL + SOURCE_SCHEMA (+ EXPORT_SCHEMA=public)
-# DEST_* ไม่จำเป็นในขั้นนี้
-set -a && source .env.flows && set +a
+cp flows.config.example.json flows.config.json
+# ใส่ source.databaseUrl + source.schema (+ exportSchema)
+# dest ไม่จำเป็นในขั้นนี้
 
 ./scripts/db-flows-sync.sh export
 ```
 
 เขียนลง `exports/directus-flows/`:
 
-- `directus_flows_operations.sql` — data-only INSERTs (schema = `EXPORT_SCHEMA`)
+- `directus_flows_operations.sql` — data-only INSERTs (schema = `exportSchema`)
 - `fingerprints/*.tsv` — สำหรับ compare บน prod โดยไม่ต้องมี live source
 - `MANIFEST` — metadata (เวลา, schema, counts)
 - `README.md` — คำอธิบายสั้นๆ
@@ -46,15 +87,14 @@ git push
 
 ## Stage B — Apply บน private prod server
 
-Server คุยกับ Postgres ของตัวเองได้โดยตรง — **ไม่ต้อง** `SOURCE_*` และ **ไม่ต้อง** SSH tunnel
+Server คุยกับ Postgres ของตัวเองได้โดยตรง — **ไม่ต้อง** `source` และ **ไม่ต้อง** SSH tunnel
 
 ```bash
 cd /path/to/bis-migration/db-selective-migration
 git pull
 
-cp docker/flows.env.example .env.flows   # ครั้งแรก
-# ใส่เฉพาะ DEST_DATABASE_URL + DEST_SCHEMA (เช่น 127.0.0.1:5432)
-set -a && source .env.flows && set +a
+cp flows.config.example.json flows.config.json   # ครั้งแรก
+# ใส่เฉพาะ dest.databaseUrl + dest.schema (เช่น 127.0.0.1:5432)
 ```
 
 ### Compare (default / dry-run)
@@ -65,7 +105,7 @@ set -a && source .env.flows && set +a
 ./scripts/db-flows-sync.sh compare
 ```
 
-สรุป **added / removed / changed** (ค่าเริ่มต้นไม่นับ `date_created` / `user_created`)
+สรุป **added / removed / changed**
 
 ### Approve + apply
 
@@ -95,8 +135,8 @@ ls backups/flows/
 
 | เก็บใน git | ไม่เก็บ |
 |------------|---------|
-| `exports/directus-flows/**` (snapshot ที่ export แล้ว) | `.env.flows` |
-| สคริปต์ + runbook + `flows.env.example` | `backups/flows/**` (runtime) |
+| `exports/directus-flows/**` (snapshot ที่ export แล้ว) | `flows.config.json` |
+| สคริปต์ + runbook + `flows.config.example.json` | `backups/flows/**` (runtime) |
 
 ## ข้อควรรู้
 

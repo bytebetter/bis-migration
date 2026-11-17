@@ -17,14 +17,64 @@ FLOW_SYNC_TABLES=(
   directus_operations
 )
 
-load_flows_env_file() {
-  local env_file="${FLOWS_ENV_FILE:-${FLOWS_PACKAGE_ROOT}/.env.flows}"
-  if [[ -f "$env_file" ]]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "$env_file"
-    set +a
+# Load flows.config.json (or FLOWS_CONFIG_FILE / --config path) into env vars used below.
+# Existing env vars win over JSON (so CLI/CI can override). Missing config file is OK until a command needs values.
+load_flows_config() {
+  local config_file="${FLOWS_CONFIG_FILE:-${FLOWS_PACKAGE_ROOT}/flows.config.json}"
+  if [[ ! -f "$config_file" ]]; then
+    return 0
   fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "ERROR: python3 is required to read ${config_file}" >&2
+    return 1
+  fi
+  # shellcheck disable=SC1090
+  eval "$(
+    FLOWS_CONFIG_FILE="$config_file" python3 - <<'PY'
+import json, os, shlex
+from pathlib import Path
+
+path = Path(os.environ["FLOWS_CONFIG_FILE"])
+data = json.loads(path.read_text(encoding="utf-8"))
+
+def get(*keys, default=""):
+    cur = data
+    for k in keys:
+        if not isinstance(cur, dict) or k not in cur:
+            return default
+        cur = cur[k]
+    if cur is None:
+        return default
+    return cur
+
+def emit(name, value):
+    # Do not overwrite env already set by the caller.
+    if os.environ.get(name):
+        return
+    if value is None or value == "":
+        return
+    if isinstance(value, bool):
+        value = "true" if value else "false"
+    else:
+        value = str(value)
+    print(f"{name}={shlex.quote(value)}")
+
+source = data.get("source") or {}
+dest = data.get("dest") or {}
+pg = data.get("pg") or {}
+
+emit("SOURCE_DATABASE_URL", source.get("databaseUrl") or data.get("sourceDatabaseUrl"))
+emit("SOURCE_SCHEMA", source.get("schema") or data.get("sourceSchema"))
+emit("DEST_DATABASE_URL", dest.get("databaseUrl") or data.get("destDatabaseUrl"))
+emit("DEST_SCHEMA", dest.get("schema") or data.get("destSchema"))
+emit("EXPORT_SCHEMA", data.get("exportSchema"))
+emit("FLOWS_SNAPSHOT_DIR", data.get("snapshotDir"))
+emit("CONTENT_ONLY", data.get("contentOnly"))
+emit("PG_USE_DOCKER", pg.get("useDocker"))
+emit("PG_CLIENT_IMAGE", pg.get("clientImage"))
+emit("PG_DUMP_MIN_MAJOR", pg.get("dumpMinMajor"))
+PY
+  )"
 }
 
 resolved_dest_database_url() {
@@ -41,8 +91,8 @@ require_source_url() {
   local url
   url="$(resolved_source_database_url)"
   if [[ -z "$url" ]]; then
-    echo "ERROR: set SOURCE_DATABASE_URL (or DATABASE_URL) — required only for export." >&2
-    echo "See docker/flows.env.example" >&2
+    echo "ERROR: set source.databaseUrl in flows.config.json — required only for export." >&2
+    echo "Copy flows.config.example.json → flows.config.json" >&2
     return 1
   fi
   echo "$url"
@@ -52,9 +102,9 @@ require_dest_url() {
   local url
   url="$(resolved_dest_database_url)"
   if [[ -z "$url" ]]; then
-    echo "ERROR: set DEST_DATABASE_URL in .env.flows / environment." >&2
-    echo "On the production server this is local Postgres (no SOURCE / no SSH needed)." >&2
-    echo "See docker/flows.env.example" >&2
+    echo "ERROR: set dest.databaseUrl in flows.config.json." >&2
+    echo "On the production server this is local Postgres (no source block / no SSH needed)." >&2
+    echo "Copy flows.config.example.json → flows.config.json" >&2
     return 1
   fi
   echo "$url"
