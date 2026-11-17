@@ -10,6 +10,8 @@
 - `scripts/refresh-baseline.sh` — อัปเดต `baseline/bisinfo_selective_initial.sql` จาก Supabase (`SOURCE_DATABASE_URL`) หรือจาก Kubernetes pod
 - `docs/db-migration-selective-runbook.md` — คู่มือรันจริงและ restore
 - `docs/production-docker-restore.md` — ติดตั้ง Postgres 16 ด้วย Docker + restore dump บน production server
+
+> Directus **flows-only** sync ย้ายไปแพ็กเกจแยกแล้ว: [`../directus-flows-sync/`](../directus-flows-sync/)
 - `docker/docker-compose.yml` — **Postgres 16 + Directus 11 + BIS Backoffice (Next.js)** (แนะนำ)
 - `docker/docker-compose.postgres.yml` — Postgres อย่างเดียว
 - `docker/docker-compose.directus.yml` — Directus อย่างเดียว (DB ภายนอก)
@@ -35,6 +37,8 @@ set -a && source .env.supabase && set +a
 ./scripts/refresh-baseline.sh
 # หรือ ./scripts/db-dump-selective-backup.sh
 ```
+
+Flow-only sync: ดู [`directus-flows-sync/`](../directus-flows-sync/)
 
 ## นำไป repo อื่น
 

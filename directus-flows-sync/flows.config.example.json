@@ -1,0 +1,18 @@
+{
+  "source": {
+    "databaseUrl": "postgresql://postgres:YOUR_PASSWORD@db.<project-ref>.supabase.co:5432/postgres?sslmode=require",
+    "schema": "bis_dev"
+  },
+  "dest": {
+    "databaseUrl": "postgresql://bis:YOUR_PASSWORD@127.0.0.1:5432/bisinfo",
+    "schema": "public"
+  },
+  "exportSchema": "public",
+  "snapshotDir": "exports",
+  "contentOnly": true,
+  "pg": {
+    "useDocker": false,
+    "clientImage": "postgres:17-alpine",
+    "dumpMinMajor": 17
+  }
+}
