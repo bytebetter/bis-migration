@@ -3,21 +3,21 @@
 # Sync Directus flows + operations via a git-mediated snapshot.
 #
 # Two-machine workflow (no SSH):
-#   1) Machine with source DB:  export  → commit exports/directus-flows/ → push
-#   2) Private prod server:     git pull → compare / apply / restore (DEST only)
+#   1) Machine with source DB:  export  → commit exports/ → push
+#   2) Private prod server:     git pull → compare / apply / restore (dest only)
 #
 # Default is dry-run (compare only). Never mutates destination without approval.
 #
 # Usage:
-#   ./scripts/db-flows-sync.sh export
-#   ./scripts/db-flows-sync.sh compare
-#   ./scripts/db-flows-sync.sh backup
-#   ./scripts/db-flows-sync.sh apply [--approve]
-#   ./scripts/db-flows-sync.sh restore <backup-name-or-path>
-#   ./scripts/db-flows-sync.sh help
+#   ./scripts/sync.sh export
+#   ./scripts/sync.sh compare
+#   ./scripts/sync.sh backup
+#   ./scripts/sync.sh apply [--approve]
+#   ./scripts/sync.sh restore <backup-name-or-path>
+#   ./scripts/sync.sh help
 #
 # Config: copy flows.config.example.json → flows.config.json (gitignored)
-# Docs:   docs/directus-flows-sync-runbook.md
+# Docs:   docs/runbook.md
 
 set -euo pipefail
 
@@ -34,23 +34,25 @@ BACKUP_NAME=""
 
 usage() {
   cat <<'EOF'
-db-flows-sync.sh — Directus flows + operations (git-mediated snapshot)
+sync.sh — Directus flows + operations (git-mediated snapshot)
+
+Package: directus-flows-sync/ (self-contained)
 
 Two-machine flow (primary):
-  export   (needs source.*)  → commit exports/directus-flows/ → git push
+  export   (needs source.*)  → commit exports/ → git push
   on prod: git pull → compare / apply / restore (needs dest.* only)
 
 Commands:
-  export               Dump source DB → exports/directus-flows/ (commit these files)
+  export               Dump source DB → exports/ (commit these files)
   compare              Diff committed snapshot vs live dest (default; no writes)
   backup               Backup destination flows/operations only (gitignored)
   apply                Compare, then replace dest from snapshot (needs approval)
-  restore <name>       Restore dest from backups/flows/<name>
+  restore <name>       Restore dest from backups/<name>
   help                 Show this help
 
 Options:
   --approve            Non-interactive approve for apply/restore
-  --snapshot DIR       Snapshot directory (default: exports/directus-flows)
+  --snapshot DIR       Snapshot directory (default: exports)
   --out DIR            Alias for --snapshot on export
   --config PATH        JSON config (default: flows.config.json)
 
@@ -61,12 +63,12 @@ JSON config (see flows.config.example.json):
   snapshotDir, contentOnly, pg.*       — optional
 
 Git hygiene:
-  • Commit:   exports/directus-flows/ , flows.config.example.json
-  • Ignore:   backups/flows/ , flows.config.json
+  • Commit:   exports/ , flows.config.example.json
+  • Ignore:   backups/ , flows.config.json
 
 Safety:
   • Default is compare / dry-run only
-  • apply always writes a dated backup under backups/flows/ before mutate
+  • apply always writes a dated backup under backups/ before mutate
 EOF
 }
 
@@ -132,7 +134,7 @@ confirm_apply() {
   echo
   echo "This will REPLACE destination directus_flows + directus_operations"
   echo "with the committed snapshot under $(resolved_snapshot_dir)."
-  echo "A backup will be taken first under backups/flows/."
+  echo "A backup will be taken first under backups/."
   printf "Type yes to continue: "
   read -r answer
   if [[ "$answer" != "yes" ]]; then
@@ -151,10 +153,10 @@ cmd_export() {
   write_flows_snapshot "$source_url" "$source_schema" "$export_schema" "$dir"
   echo
   echo "Next (on this machine):"
-  echo "  git add exports/directus-flows/"
+  echo "  git add exports/"
   echo "  git commit -m \"Update Directus flows snapshot\""
   echo "  git push"
-  echo "Then on the prod server: git pull && ./scripts/db-flows-sync.sh compare"
+  echo "Then on the prod server: git pull && ./scripts/sync.sh compare"
 }
 
 cmd_compare() {
@@ -200,7 +202,7 @@ cmd_compare() {
         ;;
       *)
         echo "Result: DIFFERENCES found (dry-run — nothing written)."
-        echo "Next: review above, then ./scripts/db-flows-sync.sh apply   (or apply --approve)"
+        echo "Next: review above, then ./scripts/sync.sh apply   (or apply --approve)"
         ;;
     esac
     return 1
@@ -250,18 +252,18 @@ cmd_apply() {
   FLOWS_COMPARE_CONTEXT=post-apply cmd_compare || verify_rc=$?
   if [[ "$verify_rc" -ne 0 ]]; then
     echo "WARNING: post-apply compare still reports differences." >&2
-    echo "Restore with: ./scripts/db-flows-sync.sh restore $(basename "$backup_dir")" >&2
+    echo "Restore with: ./scripts/sync.sh restore $(basename "$backup_dir")" >&2
     return 1
   fi
   echo "Apply complete. Backup kept at: ${backup_dir}"
-  echo "Rollback: ./scripts/db-flows-sync.sh restore $(basename "$backup_dir")"
+  echo "Rollback: ./scripts/sync.sh restore $(basename "$backup_dir")"
 }
 
 cmd_restore() {
   local dest_url dest_schema dir
   if [[ -z "$BACKUP_NAME" ]]; then
     echo "ERROR: restore requires a backup name or path" >&2
-    echo "Example: ./scripts/db-flows-sync.sh restore 20261117_153000" >&2
+    echo "Example: ./scripts/sync.sh restore 20261117_153000" >&2
     echo "Available under ${FLOWS_BACKUP_ROOT}:" >&2
     ls -1 "${FLOWS_BACKUP_ROOT}" 2>/dev/null || echo "(none yet)" >&2
     return 2

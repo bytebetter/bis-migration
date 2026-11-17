@@ -1,21 +1,83 @@
 #!/usr/bin/env bash
 # Shared helpers for Directus flows / operations sync (git-mediated snapshot workflow).
+# Self-contained package under directus-flows-sync/ (vendors minimal pg_dump/psql helpers).
 # shellcheck shell=bash
 
 SCRIPT_DIR_FLOWS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=db-selective-tables.inc.sh
-source "${SCRIPT_DIR_FLOWS}/db-selective-tables.inc.sh"
-
 FLOWS_PACKAGE_ROOT="$(cd "${SCRIPT_DIR_FLOWS}/.." && pwd)"
-FLOWS_BACKUP_ROOT="${FLOWS_PACKAGE_ROOT}/backups/flows"
-# Committed source-of-truth snapshot for prod compare/apply (see exports/directus-flows/README.md).
-FLOWS_SNAPSHOT_DEFAULT="${FLOWS_PACKAGE_ROOT}/exports/directus-flows"
+FLOWS_BACKUP_ROOT="${FLOWS_PACKAGE_ROOT}/backups"
+# Committed source-of-truth snapshot for prod compare/apply (see exports/README.md).
+FLOWS_SNAPSHOT_DEFAULT="${FLOWS_PACKAGE_ROOT}/exports"
 
-# Subset of DIRECTUS_TABLES — circular FK between flows.operation ↔ operations.
 FLOW_SYNC_TABLES=(
   directus_flows
   directus_operations
 )
+
+# ── Vendored Postgres client helpers (formerly selective-migration) ─────────
+
+resolved_source_database_url() {
+  if [[ -n "${SOURCE_DATABASE_URL:-}" ]]; then
+    echo "${SOURCE_DATABASE_URL}"
+  elif [[ -n "${DATABASE_URL:-}" ]]; then
+    echo "${DATABASE_URL}"
+  else
+    echo ""
+  fi
+}
+
+strip_psql_meta_commands() {
+  sed -E '/^\\restrict /d; /^\\unrestrict /d'
+}
+
+pg_dump_major_version() {
+  if ! command -v pg_dump >/dev/null 2>&1; then
+    echo "0"
+    return
+  fi
+  pg_dump --version | sed -E 's/.*[^0-9]([0-9]+)\..*/\1/'
+}
+
+run_pg_dump_remote() {
+  local image="${PG_CLIENT_IMAGE:-postgres:17-alpine}"
+  local min_major="${PG_DUMP_MIN_MAJOR:-17}"
+
+  if [[ "${PG_USE_DOCKER:-}" != "true" ]] && command -v pg_dump >/dev/null 2>&1; then
+    local ver
+    ver="$(pg_dump_major_version)"
+    if [[ "$ver" -ge "$min_major" ]]; then
+      pg_dump "$@"
+      return
+    fi
+    echo "Local pg_dump is ${ver}.x; need >= ${min_major} for this server. Using Docker (${image})..." >&2
+  fi
+
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Install pg_dump ${min_major}+ (brew install postgresql@${min_major}) or Docker." >&2
+    return 1
+  fi
+  docker run --rm "$image" pg_dump "$@"
+}
+
+run_psql_remote() {
+  local image="${PG_CLIENT_IMAGE:-postgres:17-alpine}"
+  local min_major="${PG_DUMP_MIN_MAJOR:-17}"
+
+  if [[ "${PG_USE_DOCKER:-}" != "true" ]] && command -v psql >/dev/null 2>&1; then
+    local ver
+    ver="$(pg_dump_major_version)"
+    if [[ "$ver" -ge "$min_major" ]]; then
+      psql "$@"
+      return
+    fi
+  fi
+
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Install psql ${min_major}+ or Docker." >&2
+    return 1
+  fi
+  docker run --rm "$image" psql "$@"
+}
 
 # Load flows.config.json (or FLOWS_CONFIG_FILE / --config path) into env vars used below.
 # Existing env vars win over JSON (so CLI/CI can override). Missing config file is OK until a command needs values.
@@ -136,13 +198,13 @@ require_snapshot_dir() {
   dir="$(resolved_snapshot_dir)"
   if [[ ! -f "${dir}/directus_flows_operations.sql" ]]; then
     echo "ERROR: snapshot SQL missing: ${dir}/directus_flows_operations.sql" >&2
-    echo "On a machine with source DB access, run: ./scripts/db-flows-sync.sh export" >&2
-    echo "Commit exports/directus-flows/, push, then pull on the prod server." >&2
+    echo "On a machine with source DB access, run: ./scripts/sync.sh export" >&2
+    echo "Commit exports/, push, then pull on the prod server." >&2
     return 1
   fi
   if [[ ! -f "${dir}/fingerprints/flows.tsv" || ! -f "${dir}/fingerprints/operations.tsv" ]]; then
     echo "ERROR: snapshot fingerprints missing under ${dir}/fingerprints/" >&2
-    echo "Re-run: ./scripts/db-flows-sync.sh export" >&2
+    echo "Re-run: ./scripts/sync.sh export" >&2
     return 1
   fi
   echo "$dir"
@@ -424,7 +486,7 @@ write_flows_snapshot() {
     echo "-- source_schema: ${source_schema}"
     echo "-- export_schema: ${export_schema}"
     echo "-- exported_at: ${stamp}"
-    echo "-- Apply on prod: ./scripts/db-flows-sync.sh apply"
+    echo "-- Apply on prod: ./scripts/sync.sh apply"
     dump_flows_data_sql "$source_url" "$source_schema" \
       | normalize_flows_dump_sql "$source_schema" "$export_schema"
   } >"${dir}/directus_flows_operations.sql"
@@ -457,11 +519,11 @@ EOF
 
 This directory is the **portable source snapshot** for production sync.
 
-- **Commit** the files here after `./scripts/db-flows-sync.sh export` (intentionally tracked).
-- On the private prod server: `git pull`, then `compare` / `apply` / `restore` using **DEST only** — no live source DB and no SSH tunnel.
-- Runtime backups stay under `backups/flows/` (gitignored).
+- **Commit** the files here after `./scripts/sync.sh export` (intentionally tracked).
+- On the private prod server: `git pull`, configure `flows.config.json` (`dest` only), then `compare` / `apply` / `restore`.
+- Runtime backups stay under `backups/` (gitignored).
 
-See `docs/directus-flows-sync-runbook.md`.
+See `docs/runbook.md`.
 EOF
   fi
 
@@ -495,7 +557,7 @@ files:
   counts_flows.txt / counts_operations.txt — row counts at backup time
 
 Restore:
-  ./scripts/db-flows-sync.sh restore ${stamp}
+  ./scripts/sync.sh restore ${stamp}
 EOF
 
   echo "$dir"

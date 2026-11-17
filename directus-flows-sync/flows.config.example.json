@@ -8,7 +8,7 @@
     "schema": "public"
   },
   "exportSchema": "public",
-  "snapshotDir": "exports/directus-flows",
+  "snapshotDir": "exports",
   "contentOnly": true,
   "pg": {
     "useDocker": false,
