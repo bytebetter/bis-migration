@@ -8,7 +8,9 @@
 - `scripts/db-migrate-selective.sh` — migrate จาก DB ต้นทางไป DB ปลายทางผ่าน `kubectl exec`
 - `scripts/db-dump-selective-backup.sh` — สร้างไฟล์ `.sql` สำหรับ restore บนเครื่องอื่น
 - `scripts/refresh-baseline.sh` — อัปเดต `baseline/bisinfo_selective_initial.sql` จาก Supabase (`SOURCE_DATABASE_URL`) หรือจาก Kubernetes pod
+- `scripts/db-flows-sync.sh` — sync เฉพาะ Directus flows + operations (compare → approve → backup → apply / restore)
 - `docs/db-migration-selective-runbook.md` — คู่มือรันจริงและ restore
+- `docs/directus-flows-sync-runbook.md` — คู่มือ sync flows ไป private prod
 - `docs/production-docker-restore.md` — ติดตั้ง Postgres 16 ด้วย Docker + restore dump บน production server
 - `docker/docker-compose.yml` — **Postgres 16 + Directus 11 + BIS Backoffice (Next.js)** (แนะนำ)
 - `docker/docker-compose.postgres.yml` — Postgres อย่างเดียว
@@ -34,6 +36,12 @@ cp docker/supabase.env.example .env.supabase
 set -a && source .env.supabase && set +a
 ./scripts/refresh-baseline.sh
 # หรือ ./scripts/db-dump-selective-backup.sh
+
+# Flow-only sync (ดู docs/directus-flows-sync-runbook.md)
+cp docker/flows.env.example .env.flows
+# ใส่ SOURCE_* / DEST_* แล้ว
+set -a && source .env.flows && set +a
+./scripts/db-flows-sync.sh compare
 ```
 
 ## นำไป repo อื่น

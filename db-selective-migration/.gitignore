@@ -7,3 +7,4 @@ baseline/*.backup
 .env.directus
 .env.backoffice
 .env.supabase
+.env.flows
