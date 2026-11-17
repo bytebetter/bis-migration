@@ -1,114 +1,106 @@
-# Directus flows sync (source → production)
+# Directus flows sync (git-mediated, two machines)
 
-ซิงก์เฉพาะตาราง `directus_flows` + `directus_operations` จาก DB ต้นทางไปปลายทาง (เช่น private production) แบบ **compare → approve → backup → apply** และมีคำสั่ง **restore** จาก backup ที่ตั้งชื่อได้
+ซิงก์เฉพาะ `directus_flows` + `directus_operations` โดย **ไม่ต้อง SSH** ไปหา prod:
 
-ใช้ DB dump/diff/apply ผ่าน `psql` / `pg_dump` ตามแนวเดียวกับ selective migration — **ไม่ได้** พึ่ง `directus-extension-sync` (ยังมีอยู่ใน repo แต่ไม่จำเป็นสำหรับ flow-only sync นี้)
+1. เครื่องที่เข้าถึง **source** DB ได้ → `export` เป็นไฟล์ใน repo → **commit + push**
+2. บน **private production server** → `git pull` → `compare` / `apply` / `restore` กับ Postgres ท้องถิ่น (DEST เท่านั้น)
+
+ใช้ DB dump/diff/apply ผ่าน `psql` / `pg_dump` ตามแนว selective migration — **ไม่ได้** พึ่ง `directus-extension-sync`
 
 ## ไฟล์ที่เกี่ยวข้อง
 
-| Path | บทบาท |
-|------|--------|
-| `docker/flows.env.example` | เทมเพลต config (คัดลอกเป็น `.env.flows`) |
-| `.env.flows` | secrets จริง (gitignored) |
-| `scripts/db-flows-sync.sh` | CLI หลัก |
-| `scripts/db-flows-common.inc.sh` | helpers + reuse `db-selective-tables.inc.sh` |
-| `backups/flows/` | export / dated backups (gitignored ผ่าน `/backups/`) |
+| Path | Git? | บทบาท |
+|------|------|--------|
+| `exports/directus-flows/` | **commit** | snapshot จาก source (SQL + fingerprints) |
+| `docker/flows.env.example` | commit | เทมเพลต config |
+| `.env.flows` | **ignore** | secrets จริง |
+| `backups/flows/` | **ignore** | runtime backup ก่อน apply/restore |
+| `scripts/db-flows-sync.sh` | commit | CLI |
 
-## 1) Configure
+## Stage A — Export (เครื่องที่ถึง source)
 
 ```bash
 cd db-selective-migration
 cp docker/flows.env.example .env.flows
-# ใส่ SOURCE_DATABASE_URL + DEST_DATABASE_URL (และ schema)
-# ถ้า prod ฟังแค่ 127.0.0.1 ให้ตั้ง DEST_SSH_* หรือเปิด tunnel เอง
+# ใส่ SOURCE_DATABASE_URL + SOURCE_SCHEMA (+ EXPORT_SCHEMA=public)
+# DEST_* ไม่จำเป็นในขั้นนี้
 set -a && source .env.flows && set +a
-chmod +x scripts/db-flows-sync.sh
+
+./scripts/db-flows-sync.sh export
 ```
 
-### Source (เช่น Supabase / Fly backoffice-dev)
+เขียนลง `exports/directus-flows/`:
 
-- ใช้ Direct connection (`:5432`) เหมือน `docker/supabase.env.example`
-- `SOURCE_SCHEMA=bis_dev` ถ้า Directus อยู่ schema นั้น
+- `directus_flows_operations.sql` — data-only INSERTs (schema = `EXPORT_SCHEMA`)
+- `fingerprints/*.tsv` — สำหรับ compare บน prod โดยไม่ต้องมี live source
+- `MANIFEST` — metadata (เวลา, schema, counts)
+- `README.md` — คำอธิบายสั้นๆ
 
-### Destination (private prod)
-
-- `DEST_DATABASE_URL` ชี้ Postgres ของ prod
-- `DEST_SCHEMA=public` ตาม Docker prod ใน repo นี้
-
-### SSH tunnel (optional)
-
-ถ้า Postgres บน server bind `127.0.0.1:5432` ให้ตั้งใน `.env.flows`:
+แล้ว commit ชุดนี้ intentionally:
 
 ```bash
-DEST_SSH_HOST=user@prod-server
-DEST_SSH_LOCAL_PORT=15432
-DEST_SSH_REMOTE_HOST=127.0.0.1
-DEST_SSH_REMOTE_PORT=5432
-DEST_DATABASE_URL=postgresql://bis:PASSWORD@127.0.0.1:15432/bisinfo
+git add exports/directus-flows/
+git commit -m "Update Directus flows snapshot"
+git push
 ```
 
-สคริปต์จะเปิด `ssh -L` ให้อัตโนมัติเมื่อมี `DEST_SSH_HOST` (และปิดตอนจบถ้าเป็น process ที่มันเปิดเอง)
+## Stage B — Apply บน private prod server
 
-## 2) Compare (default / dry-run)
+Server คุยกับ Postgres ของตัวเองได้โดยตรง — **ไม่ต้อง** `SOURCE_*` และ **ไม่ต้อง** SSH tunnel
 
-ไม่เขียนอะไรลงปลายทาง
+```bash
+cd /path/to/bis-migration/db-selective-migration
+git pull
+
+cp docker/flows.env.example .env.flows   # ครั้งแรก
+# ใส่เฉพาะ DEST_DATABASE_URL + DEST_SCHEMA (เช่น 127.0.0.1:5432)
+set -a && source .env.flows && set +a
+```
+
+### Compare (default / dry-run)
+
+เทียบ **committed snapshot** กับ dest สด — ไม่เขียน DB
 
 ```bash
 ./scripts/db-flows-sync.sh compare
-# หรือแค่: ./scripts/db-flows-sync.sh
 ```
 
-สรุปแบบมนุษย์อ่านได้: **added / removed / changed** ของ flows และ operations (เทียบ fingerprint ของเนื้อหา — ค่าเริ่มต้นไม่นับ `date_created` / `user_created`; ตั้ง `CONTENT_ONLY=false` ถ้าต้องการเทียบรวม)
+สรุป **added / removed / changed** (ค่าเริ่มต้นไม่นับ `date_created` / `user_created`)
 
-exit code `1` ถ้ามี diff, `0` ถ้าตรงกัน
+### Approve + apply
 
-## 3) Export (optional)
-
-```bash
-./scripts/db-flows-sync.sh export --side source
-./scripts/db-flows-sync.sh export --side dest --out /tmp/dest-flows.sql
-```
-
-## 4) Approve + apply
-
-ลำดับใน `apply`:
-
-1. รัน compare อีกครั้ง
-2. ขออนุมัติ — พิมพ์ `yes` หรือส่ง `--approve` (หลังรีวิวแล้ว) สำหรับ non-interactive
-3. **backup ปลายทางเสมอ** → `backups/flows/<YYYYMMDD_HHMMSS>/`
-4. แทนที่ข้อมูล flows/operations บน dest ด้วยของ source (`TRUNCATE` + load ภายใต้ `session_replication_role=replica` เพื่อวน FK)
-5. compare ซ้ำเพื่อ verify
+1. compare อีกครั้ง  
+2. approve — พิมพ์ `yes` หรือ `--approve`  
+3. **backup dest เสมอ** → `backups/flows/<stamp>/` (gitignored)  
+4. แทนที่ flows/operations จาก snapshot SQL  
+5. compare ซ้ำเพื่อ verify  
 
 ```bash
 ./scripts/db-flows-sync.sh apply
-# หรือหลังรีวิว diff แล้ว:
 ./scripts/db-flows-sync.sh apply --approve
 ```
 
-> สคริปต์นี้ **ไม่** ชี้ production ให้เอง — คุณต้องใส่ `DEST_*` เอง และต้อง approve ก่อนเขียน
-
-ต้องการแค่ backup ปลายทางโดยไม่ apply:
+### Backup อย่างเดียว / Restore
 
 ```bash
 ./scripts/db-flows-sync.sh backup
-```
-
-## 5) Restore
-
-```bash
 ls backups/flows/
 ./scripts/db-flows-sync.sh restore 20261117_153045
-# non-interactive:
 ./scripts/db-flows-sync.sh restore 20261117_153045 --approve
 ```
 
-ก่อน restore จะสร้าง safety backup ของสถานะปัจจุบัน (`*_pre_restore`) ให้อัตโนมัติ
+ก่อน restore จะสร้าง safety backup (`*_pre_restore`) ให้อัตโนมัติ
 
-แต่ละโฟลเดอร์ backup มี `README.txt` สั้นๆ และไฟล์ `directus_flows_operations.sql`
+## Git hygiene
+
+| เก็บใน git | ไม่เก็บ |
+|------------|---------|
+| `exports/directus-flows/**` (snapshot ที่ export แล้ว) | `.env.flows` |
+| สคริปต์ + runbook + `flows.env.example` | `backups/flows/**` (runtime) |
 
 ## ข้อควรรู้
 
-- ต้องมีสิทธิ์พอบน dest สำหรับ `TRUNCATE` และ `SET session_replication_role` (user ใน Docker Postgres เริ่มต้นมักเป็น superuser ของ instance นั้น)
-- ไม่แตะตาราง Directus อื่น (permissions, users, …)
-- หลัง apply บน prod ที่ Directus กำลังรันอยู่ อาจต้อง reload/restart Directus ถ้า UI แคช flow เก่า
-- อย่า commit `.env.flows` หรือไฟล์ใต้ `backups/`
+- บน dest ต้องมีสิทธิ์ `TRUNCATE` และ `SET session_replication_role` (user ใน Docker Postgres เริ่มต้นมักพอ)
+- ไม่แตะตาราง Directus อื่น
+- หลัง apply อาจต้อง reload/restart Directus ถ้า UI แคช flow เก่า
+- Snapshot มี logic ของ flows — จำกัดสิทธิ์คนที่ push ได้ตามนโยบายทีม

@@ -1,0 +1,882 @@
+0025b1c9-f263-4e36-8320-dabab1825af4	อัพเดท status exam เป็น รอเรียกคิว
+004d7b6d-5aba-43fb-a29a-c7a3aad15571	สร้างข้อมูล coordinate
+00d43bb2-6e3f-4340-a071-5ecd2e288d84	check_queue_m
+00e7fd28-5270-445a-9556-8b126d0c2409	อ่านข้อมูล Patient Info
+016ec2ca-e989-459a-b466-cb3e4f185b66	เช็คว่า appointment_datetime ไม่ใช่วันนี้ ใช่หรือไม่
+0198f454-4b30-4782-b119-7de7e562e215	อัพเดทฟิลด์ pid ของ patient_info ตาม id
+01a0f9bd-69af-425c-8e63-dc98ecbecd34	เช็คว่าเป็นถ่าย Mam หลัง us หรือไม่
+01d41964-be52-45c9-9629-ebcc03f21ada	เช็ค status ของ exam ว่าเป็น "ส่ง MAM - รอเรียกคิว" ไหม
+021cd600-e57b-4d74-8ac9-62e50618e7b6	check_queue_status_3
+02554e7d-7c6f-44c7-b910-2fd9a5dfcafa	อัพเดทฟิลด์ status ของ queue เป็น กำลังดำเนินการ
+027be0a4-d764-415b-91a8-5a08902a7a46	หน่วงเวลาเปลี่ยน status (ให้ผู้ใช้งานดูข้อมูลก่อนปิด dialog)
+028e9b83-924b-43e7-920a-20c289284b2b	ลบ queue id ที่ผูกกับ appointment 
+02cebba9-d89c-4d59-929b-bfbff576d540	ย้ายไฟล์ไปที่ Folder Result Request Form
+02ead41e-146d-4ff7-8fcb-86ba2df9a952	อ่านข้อมูล appointment
+037668f4-9ddd-44ad-ad81-a8c0a2ccade4	เช็คว่า status coordinate เป็นอะไรแล้ว return status ของ doctor_work ออกไป
+03e28967-cd40-4807-85ab-fa9e321f4de8	check_queue_status_1
+03e3261f-3d45-4d8a-adc4-28640700a46b	สร้างข้อมูล billing
+04355e76-f0c8-4fba-a35a-62d061852017	อ่านข้อมูล Nurse work
+04cd9a21-513b-4ed0-98d8-b35c20250ca7	เช็คว่า user ที่ถูก trigger มี email หรือไม่
+05976409-0ba8-4e6a-bea6-415468ba0c1d	อ่านข้อมูล appointment
+05e337ad-4cd9-46f0-984b-42a84d8fb54f	สร้างข้อมูล center_income (CD)
+062ac778-e47c-486a-82ab-1312b495b58e	เช็คว่ามี่ officer แล้วหรือยัง
+0685840b-b346-49a7-b2e0-526891aedfe9	อ่านข้อมูล pacs_sync_info
+06b08916-3876-4153-b70c-d747ee970b92	อ่านข้อมูล coordinate
+06d3eb40-94e1-4bf0-8471-9e203d3ec8a1	เช็คว่ามี officer หรือไม่
+072fe4df-fb8c-4bfa-8482-d1f7f68c3313	เช็คเงื่อนไขและ return id
+073daeec-d1d9-4e16-b648-0f16e1ff40b9	อัพเดทฟิลด์ pid ของ patient_info เป็น id โดยไม่มีตัว K นำหน้า id
+08041e42-7564-472d-9b09-b7157ec6106c	อัพเดทฟิลด์ status, close_cast_time ของ progress ตัวสุดท้าย
+081d083c-e0f7-4041-9b98-84d711fda144	Trigger Flow
+083d26f5-d4f1-437a-a6f7-30fc9f91b456	เช็คว่ามี statusTriggerFlows และ action เป็น ปล่อยกลับบ้าน, Confirm Bx หรือไม่
+084d8516-7cfd-487e-bc07-a8f7f4115017	ปั้น body examination
+0880e993-49b2-4a0e-8835-09237de17696	อ่านข้อมูล exam
+08a9840d-2c2c-415c-833a-78baad625b17	เช็คว่าเป็นเคสเปลี่ยน accession_id ไหม
+09320da1-f955-41ca-95b6-5f0451e5dfe9	return ค่า id ของ progress ตัวสุดท้าย จากข้อมูล worklist ที่ถูกอ่านมาก่อนหน้านี้
+096df5a6-04d1-41bf-8c63-5d489f5c0225	Check unsign from signed
+097fe629-0442-4516-af79-01c84fa7dd72	สร้าง Center Income
+0988be74-3a09-4199-bb29-fd72ed307321	return ค่าวันที่และเวลาของ เวลาเริ่มต้นของวันพรุ่งนี้
+09a14f22-5260-410b-8d92-f58dcc2abe34	อัพเดทข้อมูล Coordinate
+09c227dd-df94-40dc-9ec3-3b733aa49feb	check_patient_info
+09cafffb-679b-4613-a53e-9828069295e5	return body ของ data เพื่อนำไป create ต่อ
+09d9ac8c-e63d-48c5-975d-f7093a0f0df1	เช็คว่าเคสนี้สร้าง Ultrasound_work ไปแล้วใช่หรือไม่
+09e2281e-acde-47e9-9784-89a58af6d670	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย
+0a55c8a6-550d-465d-84c1-cfb2e5f98037	อัพเดทจำนวนเงิน
+0a762c3f-45d6-4454-b139-72735f102e45	อ่านข้อมูล Ultrasound_work
+0a889b5a-d657-47c0-be24-e1053ff8c4af	เช็คสถานะของ appointment ว่าเป็นส่งตรวจ หรือไม่
+0ae8c334-4e7c-4733-b1b2-17928ea3774f	อ่าน ultrasound_work
+0b14fc33-7c1d-4c5f-bdf6-0ca0e6f7cfeb	อัพเดทฟิลด์ is_insert_queue ของ appointment
+0b57264f-7820-47a0-9b5f-21c6a1b68d9b	return ค่า id ของ progress ตัวสุดท้าย จากข้อมูล worklist ที่ถูกอ่านมาก่อนหน้านี้
+0c17a0b2-9a1b-45b6-b27a-9aa120f079f6	เช็คสถานะ queue ว่าเป็น เรียกคิวแล้ว หรือไม่
+0c64b43e-fc74-45da-b34e-48b561ff8972	เช็ค action เป็น confirm_bx ใช่หรือไม่
+0c7a67f0-99b6-4f48-9777-60ce822cee2d	เข้า Trigger Flow Read environment data
+0ca29bba-47bf-4fb2-a02b-27131f942487	Read current modality row
+0d34d7fe-a28d-4c8b-9716-9ebfce149b34	สร้าง progress แพทย์วินิจฉัย
+0d4e66a2-a176-43dc-b875-f5b8af3f3704	bulk update ไปที่ pacs_sync_info
+0dcf1930-8eaa-4091-ac22-4c620edb0f10	Create Data
+0e6a079a-e95c-4db9-a7c3-50961dd20271	check_queue_status_4
+0eac2de1-a249-4972-b2d9-4a2930b0d66d	สร้างข้อมูล Finance_work
+0f6de08e-d56c-42d7-861a-925ef0276c81	Update Data
+0fa988ab-3f45-446e-aa17-1ffaba583b41	เช็ค Triggerflows และสถานะ us_work ว่าเป็น เริ่มถ่าย ใช่หรือไม่
+110791da-7bb4-46c3-9da8-49e92301be5f	อ่านข้อมูล examination ที่ถูก trigger
+1114a78f-56ad-444b-821d-529343eb1175	Trigger Flow
+11608282-1f33-4af5-9388-618c17f5f411	อ่านข้อมูล environment
+1180fb3f-c3f8-43c8-87c7-9239e0d554c2	อ่านข้อมูล Appointment 
+1261d3f6-5b50-4b38-8f1b-4bfd17f41f3d	return ค่า id ของ progress ตัวสุดท้าย จากข้อมูล worklist ที่ถูกอ่านมาก่อนหน้านี้
+12648482-abe6-4f99-a763-473016f42414	อ่านข้อมูล Ultrasound_Work
+12a7a01f-3d57-4aaf-afd4-cd0c45461ce4	อัพเดทฟิลด์ title, close_cast_time, status ของ progress
+12b39303-129c-4c53-bb15-25bee86d8660	อ่านข้อมูล queue ที่ผูกกับ patient_result
+12bd5b62-6366-4cce-a39d-5b9a13b991f4	สร้างข้อมูล Center Income
+12e2b43a-c1d8-4caf-84a4-6525553c1e86	ลงเวลาเป็น spot_called_time
+1335a958-bc05-4407-bbd4-ae35d213bb28	เช็คว่าเป็นเคสเปลี่ยนแพทย์ไหม
+1345e278-0f35-44f0-b55a-4e0b208ef5dd	read_data_worklist
+139f0871-c81b-4e8b-8dc5-de5c0dbed4fc	Create Data
+13d37aff-8aee-448d-bfc4-63761444ba84	อ่านข้อมูล queue ของ appointment ที่อ่านมาก่อนหน้านี้
+13d6161f-737f-41df-8f21-16876fd9f5ff	อ่านข้อมูล appointment
+13f5e1dc-2b60-400f-a62d-e746fef930fa	เข้า Trigger Flow Progress Created (v. ส่ง id)
+142040b7-2959-4b9e-b709-c04ffc3e893f	check_update_queue_status
+14940bc8-ffa3-41a9-b273-7a471bef9d45	Trigger Flow
+157f568a-644d-42d0-97ea-5603d4944a50	อัพเดทฟิลด์ status, close_cast_time ของ progress ตัวสุดท้าย
+15c0461e-17ab-4c21-853b-adffd06392b8	current_time
+15da3db4-92d0-4915-97bf-6d3aa45a62c5	filter หา center income ที่เป็น copy cd
+1627869e-b77a-4b13-a172-af92c3b92b02	อ่านค่า ultrasound ทั้งหมด ของ patient คนนี้
+1630c621-d1c2-4595-b70c-b0489e6d0f74	เช็คว่ามี triggerFlows หรือไม่
+168ea2bd-36b9-4813-a6ee-10fe3c196280	เข้า Trigger Flow Read environment data
+17985bc1-e566-49c1-ad4e-d63077ce9769	เช็คว่า F14 Report คือ ยกเลิกเคส หรือไม่
+17b4d5f1-639e-4108-b79b-336097ca100a	return ค่าวัน-เวลาของตอนนี้
+1804bd3d-ceb0-4387-9c58-c0ee0423d685	อัพเดท bx_status เป็น "รอเรียกคิว"
+18186e5b-aec7-46b5-bb18-a0226cfbb62e	return ค่า id ตัวสุดท้ายของ progress
+184e4429-2e9c-4950-9507-9648edbd29ef	คิดเงิน (MAM)
+184f36b8-e482-4802-a07e-a376177a8938	read_patient_info
+189b2fc0-9b13-4b35-a8ad-b233f808e4a0	สร้าง progress ผู้มาตรวจทำ US (เตียง ?)
+18cf8f04-afa4-421a-a961-8648e3c73ad3	อัพเดทฟิลด์ title, close_case_time, status ของ progress
+18d43680-4c8a-41a5-9695-5a6b74ee682e	Update Data
+190a07da-3119-4843-ae71-e821fd7545ab	เข้า Trigger Flow Read environment data
+1913fa4a-1d06-4f53-862c-a7356191662e	สร้างข้อมูล patient_result ตาม body data ที่ถูกส่งมา
+194daf62-59a3-4dea-b445-282aaf377b8b	เช็ค triggerFlows และ action ว่าคือ Confirm Bx หรือไม่
+19731793-b1f5-4cf3-b739-a49f2857a459	เช็คคิวเป็นคิว R เพื่อส่งค่า progress title ตัวแทน , ผู้มาตรวจ
+19760b4f-5958-40aa-8ea8-7f07ae79aea0	สร้าง progress ยกเลิกเคส
+1a9b9703-bbc4-4453-b58d-bf7d19a4ef29	เข้า Trigger Flow Progress Created
+1a9c5c91-9c11-4904-8cce-8b42f14d3364	เข้า Trigger Flow Progress Created
+1b3e6c1f-1e69-4cd0-bc3a-ccd4ff8f9bab	อ่านค่าเวลาต้น+สิ้นเดือนปัจจุบัน
+1b7fe772-ac3d-4ff7-a86c-8b8ea0cfd41c	อัพเดต last_signed_to_pacs ของ ultrasound_work ของวันนี้
+1ba3594a-94eb-40fd-bb49-dab4bca02584	สร้าง progress รอจัดสรรเตียง
+1be48ccd-0eeb-4a56-996c-d0e13e981767	return ค่าวัน-เวลาของตอนนี้
+1cb214ce-ee14-4934-8da7-08db3f281dd2	อ่านข้อมูล appointment ที่ฟิลด์ referral_form
+1d2de90c-6e4d-40ca-8389-edfa02a45233	เข้า Trigger Flow Progress Created
+1daa21e5-3b4f-4d94-999f-a1599fb83a81	เช็คสถานะ patient_result ว่าเป็น รอจัดส่ง หรือไม่
+1e00b341-3245-4cf3-9158-2cb01ced0b25	อ่านข้อมูล progress ตัวสุดท้าย
+1e3d6ce9-6c68-4ba3-b976-baedbcf033ad	เข้า Trigger Flow Progress Created
+1ead5467-a819-4f93-bcc1-de37c73b7290	ไปอัพเดต notifications ให้เป็น "achieve"
+1ee8d910-7718-414b-98cd-1f76e9fee1ac	อัพเดทสถานะนัดหมายทั้งหมดให้เป็น ไม่มาตามนัด
+1f29fc1a-4dc5-4030-8363-191baa73f9b9	อ่านข้อมูล income ทั้งหมด
+1f3de93d-f657-4930-ba4c-876e13eeeaef	สร้างข้อมูล center_income (CD)
+1f65eef0-0048-4780-bfea-875d0b173010	check_queue_status_2
+1f81adf9-8311-481d-b8f7-b8d83ff5dcd7	check_last_progress (รับผล)
+1fbd7ea3-06be-412f-9ad8-e38ca83bf398	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย
+2006c00b-a635-4428-bbf6-50f74e212de7	อ่านข้อมูล worklist ที่ผูกอยู่กับ queue
+209ef837-dda3-4c9f-8428-ef9cc6d682b8	เพิ่ม ultrasound_work ลงไป
+20ac814a-f7ba-45b5-bd88-d608b90025d5	Update Data
+20f623ae-f797-4f6c-bf00-c050298dd6e5	เช็คว่า queue มีตัวแทนมารับผล หรือไม่
+21336352-4333-4015-bd6b-5cdeb3b298d1	return ค่าของวันนี้
+2160b79a-b00f-4a2e-bbce-aa218100fc4f	ยืนยันจำนวนรูปที่ถ่ายใน  pacs_sync_info
+21cbe656-af1a-4a67-8607-17465d9cdcb9	เตรียมข้อมูลสำหรับสร้าง nurse_work 
+21dc2cd3-f869-4a02-b467-3045393791ca	อ่านข้อมูล appointment
+21eb35c4-b207-44dc-a4df-86f7447bcf15	ปั้นข้อความแจ้งเตือน
+2209f21d-6005-44b8-a0df-c73b8690fef4	อัพเดทข้อมูล Finance_work (รอบันทึกรับเงิน)
+2217a3bb-a397-4365-98d7-479c940ea216	เปลี่ยน status ของ doctor_wok เป็น "รออ่านผล"
+2241d73b-e784-43ee-b570-2516f746c131	เช็คว่า appointment_status ของ appointment ที่ถูกอ่านมาก่อนหน้านี้ เป็นส่งตรวจหรือไม่
+2241db89-10b5-4ec8-a858-c6ab5d31d734	read_environment
+22d78396-c087-4c64-9bf7-4d9056374427	เช็ค action doctor
+23a61051-137a-4bdc-85de-ac1da8bda431	เช็คว่า status เป็นกรณี "ปิดเคส" หรือไม่
+23b0c961-832d-450d-b561-c0498cc9f39d	อ่านข้อมูล nurse_work
+23fd6bfb-d9db-4666-959a-31892dceacba	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย
+2412672f-add5-4692-9b30-9c1405b12f72	Create Data (รับผล)
+2448046c-41e6-4179-bfa1-0adf218e40ae	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย
+249a53b5-908e-4a9b-80bb-88949a8328cf	check_last_progress (เลขใบเสร็จ)
+24ae1511-7a3b-4ffa-9eb4-b306b3ad2085	อัพเดต status ของ doctor_work ใหม่
+24c591c0-e195-467e-9f92-18d80e52e37d	เช็คเงื่อนไขว่าไม่ใช่เคสที่สร้างจาก us ส่ง confirm_bx
+24df69e2-cd65-45dc-aec7-304a73512487	เช็คสถานะของ progress ว่า ไม่ใช่ยกเลิกเรียกคิว ใช่หรือไม่
+2514bc28-9e80-4840-a5db-e2f32083e624	เช็คว่า appointment มีคิวหรือไม่
+25b5633c-f960-4dce-9686-862e96b1f0b3	เช็ค CopyCd Change
+26427818-9803-4b32-95bd-d8eff369406a	Trigger Flow
+26703b92-5cc6-4584-96af-4e4370035e2b	เช็ค pid ว่ามีตัวอักษรหรือไม่
+2681240f-3d6c-4cea-a323-6343c645e8a2	เช็คว่ามี statusTriggerFlows และ action เป็น แพทย์อ่านผลเพิ่ม หรือไม่
+26b2bc43-cf77-465b-b60a-c0a09bfaa4e4	เข้า Trigger Flow Progress Created
+26f270f2-9862-4e41-81d6-1c43f7856778	อัพเดต status ของ doctor_work (เคสก่อน US)
+271b965e-46b3-4639-8d61-c0645529791c	อ่านข้อมูล appointment
+2731ac71-d478-4144-9bb4-8e955f3f08c5	อัพเดทฟิลด์ officer ของ progress
+277135a6-a366-4017-8ca0-5a509b9692a1	อัพเดทฟิลด์ doctor ของ progress
+27dda91c-9019-46a5-a62a-5cb565e24cac	Update Data
+27facdb2-9e65-4b42-832b-b8a22b1fc5af	sort data by id
+280fef7a-1654-40da-baa5-5920798d50ad	อ่านข้อมูล Ultrasound_work
+2907bc57-8828-4905-98e7-7a3140907267	คืนค่าเวลาเริ่มต้นของวันนี้
+293d3eb0-fe12-499b-a2c1-87c34eb25257	อัพเดทฟิลด์ status, close_cast_time ของ progress ตัวสุดท้าย
+29749c4d-a5ff-49e0-8d9f-989de46f0cc5	check_socid_hn
+29b22aee-3c8e-4f10-9305-37d858f8cea3	อ่านข้อมูล worklist ที่ผูกอยู่กับ queue
+29c9ffdf-2716-41bb-b111-770cc88e458b	อ่านข้อมูล notification
+29d5480b-7b53-492f-b593-fc54f6415224	Log to Console
+2a769286-5086-47b6-856c-34329cb8730e	อัพเดทฟิลด์ status ของ patient_result ที่ผูกกับ queue เป็น รอเรียกคิว 
+2ae8d69d-b5f0-4062-86a6-4181c0a0d3fc	อัพเดต examination เป็น "spot หลัง us"
+2b504ff1-1a1a-40b7-af83-299ace8839f6	อัพเดทฟิลด์ end_time ของ worklist ที่ผูกอยู่กับ queue
+2b52e24c-c6ef-4b18-b983-b4e1a22bb586	Trigger Flow
+2bbf21f3-1b5e-4c97-b06e-4f70a57dc69b	ลบเวลา spot_called_time
+2c04badc-ab9e-41e5-8962-aa34cbf0935a	เช็ค doctor_id และ status_trigger_flows มีค่าหรือไม่
+2c3943e1-d069-4f7a-81ce-997b257a1947	อ่านข้อมูล Finance_Work
+2cbe2557-1ecf-4401-a61f-9402a46c62ac	สร้างข้อมูล  appointment
+2cf69929-ad17-4355-b5d8-2db8e20483c4	Update Data
+2cf6c3c7-5473-40db-918b-20026a2d8ba7	เข้า Trigger Flow Read environment data
+2d93efbe-3044-4dcf-94b2-a1801edf9e88	เข้า Trigger Flow เช็คสถานะ Progress ตัวสุดท้าย
+2db0164c-47da-49cb-9259-59af5b22c769	return ค่า array ของ ID นัดหมายทั้งหมดจาก nurse_work
+2e8a0bdd-e6b5-409b-aaf9-321439a5d9b8	อัพเดทข้อมูล Finance_work (ชำระเงินแล้ว)
+2f1e2676-5796-4388-8b23-05c7f7829188	เช็คว่า status เป็นค่า ยกเลิก ใช่หรือไม่
+2f5943b6-8fd7-4434-909c-9bd3c88fa862	Save corrected
+2f5ac5b4-9eca-4bb8-b97c-698ceaec3260	อ่านข้อมูล patient_result ที่ผูกอยู่กับ queue
+2f635067-7335-4aff-beaf-1129a764de71	อัพเดทสถานะนัดหมายทั้งหมดให้เป็น ไม่มาตามนัด
+30d36054-8b51-42fb-8666-fd41defdcf99	อ่านค่า ultrasound_work ตัวล่าสุด
+3163ab61-acbf-417b-84fd-7c66cc831f3d	อ่าน ultrasound ที่ส่งเข้ามา
+3164af1a-52b6-4710-8004-e0b70dad1748	Log to Console
+318742c6-3dd8-490b-a5a5-f2e208602021	อ่าน ultrasound_work ของวันนี้
+31bc574c-8fbf-4567-9436-008d23aed035	check_queue_status_1
+33144962-94a0-4cde-b911-056801de5816	อ่าน exam ล่าสุด (ครั้งที่ผ่านมา)
+33317b1a-d05b-4470-b3a4-d2069395b97a	เปลี่ยน has_recommend_bx_form เป็น true
+34421518-f22e-4093-b515-f226e33972bf	return ค่า id ของ progress ตัวสุดท้าย จากข้อมูล worklist ที่ถูกอ่านมาก่อนหน้านี้
+34a54a3d-c779-4928-a141-00d0bd44d311	เช็คว่า status เป็นกรณี "ถ่ายเพิ่ม" หรือไม่
+34e57379-2546-4c58-86c3-428aa31a7a2a	เช็คว่า front_note_1 มี รับผลตรวจวันนี้, รับผลเป็น CD หรือไม่
+34f70b23-33c3-471f-8eab-c4c61ec795f7	read_data_queue
+35806b94-002a-4efa-b928-2586fa724cb7	สร้างข้อมูล exam
+3628e59f-3a1a-45a8-982e-ea9b8e2ce96c	สร้าง progress ส่งต่อเคส
+36bbf4da-28bd-4ec2-aad9-29dbfbc33b67	อ่านข้อมูล queue
+36e844d0-50e2-430b-bf2a-d0799bd5ef3b	อ่านข้อมูล patient_info
+36f3dc5e-7242-4941-9359-550a0ef6a2a4	เช็คว่าเป็นคิวประเภท R และสถานะไม่เป็น เสร็จสิ้น และที่ฟิลด์ patient_result ไม่เป็นค่าว่าง ใช่หรือไม่
+36f830f9-24ef-4a19-ab51-9c810ee2a857	อ่าน examination
+37059709-8059-49ca-b715-95cb1be63225	อัพเดท Bx_status
+37089f4f-86f7-4565-9952-a9eb5ea38651	return วัน-เวลาของปัจจุบัน
+3755a54d-74a8-45db-8c11-364bb0948e3c	เช็คว่าเป็นเคสส่งทำ ultrasound หรือไม่
+37861d8b-26d6-4dec-b64a-6a256596db34	check_patient_info
+379b1df9-9555-4bdd-a28b-8fec7a6db122	อ่านข้อมูล billing
+37c4e88f-a4d8-4c2f-bdad-28a788940f76	เช็คว่ามี triggerFlows และ action หรือไม่
+37c847ac-8392-440e-911f-92a69edd3949	อ่านข้อมูล doctor_work ที่ผูกกับ exam นี้
+37e1c395-57cf-45b6-b7dd-8a87a9282f2c	ดึงเวลาปัจจุบันออกมา
+37f35e00-2f2e-4d22-94de-3155585a2dd0	อ่านข้อมูล Doctor_Work
+382cae8e-eb2a-4d2b-9dcd-31285fb4a690	อ่านข้อมูล Doctor_work
+3923b8b9-3860-4286-8265-a3fc896f6817	เช็คว่าเป็น case timestamp ไหม
+393135d7-b716-4e2b-b56d-513d304dcca4	อ่านข้อมูล financa_work
+3988243c-b228-405b-8175-3a64a4931261	อ่านข้อมูล Progress ตัวสุดท้าย
+39ab7d44-81c1-42dd-925f-2bc1a2182968	return วัน-เวลาของปัจจุบัน
+39f8a264-f903-4b6e-9bf6-a55944886f78	อัพเดทสถานะ doctor_work
+3a154f8b-6fe7-4014-a31a-a163f0efe3d8	อ่านข้อมูลจาก pacs_sync_info
+3a4d3f4d-0fc0-45f2-a61a-96c98199710b	เช็คว่ามี statusTriggerFlows และ status เป็น เสร็จสิ้น หรือไม่
+3a688efc-24fb-4ea4-a8fa-9a26b352c281	check_queu_status_3
+3a6e5e87-5b75-4df3-82f9-b2b11fe7c877	check_queue_status_1
+3aae050b-0661-41c4-a52d-7b2af26f0ce4	เช็คว่าเป็นคิว M หรือ BX หรือไม่
+3ad76fc7-c736-49ac-aca5-9bd81dd8973f	Trigger Flow
+3ae6685f-b135-4460-8054-e80ea3be05db	เช็ค status ของ exam ว่าเป็น "ปิดเคส" ไหม
+3b0aba87-5b6f-4e22-9240-8e18db95bccc	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย
+3b37f37d-94da-4eb1-bc79-bdd37a06a9be	นำค่า exam จาก ultrasound ตัวล่าสุด ไปอัพเดตใน last_signed_to_pacs
+3b882040-0243-4f38-be1b-9b77d460b03f	สร้างข้อมูล Finance Work
+3bbcff28-3c07-4b89-9b93-739c1837be74	return ค่า id ของ progress ตัวสุดท้าย จากข้อมูล worklist ที่ถูกอ่านมาก่อนหน้านี้
+3bef5176-57c7-438c-95f5-94b6e6157d0e	อ่านข้อมูล queue
+3c3de676-89a4-4e41-ba37-5b5068f9f5fe	อ่านข้อมูล worklist 
+3ca604a4-0492-4b3f-8b5a-b18b3a63b40e	สร้าง progress รอจัดสรรแพทย์
+3d6774bd-b1c7-4046-be66-7e2300af6d08	อัพเดทเลขใบเสร็จ center_income
+3da5a3eb-3b21-4fcb-a69a-aa1eb2b3418b	อ่านข้อมูล patient_result ที่ถูก trigger
+3e0f380b-d284-4176-8a28-c04a9db991a8	อ่านข้อมูล nurse_work
+3e774713-7aae-442a-9f89-49eec553fcf2	อัพเดทข้อมูล notifications
+3fcba7bc-ebb2-4198-9de5-f80b3ff8d901	read_data_worklist
+3fe19f05-4dc5-4691-9831-1e4c9d2e7476	อัพเดทฟิลด์ status ของ patient_result ที่ผูกกับ queue เป็น เรียกคิวแล้ว
+402b78e1-95cf-4a1f-95d9-e83366111013	อัพเดทข้อมูล billing 
+404b3ce4-95de-4340-82cc-0052f568cd11	last_no_progress
+41453c3b-4766-4852-835c-562a4c8fc0b7	อัพเดทให้ผู้มาตรวจเป็น คนไข้เก่า
+418105e9-a468-4422-b81b-6c662cd1a98e	เช็คว่าเป็น create หรือ update
+419b1bd0-140a-4e20-bac2-584b353ac34a	เช็คว่าสถานะ Coordinat ถูกอัพเดทเป็น เสร็จสิ้น ใช่หรือไม่
+41e41df6-3865-432b-943e-78955e9ce845	อัพเดทสถานะ Doctor_work เป็น รออ่านผล/Confirm Bx
+42886dbb-bb32-4e4f-9fe2-b7cfbeab7d0f	เช็ค make_payment
+42c14186-5cbb-400c-89b6-f8b451c8e4da	อ่านข้อมูล progress ของ id ที่ถูกส่งมา
+42f2a014-5485-4557-822e-c39ea232fa82	อัพเดทข้อมูล notification
+42fa887c-95dd-4efb-b08b-deaf7797bfc8	check_queue_status_3
+434678da-48db-4afa-8394-244b360b606f	อัพเดทฟิลด์ title, close_case_time, status ของ progress
+437e4482-53fd-49b7-b2fd-16977e148cec	Operation คิดเงิน
+43959dfe-a2d7-4dfe-95fa-90fa552b23ec	เช็คค่าว่าเป็นเคสเปลี่ยนแพทย์ไหม
+43b0d904-4479-41d0-bfdf-34d8e4e17666	Get exam id
+4407e6f5-aea8-4d4e-867d-560299c6b8d1	Find nurse_work
+446502c8-9229-46ac-adaa-3cc98bda1abb	read_data_queue
+44673fa4-f7f7-46fe-a1be-37d391070357	สร้าง progress เจ้าหน้าที่ Front(F14) ยกเลิกเคส
+446ce153-a8a9-47db-8f60-18c190425962	อ่านข้อมูล appointment
+44b110c3-7b58-4300-a511-c9fe3d4e8cd4	อัพเดทข้อมูล doctor_work ฟิลด์ หมอ
+44c5f0e1-ba3c-4263-9207-178a470d126f	สร้าง payload โดยแยก case ตาม status 
+454e1b90-728a-4e86-a8a3-a05bb7853d39	เช็ค isStop
+4586e6a8-c2bd-44a1-b732-39fbe63e6140	อ่านข้อมูล progress ตัวสุดท้ายที่ถูกส่งเข้ามา
+45be11ee-ee4d-4e1c-8a73-b7db9881699a	ดึงค่า is_front_noti ที่เป็น boolean ออกมา
+45ebc37b-73ea-46a4-8423-d8e6c48aa3ec	อ่านข้อมูล examination
+45fef03d-a498-4b3e-b1a6-b343dfb69654	เข้า Trigger Flow Read environment data
+46d2e5bb-a790-4335-bd13-a43837e6d80a	อ่านข้อมูล patient_info ตาม id ของ patient_info ที่ผูกมากับคิว
+4724eab2-403d-4a8e-aa39-c59808a0838e	สร้างข้อมูล Coordinate
+47c03473-f631-487c-a871-2118e0a24849	อ่านข้อมูล progress ตัวสุดท้าย
+47c671ed-b692-4e7f-9b1e-0672be9d1b63	เช็คว่ามี ultrasound_work ไหม
+47d7d849-2a2d-4d10-beb9-b3f2db4a6626	สร้างข้อมูล Center Income
+47ded662-4d85-43f0-a253-f38ffb725239	อ่าน appointment
+4819fc81-9648-44b0-915d-acde3354d0ff	สร้างข้อมูล Center Income
+48eff0a9-e03f-41bb-80d7-f18e791d205f	สร้าง nurse_work แบบเรียกคิวแล้ว
+48f72ef2-fe49-41ee-bff1-27b2a4937247	เช็ค + return array ของ exam.id ออกมา
+49e61863-885a-4038-ae87-68630e5f0e8d	อ่านข้อมูล queue ที่ถูก trigger
+4a0e20d9-0f45-4377-8d71-352e93ab575c	เช็คสถานะ finance_work
+4ab4a5a7-73eb-4a6a-9c38-0bc1a52f8e1c	อ่านข้อมูล finance_work
+4b028a2a-9b84-459d-8d2b-bc5994197b4b	Trigger Flow
+4b04350f-a32a-4547-a314-e0da694df9b8	สร้าง progress สัมภาษณ์
+4b3e80ef-7763-45bc-a400-c5772b121e87	เช็คว่ามี statusTriggerFlows และ status เป็น แจ้งแอดมินแล้ว หรือไม่
+4b580fd8-65cb-4618-9cc7-6c35aae41d09	return ค่าวัน-เวลาของตอนนี้
+4c952df6-87e4-4d70-b156-4f3ff6fe6d89	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย
+4c97f054-082f-4dc9-83a9-108b15a12788	อ่านข้อมูล doctor_work ที่ผูกกับ exam นี้
+4ca1b1e1-b95b-4461-b63d-f2f8ccbeb3e1	อ่านค่า doctor_work ทั้งหมดที่มี status เป็น "F14/ยกเลิก" และ "จ่ายเงินแล้ว"
+4ce4a61e-af81-449a-ba5c-cd43f43d0ffc	อ่าน pacs_sync_infos ว่ามีการถ่าย us ไปแล้วหรือยัง
+4d496a40-ae72-4fc8-b79e-ae42b35f5bfd	อ่านข้อมูล billing
+4db81d6a-acf2-460f-9413-924314df740d	ยิง Webhook (Patch) ไปอัพเดทสถานะนัดหมายทั้งหมดให้เป็น ไม่มาตามนัด
+4e1acf48-f6cd-4556-86e0-34ef4d0e2fb4	check_status_patient_result (รอชำระเงิน)
+4e485d5f-dfff-4c60-a19c-d8ec12425270	เข้า Trigger Flow Progress Created (v.ส่ง id)
+4e50f4f4-2557-4a1e-892e-03e772f9d6a5	เช็คว่าเคยทำ mam มาแล้วหรือยัง
+4e6528da-8c02-4865-9d91-6d91afe28911	อ่านข้อมูล appointment
+4e9ef285-0c71-4b5c-a9a2-5a8acce37e89	สร้างข้อมูล Finance Work
+4ecccd5b-b89e-4eed-8b48-bdfe2d61c88d	Create Data
+4ed71c21-4820-4e87-aa8e-20cac7b48480	เช็คสถานะ finance_work
+4ef11054-b899-47a7-8472-120fac6902bf	อ่านข้อมูล billing
+4f1ec4f1-0d64-4064-8fc2-1f337a9473e7	อัพเดทฟิลด์ status, close_cast_time ของ progress ตัวสุดท้าย
+4f866197-0bc0-490e-b80b-68ae16e65775	เช็คว่าเป็น pacs_sync_info ที่ถูกลบไหม
+4faa0d8b-c341-4b29-8570-4524d9732cce	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย
+4fec126c-b884-4a26-ae6b-d22c33c621b3	แสดงข้อมูลก่อนหน้า
+4ff132d2-f3d9-4e1b-bb4d-c1851837948c	สร้าง Coordinate ที่ F14 แบบ "ปล่อยเคสกลับบ้าน"
+50e1145c-a14f-4f3a-9990-8e7b8fc7741a	อัพเดท finance_work
+515ba19f-a8ee-413e-b70f-288b360c64f2	return ค่า array ของ ID ทั้งหมดจาก notification
+516809cc-e440-4e54-86b9-d3c1f133a2c3	อ่านข้อมูล queue
+518078a0-98be-47aa-9ab2-863f0990d099	อัพเดท Billing
+51b29370-86ea-44df-aa4c-1973eb15f61f	เช็ค action เป็น แพทย์อ่านผลเพิ่ม ใช่หรือไม่
+51b72105-e1ca-4f18-be10-3b869a176dff	เช็ค action เป็น ปล่อยกลับบ้าน หรือ confirm_bx ใช่หรือไม่
+52651e33-2cee-4e1a-a490-4020c0a3f568	เช็คว่า file อยู่ใน Folder Result Request Form หรือไม่
+53296737-8c1d-4387-af24-25802eac48fe	check_result_type_2
+533d4c1e-9034-4109-8f81-2b2227a12d1e	check_status_patient_result (กำลังออกผล)
+5378ec6f-e65b-492c-a442-71ad7ebac5ee	เช็คว่ามี statusTriggerFlows และ status เป็น รับเคสแล้ว(ปรึกษาแพทย์) หรือไม่
+53c6b9fc-8fa0-4fe2-9c48-cf20151e25d3	อัพเดต doctor_work เป็น "ยกเลิก US"
+53f5f969-727e-4ac5-b7a4-f95f66cab980	ส่ง id และ status (ใหม่) ออกมา
+540e7a6c-d228-410d-8f79-dc4a91325a68	สร้างข้อมูล Center Income
+54194ca9-bc82-4954-a334-fc5a31dc52ef	เช็คว่าสถานะ Coordinat ถูกอัพเดทเป็น รับเคสแล้ว ใช่หรือไม่
+541d3ee3-55dd-468c-9303-16a815b012e2	อ่านข้อมูล Patient_info
+543b9a72-5768-4bc0-8136-8bb385434488	เช็คว่า exam เป็นสถานะ รอปรึกษาแพทย์ หรือไม่
+543bedb4-2ca2-4709-a36b-9abbdbf3e7ed	อ่านข้อมูล Finance_work
+545e4738-97c6-422c-8ead-e941ea4d4796	อัพเดทข้อมูล coordinate
+54dbe423-a960-4bab-8716-e176a93d6511	อัพเดทข้อมูล Ultrasound_Work ให้ตัด Relation เตียง + staff ออก
+55e01ae5-451b-4ccb-9575-1e258b1645fa	Update Data
+5702e65a-983a-4809-b9b1-9d1b6c7e4f8f	สร้างข้อมูล Finance_work
+5844810b-e0b9-41d8-a0b7-194bb088346f	check_queu_status_4
+5867ad24-bd9a-4a36-a436-891813f842d9	เช็คว่า status เป็นค่า ส่งต่อแพทย์ ใช่หรือไม่
+58e5ec36-c069-4cb6-ad84-2b306cd76507	สร้าง progress ถ่าย ยกเลิกทำ US
+590b68b7-8cc1-4e66-917f-63ba77dfa9a2	เข้า Trigger Flow Progress Created (v.ส่ง id)
+5971225b-7962-49af-b5a3-5ef7b8ea4206	เช็คสถานะของ queue ว่าเป็น ยกเลิก ใช่หรือไม่
+59a17f21-3642-498a-b3fe-85544288f339	check_queue_status_2
+5a559416-6287-4d31-a863-7da020dc1e5f	อ่านข้อมูล queue ที่ถูก trigger
+5a953bef-666b-4020-81b8-59b1c0f95835	Request revisions appointment
+5a9c1a73-423f-4bb9-bf57-772721e21d60	Read procedure
+5ab2dc21-7380-4ffd-863c-f843022e78db	Update Data
+5ae06187-ae46-4034-a2f7-94a830f8f6a0	อ่านข้อมูล nurse_work
+5affe057-4f53-483e-878f-192329ba8d7e	อ่านข้อมูล patient_info ที่ถูก trigger
+5b042759-8849-45ec-bf1c-5185520d1f64	เช็ค Triggerflows และสถานะ us_work ว่าเป็น รอดำเนินการ ใช่หรือไม่
+5b5af431-3979-470f-8978-c0820232a8e8	เช็คว่า progress ล่าสุด เป็น ถ่าย Mammogram เพิ่ม หรือไม่
+5cef6beb-e3ce-4311-9698-64448f0104d9	เช็คว่ามี ultrasound_work ส่งมาไหม
+5d09baa0-00c2-4362-9e31-2173a3ee1dd0	เช็คว่า Progress ตัวสุดท้ายไม่ใช่ ถ่าย Mam เพิ่ม
+5d198dff-33cd-48e7-b6a0-a3570330adde	เช็คว่า queue เป็นตัวแทนมารับผล หรือไม่
+5d3a3c32-d077-4f1d-b381-5144bf94e416	check_queue_status_4
+5e6d7c12-f3fe-4f83-a053-35c37c7e7783	อ่านข้อมูล notification
+5ea6db41-f2cd-40e6-a299-003b049dafc7	อัพเดทข้อมูล Finance Work
+5eac4762-fda7-406c-b1d5-43f4d3f1b550	อัพเดตสถานะของ ultrasound_work เป็น "ถ่ายสำเร็จ"
+5f8375fd-cf13-4104-8380-d755c4892da5	อ่านข้อมูล appointment
+5fb16b73-dea0-4136-b5e4-57dbd8f3c345	อ่านข้อมูล nurse_work
+5ff9bad1-cd77-4ef9-ba77-70e5a9bdfe20	อ่านข้อมูล queue
+60355115-8ff8-49e7-8545-4216b86b8e66	อ่านข้อมูล exam เพื่อดึง patient_info
+6039e4b2-049f-4853-9e5c-210711c1502f	ถ้า request เป็น bx จะไม่ไปต่อ
+603b6342-11df-4c37-8d12-30c19c2e293d	อ่านข้อมูลของ appointment ที่ถูก trigger
+6085a9c3-f4e6-4269-9848-b0b3fa0bd7e6	สร้าง doctor_work
+6091baed-f359-4a5b-baab-de5f1f30178c	Delete Data
+613f6a54-c681-454b-9734-2915529f52e3	สร้าง payload
+61badf5a-dd15-47c7-b249-f7e00ceb487e	อ่านข้อมูล Recommend_bx_form
+61e3b98c-e518-49a0-9600-e48cc3091635	เช็คสถานะ patient_result ว่าเป็น จัดส่งแล้ว หรือไม่
+61e4a1b2-1b1a-4685-9040-9c8f6ee36418	check_queue_status_2
+623ed232-ba3d-4707-ac3e-90e6a5a6959e	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย
+6267c4ca-a736-4625-a567-54fdc7ba0116	อัพเดท appointment_bx_id ที่ appointment
+62736cdd-1eb9-4813-b8f2-9e61eebd2dfe	เข้า Trigger Flow Read environment data
+62891df3-458a-4f12-b606-ee553728cf7d	check_agent
+62918153-63fc-4ec4-8ddd-54aae1c7f801	ส่งค่าหมายเลขแบบฟอร์มออกมา
+6308e3ba-cef8-422c-b67c-f3136b3ca23e	Create Data
+6387008f-b0e0-4639-b1e2-6c97c00e1ac9	อัพเดทข้อมูล exam ล้าง report
+6397645a-8a44-48b4-b373-fd5d7d0f2dda	ปั้น payload สำหรับสร้าง exam
+63c4303a-3998-43f8-9820-dbcf009bd10e	เช็คว่า progress ตัวสุดท้ายไม่ใช่แพทย์วินิจฉัย
+64688255-452a-4768-a4a1-f9b3d69ce944	เข้า Trigger Flow Read environment data
+64750639-bb15-4648-b927-6736ead20576	filter status เฉพาะ "ส่งตรวจ" 
+648d5b6d-c271-4e51-b02e-1fdf5450b60f	อัพเดต is_mam_after_us_done ใน  pacs_sync_info
+649d04cb-ab4e-4367-a225-2e5236b00570	หน่วงเวลา 3 นาที
+65770f72-5947-405a-b08f-8779e76f95c6	เข้า Trigger Flow Progress Created (v. ส่ง id)
+65bb8d9a-e19e-44f3-8ddb-d04082ec27fc	เข้า Trigger Flow ของ read_environment data
+65c2eeeb-4b8c-4e91-aab8-9411cac478e6	Create Data
+66145e90-13a8-45e7-b237-ca0c811671bd	อ่านข้อมูล patient_result ที่ฟิลด์ result_request_form
+665a2583-20b3-412b-8334-41445c2548c6	เช็ค result_type
+665df4b0-a862-47e5-8ef9-37fc04f90fcb	อัพเดต doctor_work เป็น "F14/ยกเลิก"
+674ff7c9-3e3c-4fd5-b64c-a232c1dd2c0d	อ่านข้อมูล exam_cost
+68578121-e432-4a13-a584-ad31e1bc0cdc	อัพเดทสถานะ Queue ให้เป็น เสร็จสิ้น
+686f8f72-f5e5-423d-9a8c-c29f7d8132fc	เช็คว่า progress ตัวสุดท้ายไม่ใช่ เจ้าหน้าที่บันทึกเลขที่ใบเสร็จ
+68f48c30-c81d-43a1-a183-e7100e34d095	return ค่าวัน-เวลาของตอนนี้
+690634d8-2f25-4db8-8455-1ec6c9d302c6	สร้าง progress เจ้าหน้าที่ออกใบเรียกเก็บค่าบริการ
+696acf1f-f08d-4b68-8bda-1a5736f0b64e	อัพเดทฟิลด์ pid ของ patient_info ตาม id
+69afe606-dcac-4260-b00b-a33d7a902767	สร้าง worklist โดยนำคิวที่สร้างไปผูกที่ฟิลด์ queue และเวลาเริ่มต้นของ Worklist
+69b45fa0-9c5f-48f9-a106-39c3ae282202	อ่านข้อมูล appointment
+69c72dc9-ee2f-46a7-b635-ed4e514a3b24	เช็คว่า progress ตัวสุดท้ายไม่ใช่ รอปรึกษาแพทย์
+6a14a28c-c401-4f9d-9260-0438a333070a	อัพเดทข้อมูล Coordinate
+6a4aa596-4a9e-4448-bbb3-5b16467f1dd9	เช็คสถานะ queue ว่าเป็น ยกเลิก หรือไม่
+6a790e36-727d-42fc-ac2c-6e4773cd134a	อ่านข้อมูล Queue
+6aa00178-227d-4a04-a9e4-8a1cdea3c1de	อัพเดต noti ให้เป็นอ่านแล้ว
+6acb9c06-c33d-4381-bc53-5a9f9465485e	อัพเดทข้อมูล Finance Work
+6b529e11-987a-4ea4-8ca0-77a50a605023	สร้าง billing
+6b9f131e-0ffa-4894-a175-40266c578741	Update Data
+6ba3d7be-37ea-4744-af18-47f1b6a0fe6b	เช็ค pid ว่ามีตัวอักษรหรือไม่
+6c8615f6-6e43-4050-ac3d-5e37950acb52	read_data_queue
+6d169668-7aa9-41f6-adf5-98ee8c3f896e	return id ของ progress ตัวสุดท้าย
+6d2a0697-efbb-4d1a-8c4f-3472caed6db6	Read Data
+6d693638-dc88-4a29-8368-84a41da39091	เช็คว่ามี statusTriggerFlows และ status เป็น รอเรียกคิว หรือไม่
+6d8aa984-4567-4e9d-9c05-51bf6ea62b3b	Set bx_status 8
+6da9584b-85d8-4130-9756-0f9d0fddfd0e	เข้า Trigger Flow Progress Created
+6df67a1a-22f1-42eb-8eca-2b0c63c2a297	อัพเดทฟิลด์ officer ของ progress ตัวสุดท้าย
+6e15e4f4-1c3b-4b82-b503-bea18a379a04	อัพเดท Billing
+6e17c823-e386-42d3-9daa-d50988a44d83	Skip - not sign 
+6e2502a1-7b70-4835-be80-3d40185ba93b	เช็คว่าเป็น create items หรือไม่
+6e433783-7898-422a-8f0d-c5306643b483	เข้า Trigger Flow Progress Created
+6e5af4a9-da57-4c4c-ad7c-656d547c447e	เช็คว่าเป็นเคสเปลี่ยนแพทย์ไหม
+6e7db230-f050-478a-8825-d792086e59ae	return ค่าวัน-เวลาของตอนนี้
+6ea1cabe-973f-489c-abe7-d106b2e002ef	เช็คว่าสถานะเกี่ยวข้องกับการส่งไปหาแพทย์หรือไม่
+6f0c124f-40f2-4f4d-adb1-531485414b89	อัพเดทสถานะ doctor_work ของหมอคนนั้นเป็น "ส่ง us แล้ว"
+6f4ab2f4-6af1-49be-9a14-7ed34a754e7b	อัพเดตข้อมูลใน nurse_work
+6f530150-558b-45da-a8ad-77af9e4a9511	เข้า Trigger Flow Progress Created
+700b7d27-89fd-45ac-b4b2-610f451a3724	check_result_type_1
+70384f0d-b062-4600-b512-86640e250bb2	current_time
+704c4947-bda5-4e31-b78f-f48a4947747d	เข้า Trigger Flow Progress Created
+716baf61-077c-47e7-8af7-8e7db7615de3	Operation คิดเงิน
+7215494a-611a-4297-b245-a002192a0db7	ล้างข้อมูลหมอใน coordinate
+722166d7-c75a-48a3-8466-278db03c6376	เช็คว่าเป็น nurse_work ที่ถูกสร้างจาก [id-5] ไหม
+7277c55a-fc07-484e-8eeb-3c830d7e3ae0	check_queue_status_3
+727c0ffd-9a67-40ba-bc8e-f7a902b53989	เช็คว่า status เป็นค่า รอปรึกษาแพทย์ ใช่หรือไม่
+728f0f98-c077-448a-944b-9740b0018744	เช็คว่า exam ที่ผูกกับ ultrasound นี้เป็นตัวล่าสุดไหม
+73f79828-06fe-4d19-9df5-38d73eefe429	อ่านข้อมูล examination_general
+742cc2f8-c972-45e7-8c70-fcaf24f13a99	เช็คว่ามี triggerFlows และ status ว่าเป็น ขอเปลี่ยนแพทย์ ใช่หรือไม่
+74379349-c07a-4b8d-a544-543eff96bce2	ปั้น Body ก่อนยิง API
+74dfa88b-5bb4-4eb3-a942-6ea86b227642	เช็ค ultrasound_work ว่าอยู่ในระหว่างกำลังดำเนินการไหม
+74fc7f0b-6be9-4a05-8893-81955ec4b8c5	เพิ่ม exam_date ลงใน examination
+752941d2-0719-4cbc-8f35-f3d79e31ab9e	เปลี่ยน status ของ exam เป็น "ส่งต่อแพทย์"
+752a7b27-ad4f-4a65-bd2a-f2bb1c60e8db	อ่านข้อมูล appointment ที่ถูก trigger
+75977bc3-d8b7-47d3-846d-3bda364029ad	อัพเดท end_time worklist
+75aae28f-d234-477b-9e9d-6b5d1560ca27	เช็คว่า progress ตัวสุดท้ายไม่ใช่แพทย์ส่ง US
+764cde67-2c01-4775-a7e1-05a3f5069055	เข้า Trigger Flow Progress Created (v.ส่ง id)
+764ea632-a224-4f15-ac2c-d9b79b958c87	เข้า Trigger Flow Progress Created (v. ส่ง id)
+767d7834-fffc-4b11-b4cf-18b742d9822e	เช็คว่า status เป็นกรณี "ถ่ายเพิ่ม" หรือไม่
+7767f57f-572b-4354-84ad-608eccd69933	เช็ค Triggerflows และสถานะ us_work ว่าเป็น ถ่ายสำเร็จ ใช่หรือไม่
+778e3b30-a864-4f69-879d-21f1ab066f48	อ่านข้อมูล coordinate
+781a4174-23c0-4904-ab91-de2970dd1d5a	return ค่า array ของ ID ทั้งหมดจาก queue
+781dd8e5-109b-4eef-b37c-1387ed408406	return id ของ progress ตัวสุดท้าย
+785021fc-633a-4cdd-aec9-e27999481a4d	อ่าน pacs_sync_info ที่ active ทั้งหมดของ exam นี้
+78ce84fd-5660-461d-9113-2eb266c2ae80	เช็คสถานะว่าเป็นยกเลิกไหม
+78d524d5-1a58-422c-8099-1fa03ce36c00	return ค่าวัน-เวลาของตอนนี้
+7926f747-6417-421c-b81e-ad7cd01a4d72	เช็คว่าทำ us มาแล้วหรือยัง
+793171dc-269b-4d2b-a931-c20c057bf1ac	อ่านข้อมูล billing
+79a6c551-2bc4-46b3-9ec1-8b083d40f5a6	อัพเดทฟิลด์ officer ของ progress โดยใช้ข้อมูลของ user ที่ query มา
+79a92916-f129-477a-848d-0aad358718b4	สร้างข้อมูล patient_result ตาม body data ที่ถูกส่งมา
+7a0f41be-6e61-4a5f-935a-6e6e86ce4da7	อัพเดทสถานะนัดหมายทั้งหมดให้เป็น ไม่มาตามนัด
+7a31b941-a8da-48cf-833a-49d4a2cc9509	อ่านข้อมูล doctor_work
+7a51392d-35b0-485b-92db-8f027177fdb1	check_queue_status_1
+7a939d1c-dc58-4101-bc63-3b98a97c7439	อัพเดทฟิลด์ status ของ patient_result เป็น ยกเลิกคิว
+7af05002-f036-4097-9460-1f18015ada72	เช็คว่ามี statusTriggerFlows หรือไม่
+7b0984ee-138f-4aa5-9c65-e173b9c5b7cb	อ่าน exam ที่ผูกอยู่กับ ultrasound นี้
+7b30897e-3435-416d-b15a-7d6b38727b22	อ่านข้อมูล queue
+7b3b9c52-342c-4234-8328-fd6d9b2fc231	เข้า Trigger Flow [Progress Created]
+7b5aa404-5fb8-4eea-a4f9-34da82d5dc48	เช็คว่าหมอกดรับเคสเอง
+7b5c1c90-56d0-4740-93d6-9fe58388afaa	stamp เวลา end_time
+7bfac020-f52d-4b2e-95c8-f12c842c4ec7	อัพเดต status ของ doctor_work (เคสหลัง US)
+7bfea05c-5bad-4136-b0a8-124c5dd5349a	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย
+7c48ef4a-8562-4b41-88d7-0b1a31715064	อัพเดทฟิลด์ appointment_status ของ appointment ที่ผูกอยู่กับ queue
+7c870612-af16-44b0-8824-fab06d638b5d	อ่านค่า doctor_work ของ exam นั้น
+7c93ad07-a673-454f-bbc5-f389a6619918	เข้า Trigger Flow Progress Created (v.ส่ง id)
+7cc45765-3563-48b4-8dbe-0a2098211b4d	เช็คว่า หมอปล่อยกลับบ้านที่ Location ics ใช่หรือไม่
+7cd09f3a-d73d-486c-b593-e09dc27c9292	สร้าง payload
+7d3cedfe-1098-40fa-82de-548eaff3e9bf	เข้า Trigger Flow Progress Created (v.ส่ง id)
+7de9530c-e17c-446f-b3b0-461fbf4a8b31	อ่านข้อมูล queue ที่ถูก trigger
+7e017fed-2018-4a4e-9bf1-912a64defe5c	เช็คว่า F14 Report คือ ยกเลิกเคส หรือไม่
+7e36d0ca-df51-4fa8-9d79-060a433ca44f	อัพเดทข้อมูล Finance Work
+7e787b4c-cf0b-43db-b03a-636e9590bb3a	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย
+7e875a64-c9c4-446c-a232-e7746349f24f	เข้า Trigger Flow Progress Created (v.ส่ง id)
+7e8f842b-841a-4aed-be2e-ec36f9460167	อ่านข้อมูล patient_info
+7ed20ba4-a505-428d-8fc5-dbc5b22d7875	สร้างข้อมูล Coordinate
+7ee67adf-edd1-45db-8f5c-997b1204a38e	อัพเดต examination เป็น "spot ก่อน us"
+7f0dfae3-5bdd-46ac-a883-6769d15551f5	สร้าง coordinate ที่ F14 แบบ "ปล่อยเคสกลับบ้าน"
+7f5369ee-836c-45c1-866c-30cbc9d82f2c	อัพเดต noti ให้เป็นอ่านแล้ว
+80286859-0ab8-4912-800e-bd34353f2af6	อ่านข้อมูล worklist ที่ผูกอยู่กับ queue 
+804a1935-d583-4f57-8729-d53d908a8a4c	เข้า Trigger Flow Progress Created (v.ส่ง id)
+8058cade-55e9-4cb3-a17e-6bda6e0897a2	เช็คเงื่อนไขอัพเดท bx_status ของนัดหมาย
+80c766e4-f3db-445a-8e43-c6f15195bbdc	Trigger Flow
+80d9d074-7144-4d6c-83b2-4ce81243b6f5	Trigger Flow
+818ed4f8-2288-4c4e-b789-baf00ac3d029	เช็คว่า file อยู่ใน Folder Referral Form หรือไม่
+82256ef0-d02b-434a-81f4-b8ae9b186941	สร้างข้อมูล nurse_work
+8271f639-cbfb-4902-b3a9-8fe17357924b	สร้าง progress แจ้งชำระเงิน
+829a3a11-2a96-488a-8244-143301d5f7a2	Update Data
+82be44dd-8fb6-4505-b962-c84dd709604e	อัพเดทสถานะ coordinate รับเคส เป็นเสร็จสิ้น
+82d0a4ae-60ce-4508-b068-8a1507473545	check_queue_status_2
+82ef2c5b-32d0-472f-bf70-a29e9e0e2291	return ค่าวัน-เวลาของตอนนี้
+8307f441-16ff-495a-81ee-e7d5afb325df	สร้าง payload สำหรับ update ข้อมูล
+8342533d-4da9-4785-89a7-d8c78a25e1c5	อ่าน ultrasound_work
+835e71ec-5fcf-434a-83cd-fd0f94485fdd	Trigger Flow
+838f0829-3341-40ef-89f7-d6983445ea0a	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย
+83e90f46-089b-4b8b-9b57-0c6144883e91	เช็คว่าส่ง exam_date มาไหม
+83ef9e30-dd7d-49c3-9adc-04c19541aa94	เข้า Trigger Flow Progress Created
+8408cca3-4a31-4a13-b54e-c1a53c9c2896	Trigger Flow
+84f127d2-4a56-4ee3-93aa-6e988edb5af2	Create Data
+850fc90c-3363-40ca-ac03-3edf2a1a4118	ลบ Center Income
+859d1d47-31d0-4aba-8a6e-5d710aa67567	อ่านข้อมูล appointment
+85bfe0d7-db3e-4bdc-932b-9d9fe4e1345a	return body ของ data เพื่อนำไป create ต่อ
+868a457b-88f8-48b8-b12c-9ebe1ca68af0	อ่านข้อมูล exam
+86e45252-4e23-4831-9a6b-275dc582cb99	อัพเดทข้อมูล doctor_work
+87bee657-35e9-43fa-83c8-bb4e2a09eb31	Check PATCH
+87eb88a0-c768-4d62-8d2c-5b1de7e3f7a9	อัพเดทสถานะ progress ตัวสุดท้ายให้เป็น เสร็จสิ้น และเวลาปิดเคส
+882cb9c2-ac2c-4a21-a790-5359d163ae78	อ่านข้อมูล pacs_sync_info
+886e65ee-0aaa-4572-b699-114de460905f	เช็คว่ามี triggerFlows หรือไม่
+8871e694-ea81-4260-9f5c-3797abf5e725	อ่านข้อมูล worklist 
+88cd3f5c-8397-49b7-8dbf-ebc45be5a116	เช็คว่า appointment มีคิว หรือไม่
+88f838b4-22d7-4f8d-968e-191f82f68d68	อ่านข้อมูล Notification
+8a1c6a8f-4841-4286-8dda-d0d896868237	เข้า Trigger Flow Progress Created
+8a4decb4-5288-4845-878c-10381a0a2c87	เช็ค triggerFlows และ action ว่ามีค่าหรือไม่
+8a777282-4583-469d-8fbe-0fd7793bfda2	เช็คเงื่อนไขว่าเป็นการเรียกคิว bx หรือส่งไปที่แผนกพยาบาลหรือไม่
+8a8da9e9-bbbe-4d4f-a398-b26582f6457d	เคลียร์ค่า Notification ทั้งหมด
+8a8e99d3-f47a-461b-a2f5-28069795c100	อ่านข้อมูล billing
+8a9fbbc4-e66f-46e1-ad6b-e5b37e7ae79f	สร้างการแจ้งเตือนไปยังแพทย์
+8aa03e6c-8edf-4b51-a4d1-8ef096f30be8	เช็ค condition การลง PACs
+8ab12870-8118-4068-9d35-117a674d9e3a	เข้า Trigger Flow Progress Created (v.ส่ง id)
+8ac1acd0-96af-4c40-a6ef-30930492c1e4	อ่านค่า record ที่พึ่งสร้างไป
+8ae6b53f-45ac-4b18-a052-d0a18b5471fd	read_data_queue
+8b493d3c-c8b5-43f0-ba9c-88fc57b16a76	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย
+8b5dacae-859b-4aa5-aa08-623eacefbf16	เช็คว่า F14 Report คือ ยกเลิกเคส หรือไม่
+8c2a0d86-2285-41e6-aee6-204c451f778c	เช็คว่าเป็น create หรือ update
+8c75f87e-455c-4ece-b783-6fba6cc9fd2a	เช็ค appointed_dept เพื่อดูว่าส่งมาที่พยาบาลไหม
+8ca7f653-b1b1-4b75-ab83-20e902d3718c	return ค่าวัน-เวลาของตอนนี้
+8ccaffe4-ac01-43bf-bab4-2f5427f4272c	เช็คว่ามีการเปลี่ยนวันหรือไม่
+8cf2ce3e-d64b-41a5-965e-a71c2783539b	อ่านข้อมูล billing
+8cf5fa4d-6f3d-41d6-81fd-a0f2ba93301d	เช็คว่าเป็นการ assign หมอของเคสเปลี่ยนแพทย์หรือไม่
+8d0c6e3c-1208-4ec9-bf9c-2c8b05c9aa34	ยิง Webhook (Patch) ไปอัพเดทสถานะคิวทั้งหมดให้เป็น ยกเลิกคิว
+8da0cf4e-e146-4704-b6bf-b79321122883	เช็คสถานะตัวสุดท้ายของ progress ว่าไม่ใช่ ยกเลิกเรียกคิวหรือ ไม่
+8db44af9-56c5-4140-8ea2-02ff28debf0c	สร้าง progress แจ้งชำระเงิน
+8dc73caf-5382-4dcc-9695-7c54332d85de	อ่านข้อมูล progress ตัวสุดท้าย
+8e57b166-498a-4ca3-a116-2f68277620a4	อัพเดทฟิลด์ is_change_time_slot ของ appointment ที่ถูก trigger
+8ed16748-d00d-4ae6-a9fb-80d8a9bf2a50	return ค่า id ของ progress ตัวสุดท้าย จากข้อมูล worklist ที่ถูกอ่านมาก่อนหน้านี้
+8ef45029-862c-434b-9f62-783ac4cd77f4	current_time
+8f2a3c87-1377-4d95-a75f-548349f88d48	Create Data (ชำระเงิน)
+8fbf5f92-9d76-4a9a-85f1-ea1ef70f81b5	อ่านข้อมูล discount
+90636ef6-44fb-42e6-b4d9-a4c1832c9aab	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย
+9126213b-0c52-4dc0-8c91-67167d29d35b	read_data_queue
+91d4e2ee-5c31-41ea-a878-3766d2783f3e	อัพเดต noti ให้เป็นอ่านแล้ว
+91ecb393-f162-43ad-baa5-97817e8a4a35	อ่านข้อมูล patient_result
+92a3d0c6-fa16-4c42-9c9e-de12a2019fac	อ่านข้อมูล discount
+92b2ec9b-8d17-4230-a3ff-6f2df5b33f31	อ่านข้อมูล worklist 
+92d73fb2-cb8e-49d9-b69d-c9cfda1be346	อ่านข้อมูล examination
+93b82c03-d4b0-4d1a-8bea-cb47532b3dba	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย
+93c548a5-e656-477e-abb0-ed878de9f79b	Update Data
+93eabd18-1557-44ae-925a-8fe09f5e768f	เช็คว่า progress ตัวสุดท้ายไม่ใช่ เจ้าหน้าที่ Front ส่งตรวจ
+95345a4c-8278-4ffa-9954-df1f9d16a44b	ปั้นข้อมูล recommended_procedures
+9544eb4f-2af7-4fa6-918b-ab0a4b868203	เช็คว่ามี triggerFlows หรือไม่
+954a2a4e-5236-47e5-b54e-9161cf4a0491	สร้างข้อมูล Billing
+95dbac9a-fd39-4050-9d43-efdc024069a5	อ่าน doctor_work ปัจจุบัน
+95e5e2dc-2c96-492f-8e55-384bf54d8b50	อ่านข้อมูล Notification ทั้งหมด
+95fe8024-a998-4933-8f66-df633e78ca30	อ่านข้อมูล billing
+961c0a9f-0190-43b8-98a4-e7d5bb470e61	เข้า Trigger Flow Progress Created
+963f9585-25e2-4da8-91b7-f974e1f5a8ed	Update Data (แจ้งชำระเงิน)
+96d74505-3f96-4643-bea6-3f04bff32ba0	เข้า Trigger Flow Progress Created (v.ส่ง id)
+96e5ae9e-f933-4050-a162-dada34a28c2c	เช็คเงื่อนไข status เป็นส่งตรวจ + เจอ nurse_work
+96f6e62a-deaa-45f1-afe2-b01688d546c4	เช็คว่าสถานะของคิวเป็น รอเรียกคิว หรือไม่
+97338b24-54d7-4fef-881a-8d780de91d58	อัพเดทข้อมูล exam ล้าง report
+97f4f4bd-6669-4d16-a833-5e9df49f4b8f	(เงื่อนไขอาจจะผิด) อัพเดทสถานะ doctor_work ของหมอคนนั้นเป็น "รออ่านผลเพิ่มหลัง US"
+98980d81-f462-42be-a800-6e3fc96d3bd9	อ่านข้อมูล notification
+98c31b14-25f5-4a58-95ba-a254822010ea	read_data_worklist
+98f28f2d-f0ed-4443-a5de-cc6ae3a6e408	เข้า Trigger Flow Read environment data
+99147fd7-7423-40c5-8374-354430fe211b	อ่านข้อมูล Finance_work
+99299cc4-f98c-4950-b194-6b14b8e1788e	เช็คว่ามี statusTriggerFlows และ status เป็น รับเคส หรือไม่
+997035ca-4714-4a1f-b525-d8668c1d462a	Update Data
+99a1e5fc-14b4-4523-8a21-23e63668deb6	อ่านข้อมูล Ultrasound_work
+99a9bab8-367d-4e18-aa46-ab6235dfa247	Trigger Flow
+9a23c65b-d297-445b-a47a-9d2a4492a93c	สร้างข้อมูล Finance Work
+9a383f7d-ea12-4b89-8648-ea32fb053f3e	อ่านข้อมูล Ultrasound_work
+9a3d5c8c-46d2-42b6-9b7e-364f7142f618	เช็คว่าเปลี่ยน time_slot ของนัดหมาย หรือไม่
+9a6dd89c-ac48-467b-bdba-ca576497c3d5	อัพเดท bx_status ของนัดหมาย
+9a9479d5-8d41-4314-9c08-d40c05ecf667	Trigger Flow
+9aacdce4-f872-4f3d-a847-0c47db5e63f9	backup data
+9ab51cf1-daed-4be8-aad5-a0bda8b2eea8	สร้าง Center Income
+9af25f42-d40f-45a9-966f-c746851d6f76	query ข้อมูลของ user โดยใช้ id ที่อยู่ใน progress
+9b0a5d63-63fc-4800-b0bd-4399266e1bc9	อ่านข้อมูล queue ตาม id ที่ถูกสร้าง
+9b3b1cb7-748a-4b3e-ba59-c27bcd1135fe	แก้ไข exam_date
+9bac2d89-e960-4aad-ab39-a41b926e9aca	อ่านข้อมูล queue ที่ถูก trigger
+9bb7ee61-6361-4ed5-ac90-39ce139bd07d	สร้าง progress แพทย์ส่ง US
+9bc1a1b4-05b6-456c-939e-e82fd04522ce	อ่านข้อมูล Billing
+9c34d5cb-4e86-4576-bc98-15ada08dbeef	เช็ค action officer
+9d23418f-4e5c-45ae-89df-3ac0e00ab14a	อ่านข้อมูล patient_info
+9d9b114d-a29f-4ea6-a5d0-448a05f1216e	Trigger Flow
+9da8aec5-9cf5-44d5-924b-d180391029d2	check_queue_s
+9e092224-7141-4251-b8af-7bbe9b4bdb21		Compute next corrected
+9e154126-47a8-4692-982d-3ffd7ec5d792	เช็คว่า front_note_1 มี รับผลตรวจวันนี้, รับผลเป็น CD หรือไม่
+9e7dc062-9503-4bef-a177-17058c1ede7e	เช็คเงื่อนไขสร้าง nurse_work (tech)
+9f432fa3-09db-4851-bb79-d1499cc7ff42	อัพเดทสถานะ Ultrasound_Work
+9f4e54e0-b002-4aed-a2e7-a00d0323e5f1	อ่านข้อมูล pacs_sync_info
+9f60c0f2-0809-4320-bbcb-30d7ff11280e	อ่านข้อมูล appointment
+9ff4910f-b9ea-4127-9974-bbec14744c91	ยิงไปสร้าง file
+a02bca20-ef49-4ed9-9edf-ae8c904d3d4d	เข้า Trigger Flow Progress Created
+a09c26fc-c355-4208-834a-7a93f070f553	อัพเดทฟิลด์ status, close_cast_time ของ progress ตัวสุดท้าย
+a0e1c010-08d5-47ea-941b-2c36ba2a0d84	เช็คว่ามี statusTriggerFlows และ statusExam เป็น กำลังสัมภาษณ์ หรือไม่
+a1636f97-46e6-4846-8479-c705c8c21a87	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย
+a28eb49b-8467-463d-bc2b-8f9b6214d648	check_last_progress
+a2959af4-e0ea-4aab-b8dd-89a01d953da3	อ่านข้อมูล environment
+a2b87961-208e-4ef9-96b7-02a89f066007	อ่านข้อมูล appointment ทั้งหมดที่ appointment_status ไม่ใช่ส่งตรวจ หรือเสร็จสิ้น
+a2e0a114-647c-4789-a8ba-34f89f9d1407	เข้า Trigger Flow Progress Created
+a306d93d-e0e8-4492-b4ee-5edaec3e4ac6	เช็คว่ามี statusTriggerFlows และ status เป็น ขอเปลี่ยนแพทย์ หรือไม่
+a31e7db7-ae56-4012-8d80-9c6368a68672	อัพเดทฟิลด์ close_cast_time, status ที่ progress ตัวสุดท้าย
+a406bf23-e9b1-4fb3-85d9-628dd9a6dc5a	เช็คว่ามี nurse_work แล้วยัง
+a41c76b1-cf58-4015-a85e-2dfd517794dc	เช็ค bx_status
+a483747f-7f49-4516-9c8d-2ef073721d9b	อ่านข้อมูล exam_cost
+a4e7af8b-7ba1-4472-ba52-b6d30e05413a	อัพเดทฟิลด์ appointment_status ของ appointment ที่ผูกกับ queue ให้เป็น ยังไม่ถึงเวลานัด/ยังไม่มา
+a5087141-4e7b-4d8e-9a8d-8e70fa7b40df	แก้ไข Center Income
+a56e55c9-8864-462d-9215-48591b672ac3	อัพเดท Billing
+a6fd97a2-37b2-496f-93b9-1529bf9afa81	เช็ค appointment ว่ารับผล copy_cd ไหม
+a712a779-0732-449b-9c73-09d683fb2639	check_queue_status_3
+a726a6d2-5fc9-4e27-b5bf-315170076e05	อ่านข้อมูล doctor_work ที่ผูกกับ exam นี้
+a7280461-38fb-4321-8f14-373c9fa6616b	สร้าง Coordinate ที่ F14 แบบ "ปล่อยเคสกลับบ้าน"
+a7612dcc-1ccb-4cff-addd-a7386682d468	update status และล้าง doctor_work ออก
+a78b7bd6-c501-4e38-a718-68e634bacd9b	เข้า Trigger Flow Progress Created
+a7bd35c0-c69b-4ccc-a643-9f896371f569	เข้า Trigger Flow ของ read_environment data
+a957c5f1-a6e8-4f68-add4-a4e33ae169db	อ่านข้อมูล appointment
+a9b38de3-3c19-44a0-9f4f-f0f40c89947c	last_no_progress
+a9c41096-0580-43c7-a774-6e08ffb0bf8f	สร้าง progress ขอเปลี่ยนเตียง
+a9cec322-400d-4515-b0bf-18f0aae29d62	อ่านข้อมูล progress ตัวสุดท้าย
+aa2ce143-e25a-4e07-aea4-569df9111064	return ค่าวัน-เวลาของตอนนี้
+aa6cb475-8981-4ebf-b80f-8304fe5555e2	เข้า Trigger Flow Progress Created (v.ส่ง id)
+aa77d1a9-5803-4a1d-af68-59f08434ef2f	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย
+aac18154-bb9a-4a0b-9068-51b235e71f58	เข้า Trigger Flow Progress Created (v.ส่ง id)
+aaf08630-1df2-4c5a-93b7-f84e14551963	read_address
+ab7fd238-6580-4a74-81c5-b6e4b2610057	อ่านข้อมูล exam
+ab83ee75-50ac-4b9c-8d45-a8412d5cd7c8	เช็คว่า trigger_flows เป็น "doctor_work" หรือไม่ 
+abc2ef17-79cb-4527-bdf2-a03ba18fc93f	อัพเดทข้อมูล notification
+abd5dfbc-ca0a-4303-8069-b250b9862610	read all patient_info data
+abffb104-2300-44bf-a38c-db99044a3ee7	เช็คว่ามี statusTriggerFlows หรือไม่
+ad049129-e809-420a-9959-016e0049f74d	read_data_worklist
+ad564ea8-1d44-494a-b088-c5b0a8ceb0f0	อ่านข้อมูล Coordinate
+ad6d3d7a-3ddd-4de9-abda-eaba4c8facc5	Pick nurse_work
+ad84c292-4e63-42b9-ac3b-f915619ca041	อ่านข้อมูล Exam
+ad86bc96-ccfb-47c8-becb-c8a5f6d040e1	อ่านข้อมูล nurse_work ทั้งหมด
+adb772fe-f637-4352-92dd-049bec15969f	เช็คว่า created_by_queue_type เป็น K หรือไม่
+aeb3404a-23bf-4c86-b900-1d69240b6808	Update Data
+aed4b285-333a-4198-9106-5c630c478f96	อ่านข้อมูล Ultrasound_work
+af53aa9e-c4a7-464e-9dd7-4f6022a42df7	อัพเดทจำนวนเงิน
+aff576f2-6aa7-4a7e-a705-3251cc925521	stamp เวลาที่ nurse_received_appointment_at
+b0682e18-4238-41dd-8f50-cb749206d544	อ่านข้อมูล Ultrasound_Work
+b0b16a52-a467-41ce-bcc8-b2c11f1a2228	สร้างข้อมูล patient_result ที่ฟิลด์ queues คือ id ของ queue ที่ถูก trigger
+b0b3f313-248e-4d04-b1e6-49302deba6ad	อ่านข้อมูล worklist
+b13bf21c-4138-4770-8076-a67561fe6036	Operation คิดเงิน
+b16b54a4-fd7f-44ad-8c15-eb0d210127b7	อ่านข้อมูล Coordinate
+b16e6226-a2ad-4a0f-87cb-aa826413f181	นำข้อมูลจาก revision 2 ตัวสุดท้าย มาเทียบกัน
+b207a0dd-8d4a-4025-8169-681f48d0164b	สร้างข้อมูล Billing
+b22415f4-7c80-475d-856b-6bcf16596a25	ยิง Webhook (Delete) ไปเคลียร์ค่า Notification ทั้งหมด
+b25a6b65-9978-431d-8c74-b1d5ece2f45f	อ่านข้อมูล worklist 
+b2b5659b-e0a3-4fa0-bc49-dbcbc441e14f	สร้าง progress รอจัดสรรแพทย์
+b3303afe-e0ee-492f-9bfd-d5ef9589b660	สร้างข้อมูล Coordinate
+b33449be-4252-4309-b5be-259728890060	อัพเดทฟิลด์ pid ของ patient_info ให้มี K นำหน้า id
+b3890795-6e6b-4810-821a-f6582296e377		Is edit after Sign to PACS
+b3f15ab6-200f-4ac5-a4f0-e00b6d17a6b3	อ่าน pacs_sync_infos
+b48adc12-7dbd-4bb6-bdcd-825a44112892	Trigger Flow
+b49e41df-4f21-476d-9c1a-cc13c63d1ddf	สร้าง progress เจ้าหน้าที่ Front(F14) ให้คำแนะนำ
+b4b4ffb9-600c-4d9f-8b08-3949c0bc4c81	สร้าง examination
+b543351e-66d2-42bf-b9ba-8e1108a64000	เช็คว่ามี statusTriggerFlows และ status เป็น ขอเปลี่ยนเตียง หรือไม่
+b54c528e-42c7-4f7f-a3aa-f8d8f6b335f0	เช็คว่าเคสนี้เคยสร้าง Coordinate ใช่หรือไม่
+b5528219-a2b5-4d03-b87b-1f34d5852353	อ่านข้อมูล patient_info ที่ผูกกับ appointment
+b597abd0-fc07-4f3c-9ca7-9b7588ff2c5e	return ค่า array ของ ID ทั้งหมดจาก notifications
+b5d95e32-7633-4e47-beaa-c88bdba34352	check_queue_r
+b6e11f73-e864-42e5-9904-37e6ce51aa7b	เช็คว่า data ที่มาจาก read_us_pacs_sync_infos มี length > 0 ไหม
+b6e61aa7-982a-4458-9146-04b7f7eaa65b	เพิ่มเลขที่ใบแนะนำเจาะลงใน recommend_bx_form
+b72ff5d2-ced8-4cae-8eb7-b4492bbbab9c	read_data_last_progress
+b73f254f-febf-450d-8505-ac60e79fb5d5	อัพเดท status nurse_work 
+b7e0b4f2-9a16-474f-8736-68414837ceea	ปรับ status เป็น "แพทย์ตอบกลับ - รอเรียกคิว"
+b8191d54-9433-49fa-84b1-45cfc0ae52c1	return ค่า array ของ ID ทั้งหมดจาก appointments
+b84c13b1-3ddc-429c-a9df-08e7b89b91fe	อ่านข้อมูล appointment
+b8cc3209-e92d-4eda-80a7-77ba667071c9	สร้างข้อมูล Billing
+b8e3a46f-b8bc-4b63-866b-aaaf0e5b218d	สร้าง Coordinate แบบ "รอทำ US"
+b921e43f-39fb-4dfb-b5f1-03f4c1a2b1a3	อ่านข้อมูล progress ตัวสุดท้าย
+b9550ac5-7ec8-412d-8836-0dad8ef58c79	เช็คว่ามี statusTriggerFlows และ status เป็น รอSigntopacs หรือไม่
+ba15a150-ddc8-4a4f-ae8f-79b1f7c27dfa	อ่านข้อมูล patient_result ที่ถูก trigger
+baa79662-0543-4504-b26f-63aaf1f11ad0	สร้าง progress จัดส่งผลตรวจ
+bad0cec5-b238-4e28-85fd-8ad220cf7095	อ่านข้อมูล Ultrasound_Work
+bb20cfdd-c509-4e7e-9627-bfee9f06bd85	อัพเดทฟิลด์ status, close_cast_time ของ progress ตัวสุดท้าย
+bb60e92f-c206-4d90-b223-026e9a47c34b	สร้าง progress แพทย์วินิจฉัย
+bb616dad-e777-4001-ade1-8ff28de10380	สร้าง doctor_work
+bba0c2db-7908-4c75-b724-be3ed790bd57	อ่านข้อมูล financa_work
+bc6b8896-d250-474f-9739-2c14e44166ef	เช็คว่ามี statusTriggerFlows และสถานะเป็น ทำ Mammogram หรือไม่
+bc8dcb73-bce5-4d31-9996-138ead0a7c31	เช็คว่าเป็นเคสปรึกษาแพทย์ไหม
+bcb8d3d6-e9a0-46d9-8408-6686e02496ad	อัพเดท สถานะ exam เป็น ยกเลิก
+bd02abb4-e11e-4df9-b665-1428055dedd6	update สเตตัสของ doctor_work 
+bd91b682-1cea-46d3-ae81-8d8ecb0f4b79	อ่านข้อมูล queue ของ appointment ที่ถูก trigger
+bdbadc5d-6cbb-4d76-af20-5cd041f543bb	เช็ค Triggerflows และสถานะ us_work ว่าเป็น ถ่ายสำเร็จ ใช่หรือไม่
+be13f053-4b9b-401f-af0e-6bc036dfe2f0	Update Data
+be142486-6e47-4d39-b87e-7d1f603cf18f	Read examination_general
+bf99a228-27ef-4409-b1ca-70e69af99508	เช็คว่าเป็น ยกเลิกปรึกษาแพทย์ ใช่หรือไม่
+bfae4a69-b183-45cd-89dc-984e350e0d81	เข้า Trigger Flow Read environment data
+bfbe4e79-6ee7-4fac-b40b-7e0af7366e98	อ่านข้อมูล Ultrasound_Work
+bfc3dd87-a97d-41b4-a2b1-0fce6637f8b0	สร้าง Coordinate แบบ "รอหมอรับเคส"
+c011e6a9-74c7-420b-bf93-9c07e689e094	เช็ค bx status ว่าเป็นยกเลิกหรือไม่
+c01ea2d0-ac85-430e-aa19-0a0e848f4371	เก็บค่าเวลา ณ ปัจจุบัน
+c05a5cb8-1abf-4249-8371-6e3990328e49	Trigger Flow
+c0764b84-82c6-477f-a75a-09ab8e72e766	อ่านข้อมูล queue ทั้งหมดที่เป็นสถานะ รอเรียกคิว, เรียกคิวแล้ว
+c0a85a54-c48c-42c0-abb4-28ebc3b08db1	read_data_worklist
+c10c1486-f31f-4c37-a478-7231340e35b5	อ่านข้อมูล Coordinate
+c1bda475-1ffe-4029-9286-68bc95df4e7f	อ่านข้อมูล doctor_work
+c1d46765-2a91-4f98-a146-1e34421cf023	อ่านค่า ultrasound_work ที่เกี่ยวข้อง
+c1e7dcb2-0125-4c82-b544-85bcd78b8c5e	วิเคราะห์ pacs_sync_infos ว่าเคยทำ MAM/US หรือยัง
+c210995d-6697-4e7b-be3d-dda8c386e122	เข้า Trigger Flow Progress Created
+c237e2b8-08d0-4232-8844-692f55dfa02b	update_current_examination_history
+c23cbf7f-d3a5-4925-ba2e-f92297cba54f	check_queue_status_2
+c24d515b-ac1c-4334-94f2-99399e1044ee	หน่วงเวลาเปลี่ยนสถานะ
+c29aa505-d3bb-4459-8884-8f9115546685	Log to Console
+c2af3dfb-6550-414f-b337-13ec7113eb30	อ่านข้อมูล queue
+c35e0bb8-bcdc-4067-92c2-fec71bd6c0a3	เช็คว่ามี statusTriggerFlows และ status เป็น ถ่ายสำเร็จ หรือไม่
+c38c951c-395a-4b62-bfd1-f9a3c6f8ef3c	ปั้นข้อมูล ชื่อจริง-นามสกุล
+c41dd34f-b59d-4571-82e8-8c04a7d7de83	หา pacs_sync_info ของ US
+c45d3878-609e-42e0-9dd3-9474ad26c17e	เข้า Trigger Flow Progress Created
+c45f66f6-75f7-4b12-be01-39cdaa820a0f	check_queue_status_2
+c45f6bf9-34f2-40ce-b59f-1d78681c4023	ส่ง keys[0] ไป flow สร้าง file
+c4c22da8-7bb5-41bb-a8d8-5b95d3a7dc02	อัพเดต status ของ doctor_work (เคสก่อน US)
+c4d1e9e6-00b5-4b0d-bb49-24e67c13aa55	ลบเวลา called_time + start_time
+c4efc049-c7af-483a-8461-3dd682af83fc	เช็คว่า status เป็นกรณี "คืนเคส" หรือไม่
+c5758ad9-6499-406b-9db6-37a71f5450c3	เช็คว่า appointment_datetime เป็นวันนี้ หรือไม่
+c5a36c4d-9311-4ec3-85ec-d91722f6e7c5	เช็คว่า F14 Report คือ ปล่อยเคส หรือไม่
+c654b1d0-e22f-4500-a7c5-cfc42a987485	สร้าง progress รับผล
+c65f98e1-b9f0-4d5a-a48e-3df83195c86d	อ่าน exam 10 ครั้งล่าสุดที่ sign to pacs ของคนไข้คนนี้
+c713fa83-ba4c-46db-ab91-0922e5db6b89	อัพเดทฟิลด์ pid ของ queue ให้เป็น pid ของ patient_info
+c7445fce-beaf-4eae-a06e-9fcef5d9f1d0	Is sign to PACS
+c74646e2-c4dd-41c5-9561-9f3a3efe79c0	return ค่า array ของ ID ทั้งหมดจาก notification
+c76bb48f-7f93-4e14-9e87-b0f25209a16e	สร้าง progress บันทึกเลขใบเสร็จ
+c7bd34c1-9c17-412b-abfb-f7523dd106e4	Update Data (รับผล)
+c8078bfc-22df-4ccc-9b67-fed3b293d31b	เช็คสถานะ queue ว่าเป็น ยกเลิก หรือไม่
+c80ec306-91ce-4c7d-a50a-d739013ac9a9	เช็คว่าเคสนี้มีหมอรับเคสไปแล้วหรือยัง
+c88e3fee-92ad-4628-bf28-077119a73670	อ่านข้อมูล address
+c8a0c4d2-6b9b-40cc-b1c8-1e4443701cf6	อ่านข้อมูล exam ที่พึ่งถูกสร้าง
+c8a677e3-5147-4fbc-b034-135fc70f518f	เช็คว่ามี statusTriggerFlows และสถานะเป็น F14/ยกเลิก หรือไม่
+c8a79719-448b-4716-8769-7d0f30d71817	read appointment data
+c938824e-39d3-4dd2-9535-d43b113ba34e	เช็คว่าเป็น action create หรือ update
+c9dd914f-a0d9-4c9a-a33b-db422176f8e0	อ่านข้อมูล Pacs_Sync_info
+caa25817-008b-4de8-915d-9ad6e0a8f803	เช็คว่าเป็นเคสส่งปรึกษาแพทย์ไหม
+cb35e5cb-4cab-4ac7-a7d2-9080373a58b6	อัพเดทข้อมูล exam ฟิลด์ หมอ
+cc1d6a5c-8466-41cf-ba16-6aac6a095a24	สร้าง progress ผู้มาตรวจถ่าย Mammogram
+cc42d515-f654-4505-a0ef-d42da5165a42	ย้ายไฟล์ไปที่ folder Referral form
+cc84065d-dcc5-4493-91ce-850595298d71	Log to Console
+cc9f080a-8264-4672-8d43-d5949d3cbf13	เช็คว่า exam เป็นสถานะ ส่งต่อแพทย์ หรือไม่
+cd21d750-3f4a-47c8-9b7d-43df17f29a0b	อ่านข้อมูล nurse_work
+cdb013c5-3a24-4a6e-8b72-e4bc9e48deb6	เช็ค status_trigger_flows
+cdd197c9-e335-40c4-bd1d-ca94356f34a4	สร้างข้อมูล nurse_work
+ce036c93-5f84-45ac-8f66-2cbe022a3400	อ่านข้อมูล patient_result ที่ผูกกับ queue
+ce05d8e9-4bee-4e32-8943-796db1c94a09	Create Data (ชำระเงิน)
+ce63b7a1-d71c-4e0e-8c5a-492052c83732	อ่านข้อมูล examination
+ce671c3a-a057-4f0a-87d1-857b2c40da9c	read_last_examination
+ce79afdb-237d-4889-9f12-12b84b9fa9ee	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย
+cf3ebc88-3620-4778-81ce-6b499fcbd81e	อ่านข้อมูล doctor_work
+d046f335-999e-4ef3-9361-53be155f14b9		Skip - not unsign
+d086f883-d9ee-4a25-9973-46defa0a30a3	เช็คว่าเป็นคิว M หรือไม่
+d0aed853-9e61-4baf-8926-c3c91df65dbd	เช็คว่า status เป็นกรณี "รับเคส" หรือไม่
+d2b985a6-6d92-4fc7-ba94-893b8a8a7d6e	อัพเดทฟิลด์ appointment_status ของ appointment ที่ผูกกับ queue ให้เป็น รอเรียกคิว
+d309a5ad-d197-4bba-bcc8-e74267537d80	เช็คว่ามี statusTriggerFlows และ status เป็น ยกเลิก หรือไม่
+d34de265-d94c-44cd-95c1-7a5d6b3b3ae9	อ่านข้อมูล progress ตัวสุดท้าย
+d36bd7a2-0608-4b7b-9ec6-078047461882	query ข้อมูลของ user โดยใช้ id ที่อยู่ใน progress
+d36d01aa-caf6-4157-8bac-74e222b0e504	Trigger Flow
+d3d569a5-5c42-4aa7-89f9-14cd7176625b	สร้าง Coordinate ที่ F14 แบบ "รอปรึกษาแพทย์"
+d414e8a3-dee0-4698-b5a0-5e009789a74b	last_no_progress
+d438f5f0-0d3e-4221-bbb3-526c04ac8821	check_queue_status_4
+d44b81d1-22a3-43eb-ac15-b91bcc7a4eca	สร้าง payload สำหรับ bulk update
+d45119b7-0d47-4bff-a007-e3568b0544a6	check_queue_k
+d4a08706-1932-4d2a-8534-ebeb21edbbd1	Trigger Flow
+d507371d-5f0d-4825-9dbd-5c1e171e7b95	อัพเดทสถานะ doctor_work ของหมอคนนั้นเป็น "รออ่านผล"
+d551d694-a08f-476b-ac00-67b57c1e9039	ปรับ status ของคิวเป็น "เสร็จสิ้น"
+d55376a9-be58-4473-a594-024771b82997	สร้างข้อมูล billing
+d59c0108-3512-4ba5-9f16-993c2cc93d17	สร้างข้อมูล doctor_work
+d61ba106-f516-48de-a02a-04ea535174a4	return ค่า array ของ ID ทั้งหมดจาก notifications
+d663531c-2a58-4cee-9bcb-c57bfc981dd2	อัพเดทฟิลด์ status, close_cast_time ของ progress ตัวสุดท้าย
+d680693d-2b49-4c5a-a485-95bbfa1d89e5	สร้าง progress รอปรึกษาแพทย์
+d71d902c-f182-4ec8-98dd-1c7498a403dd	อัพเดทข้อมูล notifications
+d755017a-31ad-4029-86ac-7adb4fa0ee0a	ปั้น body เพื่อไปสร้าง exam
+d8088e40-c8e3-40f0-812c-7fa92846329e	อ่านข้อมูล Appointment
+d819f2ca-5797-4285-9145-8e34926c33cb	อ่านข้อมูล patient_info
+d8e37811-57f8-4617-82c8-e950ecc45be7	อ่าน examination
+d95d5fca-0d3b-4338-99da-6037a1299825	เช็คว่าเป็นเคสเปลี่ยนเตียง/แพทย์หรือไม่
+d9d63157-7f39-401c-ab60-21bf0dc7c7dd	อ่านข้อมูล Doctor_Work
+da1dc4dc-26b2-4113-a24c-5d6c04381386	check_service_type_title
+da298584-fdab-4a51-a782-8708f01692c5	อ่านข้อมูล Billing
+da5c973d-083c-4922-b300-04c1f3d84193	อัพเดทฟิลด์ appointment ของ queue ให้เป็นค่า null
+da7a847c-b169-4143-a802-c3254a89a848	อ่านข้อมูล appointment
+da83e3bc-6ba1-4960-b31d-29b343ca41f6	อ่านข้อมูล queue
+dad45528-69a1-400b-ade5-c5a85d0de54a	อ่านข้อมูล appointment ที่ถูก trigger
+db84d91a-9199-4bba-a8c8-3f0d95f887a8	ลบเวลาเริ่มใน pacs_sync_info ที่เกี่ยวข้องทั้งหมด
+dbcd4000-2aab-4ecf-a67f-e82ea393195d	อ่านข้อมูล progress ตัวสุดท้าย
+dc023ea6-3d7b-4fd7-baf7-2d342f748348	เปลี่ยนสถานะเป็น "รอเรียกคิว"
+dcc6ecad-947b-41da-b7ef-dbd1ff9f8d69	เช็คสถานะ appointment ว่าเป็น ไม่มาตามนัด หรือยกเลิกนัด หรือไม่
+dcd027ff-23db-411b-9580-8711230d5dc9	check_last_progress (รับผล)
+dd646b7c-28de-4c1a-b6b8-d1f0d4f1d0fa	เช็คว่า trigger_flows เป็น "ultrasound_work" หรือไม่ 
+dda5d30e-3d66-4656-a7f1-90ac18e607f5	อ่านข้อมูล queue ที่ผูกอยู่กับ patient_result
+dde281a5-84bf-4fdd-923e-05ce9c7ff3b8	เข้า Trigger Flow Progress Created
+de045926-46dd-4988-a03c-17de022191aa	สร้าง progress แพทย์อ่านผลเพิ่มเติม
+de2e85d8-7511-4b5b-a36a-d91ce587d716	PACS Sync Operation
+de807d21-4ef0-45af-b0a2-c486d8cfbed3	เข้า Trigger Flow Progress Created
+de851b09-f1bc-42ec-a013-ad4ea51e6396	อ่านข้อมูล progress ของ id ที่ถูกส่งมา
+ded0aef6-a9fd-45cd-8a54-df900c90bf81	สร้าง Examination
+ded6172c-3ba9-48e5-ba07-d7ecd37889b7	อัพเดทจำนวนเงิน
+defc8da9-0ae5-4e5a-9657-6a1e0c6970b0	เช็คว่ามี statusTriggerFlows และ status เป็น รับเคส (US) หรือไม่
+df2d66cc-9523-43dd-9b11-8ce4ebde585e	อัพเดทฟิลด์ status, close_case_time ของ progress ตัวสุดท้าย
+df94a8e5-92f4-4f31-93bb-240e94944fee	อัพเดตจำนวนภาพใน  pacs_sync_info
+dfca3d1b-083a-4388-a626-e23540fd5f90	อ่านข้อมูล appointment
+dff5b6bf-6c7e-4522-9a9a-54ebf42f6c61	อ่านข้อมูลจาก patient_info
+e085f651-7f3a-4c87-b4d1-e1cb80be3ee5	Log to Console
+e10cfe20-5c83-4f56-9630-580c94ee0194	เช็ค confirm จำนวนรูป
+e10e40a3-d832-4875-bbdc-0b88ade461b3	เช็คว่าเป็นคิว R หรือไม่
+e13f209e-8d33-461d-bdd6-9548aad2d7f2	สร้างข้อมูล Finance_work
+e145b84c-4403-416f-a7f4-eb91c0be5980	อ่านข้อมูล doctor_work
+e149a194-30b0-44a0-a570-fd23f0664ddf	เช็คว่า status เป็นค่า ส่ง MAM - รอเรียกคิว ใช่หรือไม่
+e1d35ce7-202a-41f9-b0cc-2ccb3bc781f5	อ่านข้อมูล exam_cost
+e1e9982f-da5b-4b35-b28d-12f34cdf4495	return ค่าวัน-เวลาของปัจจุบัน
+e2142efc-251d-4b1a-a934-2f8b3d1afb30	อัพเดท Billing
+e220f43c-4749-4771-8417-4d3af87b5bc6	อัพเดทสถานะคิวทั้งหมดให้เป็น ยกเลิกคิว
+e23c300e-c0ee-4a50-aaed-441c7026ab32	check_last_examination_is_not_null
+e273937b-6760-411f-bbd2-c143eb7e2245	เช็คว่าเป็น ultrasound เก่า + สถานะเป็น sign to pacs หรือไม่
+e3ebf72c-ce1f-45e7-bce1-c71733e09cd4	อ่านค่า record ของ appointment 
+e4322816-86bb-49a7-aa93-300cf7e10ee0	Create Data
+e4dcc5e5-8652-48e8-ad70-562e1bbfeb9e	last_no_progress
+e4e813bb-1a0f-4df8-9577-3ca4f48fa9f0	read_data_patient_result
+e511b6f6-9131-44ec-9100-265b1de52c1d	check_information_type
+e5125879-3f3a-4d0b-96f8-dc76a5187002	อ่านข้อมูล Center income
+e5369359-c3d9-4782-bba9-acb12207d06b	เข้า Trigger Flow Progress Created
+e59c83bc-589d-41e3-bae4-31fb5f453d3f	อ่านข้อมูล financa_work
+e645f01b-1344-463d-8e4b-10aee51adfd9	check_last_progress (ชำระเงิน)
+e650b0d4-aca7-49fd-a745-0c5708559677	อ่านข้อมูล pacs_sync_info ที่ถูกลบ
+e696e574-540e-4c80-927d-5170023272d7	เช็คว่ามี doctor_work_id หรือไม่
+e737c04f-8e1c-4b4a-9310-cb855349b083	read_data_queue
+e75dc90c-08ed-4d04-afc6-cb09e38d03bd	อ่านข้อมูล worklist ของ queue ที่อ่านมาก่อนหน้านี้
+e791e830-2e9c-45d6-adc5-f1cc5d018aa2	return ค่าวัน-เวลาของตอนนี้
+e7e97331-fdee-4b2e-8629-89313585573b	อ่านข้อมูลจาก pacs_sync_info
+e8368cc8-f59b-49e2-bbae-a916353cd652	อ่านข้อมูล finance_work
+e8935944-6534-41f1-a15c-15a42517f7ed	สร้าง ultrasound_work ใหม่
+e8d7b44f-16c8-4da2-8531-3f0446971793	อัพเดท finance_work
+e8eb4f11-3d95-4862-bf98-ce0f0aa87bfd	หา nurse_work ที่ผูกกับ appointment
+e92e6855-1a2a-4fec-a587-f95abd2f7c11	เช็คว่าเคสนี้ยังไม่เคยสร้าง Coordinate ใช่หรือไม่
+e944155e-be74-4b16-855f-20c53ec59321	เช็คว่าสถานะของ progress ตัวสุดท้ายไม่ใช่ ยกเลิก ใช่หรือไม่
+ea0ba221-8ff0-4e62-a667-ac5d4209eefb	อ่านค่า recommend_bx_form ทั้งหมดของเดือนนี้
+ea26567e-aaba-46ce-91f1-40a42849bebf	สร้าง notification ที่เจ้าหน้าที่ F14
+eabc22bb-d1a1-4854-b26f-8ab18a7f458f	check_patient_result_status
+eb673619-c46f-42e9-8d07-908482611878	เข้า Trigger Flow Progress Created (v.ส่ง id)
+ec87be42-d8c3-4a99-b7fb-e4925477ed98	อ่านข้อมูล queue
+ec8e47a6-ff82-4f1f-bcec-9623fd6fb88e	อ่านข้อมูล patient_info
+ece3c6a2-3fb2-4fa2-a6a0-b4d099831021	อ่านข้อมูล coordinate
+eda07fc0-4e79-435c-a5f2-56cce03a9d6d	สร้างข้อมูล exam, appointment, exam_gen
+eda6d8d3-0988-4c54-af83-73e5ffa50001	อ่านข้อมูล progress ตัวสุดท้าย
+edc8c116-452e-4650-8bea-100510e807f2	คิดเลขใบเสร็จ
+ee0fcad1-0d08-4ef5-9c8f-a93389b2e8c0	Update Data
+eeadcddb-cad4-4d9a-b045-eadd1bcdba51	return ค่า array ของ ID ทั้งหมดจาก notification
+eeb2d419-70d5-4bbe-9b1c-fcff276da987	สร้าง coordinate
+eec9d453-8492-423d-876d-73f2ca4d9345	check_queue_e
+ef0b9191-7acd-4125-a026-aab20927b81d	อัพเดทเวลาถ่ายเพิ่ม
+ef8f31bd-5732-436d-804b-26802e6c68d7	Trigger Flow
+efd05623-3596-450e-8cb1-0e983f4c6e6d	อ่านข้อมูล discount
+f0224a21-ca59-42cb-9a49-9f12c52ff130	อ่าน examination ทั้งหมดของ patient ouh
+f02e6194-90b6-41b7-9d05-b1b0c56c7a73	อ่าน ultrasound_work
+f03903c7-9451-4c4e-bd71-d6b0870f6500	เข้า Trigger Flow Postpone the appointment
+f0b5cbf3-18c5-4990-afd6-56bbe1e029e7	สร้างข้อมูล Coordinate
+f100f991-e1e1-4da3-a149-ee5902d40e54	ถ้า request ไม่ใช่ bx ให้สร้าง exam
+f118e0ab-f4ae-4864-be5c-d0871cd38a64	อัพเดทข้อมูล Billing
+f12acf50-5b99-46ff-9fdf-26502dbfa19a	เช็คว่าเป็น create หรือ update
+f17200a1-843c-41ad-9e79-64b8f0ac125a	current_time
+f1e1420d-c68a-4328-9787-bebbe8f3c0d7	อ่านข้อมูล ultrasound_work
+f1f4a079-c07d-4d39-b2f2-a08ec2a95f0f	อัพเดทข้อมูล billing 
+f21260e8-0ae2-42fa-89e6-e4d5fba5b48c	เช็คว่า bx_status = 17 หรือไม่
+f21e358d-22b5-4fcb-9cef-a8d05c01a175	Log to Console
+f223058c-eac8-4e92-bdcf-dbef9a83906a	อ่านข้อมูล queue ที่ถูก trigger
+f251a7f6-ce3a-485d-b867-72d133b3f73c	คิดเงิน (MAM)
+f2b88382-312f-45cc-bc52-20d14fac1a5a	เข้า Trigger Flow เช็คสถานะ Progress ตัวสุดท้าย
+f2e7eb3c-9233-4154-b7d5-3c63ad41fa46	PACS Sync Operation
+f31e0e98-ee3b-4afa-8323-2fa3bc4dcb29	อ่าน appointment => หา patient_id
+f395f05e-8ccf-46ca-aa4b-859b0d2ed52c	สร้าง Progress ขั้นตอนแรก โดยเอา title มาใช้ด้วย
+f3cd0901-e20c-42bb-b4f3-c59e113b04d8	Check POST
+f3e3c947-30d5-4647-9149-be9a7af26e2b	เช็คว่ามี is_mam_after_us_done ส่งมาไหม (เคส spot ที่ทำ us ก่อน)
+f409b9e0-544b-43f6-8fc3-94b8e29d19e8	เข้า Trigger Flow Progress Created (v.ส่ง id)
+f438a67d-64ba-48a4-9eee-d112b1b4ccc9	อัพเดท finance_work
+f438fb42-3f1d-4a8a-ba2a-85f3a2879131	ส่ง key ไป flow สร้าง file
+f481f3dd-ead1-428c-9608-3449eb4a74db	อ่านข้อมูล nurse_work(กันซ้ำ)
+f4e2e70b-9c86-484a-b919-1f5d5b9b9be7	Create Data (รับผล)
+f525e20d-4eaa-4f9e-b0fa-e4e0effa5a59	อ่านข้อมูล billing
+f52edefd-f390-4063-a084-620289aaf6a6	ปั้น Body ก่อนยิง API
+f57791c4-b26d-4ff7-bdb6-0fc9398798e2	อ่านข้อมูล Patient Info
+f5a42e53-4f80-48c8-8ff5-8e084ff671df	เช็คว่า exam เป็นสถานะ ยกเลิก หรือไม่
+f5a61cb0-fe30-440a-9f4d-30fe0fdbb1f7	สร้าง progress ถ่าย Mammogram เพิ่ม
+f65d1af9-ea24-4eca-a9e2-38c3fa0a5672	ยิง Webhook (Patch) ไปอัพเดทสถานะนัดหมายทั้งหมดให้เป็น ไม่มาตามนัด
+f667429d-0afc-4e01-83ea-779867f373c1	เช็คสถานะ nurse_work, action (ถ้ามี action จะไม่เข้าเงื่อนไขนื่องจาก ถ้าเปลี่ยนสถานะ appointment จากฝั่งพยาบาลจะมา reset สถานะตรงนี้เลยต้องเช็ค action ถ้าเช็ค code search คำว่า "action to flows id:82")
+f76613f2-9542-47ac-9b38-8447db9432a4	อัพเดทฟิลด์ email ต่อท้ายด้วย @thanyarak.or.th
+f767d8b7-aa3f-47d9-b10e-9036d8b5be36	สร้าง progress ขอเปลี่ยนแพทย์
+f866a263-627a-462d-a551-59c369f5e614	อ่านข้อมูล exam
+f8acc5fa-4af4-4279-affa-14b23c36dbf2	Check DELETE
+f8ed4e09-1a5a-4f4b-add4-f1f40105ae83	last_no_progress
+f90d0acb-70d4-4bf1-9825-0abc5fac855c	เช็คว่ามี Mammogram หรือไม่ แล้ว return แผนกออกไป
+f9865b18-2aa1-40ee-85ac-17e423dfe7dd	ลบข้อมูลที่ doctor_work เมื่อคืนเคส
+f9e05871-9549-4fd8-b879-9c0bbbf41665	อ่านข้อมูล pacs_sync_info
+faea10cd-aa69-4d33-b770-0f224f3f77d6	อ่านค่า coordinate นี้
+fb307ad9-cb01-414b-b940-71b0f3ac6692	check_result_type_3
+fb7073c7-aa55-44b6-a0d3-512d3546ffd7	อ่านข้อมูล Coordinate
+fb953041-e718-4a4a-be55-1a0b67d01d47	อ่านข้อมูล appointment ของ id ที่ส่งเข้ามา
+fcac6ba9-bf8a-430e-8a8f-b0f0214c1680	current_time
+fcbaba78-c0c6-4d1b-b980-2a8d3722a177	อัพเดทสถานะ notification
+fdc17e3c-7fcf-4f7f-8a26-ebeba2fd609b	เคลียร์ค่า queue ใน appointment
+fdf3b17e-b70b-4de2-bc84-8ee938c1b1fd	check_queue_status_1
+fe01278e-edce-4f6d-8e35-c88fd019c4b7	อัพเดทฟิลด์ is_change_time_slot, is_insert_queue, appointment_status, queue ของ appointment ที่ถูก trigger
+fe2dc5a8-554d-40f9-9b68-273ebae1e8bf	อ่านข้อมูล examination 
+fe3032b4-4938-4ec3-af26-ba646a72d312	อัพเดท Billing
+fe4147c7-62f4-42dc-8bb3-e8d898655970	ลงเวลาเป็น called_time
+fef52545-fee4-4246-9a7d-648199312db2	เข้า Trigger Flow Progress Created (v.ส่ง id)
+fefb7f54-ba54-4759-a002-653fc4873c38	Log to Console
+ff06a3b9-939f-4b4c-be8b-de419b41e81c	เช็คว่ามี statusTriggerFlows และ สถานะเป็น F14/แนะนำ Bx || F14/ปล่อยกลับบ้าน หรือไม่
+ff73d529-bcd2-47dc-89a5-b0207e5dc91e	สร้าง progress เจ้าหน้าที่ออกใบเรียกเก็บค่าบริการ
+ff7ff3f9-3f59-4d4b-b0cb-558400d471b6	current_time

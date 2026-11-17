@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 #
-# Sync Directus flows + operations: compare → approve → backup → apply → restore.
+# Sync Directus flows + operations via a git-mediated snapshot.
+#
+# Two-machine workflow (no SSH):
+#   1) Machine with source DB:  export  → commit exports/directus-flows/ → push
+#   2) Private prod server:     git pull → compare / apply / restore (DEST only)
 #
 # Default is dry-run (compare only). Never mutates destination without approval.
 #
 # Usage:
+#   ./scripts/db-flows-sync.sh export
 #   ./scripts/db-flows-sync.sh compare
-#   ./scripts/db-flows-sync.sh export [--side source|dest] [--out PATH]
 #   ./scripts/db-flows-sync.sh backup
 #   ./scripts/db-flows-sync.sh apply [--approve]
 #   ./scripts/db-flows-sync.sh restore <backup-name-or-path>
@@ -22,42 +26,47 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/db-flows-common.inc.sh"
 
 load_flows_env_file
-trap flows_cleanup_on_exit EXIT
 
 APPROVE=0
-SIDE="source"
 OUT_PATH=""
 COMMAND=""
 BACKUP_NAME=""
 
 usage() {
   cat <<'EOF'
-db-flows-sync.sh — Directus flows + operations sync (source → destination)
+db-flows-sync.sh — Directus flows + operations (git-mediated snapshot)
+
+Two-machine flow (primary):
+  export   (needs SOURCE_*)  → commit exports/directus-flows/ → git push
+  on prod: git pull → compare / apply / restore (needs DEST_* only)
 
 Commands:
-  compare              Diff source vs dest (default; no writes)
-  export               Dump data-only SQL for flows/operations
-  backup               Backup destination flows/operations only
-  apply                Compare, then replace dest with source (needs approval)
+  export               Dump source DB → exports/directus-flows/ (commit these files)
+  compare              Diff committed snapshot vs live dest (default; no writes)
+  backup               Backup destination flows/operations only (gitignored)
+  apply                Compare, then replace dest from snapshot (needs approval)
   restore <name>       Restore dest from backups/flows/<name>
   help                 Show this help
 
 Options:
-  --approve            Non-interactive approve for apply (after you reviewed compare)
-  --side source|dest   Side for export (default: source)
-  --out PATH           Output path for export
+  --approve            Non-interactive approve for apply/restore
+  --snapshot DIR       Snapshot directory (default: exports/directus-flows)
+  --out DIR            Alias for --snapshot on export
   --env-file PATH      Load env from PATH instead of .env.flows
 
 Environment (see docker/flows.env.example):
-  SOURCE_DATABASE_URL, SOURCE_SCHEMA
-  DEST_DATABASE_URL, DEST_SCHEMA
-  DEST_SSH_HOST (+ DEST_SSH_LOCAL_PORT, …) optional tunnel
-  CONTENT_ONLY=true|false  compare ignores date_created/user_created when true (default)
+  SOURCE_DATABASE_URL, SOURCE_SCHEMA   — export machine only
+  EXPORT_SCHEMA                        — schema written into snapshot SQL (default: public)
+  DEST_DATABASE_URL, DEST_SCHEMA       — prod server (local Postgres)
+  CONTENT_ONLY=true|false              — fingerprint compare (default true)
+
+Git hygiene:
+  • Commit:   exports/directus-flows/   (intentional snapshot)
+  • Ignore:   backups/flows/ , .env.flows
 
 Safety:
   • Default is compare / dry-run only
   • apply always writes a dated backup under backups/flows/ before mutate
-  • Do not point DEST at production until you intend to; this tooling does not auto-target prod
 EOF
 }
 
@@ -80,12 +89,9 @@ while [[ $# -gt 0 ]]; do
       APPROVE=1
       shift
       ;;
-    --side)
-      SIDE="${2:?--side needs source|dest}"
-      shift 2
-      ;;
-    --out)
-      OUT_PATH="${2:?--out needs a path}"
+    --snapshot|--out)
+      OUT_PATH="${2:?$1 needs a directory path}"
+      FLOWS_SNAPSHOT_DIR="$OUT_PATH"
       shift 2
       ;;
     --env-file)
@@ -119,7 +125,8 @@ confirm_apply() {
   fi
   local answer
   echo
-  echo "This will REPLACE destination directus_flows + directus_operations with source."
+  echo "This will REPLACE destination directus_flows + directus_operations"
+  echo "with the committed snapshot under $(resolved_snapshot_dir)."
   echo "A backup will be taken first under backups/flows/."
   printf "Type yes to continue: "
   read -r answer
@@ -129,42 +136,51 @@ confirm_apply() {
   fi
 }
 
-cmd_compare() {
-  local source_url dest_url source_schema dest_schema
-  local tmp diff_status=0
+cmd_export() {
+  local source_url source_schema export_schema dir
   source_url="$(require_source_url)"
-  dest_url="$(require_dest_url)"
-  source_schema="$(flows_schema_for_side source)"
-  dest_schema="$(flows_schema_for_side dest)"
+  source_schema="$(flows_source_schema)"
+  export_schema="$(flows_export_schema)"
+  dir="$(resolved_snapshot_dir)"
 
-  flows_ssh_tunnel_start
+  write_flows_snapshot "$source_url" "$source_schema" "$export_schema" "$dir"
+  echo
+  echo "Next (on this machine):"
+  echo "  git add exports/directus-flows/"
+  echo "  git commit -m \"Update Directus flows snapshot\""
+  echo "  git push"
+  echo "Then on the prod server: git pull && ./scripts/db-flows-sync.sh compare"
+}
+
+cmd_compare() {
+  local dest_url dest_schema snap tmp
+  local flows_rc=0 ops_rc=0
+  snap="$(require_snapshot_dir)"
+  dest_url="$(require_dest_url)"
+  dest_schema="$(flows_dest_schema)"
 
   tmp="$(mktemp -d -t bis-flows-compare.XXXXXX)"
-  echo "Comparing flows/operations" >&2
-  echo "  source: schema=${source_schema}" >&2
-  echo "  dest:   schema=${dest_schema}" >&2
+  echo "Comparing committed snapshot vs dest" >&2
+  echo "  snapshot: ${snap}" >&2
+  if [[ -f "${snap}/MANIFEST" ]]; then
+    echo "  manifest: $(tr '\n' ' ' <"${snap}/MANIFEST")" >&2
+  fi
+  echo "  dest:     schema=${dest_schema}" >&2
   echo "  CONTENT_ONLY=${CONTENT_ONLY:-true}" >&2
 
-  export_flows_fingerprint_tsv "$source_url" "$source_schema" flows >"${tmp}/src_flows.tsv"
   export_flows_fingerprint_tsv "$dest_url" "$dest_schema" flows >"${tmp}/dst_flows.tsv"
-  export_flows_fingerprint_tsv "$source_url" "$source_schema" operations >"${tmp}/src_ops.tsv"
   export_flows_fingerprint_tsv "$dest_url" "$dest_schema" operations >"${tmp}/dst_ops.tsv"
-  export_flows_label_map "$source_url" "$source_schema" flows >"${tmp}/src_flows_labels.tsv"
   export_flows_label_map "$dest_url" "$dest_schema" flows >"${tmp}/dst_flows_labels.tsv"
-  export_flows_label_map "$source_url" "$source_schema" operations >"${tmp}/src_ops_labels.tsv"
   export_flows_label_map "$dest_url" "$dest_schema" operations >"${tmp}/dst_ops_labels.tsv"
 
   echo
-  # Do not toggle `set -e` here — that would leak into callers (e.g. apply).
-  local flows_rc=0
-  local ops_rc=0
   compare_fingerprint_files flows \
-    "${tmp}/src_flows.tsv" "${tmp}/dst_flows.tsv" \
-    "${tmp}/src_flows_labels.tsv" "${tmp}/dst_flows_labels.tsv" || flows_rc=$?
+    "${snap}/fingerprints/flows.tsv" "${tmp}/dst_flows.tsv" \
+    "${snap}/fingerprints/flows_labels.tsv" "${tmp}/dst_flows_labels.tsv" || flows_rc=$?
   echo
   compare_fingerprint_files operations \
-    "${tmp}/src_ops.tsv" "${tmp}/dst_ops.tsv" \
-    "${tmp}/src_ops_labels.tsv" "${tmp}/dst_ops_labels.tsv" || ops_rc=$?
+    "${snap}/fingerprints/operations.tsv" "${tmp}/dst_ops.tsv" \
+    "${snap}/fingerprints/operations_labels.tsv" "${tmp}/dst_ops_labels.tsv" || ops_rc=$?
 
   rm -rf "$tmp"
 
@@ -185,53 +201,24 @@ cmd_compare() {
     return 1
   fi
   echo
-  echo "Result: source and dest match for flows + operations."
+  echo "Result: snapshot and dest match for flows + operations."
   return 0
-}
-
-cmd_export() {
-  local url schema stamp out
-  if [[ "$SIDE" != "source" && "$SIDE" != "dest" ]]; then
-    echo "ERROR: --side must be source or dest" >&2
-    return 2
-  fi
-  if [[ "$SIDE" == "source" ]]; then
-    url="$(require_source_url)"
-  else
-    url="$(require_dest_url)"
-    flows_ssh_tunnel_start
-  fi
-  schema="$(flows_schema_for_side "$SIDE")"
-  stamp="$(date +%Y%m%d_%H%M%S)"
-  out="${OUT_PATH:-${FLOWS_PACKAGE_ROOT}/backups/flows/export_${SIDE}_${stamp}.sql}"
-  mkdir -p "$(dirname "$out")"
-
-  echo "Exporting ${SIDE} flows/operations (${schema}) → ${out}" >&2
-  {
-    echo "-- Directus flows/operations data-only export"
-    echo "-- side: ${SIDE}  schema: ${schema}  at: ${stamp}"
-    dump_flows_data_sql "$url" "$schema" | sanitize_flows_dump_sql
-  } >"$out"
-  echo "Done. Size: $(du -h "$out" | cut -f1)" >&2
 }
 
 cmd_backup() {
   local dest_url dest_schema dir
   dest_url="$(require_dest_url)"
-  dest_schema="$(flows_schema_for_side dest)"
-  flows_ssh_tunnel_start
+  dest_schema="$(flows_dest_schema)"
   dir="$(backup_dest_flows "$dest_url" "$dest_schema")"
   echo "Backup complete: ${dir}"
 }
 
 cmd_apply() {
-  local source_url dest_url source_schema dest_schema backup_dir
-  source_url="$(require_source_url)"
+  local dest_url dest_schema snap export_schema backup_dir
+  snap="$(require_snapshot_dir)"
   dest_url="$(require_dest_url)"
-  source_schema="$(flows_schema_for_side source)"
-  dest_schema="$(flows_schema_for_side dest)"
-
-  flows_ssh_tunnel_start
+  dest_schema="$(flows_dest_schema)"
+  export_schema="$(snapshot_export_schema "$snap")"
 
   echo "=== Pre-apply compare (dry-run) ==="
   local cmp_rc=0
@@ -246,7 +233,11 @@ cmd_apply() {
   backup_dir="$(backup_dest_flows "$dest_url" "$dest_schema")"
   echo "Pre-apply backup: ${backup_dir}"
 
-  apply_flows_from_source "$source_url" "$source_schema" "$dest_url" "$dest_schema"
+  apply_flows_from_sql_file \
+    "${snap}/directus_flows_operations.sql" \
+    "$export_schema" \
+    "$dest_url" \
+    "$dest_schema"
 
   echo
   echo "=== Post-apply verify ==="
@@ -271,10 +262,8 @@ cmd_restore() {
     return 2
   fi
   dest_url="$(require_dest_url)"
-  dest_schema="$(flows_schema_for_side dest)"
+  dest_schema="$(flows_dest_schema)"
   dir="$(resolve_backup_dir "$BACKUP_NAME")"
-
-  flows_ssh_tunnel_start
 
   if [[ "$APPROVE" != "1" ]]; then
     if [[ ! -t 0 ]]; then
@@ -292,7 +281,6 @@ cmd_restore() {
     fi
   fi
 
-  # Safety backup of current dest before restore
   local safety
   safety="$(backup_dest_flows "$dest_url" "$dest_schema" "$(date +%Y%m%d_%H%M%S)_pre_restore")"
   echo "Safety backup of current dest: ${safety}"

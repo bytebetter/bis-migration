@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared helpers for Directus flows / operations sync.
+# Shared helpers for Directus flows / operations sync (git-mediated snapshot workflow).
 # shellcheck shell=bash
 
 SCRIPT_DIR_FLOWS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -8,15 +8,14 @@ source "${SCRIPT_DIR_FLOWS}/db-selective-tables.inc.sh"
 
 FLOWS_PACKAGE_ROOT="$(cd "${SCRIPT_DIR_FLOWS}/.." && pwd)"
 FLOWS_BACKUP_ROOT="${FLOWS_PACKAGE_ROOT}/backups/flows"
+# Committed source-of-truth snapshot for prod compare/apply (see exports/directus-flows/README.md).
+FLOWS_SNAPSHOT_DEFAULT="${FLOWS_PACKAGE_ROOT}/exports/directus-flows"
 
-# Subset of DIRECTUS_TABLES — keep order: operations depend on flows (and vice versa via operation FK).
+# Subset of DIRECTUS_TABLES — circular FK between flows.operation ↔ operations.
 FLOW_SYNC_TABLES=(
   directus_flows
   directus_operations
 )
-
-_FLOWS_SSH_PID=""
-_FLOWS_SSH_STARTED_BY_US=0
 
 load_flows_env_file() {
   local env_file="${FLOWS_ENV_FILE:-${FLOWS_PACKAGE_ROOT}/.env.flows}"
@@ -42,7 +41,7 @@ require_source_url() {
   local url
   url="$(resolved_source_database_url)"
   if [[ -z "$url" ]]; then
-    echo "ERROR: set SOURCE_DATABASE_URL (or DATABASE_URL) in .env.flows / environment." >&2
+    echo "ERROR: set SOURCE_DATABASE_URL (or DATABASE_URL) — required only for export." >&2
     echo "See docker/flows.env.example" >&2
     return 1
   fi
@@ -54,76 +53,64 @@ require_dest_url() {
   url="$(resolved_dest_database_url)"
   if [[ -z "$url" ]]; then
     echo "ERROR: set DEST_DATABASE_URL in .env.flows / environment." >&2
+    echo "On the production server this is local Postgres (no SOURCE / no SSH needed)." >&2
     echo "See docker/flows.env.example" >&2
     return 1
   fi
   echo "$url"
 }
 
-flows_schema_for_side() {
-  local side="$1"
-  if [[ "$side" == "source" ]]; then
-    echo "${SOURCE_SCHEMA:-public}"
-  else
-    echo "${DEST_SCHEMA:-${TARGET_SCHEMA:-public}}"
-  fi
+flows_source_schema() {
+  echo "${SOURCE_SCHEMA:-public}"
 }
 
-# Optional SSH local-forward for private production Postgres.
-flows_ssh_tunnel_start() {
-  if [[ -z "${DEST_SSH_HOST:-}" ]]; then
-    return 0
-  fi
-  local local_port remote_host remote_port ssh_port identity_args=()
-  local_port="${DEST_SSH_LOCAL_PORT:-15432}"
-  remote_host="${DEST_SSH_REMOTE_HOST:-127.0.0.1}"
-  remote_port="${DEST_SSH_REMOTE_PORT:-5432}"
-  ssh_port="${DEST_SSH_PORT:-22}"
-
-  if [[ -n "${DEST_SSH_IDENTITY_FILE:-}" ]]; then
-    identity_args=(-i "${DEST_SSH_IDENTITY_FILE/#\~/$HOME}")
-  fi
-
-  if command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 "$local_port" >/dev/null 2>&1; then
-    echo "SSH tunnel: port ${local_port} already open (reusing)." >&2
-    # Keep existing _FLOWS_SSH_STARTED_BY_US so EXIT trap still cleans up our tunnel.
-    return 0
-  fi
-
-  echo "SSH tunnel: ${DEST_SSH_HOST} ${remote_host}:${remote_port} → 127.0.0.1:${local_port}" >&2
-  ssh -f -N \
-    -o ExitOnForwardFailure=yes \
-    -o ServerAliveInterval=30 \
-    -p "$ssh_port" \
-    "${identity_args[@]}" \
-    -L "${local_port}:${remote_host}:${remote_port}" \
-    "$DEST_SSH_HOST"
-  # shellcheck disable=SC2009
-  _FLOWS_SSH_PID="$(ps -Ao pid,command | awk -v p="$local_port" -v h="$DEST_SSH_HOST" '
-    $0 ~ "ssh" && $0 ~ ("-L " p ":") && $0 ~ h { print $1; exit }
-  ')"
-  _FLOWS_SSH_STARTED_BY_US=1
-  sleep 1
+flows_dest_schema() {
+  echo "${DEST_SCHEMA:-${TARGET_SCHEMA:-public}}"
 }
 
-flows_ssh_tunnel_stop() {
-  if [[ "${_FLOWS_SSH_STARTED_BY_US}" != "1" ]]; then
-    return 0
-  fi
-  if [[ -n "${_FLOWS_SSH_PID}" ]] && kill -0 "${_FLOWS_SSH_PID}" 2>/dev/null; then
-    echo "SSH tunnel: stopping pid ${_FLOWS_SSH_PID}" >&2
-    kill "${_FLOWS_SSH_PID}" 2>/dev/null || true
-  fi
-  _FLOWS_SSH_PID=""
-  _FLOWS_SSH_STARTED_BY_US=0
+# Schema written into the committed SQL snapshot (portable for prod apply).
+flows_export_schema() {
+  echo "${EXPORT_SCHEMA:-${TARGET_SCHEMA:-public}}"
 }
 
-flows_cleanup_on_exit() {
-  flows_ssh_tunnel_stop
+resolved_snapshot_dir() {
+  local dir="${FLOWS_SNAPSHOT_DIR:-${FLOWS_SNAPSHOT_DEFAULT}}"
+  if [[ "$dir" != /* ]]; then
+    dir="${FLOWS_PACKAGE_ROOT}/${dir}"
+  fi
+  echo "$dir"
 }
 
-# Prefer host psql for dest/localhost (SSH tunnels + Docker Desktop localhost quirks).
-# Fall back to run_psql_remote (may use Docker) for remote URLs when local client is missing.
+require_snapshot_dir() {
+  local dir
+  dir="$(resolved_snapshot_dir)"
+  if [[ ! -f "${dir}/directus_flows_operations.sql" ]]; then
+    echo "ERROR: snapshot SQL missing: ${dir}/directus_flows_operations.sql" >&2
+    echo "On a machine with source DB access, run: ./scripts/db-flows-sync.sh export" >&2
+    echo "Commit exports/directus-flows/, push, then pull on the prod server." >&2
+    return 1
+  fi
+  if [[ ! -f "${dir}/fingerprints/flows.tsv" || ! -f "${dir}/fingerprints/operations.tsv" ]]; then
+    echo "ERROR: snapshot fingerprints missing under ${dir}/fingerprints/" >&2
+    echo "Re-run: ./scripts/db-flows-sync.sh export" >&2
+    return 1
+  fi
+  echo "$dir"
+}
+
+snapshot_export_schema() {
+  local dir="$1"
+  local schema=""
+  if [[ -f "${dir}/MANIFEST" ]]; then
+    schema="$(awk -F= '/^export_schema=/{print $2; exit}' "${dir}/MANIFEST")"
+  fi
+  if [[ -z "$schema" ]]; then
+    schema="$(flows_export_schema)"
+  fi
+  echo "$schema"
+}
+
+# Prefer host psql for local/prod Postgres. Fall back to Docker helper if needed.
 flows_psql() {
   local url="$1"
   shift
@@ -163,7 +150,6 @@ flows_prefer_modern_pg_dump() {
   return 0
 }
 
-# Dump data-only SQL for flow tables from url/schema (stdout).
 dump_flows_data_sql() {
   local url="$1"
   local schema="$2"
@@ -186,7 +172,6 @@ join_pg_tables_for_schema() {
   echo "$out"
 }
 
-# Rewrite dump schema names for restore into DEST_SCHEMA.
 rewrite_flows_dump_schema() {
   local from="$1"
   local to="$2"
@@ -206,7 +191,6 @@ sanitize_flows_dump_sql() {
     -e '/^SET idle_session_timeout =/d'
 }
 
-# Pipeline used for every backup/apply/export normalize step.
 normalize_flows_dump_sql() {
   local from_schema="$1"
   local to_schema="$2"
@@ -214,7 +198,6 @@ normalize_flows_dump_sql() {
 }
 
 # Export a stable TSV fingerprint per row for compare (id + content fields).
-# Columns chosen to ignore date_created / user_created noise when CONTENT_ONLY=true (default).
 export_flows_fingerprint_tsv() {
   local url="$1"
   local schema="$2"
@@ -288,7 +271,6 @@ ORDER BY id;"
   fi
 }
 
-# Human-readable name map: id → name (flows) or id → key (operations)
 export_flows_label_map() {
   local url="$1"
   local schema="$2"
@@ -349,8 +331,8 @@ def label(rid):
     return src_labels.get(rid) or dst_labels.get(rid) or ""
 
 print(f"=== {kind.upper()} ===")
-print(f"  source: {len(src)}  dest: {len(dst)}  unchanged: {unchanged}")
-print(f"  + added (source only):   {len(added)}")
+print(f"  snapshot: {len(src)}  dest: {len(dst)}  unchanged: {unchanged}")
+print(f"  + added (snapshot only): {len(added)}")
 print(f"  - removed (dest only):   {len(removed)}")
 print(f"  ~ changed:               {len(changed)}")
 
@@ -369,9 +351,72 @@ show("Added:", added, "+")
 show("Removed:", removed, "-")
 show("Changed:", changed, "~")
 
-# exit 1 when differences exist (useful for CI / scripting)
 sys.exit(0 if not (added or removed or changed) else 1)
 PY
+}
+
+write_flows_snapshot() {
+  local source_url="$1"
+  local source_schema="$2"
+  local export_schema="$3"
+  local dir="$4"
+  local stamp
+  stamp="$(date +%Y%m%d_%H%M%S)"
+  local flows_count ops_count
+
+  mkdir -p "${dir}/fingerprints"
+
+  echo "Exporting source flows/operations → snapshot ${dir}" >&2
+  echo "  source_schema=${source_schema} → export_schema=${export_schema}" >&2
+
+  {
+    echo "-- Directus flows/operations snapshot (committed artifact)"
+    echo "-- source_schema: ${source_schema}"
+    echo "-- export_schema: ${export_schema}"
+    echo "-- exported_at: ${stamp}"
+    echo "-- Apply on prod: ./scripts/db-flows-sync.sh apply"
+    dump_flows_data_sql "$source_url" "$source_schema" \
+      | normalize_flows_dump_sql "$source_schema" "$export_schema"
+  } >"${dir}/directus_flows_operations.sql"
+
+  export_flows_fingerprint_tsv "$source_url" "$source_schema" flows \
+    >"${dir}/fingerprints/flows.tsv"
+  export_flows_fingerprint_tsv "$source_url" "$source_schema" operations \
+    >"${dir}/fingerprints/operations.tsv"
+  export_flows_label_map "$source_url" "$source_schema" flows \
+    >"${dir}/fingerprints/flows_labels.tsv"
+  export_flows_label_map "$source_url" "$source_schema" operations \
+    >"${dir}/fingerprints/operations_labels.tsv"
+
+  flows_count="$(wc -l <"${dir}/fingerprints/flows.tsv" | tr -d '[:space:]')"
+  ops_count="$(wc -l <"${dir}/fingerprints/operations.tsv" | tr -d '[:space:]')"
+
+  cat >"${dir}/MANIFEST" <<EOF
+exported_at=${stamp}
+source_schema=${source_schema}
+export_schema=${export_schema}
+flows_count=${flows_count}
+operations_count=${ops_count}
+content_only=${CONTENT_ONLY:-true}
+sql_file=directus_flows_operations.sql
+EOF
+
+  if [[ ! -f "${dir}/README.md" ]]; then
+    cat >"${dir}/README.md" <<'EOF'
+# Directus flows snapshot (committed)
+
+This directory is the **portable source snapshot** for production sync.
+
+- **Commit** the files here after `./scripts/db-flows-sync.sh export` (intentionally tracked).
+- On the private prod server: `git pull`, then `compare` / `apply` / `restore` using **DEST only** — no live source DB and no SSH tunnel.
+- Runtime backups stay under `backups/flows/` (gitignored).
+
+See `docs/directus-flows-sync-runbook.md`.
+EOF
+  fi
+
+  echo "Snapshot written: flows=${flows_count} operations=${ops_count}" >&2
+  echo "$dir"
 }
 
 backup_dest_flows() {
@@ -392,7 +437,7 @@ backup_dest_flows() {
     "SELECT count(*) FROM ${dest_schema}.directus_operations;" >"${dir}/counts_operations.txt" || true
 
   cat >"${dir}/README.txt" <<EOF
-Directus flows backup
+Directus flows backup (runtime — gitignored under backups/)
 created: ${stamp}
 dest_schema: ${dest_schema}
 files:
@@ -406,31 +451,31 @@ EOF
   echo "$dir"
 }
 
-# Replace dest flow tables with source data (FK-safe via session_replication_role).
-apply_flows_from_source() {
-  local source_url="$1"
-  local source_schema="$2"
+# Replace dest flow tables from a committed/runtime SQL file (FK-safe).
+apply_flows_from_sql_file() {
+  local sql_file="$1"
+  local from_schema="$2"
   local dest_url="$3"
   local dest_schema="$4"
   local tmp
-  tmp="$(mktemp -t bis-flows-apply.XXXXXX.sql)"
 
+  if [[ ! -f "$sql_file" ]]; then
+    echo "ERROR: missing SQL file: ${sql_file}" >&2
+    return 1
+  fi
+
+  tmp="$(mktemp -t bis-flows-apply.XXXXXX.sql)"
   {
     echo "BEGIN;"
     echo "SET LOCAL session_replication_role = replica;"
     echo "TRUNCATE TABLE ${dest_schema}.directus_operations, ${dest_schema}.directus_flows CASCADE;"
-  } >"$tmp"
-
-  dump_flows_data_sql "$source_url" "$source_schema" \
-    | normalize_flows_dump_sql "$source_schema" "$dest_schema" \
-    >>"$tmp"
-
-  {
+    # Re-normalize in case export_schema ≠ dest_schema, and strip PG17-only SETs again.
+    sanitize_flows_dump_sql <"$sql_file" | rewrite_flows_dump_schema "$from_schema" "$dest_schema"
     echo "SET LOCAL session_replication_role = origin;"
     echo "COMMIT;"
-  } >>"$tmp"
+  } >"$tmp"
 
-  echo "Applying source flows/operations → dest (${source_schema} → ${dest_schema})…" >&2
+  echo "Applying snapshot SQL → dest (${from_schema} → ${dest_schema})…" >&2
   flows_psql "$dest_url" -v ON_ERROR_STOP=1 -f - <"$tmp"
   rm -f "$tmp"
 }
@@ -440,26 +485,8 @@ restore_flows_from_backup() {
   local dest_schema="$2"
   local backup_dir="$3"
   local sql_file="${backup_dir}/directus_flows_operations.sql"
-  local tmp
 
-  if [[ ! -f "$sql_file" ]]; then
-    echo "ERROR: missing ${sql_file}" >&2
-    return 1
-  fi
-
-  tmp="$(mktemp -t bis-flows-restore.XXXXXX.sql)"
-  {
-    echo "BEGIN;"
-    echo "SET LOCAL session_replication_role = replica;"
-    echo "TRUNCATE TABLE ${dest_schema}.directus_operations, ${dest_schema}.directus_flows CASCADE;"
-    cat "$sql_file"
-    echo "SET LOCAL session_replication_role = origin;"
-    echo "COMMIT;"
-  } >"$tmp"
-
-  echo "Restoring flows from ${backup_dir} → ${dest_schema}…" >&2
-  flows_psql "$dest_url" -v ON_ERROR_STOP=1 -f - <"$tmp"
-  rm -f "$tmp"
+  apply_flows_from_sql_file "$sql_file" "$dest_schema" "$dest_url" "$dest_schema"
 }
 
 resolve_backup_dir() {
