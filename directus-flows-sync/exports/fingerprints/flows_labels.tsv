@@ -57,6 +57,7 @@
 95fa6dda-c2a3-43a3-9ff6-dbf26cfb5025	[id-67]<recommend_bx_form.create>[recommend_bx_form.update]
 96612f43-f36a-46b0-8f7d-98a336cf4416	[id-97]<nursework.update>
 96d6e2ad-4b19-4ce1-8e85-0a0921c808b3	[id-23]<patient_result.update>[finance_work.create, finance.update, billing.create, billing.update, center_income.create]
+9b45be8e-0df7-4e1a-b3ca-2a1686ecaba9	[id-96]<nursework.update>[doctor_work.create, coordinate.create]
 9c0642e6-8c23-403f-b833-cc2c7f0c7524	[id-70]<CRONJOB>[doctor_work.update]
 9eb9360a-fa14-4b41-87db-345589c2ceb8	[id-81]<finance_work.update>[nurse_work.update]
 9fefa146-297d-4afd-b1d6-0710f75a25c8	[id-77]<ultrasound_work.update>[pacs_sync_info.update]
