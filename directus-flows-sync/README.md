@@ -24,11 +24,13 @@ cp flows.config.example.json flows.config.json
 ./scripts/sync.sh export          # needs source
 git add exports/ && git commit && git push
 
-# on private prod:
+# on private prod (Postgres published on host :5432):
 git pull
+# prefer: "pg": { "useDocker": false } + dest URL @127.0.0.1:5432
+# if Docker client: loopback is rewritten to host.docker.internal automatically
 ./scripts/sync.sh compare         # needs dest only
 ./scripts/sync.sh apply           # type yes, or --approve
 ./scripts/sync.sh restore <stamp>
 ```
 
-See [docs/runbook.md](docs/runbook.md).
+If compare fails with `Connection refused` to `127.0.0.1` while Postgres is in Docker, see [docs/runbook.md](docs/runbook.md#prod--postgres-ใน-docker-connection-refused).

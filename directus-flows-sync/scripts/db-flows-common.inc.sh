@@ -38,45 +38,190 @@ pg_dump_major_version() {
   pg_dump --version | sed -E 's/.*[^0-9]([0-9]+)\..*/\1/'
 }
 
+# Parse postgres URL host with urllib (handles passwords containing '@' when %-encoded).
+flows_url_host() {
+  local url="$1"
+  python3 - "$url" <<'PY'
+import sys
+from urllib.parse import urlparse, unquote
+u = urlparse(sys.argv[1])
+print(u.hostname or "")
+PY
+}
+
+flows_url_is_loopback() {
+  local host
+  host="$(flows_url_host "$1")"
+  case "$host" in
+    127.0.0.1|localhost|::1|0.0.0.0) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Warn when password likely broke host parsing (unescaped '@' in userinfo).
+flows_warn_url_password_encoding() {
+  local url="$1"
+  python3 - "$url" <<'PY' >&2 || true
+import sys
+from urllib.parse import urlparse
+u = urlparse(sys.argv[1])
+raw = sys.argv[1]
+# Heuristic: more than one '@' before the path → password probably not %-encoded.
+before = raw.split("://", 1)[-1].split("/", 1)[0]
+if before.count("@") > 1:
+    print(
+        "WARN: database URL has multiple '@' before '/'. "
+        "If the password contains '@', encode it as %40 "
+        "(e.g. postgresql://user:p%40ss@127.0.0.1:5432/db).",
+        file=sys.stderr,
+    )
+if u.hostname in (None, ""):
+    print("WARN: could not parse hostname from database URL.", file=sys.stderr)
+PY
+}
+
+# Inside a client container, 127.0.0.1 is the container — rewrite to reach host-published Postgres.
+flows_rewrite_url_for_docker_client() {
+  local url="$1"
+  local docker_host="${PG_DOCKER_HOST:-host.docker.internal}"
+  python3 - "$url" "$docker_host" <<'PY'
+import sys
+from urllib.parse import quote, unquote, urlparse, urlunparse
+
+url, docker_host = sys.argv[1], sys.argv[2]
+u = urlparse(url)
+host = u.hostname or ""
+if host in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
+    userinfo = ""
+    if u.username is not None:
+        userinfo = quote(unquote(u.username), safe="")
+        if u.password is not None:
+            # unquote first so already-%40 passwords are not double-encoded.
+            userinfo += ":" + quote(unquote(u.password), safe="")
+        userinfo += "@"
+    port = f":{u.port}" if u.port else ""
+    netloc = f"{userinfo}{docker_host}{port}"
+    print(urlunparse((u.scheme, netloc, u.path, u.params, u.query, u.fragment)))
+else:
+    print(url)
+PY
+}
+
+flows_docker_run_args() {
+  # Always map host.docker.internal for loopback URLs; optionally join a compose network too.
+  local args=(--add-host=host.docker.internal:host-gateway)
+  if [[ -n "${PG_DOCKER_NETWORK:-}" ]]; then
+    args+=(--network "${PG_DOCKER_NETWORK}")
+  fi
+  printf '%s\n' "${args[@]}"
+}
+
+# Run psql in a throwaway client container that can reach host-mapped or compose-network Postgres.
+flows_psql_docker() {
+  local url="$1"
+  shift
+  local image="${PG_CLIENT_IMAGE:-postgres:17-alpine}"
+  local docker_url run_args=()
+  local line
+
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Install Docker or host psql to connect." >&2
+    return 1
+  fi
+
+  flows_warn_url_password_encoding "$url"
+  docker_url="$(flows_rewrite_url_for_docker_client "$url")"
+  if [[ "$docker_url" != "$url" ]]; then
+    echo "Docker psql client: rewriting loopback host → ${PG_DOCKER_HOST:-host.docker.internal}" >&2
+  fi
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && run_args+=("$line")
+  done < <(flows_docker_run_args)
+
+  # shellcheck disable=SC2086
+  docker run --rm "${run_args[@]}" "$image" psql "$docker_url" "$@"
+}
+
+flows_pg_dump_docker() {
+  local image="${PG_CLIENT_IMAGE:-postgres:17-alpine}"
+  local run_args=() line
+  local -a dump_args=("$@")
+  local i dbname="" rewritten
+
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Install Docker or host pg_dump." >&2
+    return 1
+  fi
+
+  for i in "${!dump_args[@]}"; do
+    case "${dump_args[$i]}" in
+      --dbname=*)
+        dbname="${dump_args[$i]#--dbname=}"
+        flows_warn_url_password_encoding "$dbname"
+        rewritten="$(flows_rewrite_url_for_docker_client "$dbname")"
+        if [[ "$rewritten" != "$dbname" ]]; then
+          echo "Docker pg_dump client: rewriting loopback host → ${PG_DOCKER_HOST:-host.docker.internal}" >&2
+        fi
+        dump_args[$i]="--dbname=${rewritten}"
+        ;;
+    esac
+  done
+
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && run_args+=("$line")
+  done < <(flows_docker_run_args)
+
+  docker run --rm "${run_args[@]}" "$image" pg_dump "${dump_args[@]}"
+}
+
 run_pg_dump_remote() {
   local image="${PG_CLIENT_IMAGE:-postgres:17-alpine}"
   local min_major="${PG_DUMP_MIN_MAJOR:-17}"
+  local use_docker=0
+  local dbname=""
+  local a
 
-  if [[ "${PG_USE_DOCKER:-}" != "true" ]] && command -v pg_dump >/dev/null 2>&1; then
+  for a in "$@"; do
+    case "$a" in
+      --dbname=*) dbname="${a#--dbname=}" ;;
+    esac
+  done
+
+  if [[ "${PG_USE_DOCKER:-}" == "true" ]]; then
+    use_docker=1
+  elif command -v pg_dump >/dev/null 2>&1; then
     local ver
     ver="$(pg_dump_major_version)"
     if [[ "$ver" -ge "$min_major" ]]; then
+      # Host pg_dump can use 127.0.0.1 when Postgres is published on the host.
       pg_dump "$@"
       return
     fi
-    echo "Local pg_dump is ${ver}.x; need >= ${min_major} for this server. Using Docker (${image})..." >&2
+    echo "Local pg_dump is ${ver}.x; need >= ${min_major}. Using Docker (${image})..." >&2
+    use_docker=1
+  else
+    use_docker=1
   fi
 
-  if ! command -v docker >/dev/null 2>&1; then
-    echo "Install pg_dump ${min_major}+ (brew install postgresql@${min_major}) or Docker." >&2
-    return 1
+  if [[ "$use_docker" -eq 1 ]]; then
+    flows_pg_dump_docker "$@"
+    return
   fi
-  docker run --rm "$image" pg_dump "$@"
+  echo "Install pg_dump ${min_major}+ or Docker." >&2
+  return 1
 }
 
 run_psql_remote() {
-  local image="${PG_CLIENT_IMAGE:-postgres:17-alpine}"
-  local min_major="${PG_DUMP_MIN_MAJOR:-17}"
-
+  # Prefer host psql for published ports (ignore client major — queries don't need dump parity).
   if [[ "${PG_USE_DOCKER:-}" != "true" ]] && command -v psql >/dev/null 2>&1; then
-    local ver
-    ver="$(pg_dump_major_version)"
-    if [[ "$ver" -ge "$min_major" ]]; then
-      psql "$@"
-      return
+    local url="${1:-}"
+    if [[ -n "$url" ]]; then
+      flows_warn_url_password_encoding "$url"
     fi
+    psql "$@"
+    return
   fi
-
-  if ! command -v docker >/dev/null 2>&1; then
-    echo "Install psql ${min_major}+ or Docker." >&2
-    return 1
-  fi
-  docker run --rm "$image" psql "$@"
+  flows_psql_docker "$@"
 }
 
 # Load flows.config.json (or FLOWS_CONFIG_FILE / --config path) into env vars used below.
@@ -135,6 +280,8 @@ emit("CONTENT_ONLY", data.get("contentOnly"))
 emit("PG_USE_DOCKER", pg.get("useDocker"))
 emit("PG_CLIENT_IMAGE", pg.get("clientImage"))
 emit("PG_DUMP_MIN_MAJOR", pg.get("dumpMinMajor"))
+emit("PG_DOCKER_NETWORK", pg.get("dockerNetwork"))
+emit("PG_DOCKER_HOST", pg.get("dockerHost"))
 PY
   )"
 }
@@ -222,15 +369,21 @@ snapshot_export_schema() {
   echo "$schema"
 }
 
-# Prefer host psql for local/prod Postgres. Fall back to Docker helper if needed.
+# Prefer host psql for host-published Postgres. Docker client rewrites 127.0.0.1 → host.docker.internal.
 flows_psql() {
   local url="$1"
   shift
-  if command -v psql >/dev/null 2>&1; then
+  if [[ "${PG_USE_DOCKER:-}" != "true" ]] && command -v psql >/dev/null 2>&1; then
+    flows_warn_url_password_encoding "$url"
     psql "$url" "$@"
     return
   fi
-  run_psql_remote "$url" "$@"
+  if [[ "${PG_USE_DOCKER:-}" == "true" ]]; then
+    echo "pg.useDocker=true → using Docker psql client" >&2
+  elif ! command -v psql >/dev/null 2>&1; then
+    echo "Host psql not found → using Docker psql client" >&2
+  fi
+  flows_psql_docker "$url" "$@"
 }
 
 # When default PATH has an old pg_dump and Docker is unavailable, prefer Homebrew PG 17+.
