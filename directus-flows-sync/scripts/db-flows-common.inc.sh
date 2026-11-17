@@ -349,8 +349,8 @@ require_snapshot_dir() {
     echo "Commit exports/, push, then pull on the prod server." >&2
     return 1
   fi
-  if [[ ! -f "${dir}/fingerprints/flows.tsv" || ! -f "${dir}/fingerprints/operations.tsv" ]]; then
-    echo "ERROR: snapshot fingerprints missing under ${dir}/fingerprints/" >&2
+  if [[ ! -f "${dir}/fingerprints/flows.jsonl" || ! -f "${dir}/fingerprints/operations.jsonl" ]]; then
+    echo "ERROR: snapshot fingerprints missing under ${dir}/fingerprints/ (flows.jsonl, operations.jsonl)" >&2
     echo "Re-run: ./scripts/sync.sh export" >&2
     return 1
   fi
@@ -462,8 +462,11 @@ normalize_flows_dump_sql() {
   sanitize_flows_dump_sql | rewrite_flows_dump_schema "$from_schema" "$to_schema"
 }
 
-# Export a stable TSV fingerprint per row for compare (id + content fields).
+# Export a stable JSONL fingerprint per row for compare (id + content fields).
+# Uses options::jsonb so json vs jsonb storage / key-order / spacing does not create false diffs.
+# JSONL avoids TSV breakage when options contain tabs/newlines (common in exec ops).
 export_flows_fingerprint_tsv() {
+  # Name kept for call-sites; output is JSONL (one json object per line).
   local url="$1"
   local schema="$2"
   local kind="$3" # flows | operations
@@ -471,65 +474,73 @@ export_flows_fingerprint_tsv() {
 
   if [[ "$kind" == "flows" ]]; then
     if [[ "$content_only" == "true" ]]; then
-      flows_psql "$url" -v ON_ERROR_STOP=1 -AtF $'\t' -c "
-SELECT id::text,
-       coalesce(name,''),
-       coalesce(icon,''),
-       coalesce(color,''),
-       coalesce(description,''),
-       coalesce(status,''),
-       coalesce(trigger,''),
-       coalesce(accountability,''),
-       coalesce(options::text,''),
-       coalesce(operation::text,'')
+      flows_psql "$url" -v ON_ERROR_STOP=1 -At -c "
+SELECT jsonb_build_object(
+  'id', id::text,
+  'name', coalesce(name, ''),
+  'icon', coalesce(icon, ''),
+  'color', coalesce(color, ''),
+  'description', coalesce(description, ''),
+  'status', coalesce(status, ''),
+  'trigger', coalesce(trigger, ''),
+  'accountability', coalesce(accountability, ''),
+  'options', coalesce(options::jsonb, 'null'::jsonb),
+  'operation', coalesce(operation::text, '')
+)::text
 FROM ${schema}.directus_flows
 ORDER BY id;"
     else
-      flows_psql "$url" -v ON_ERROR_STOP=1 -AtF $'\t' -c "
-SELECT id::text,
-       coalesce(name,''),
-       coalesce(icon,''),
-       coalesce(color,''),
-       coalesce(description,''),
-       coalesce(status,''),
-       coalesce(trigger,''),
-       coalesce(accountability,''),
-       coalesce(options::text,''),
-       coalesce(operation::text,''),
-       coalesce(date_created::text,''),
-       coalesce(user_created::text,'')
+      flows_psql "$url" -v ON_ERROR_STOP=1 -At -c "
+SELECT jsonb_build_object(
+  'id', id::text,
+  'name', coalesce(name, ''),
+  'icon', coalesce(icon, ''),
+  'color', coalesce(color, ''),
+  'description', coalesce(description, ''),
+  'status', coalesce(status, ''),
+  'trigger', coalesce(trigger, ''),
+  'accountability', coalesce(accountability, ''),
+  'options', coalesce(options::jsonb, 'null'::jsonb),
+  'operation', coalesce(operation::text, ''),
+  'date_created', coalesce(date_created::text, ''),
+  'user_created', coalesce(user_created::text, '')
+)::text
 FROM ${schema}.directus_flows
 ORDER BY id;"
     fi
   else
     if [[ "$content_only" == "true" ]]; then
-      flows_psql "$url" -v ON_ERROR_STOP=1 -AtF $'\t' -c "
-SELECT id::text,
-       coalesce(name,''),
-       coalesce(key,''),
-       coalesce(type,''),
-       position_x::text,
-       position_y::text,
-       coalesce(options::text,''),
-       coalesce(resolve::text,''),
-       coalesce(reject::text,''),
-       flow::text
+      flows_psql "$url" -v ON_ERROR_STOP=1 -At -c "
+SELECT jsonb_build_object(
+  'id', id::text,
+  'name', coalesce(name, ''),
+  'key', coalesce(key, ''),
+  'type', coalesce(type, ''),
+  'position_x', position_x,
+  'position_y', position_y,
+  'options', coalesce(options::jsonb, 'null'::jsonb),
+  'resolve', coalesce(resolve::text, ''),
+  'reject', coalesce(reject::text, ''),
+  'flow', flow::text
+)::text
 FROM ${schema}.directus_operations
 ORDER BY id;"
     else
-      flows_psql "$url" -v ON_ERROR_STOP=1 -AtF $'\t' -c "
-SELECT id::text,
-       coalesce(name,''),
-       coalesce(key,''),
-       coalesce(type,''),
-       position_x::text,
-       position_y::text,
-       coalesce(options::text,''),
-       coalesce(resolve::text,''),
-       coalesce(reject::text,''),
-       flow::text,
-       coalesce(date_created::text,''),
-       coalesce(user_created::text,'')
+      flows_psql "$url" -v ON_ERROR_STOP=1 -At -c "
+SELECT jsonb_build_object(
+  'id', id::text,
+  'name', coalesce(name, ''),
+  'key', coalesce(key, ''),
+  'type', coalesce(type, ''),
+  'position_x', position_x,
+  'position_y', position_y,
+  'options', coalesce(options::jsonb, 'null'::jsonb),
+  'resolve', coalesce(resolve::text, ''),
+  'reject', coalesce(reject::text, ''),
+  'flow', flow::text,
+  'date_created', coalesce(date_created::text, ''),
+  'user_created', coalesce(user_created::text, '')
+)::text
 FROM ${schema}.directus_operations
 ORDER BY id;"
     fi
@@ -556,16 +567,27 @@ compare_fingerprint_files() {
   local src_labels="$4"
   local dst_labels="$5"
   python3 - "$kind" "$src_file" "$dst_file" "$src_labels" "$dst_labels" <<'PY'
+import json
 import sys
 from pathlib import Path
 
 kind, src_path, dst_path, src_labels_path, dst_labels_path = sys.argv[1:6]
 
-def load_rows(path):
+def load_rows(path: str):
+    """Load JSONL fingerprints (preferred) or legacy TSV (best-effort)."""
     rows = {}
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
+    text = Path(path).read_text(encoding="utf-8")
+    for line in text.splitlines():
         if not line.strip():
             continue
+        if line.lstrip().startswith("{"):
+            obj = json.loads(line)
+            rid = str(obj.get("id", ""))
+            # Drop id from payload used for equality; keep stable key order via json dumps.
+            payload = {k: obj[k] for k in obj.keys() if k != "id"}
+            rows[rid] = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+            continue
+        # Legacy TSV: id + tab-separated fields (fragile if fields contain tabs/newlines).
         parts = line.split("\t")
         rows[parts[0]] = "\t".join(parts[1:])
     return rows
@@ -600,6 +622,20 @@ print(f"  snapshot: {len(src)}  dest: {len(dst)}  unchanged: {unchanged}")
 print(f"  + added (snapshot only): {len(added)}")
 print(f"  - removed (dest only):   {len(removed)}")
 print(f"  ~ changed:               {len(changed)}")
+
+# Hint for the historical false-diff: same ids, nearly all "changed" after a successful apply.
+if (
+    not added
+    and not removed
+    and changed
+    and len(src) == len(dst)
+    and len(changed) >= max(1, int(0.8 * len(src)))
+):
+    print(
+        "  note: almost every row is ~changed with no add/remove — "
+        "often json vs jsonb options::text formatting. "
+        "Current tooling fingerprints via options::jsonb (JSONL)."
+    )
 
 def show(title, ids, mark):
     if not ids:
@@ -645,16 +681,18 @@ write_flows_snapshot() {
   } >"${dir}/directus_flows_operations.sql"
 
   export_flows_fingerprint_tsv "$source_url" "$source_schema" flows \
-    >"${dir}/fingerprints/flows.tsv"
+    >"${dir}/fingerprints/flows.jsonl"
   export_flows_fingerprint_tsv "$source_url" "$source_schema" operations \
-    >"${dir}/fingerprints/operations.tsv"
+    >"${dir}/fingerprints/operations.jsonl"
   export_flows_label_map "$source_url" "$source_schema" flows \
     >"${dir}/fingerprints/flows_labels.tsv"
   export_flows_label_map "$source_url" "$source_schema" operations \
     >"${dir}/fingerprints/operations_labels.tsv"
+  # Remove legacy TSV fingerprints if present (replaced by JSONL).
+  rm -f "${dir}/fingerprints/flows.tsv" "${dir}/fingerprints/operations.tsv"
 
-  flows_count="$(wc -l <"${dir}/fingerprints/flows.tsv" | tr -d '[:space:]')"
-  ops_count="$(wc -l <"${dir}/fingerprints/operations.tsv" | tr -d '[:space:]')"
+  flows_count="$(wc -l <"${dir}/fingerprints/flows.jsonl" | tr -d '[:space:]')"
+  ops_count="$(wc -l <"${dir}/fingerprints/operations.jsonl" | tr -d '[:space:]')"
 
   cat >"${dir}/MANIFEST" <<EOF
 exported_at=${stamp}
@@ -743,6 +781,11 @@ apply_flows_from_sql_file() {
   echo "Applying snapshot SQL → dest (${from_schema} → ${dest_schema})…" >&2
   flows_psql "$dest_url" -v ON_ERROR_STOP=1 -f - <"$tmp"
   rm -f "$tmp"
+
+  local flows_n ops_n
+  flows_n="$(flows_psql "$dest_url" -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM ${dest_schema}.directus_flows;")"
+  ops_n="$(flows_psql "$dest_url" -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM ${dest_schema}.directus_operations;")"
+  echo "Apply finished: dest now has flows=${flows_n} operations=${ops_n}" >&2
 }
 
 restore_flows_from_backup() {
