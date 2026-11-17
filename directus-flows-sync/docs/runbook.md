@@ -141,6 +141,8 @@ python3 scripts/check-deps.py exports/directus_flows_operations.sql
 python3 scripts/check-deps.py --json   # สำหรับ script
 ```
 
+Finding ที่ต้องแก้ (hardcoded URL, folder UUID, custom op, `$env`, roles, cron, `environment_data`) จะพิมพ์ **ชื่อ flow** และชื่อ/id ของ operation ที่เกี่ยวข้อง
+
 ## Git hygiene
 
 | Commit | Ignore |
