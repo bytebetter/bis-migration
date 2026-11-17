@@ -117,12 +117,16 @@ flows_docker_run_args() {
 }
 
 # Run psql in a throwaway client container that can reach host-mapped or compose-network Postgres.
+# IMPORTANT: without `docker run -i`, stdin is NOT forwarded into the container.
+# That made `psql -f - <apply.sql` appear to succeed while applying zero statements
+# (dest left unchanged — classic same-name/different-UUID compare after "apply").
 flows_psql_docker() {
   local url="$1"
   shift
   local image="${PG_CLIENT_IMAGE:-postgres:17-alpine}"
   local docker_url run_args=()
   local line
+  local -a docker_flags=(--rm)
 
   if ! command -v docker >/dev/null 2>&1; then
     echo "Install Docker or host psql to connect." >&2
@@ -138,8 +142,59 @@ flows_psql_docker() {
     [[ -n "$line" ]] && run_args+=("$line")
   done < <(flows_docker_run_args)
 
+  # Forward host stdin into the container when piped (e.g. psql -f - <file).
+  if [[ ! -t 0 ]]; then
+    docker_flags+=(-i)
+  fi
+
   # shellcheck disable=SC2086
-  docker run --rm "${run_args[@]}" "$image" psql "$docker_url" "$@"
+  docker run "${docker_flags[@]}" "${run_args[@]}" "$image" psql "$docker_url" "$@"
+}
+
+# Run a SQL file with ON_ERROR_STOP. Prefer host psql; Docker mounts the file (no stdin).
+flows_psql_sql_file() {
+  local url="$1"
+  local sql_file="$2"
+  local image="${PG_CLIENT_IMAGE:-postgres:17-alpine}"
+  local docker_url run_args=() line abs
+
+  if [[ ! -f "$sql_file" ]]; then
+    echo "ERROR: SQL file missing: ${sql_file}" >&2
+    return 1
+  fi
+
+  if [[ "${PG_USE_DOCKER:-}" != "true" ]] && command -v psql >/dev/null 2>&1; then
+    flows_warn_url_password_encoding "$url"
+    psql "$url" -v ON_ERROR_STOP=1 -f "$sql_file"
+    return
+  fi
+
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Install Docker or host psql to apply SQL files." >&2
+    return 1
+  fi
+
+  if [[ "${PG_USE_DOCKER:-}" == "true" ]]; then
+    echo "pg.useDocker=true → using Docker psql client (mounted SQL file)" >&2
+  else
+    echo "Host psql not found → using Docker psql client (mounted SQL file)" >&2
+  fi
+
+  flows_warn_url_password_encoding "$url"
+  docker_url="$(flows_rewrite_url_for_docker_client "$url")"
+  if [[ "$docker_url" != "$url" ]]; then
+    echo "Docker psql client: rewriting loopback host → ${PG_DOCKER_HOST:-host.docker.internal}" >&2
+  fi
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && run_args+=("$line")
+  done < <(flows_docker_run_args)
+
+  abs="$(cd "$(dirname "$sql_file")" && pwd)/$(basename "$sql_file")"
+  docker run --rm -i \
+    "${run_args[@]}" \
+    -v "${abs}:/tmp/bis-flows-apply.sql:ro" \
+    "$image" \
+    psql "$docker_url" -v ON_ERROR_STOP=1 -f /tmp/bis-flows-apply.sql
 }
 
 flows_pg_dump_docker() {
@@ -755,17 +810,25 @@ EOF
 }
 
 # Replace dest flow tables from a committed/runtime SQL file (FK-safe).
+# Optional $5/$6 = expected flows/operations counts (from MANIFEST); mismatch → hard fail.
 apply_flows_from_sql_file() {
   local sql_file="$1"
   local from_schema="$2"
   local dest_url="$3"
   local dest_schema="$4"
+  local expect_flows="${5:-}"
+  local expect_ops="${6:-}"
   local tmp
+  local before_flows before_ops flows_n ops_n
 
   if [[ ! -f "$sql_file" ]]; then
     echo "ERROR: missing SQL file: ${sql_file}" >&2
     return 1
   fi
+
+  before_flows="$(flows_psql "$dest_url" -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM ${dest_schema}.directus_flows;")"
+  before_ops="$(flows_psql "$dest_url" -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM ${dest_schema}.directus_operations;")"
+  echo "Dest before apply: flows=${before_flows} operations=${before_ops}" >&2
 
   tmp="$(mktemp -t bis-flows-apply.XXXXXX.sql)"
   {
@@ -779,13 +842,31 @@ apply_flows_from_sql_file() {
   } >"$tmp"
 
   echo "Applying snapshot SQL → dest (${from_schema} → ${dest_schema})…" >&2
-  flows_psql "$dest_url" -v ON_ERROR_STOP=1 -f - <"$tmp"
+  echo "  sql_bytes=$(wc -c <"$tmp" | tr -d '[:space:]')  via flows_psql_sql_file" >&2
+  if ! flows_psql_sql_file "$dest_url" "$tmp"; then
+    echo "ERROR: psql apply failed (transaction rolled back if BEGIN succeeded)." >&2
+    rm -f "$tmp"
+    return 1
+  fi
   rm -f "$tmp"
 
-  local flows_n ops_n
   flows_n="$(flows_psql "$dest_url" -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM ${dest_schema}.directus_flows;")"
   ops_n="$(flows_psql "$dest_url" -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM ${dest_schema}.directus_operations;")"
-  echo "Apply finished: dest now has flows=${flows_n} operations=${ops_n}" >&2
+  echo "Apply finished: dest now has flows=${flows_n} operations=${ops_n} (was ${before_flows}/${before_ops})" >&2
+
+  if [[ "$flows_n" == "$before_flows" && "$ops_n" == "$before_ops" ]]; then
+    echo "ERROR: dest row counts unchanged after apply — SQL likely did not execute." >&2
+    echo "If using Docker psql client, ensure stdin is forwarded (-i) or SQL file is mounted." >&2
+    return 1
+  fi
+
+  if [[ -n "$expect_flows" && -n "$expect_ops" ]]; then
+    if [[ "$flows_n" != "$expect_flows" || "$ops_n" != "$expect_ops" ]]; then
+      echo "ERROR: apply count mismatch — dest ${flows_n}/${ops_n} != MANIFEST ${expect_flows}/${expect_ops}" >&2
+      echo "Apply did not fully replace destination flows/operations." >&2
+      return 1
+    fi
+  fi
 }
 
 restore_flows_from_backup() {

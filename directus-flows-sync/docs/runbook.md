@@ -121,6 +121,14 @@ git pull
 ./scripts/sync.sh restore <YYYYMMDD_HHMMSS>
 ```
 
+## Apply บน prod แล้ว dest ไม่เปลี่ยน (96/872 ค้างเดิม)
+
+**อาการ:** compare ยังเห็น flow ชื่อคล้ายกันแต่ **UUID คนละชุด** / จำนวนแถวไม่ตรง MANIFEST (เช่น 99/890)
+
+**สาเหตุที่พบบ่อย:** host ไม่มี `psql` → ใช้ Docker client แต่ `docker run` **ไม่ได้ใส่ `-i`** ทำให้ `psql -f - <apply.sql` ได้ stdin ว่าง — psql จบ exit 0 โดยไม่รัน TRUNCATE/INSERT
+
+**ตอนนี้:** Docker apply mount ไฟล์ SQL เข้า container + forward stdin เมื่อ pipe; หลัง apply ถ้า count ไม่ตรง MANIFEST หรือ count ไม่เปลี่ยน → **fail ดัง**
+
 ## Compare หลัง apply แล้วยังเห็น diff เดิม?
 
 **สาเหตุที่พบบ่อย (แก้แล้วใน tooling ปัจจุบัน):** fingerprint เดิมเป็น TSV + `options::text` — ถ้า source เก็บ `json` แต่ dest เป็น `jsonb` (หรือกลับกัน) ข้อความ JSON คนละรูป (เว้นวรรค / ลำดับ key) ทั้งที่ข้อมูลเดียวกัน ทำให้ทุกแถวขึ้น `~ changed` แม้ apply แทนที่สำเร็จแล้ว
