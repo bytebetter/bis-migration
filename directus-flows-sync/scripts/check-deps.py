@@ -3,6 +3,9 @@
 Scan a committed Directus flows/operations SQL snapshot for external dependencies
 beyond the flow/operation graph itself (collections, folders, URLs, custom ops, …).
 
+Findings that need action (hardcoded URLs, folders, custom ops, $env, roles, …)
+include flow name + operation name/id.
+
 Usage:
   ./scripts/check-deps.py [exports/directus_flows_operations.sql]
   ./scripts/check-deps.py --json
@@ -18,7 +21,7 @@ import argparse
 import json
 import re
 import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -115,6 +118,38 @@ def load_lines(path: Path | None) -> set[str] | None:
     return {ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()}
 
 
+def _loc(
+    *,
+    flow_id: str | None,
+    flow_name: str | None,
+    op_id: str | None = None,
+    op_name: str | None = None,
+    op_type: str | None = None,
+    op_key: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "flow_id": flow_id,
+        "flow_name": flow_name or (flow_id or "?"),
+        "op_id": op_id,
+        "op_name": op_name,
+        "op_type": op_type,
+        "op_key": op_key,
+    }
+
+
+def _fmt_loc(row: dict[str, Any]) -> str:
+    flow = row.get("flow_name") or row.get("flow_id") or "?"
+    parts = [f"flow={flow}"]
+    if row.get("op_name") or row.get("op_id"):
+        op = row.get("op_name") or row.get("op_key") or row.get("op_id")
+        parts.append(f"op={op}")
+    if row.get("op_id"):
+        parts.append(f"op_id={row['op_id']}")
+    if row.get("op_type"):
+        parts.append(f"type={row['op_type']}")
+    return "  |  ".join(parts)
+
+
 def analyze(
     sql_path: Path,
     collections_present: set[str] | None = None,
@@ -123,30 +158,41 @@ def analyze(
     text = sql_path.read_text(encoding="utf-8")
     flows = parse_inserts(text, "directus_flows")
     ops = parse_inserts(text, "directus_operations")
-    flow_ids = {f["id"] for f in flows if f.get("id")}
+    flow_by_id = {f["id"]: f for f in flows if f.get("id")}
+    flow_ids = set(flow_by_id)
     op_ids = {o["id"] for o in ops if o.get("id")}
+
+    def flow_name(fid: str | None) -> str | None:
+        if not fid:
+            return None
+        f = flow_by_id.get(fid)
+        return (f.get("name") if f else None) or fid
 
     collections: Counter[str] = Counter()
     flow_collections: Counter[str] = Counter()
     op_collections: Counter[str] = Counter()
     op_types: Counter[str] = Counter()
     request_urls: Counter[str] = Counter()
-    hardcoded_urls: Counter[str] = Counter()
-    env_keys: Counter[str] = Counter()
-    folders: Counter[str] = Counter()
-    folder_labels: dict[str, set[str]] = defaultdict(set)
-    trigger_flows: Counter[str] = Counter()
-    cron: Counter[str] = Counter()
     permissions: Counter[str] = Counter()
     user_created: Counter[str] = Counter()
-    roles: Counter[str] = Counter()
     system_api_paths: Counter[str] = Counter()
-    environment_data_keys: list[str] = []
-    custom_ops: list[dict[str, Any]] = []
+    trigger_flows: Counter[str] = Counter()
     external_uuids: Counter[str] = Counter()
     notes: list[str] = []
 
+    # Occurrence-level findings (with flow context)
+    hardcoded_url_hits: list[dict[str, Any]] = []
+    folder_hits: list[dict[str, Any]] = []
+    env_key_hits: list[dict[str, Any]] = []
+    role_hits: list[dict[str, Any]] = []
+    custom_ops: list[dict[str, Any]] = []
+    environment_data_hits: list[dict[str, Any]] = []
+    cron_hits: list[dict[str, Any]] = []
+    request_url_hits: list[dict[str, Any]] = []
+
     for f in flows:
+        fid = f.get("id")
+        fname = f.get("name") or fid
         if f.get("user_created"):
             user_created[str(f["user_created"])] += 1
         try:
@@ -159,33 +205,53 @@ def analyze(
             flow_collections[str(c)] += 1
             collections[str(c)] += 1
         if opt.get("cron"):
-            cron[str(opt["cron"])] += 1
+            cron_hits.append(
+                {
+                    **_loc(flow_id=fid, flow_name=fname),
+                    "expr": str(opt["cron"]),
+                }
+            )
 
     for o in ops:
         t = o.get("type") or "?"
         op_types[t] += 1
         blob = o.get("options") or ""
         name = o.get("name") or o.get("key") or ""
+        oid = o.get("id")
+        okey = o.get("key")
+        fid = o.get("flow")
+        fname = flow_name(fid)
+        loc = _loc(
+            flow_id=fid,
+            flow_name=fname,
+            op_id=oid,
+            op_name=str(name) if name else None,
+            op_type=t,
+            op_key=str(okey) if okey else None,
+        )
 
         for m in ENV_RE.finditer(blob):
-            env_keys[m.group(1)] += 1
+            env_key_hits.append({**loc, "key": m.group(1)})
 
+        seen_folders: set[str] = set()
         for m in FOLDER_BODY_RE.finditer(blob):
-            fid = m.group(1).lower()
-            folders[fid] += 1
-            folder_labels[fid].add(str(name))
+            folder_id = m.group(1).lower()
+            seen_folders.add(folder_id)
+            folder_hits.append({**loc, "folder_id": folder_id})
 
         # Exec often compares folder UUID without a JSON "folder" key.
         if t == "exec" and "folder" in blob.lower():
             for m in UUID_RE.finditer(blob):
-                fid = m.group(0).lower()
-                if fid in flow_ids or fid in op_ids:
+                folder_id = m.group(0).lower()
+                if folder_id in flow_ids or folder_id in op_ids:
                     continue
-                folders[fid] += 1
-                folder_labels[fid].add(str(name))
+                if folder_id in seen_folders:
+                    continue
+                seen_folders.add(folder_id)
+                folder_hits.append({**loc, "folder_id": folder_id})
 
         for m in HARDCODED_URL_RE.finditer(blob):
-            hardcoded_urls[m.group(0)] += 1
+            hardcoded_url_hits.append({**loc, "url": m.group(0)})
 
         try:
             opt = json.loads(blob or "{}")
@@ -202,6 +268,7 @@ def analyze(
         if t == "request":
             url = str(opt.get("url") or "<missing>")
             request_urls[url] += 1
+            request_url_hits.append({**loc, "url": url})
             if "/users" in url:
                 system_api_paths["users"] += 1
             if "/files" in url:
@@ -222,15 +289,13 @@ def analyze(
         if t not in CORE_OP_TYPES:
             custom_ops.append(
                 {
-                    "id": o.get("id"),
-                    "type": t,
-                    "name": name,
+                    **loc,
                     "option_keys": sorted(opt.keys()),
                 }
             )
 
         if t == "item-read" and opt.get("collection") == "environment_data":
-            environment_data_keys.append(str(opt.get("key")))
+            environment_data_hits.append({**loc, "key": str(opt.get("key"))})
 
         def walk(obj: Any, path: str = "") -> None:
             if isinstance(obj, dict):
@@ -238,7 +303,7 @@ def analyze(
                     p = f"{path}.{k}" if path else k
                     lk = k.lower()
                     if lk in ("role", "roles") or lk.endswith("_role"):
-                        roles[str(v)] += 1
+                        role_hits.append({**loc, "path": p, "value": v})
                     walk(v, p)
             elif isinstance(obj, list):
                 for i, v in enumerate(obj):
@@ -248,14 +313,14 @@ def analyze(
                     ul = u.lower()
                     if ul in flow_ids or ul in op_ids:
                         continue
-                    if ul in folders:
+                    if ul in seen_folders:
                         continue
                     external_uuids[ul] += 1
 
         walk(opt)
 
-    # Folders / metadata already categorized — drop from generic UUID bucket.
-    for fid in folders:
+    folder_ids = {h["folder_id"] for h in folder_hits}
+    for fid in folder_ids:
         external_uuids.pop(fid, None)
     for uid in user_created:
         external_uuids.pop(uid.lower(), None)
@@ -269,11 +334,11 @@ def analyze(
             if c not in collections_present:
                 missing_collections.append(c)
     if folders_present is not None:
-        for fid in sorted(folders):
-            if fid not in folders_present:
-                missing_folders.append(fid)
+        for folder_id in sorted(folder_ids):
+            if folder_id not in folders_present:
+                missing_folders.append(folder_id)
 
-    if hardcoded_urls:
+    if hardcoded_url_hits:
         notes.append(
             "At least one request URL is hardcoded (not via environment_data). "
             "Confirm it matches the target environment before apply."
@@ -282,35 +347,45 @@ def analyze(
         notes.append(
             "Custom operation types require matching Directus extensions on dest."
         )
-    if environment_data_keys:
+    if environment_data_hits:
         notes.append(
             "Flows read collection environment_data (typically url + access_token). "
             "Ensure that row exists on dest with correct values."
         )
-    if folders:
+    if folder_hits:
         notes.append(
             "Hardcoded directus_folders UUIDs must exist on dest (or file-move steps fail)."
         )
-    if not env_keys:
+    if not env_key_hits:
         notes.append("No Directus $env / process.env key references found in options.")
+
+    # Aggregate helpers for summary counts
+    hardcoded_urls_unique = sorted({h["url"] for h in hardcoded_url_hits})
+    folders_unique = sorted(folder_ids)
+    env_keys_unique = sorted({h["key"] for h in env_key_hits})
+    roles_unique = sorted({str(h["value"]) for h in role_hits})
 
     report = {
         "snapshot": str(sql_path),
         "counts": {
             "flows": len(flows),
             "operations": len(ops),
-            "collections_unique": len([c for c in collections if not str(c).startswith("{{")]),
+            "collections_unique": len(
+                [c for c in collections if not str(c).startswith("{{")]
+            ),
             "request_ops": op_types.get("request", 0),
             "request_url_patterns": len(request_urls),
-            "hardcoded_urls": len(hardcoded_urls),
-            "folders": len(folders),
-            "env_keys": len(env_keys),
-            "roles": len(roles),
-            "custom_operation_types": len({c["type"] for c in custom_ops}),
+            "hardcoded_urls": len(hardcoded_urls_unique),
+            "hardcoded_url_hits": len(hardcoded_url_hits),
+            "folders": len(folders_unique),
+            "folder_hits": len(folder_hits),
+            "env_keys": len(env_keys_unique),
+            "roles": len(roles_unique),
+            "custom_operation_types": len({c["op_type"] for c in custom_ops}),
             "custom_operation_instances": len(custom_ops),
-            "cron_schedules": len(cron),
+            "cron_schedules": len({h["expr"] for h in cron_hits}),
             "trigger_flow_targets": len(trigger_flows),
-            "environment_data_reads": len(environment_data_keys),
+            "environment_data_reads": len(environment_data_hits),
             "user_created_unique": len(user_created),
             "external_uuids_other": len(external_uuids),
         },
@@ -326,32 +401,28 @@ def analyze(
             if not str(c).startswith("{{")
         ],
         "dynamic_collections": [c for c in collections if str(c).startswith("{{")],
-        "folders": [
-            {
-                "id": fid,
-                "refs": n,
-                "labels": sorted(folder_labels.get(fid) or []),
-            }
-            for fid, n in folders.most_common()
+        "folders": folder_hits,
+        "hardcoded_urls": hardcoded_url_hits,
+        "request_urls": request_url_hits,
+        "request_url_patterns": [
+            {"url": u, "refs": n} for u, n in request_urls.most_common()
         ],
-        "request_urls": [{"url": u, "refs": n} for u, n in request_urls.most_common()],
-        "hardcoded_urls": [{"url": u, "refs": n} for u, n in hardcoded_urls.most_common()],
-        "env_keys": [{"key": k, "refs": n} for k, n in env_keys.most_common()],
-        "roles": [{"value": k, "refs": n} for k, n in roles.most_common()],
+        "env_keys": env_key_hits,
+        "roles": role_hits,
         "system_api_paths": dict(system_api_paths.most_common()),
         "custom_operations": custom_ops,
-        "cron": [{"expr": e, "refs": n} for e, n in cron.most_common()],
+        "cron": cron_hits,
         "permissions": dict(permissions.most_common()),
-        "environment_data_keys": environment_data_keys,
+        "environment_data": environment_data_hits,
         "user_created": [{"id": u, "refs": n} for u, n in user_created.most_common()],
         "external_uuids_other": [
             {"id": u, "refs": n} for u, n in external_uuids.most_common(50)
         ],
         "trigger_flow_targets_internal": sum(
-            1 for fid in trigger_flows if fid in flow_ids
+            1 for tid in trigger_flows if tid in flow_ids
         ),
         "trigger_flow_targets_missing": [
-            fid for fid in trigger_flows if fid not in flow_ids
+            tid for tid in trigger_flows if tid not in flow_ids
         ],
         "dest_probe": {
             "collections_checked": collections_present is not None,
@@ -366,23 +437,23 @@ def analyze(
         },
     }
 
-    # Heuristic: "many" if lots of non-collection infra deps beyond schema tables
     infra = (
-        len(folders)
-        + len(hardcoded_urls)
-        + len(env_keys)
-        + len(roles)
-        + len({c["type"] for c in custom_ops})
-        + (1 if environment_data_keys else 0)
+        len(folders_unique)
+        + len(hardcoded_urls_unique)
+        + len(env_keys_unique)
+        + len(roles_unique)
+        + len({c["op_type"] for c in custom_ops})
+        + (1 if environment_data_hits else 0)
     )
     many = len(collections) > 40 or infra > 15
     report["verdict"]["external_deps_many"] = many
     report["verdict"]["summary_th"] = (
         f"พบ collection อ้างอิง {report['counts']['collections_unique']} รายการ "
-        f"(ส่วนใหญ่เป็นตารางแอป), folder UUID {len(folders)}, "
-        f"request URL patterns {len(request_urls)} (hardcoded {len(hardcoded_urls)}), "
+        f"(ส่วนใหญ่เป็นตารางแอป), folder UUID {len(folders_unique)}, "
+        f"request URL patterns {len(request_urls)} "
+        f"(hardcoded {len(hardcoded_urls_unique)}), "
         f"custom op types {report['counts']['custom_operation_types']}, "
-        f"$env keys {len(env_keys)}, roles {len(roles)}. "
+        f"$env keys {len(env_keys_unique)}, roles {len(roles_unique)}. "
         + (
             "ปริมาณ infra ภายนอกไม่มาก — ตรวจ folder + environment_data + extension เป็นหลัก."
             if not many
@@ -399,9 +470,14 @@ def print_human(report: dict[str, Any]) -> None:
     print()
     print("=== Summary (external refs beyond flow/op graph) ===")
     print(f"  collections (unique):     {c['collections_unique']}")
-    print(f"  folders (UUID):           {c['folders']}")
-    print(f"  request ops / URL patterns: {c['request_ops']} / {c['request_url_patterns']}")
-    print(f"  hardcoded absolute URLs:  {c['hardcoded_urls']}")
+    print(f"  folders (UUID):           {c['folders']}  (hits={c['folder_hits']})")
+    print(
+        f"  request ops / URL patterns: {c['request_ops']} / {c['request_url_patterns']}"
+    )
+    print(
+        f"  hardcoded absolute URLs:  {c['hardcoded_urls']}  "
+        f"(hits={c['hardcoded_url_hits']})"
+    )
     print(f"  $env keys:                {c['env_keys']}")
     print(f"  roles:                    {c['roles']}")
     print(
@@ -430,54 +506,60 @@ def print_human(report: dict[str, Any]) -> None:
     if report["dynamic_collections"]:
         print("  dynamic:", ", ".join(report["dynamic_collections"]))
 
+    if report["hardcoded_urls"]:
+        print()
+        print("=== Hardcoded absolute URLs (actionable) ===")
+        for row in report["hardcoded_urls"]:
+            print(f"  URL: {row['url']}")
+            print(f"       {_fmt_loc(row)}")
+
     if report["folders"]:
         print()
         print("=== Folders (hardcoded UUID) ===")
         for row in report["folders"]:
-            labels = "; ".join(row["labels"][:3])
-            print(f"  {row['refs']:4d}  {row['id']}  {labels}")
-
-    if report["hardcoded_urls"]:
-        print()
-        print("=== Hardcoded absolute URLs ===")
-        for row in report["hardcoded_urls"]:
-            print(f"  {row['refs']:4d}  {row['url']}")
-
-    if report["request_urls"]:
-        print()
-        print("=== Request URL patterns ===")
-        for row in report["request_urls"]:
-            print(f"  {row['refs']:4d}  {row['url']}")
+            print(f"  folder={row['folder_id']}")
+            print(f"       {_fmt_loc(row)}")
 
     if report["custom_operations"]:
         print()
         print("=== Custom / extension operations ===")
         for row in report["custom_operations"]:
-            print(f"  {row['type']}  {row['name']}  ({row['id']})")
+            print(f"  type={row['op_type']}")
+            print(f"       {_fmt_loc(row)}")
 
     if report["env_keys"]:
         print()
         print("=== $env keys ===")
         for row in report["env_keys"]:
-            print(f"  {row['refs']:4d}  {row['key']}")
+            print(f"  key={row['key']}")
+            print(f"       {_fmt_loc(row)}")
 
     if report["roles"]:
         print()
         print("=== Roles ===")
         for row in report["roles"]:
-            print(f"  {row['refs']:4d}  {row['value']}")
+            print(f"  value={row['value']}  path={row.get('path')}")
+            print(f"       {_fmt_loc(row)}")
 
     if report["cron"]:
         print()
         print("=== Cron ===")
         for row in report["cron"]:
-            print(f"  {row['refs']:4d}  {row['expr']}")
+            print(f"  expr={row['expr']}")
+            print(f"       {_fmt_loc(row)}")
 
-    if report["environment_data_keys"]:
+    if report["environment_data"]:
         print()
-        print("=== environment_data item keys ===")
-        for k in report["environment_data_keys"]:
-            print(f"  {k}")
+        print("=== environment_data reads ===")
+        for row in report["environment_data"]:
+            print(f"  key={row['key']}")
+            print(f"       {_fmt_loc(row)}")
+
+    if report["request_url_patterns"]:
+        print()
+        print("=== Request URL patterns (aggregate) ===")
+        for row in report["request_url_patterns"]:
+            print(f"  {row['refs']:4d}  {row['url']}")
 
     if report["system_api_paths"]:
         print()
