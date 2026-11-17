@@ -113,10 +113,32 @@ git push
 git pull
 # flows.config.json มี dest.* เท่านั้นก็พอ
 ./scripts/sync.sh compare
+./scripts/sync.sh check-deps          # สแกน deps นอก flows/ops (มี dest จะ probe collection/folder ที่ขาด)
+./scripts/sync.sh check-deps --strict # exit 1 ถ้า dest ขาด collection/folder ที่ snapshot อ้าง
 ./scripts/sync.sh apply
 ./scripts/sync.sh apply --approve
 ./scripts/sync.sh backup
 ./scripts/sync.sh restore <YYYYMMDD_HHMMSS>
+```
+
+## External deps (ก่อน apply)
+
+Snapshot ซิงก์แค่ `directus_flows` + `directus_operations` — แต่ options JSON อาจอ้างของนอกกราฟ:
+
+| ชนิด | ตรวจด้วย | หมายเหตุ |
+|------|----------|----------|
+| collections | `check-deps` | ส่วนใหญ่เป็นตารางแอป (+ `environment_data`, `directus_*`) |
+| `directus_folders` UUID | `check-deps` (+ dest probe) | hardcode ในย้ายไฟล์ |
+| request URLs | `check-deps` | ส่วนใหญ่ผ่าน `{{read_environment.url}}` |
+| `$env` / roles / webhooks | `check-deps` | ใน snapshot ปัจจุบันแทบไม่มี |
+| custom op types | `check-deps` | ต้องมี extension บน dest (เช่น `pricing-operation`) |
+| `environment_data` | มือ / DB | แถวที่ flow อ่าน `url` + `access_token` |
+
+รันตรง ๆ กับไฟล์ SQL ก็ได้:
+
+```bash
+python3 scripts/check-deps.py exports/directus_flows_operations.sql
+python3 scripts/check-deps.py --json   # สำหรับ script
 ```
 
 ## Git hygiene

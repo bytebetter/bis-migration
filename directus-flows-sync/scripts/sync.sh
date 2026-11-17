@@ -11,6 +11,7 @@
 # Usage:
 #   ./scripts/sync.sh export
 #   ./scripts/sync.sh compare
+#   ./scripts/sync.sh check-deps [--strict]
 #   ./scripts/sync.sh backup
 #   ./scripts/sync.sh apply [--approve]
 #   ./scripts/sync.sh restore <backup-name-or-path>
@@ -28,6 +29,7 @@ source "${SCRIPT_DIR}/db-flows-common.inc.sh"
 load_flows_config
 
 APPROVE=0
+STRICT=0
 OUT_PATH=""
 COMMAND=""
 BACKUP_NAME=""
@@ -45,6 +47,7 @@ Two-machine flow (primary):
 Commands:
   export               Dump source DB → exports/ (commit these files)
   compare              Diff committed snapshot vs live dest (default; no writes)
+  check-deps           Scan snapshot options for external refs (collections, folders, URLs, …)
   backup               Backup destination flows/operations only (gitignored)
   apply                Compare, then replace dest from snapshot (needs approval)
   restore <name>       Restore dest from backups/<name>
@@ -52,6 +55,7 @@ Commands:
 
 Options:
   --approve            Non-interactive approve for apply/restore
+  --strict             With check-deps: exit 1 if dest is missing collections/folders
   --snapshot DIR       Snapshot directory (default: exports)
   --out DIR            Alias for --snapshot on export
   --config PATH        JSON config (default: flows.config.json)
@@ -75,7 +79,7 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    compare|export|backup|apply|restore|help|-h|--help)
+    compare|export|backup|apply|restore|check-deps|help|-h|--help)
       if [[ -z "$COMMAND" ]]; then
         if [[ "$1" == "-h" || "$1" == "--help" ]]; then
           COMMAND="help"
@@ -90,6 +94,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --approve)
       APPROVE=1
+      shift
+      ;;
+    --strict)
+      STRICT=1
       shift
       ;;
     --snapshot|--out)
@@ -260,6 +268,56 @@ cmd_apply() {
   echo "Rollback: ./scripts/sync.sh restore $(basename "$backup_dir")"
 }
 
+cmd_check_deps() {
+  local snap sql_file args=()
+  local cols_file="" folders_file="" tmp=""
+  snap="$(require_snapshot_dir)"
+  sql_file="${snap}/directus_flows_operations.sql"
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "ERROR: python3 is required for check-deps" >&2
+    return 1
+  fi
+
+  args=("${SCRIPT_DIR}/check-deps.py" "$sql_file")
+
+  # Optional live probe against dest (prod): flag missing collections / folders.
+  local dest_url dest_schema
+  dest_url="$(resolved_dest_database_url)"
+  if [[ -n "$dest_url" ]]; then
+    dest_schema="$(flows_dest_schema)"
+    tmp="$(mktemp -d -t bis-flows-check-deps.XXXXXX)"
+    cols_file="${tmp}/collections.txt"
+    folders_file="${tmp}/folders.txt"
+    echo "Probing dest for collections/folders (schema=${dest_schema})..." >&2
+    if flows_psql "$dest_url" -v ON_ERROR_STOP=1 -At -c \
+      "SELECT collection FROM ${dest_schema}.directus_collections ORDER BY 1;" \
+      >"$cols_file" 2>/dev/null; then
+      args+=(--collections-file "$cols_file")
+    else
+      echo "WARNING: could not list dest collections — snapshot-only scan." >&2
+    fi
+    if flows_psql "$dest_url" -v ON_ERROR_STOP=1 -At -c \
+      "SELECT id::text FROM ${dest_schema}.directus_folders ORDER BY 1;" \
+      >"$folders_file" 2>/dev/null; then
+      args+=(--folders-file "$folders_file")
+    else
+      echo "WARNING: could not list dest folders — folder probe skipped." >&2
+    fi
+  else
+    echo "No dest.databaseUrl — scanning committed snapshot only." >&2
+  fi
+
+  if [[ "$STRICT" == "1" ]]; then
+    args+=(--strict)
+  fi
+
+  local rc=0
+  python3 "${args[@]}" || rc=$?
+  [[ -n "$tmp" ]] && rm -rf "$tmp"
+  return "$rc"
+}
+
 cmd_restore() {
   local dest_url dest_schema dir
   if [[ -z "$BACKUP_NAME" ]]; then
@@ -300,6 +358,7 @@ cmd_restore() {
 case "$COMMAND" in
   help) usage ;;
   compare) cmd_compare ;;
+  check-deps) cmd_check_deps ;;
   export) cmd_export ;;
   backup) cmd_backup ;;
   apply) cmd_apply ;;
