@@ -121,6 +121,16 @@ git pull
 ./scripts/sync.sh restore <YYYYMMDD_HHMMSS>
 ```
 
+## Compare หลัง apply แล้วยังเห็น diff เดิม?
+
+**สาเหตุที่พบบ่อย (แก้แล้วใน tooling ปัจจุบัน):** fingerprint เดิมเป็น TSV + `options::text` — ถ้า source เก็บ `json` แต่ dest เป็น `jsonb` (หรือกลับกัน) ข้อความ JSON คนละรูป (เว้นวรรค / ลำดับ key) ทั้งที่ข้อมูลเดียวกัน ทำให้ทุกแถวขึ้น `~ changed` แม้ apply แทนที่สำเร็จแล้ว
+
+**ตอนนี้:** fingerprint เป็น JSONL และ normalize `options` ผ่าน `::jsonb` — post-apply compare ควรขึ้นว่า match
+
+ตรวจเร็ว ๆ หลัง apply:
+- บรรทัด `Apply finished: dest now has flows=N operations=M` ต้องใกล้เคียง MANIFEST
+- `./scripts/sync.sh compare` ต้อง `unchanged` ครบ / ไม่มี add-remove-changed
+
 ## External deps (ก่อน apply)
 
 Snapshot ซิงก์แค่ `directus_flows` + `directus_operations` — แต่ options JSON อาจอ้างของนอกกราฟ:

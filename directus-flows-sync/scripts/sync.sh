@@ -184,18 +184,18 @@ cmd_compare() {
   echo "  dest:     schema=${dest_schema}" >&2
   echo "  CONTENT_ONLY=${CONTENT_ONLY:-true}" >&2
 
-  export_flows_fingerprint_tsv "$dest_url" "$dest_schema" flows >"${tmp}/dst_flows.tsv"
-  export_flows_fingerprint_tsv "$dest_url" "$dest_schema" operations >"${tmp}/dst_ops.tsv"
+  export_flows_fingerprint_tsv "$dest_url" "$dest_schema" flows >"${tmp}/dst_flows.jsonl"
+  export_flows_fingerprint_tsv "$dest_url" "$dest_schema" operations >"${tmp}/dst_ops.jsonl"
   export_flows_label_map "$dest_url" "$dest_schema" flows >"${tmp}/dst_flows_labels.tsv"
   export_flows_label_map "$dest_url" "$dest_schema" operations >"${tmp}/dst_ops_labels.tsv"
 
   echo
   compare_fingerprint_files flows \
-    "${snap}/fingerprints/flows.tsv" "${tmp}/dst_flows.tsv" \
+    "${snap}/fingerprints/flows.jsonl" "${tmp}/dst_flows.jsonl" \
     "${snap}/fingerprints/flows_labels.tsv" "${tmp}/dst_flows_labels.tsv" || flows_rc=$?
   echo
   compare_fingerprint_files operations \
-    "${snap}/fingerprints/operations.tsv" "${tmp}/dst_ops.tsv" \
+    "${snap}/fingerprints/operations.jsonl" "${tmp}/dst_ops.jsonl" \
     "${snap}/fingerprints/operations_labels.tsv" "${tmp}/dst_ops_labels.tsv" || ops_rc=$?
 
   rm -rf "$tmp"
@@ -240,8 +240,18 @@ cmd_apply() {
   local cmp_rc=0
   FLOWS_COMPARE_CONTEXT=pre-apply cmd_compare || cmp_rc=$?
   if [[ "$cmp_rc" -eq 0 ]]; then
-    echo "Nothing to apply — already in sync."
-    return 0
+    # Fingerprints can falsely "match" if empty/corrupt; still check MANIFEST counts.
+    local want_flows want_ops have_flows have_ops
+    want_flows="$(awk -F= '/^flows_count=/{print $2; exit}' "${snap}/MANIFEST" 2>/dev/null || true)"
+    want_ops="$(awk -F= '/^operations_count=/{print $2; exit}' "${snap}/MANIFEST" 2>/dev/null || true)"
+    have_flows="$(flows_psql "$dest_url" -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM ${dest_schema}.directus_flows;")"
+    have_ops="$(flows_psql "$dest_url" -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM ${dest_schema}.directus_operations;")"
+    if [[ -n "$want_flows" && -n "$want_ops" && ( "$have_flows" != "$want_flows" || "$have_ops" != "$want_ops" ) ]]; then
+      echo "Fingerprints match but dest counts (${have_flows}/${have_ops}) ≠ MANIFEST (${want_flows}/${want_ops}) — applying anyway." >&2
+    else
+      echo "Nothing to apply — already in sync."
+      return 0
+    fi
   fi
 
   confirm_apply
