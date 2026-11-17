@@ -259,18 +259,29 @@ cmd_apply() {
   backup_dir="$(backup_dest_flows "$dest_url" "$dest_schema")"
   echo "Pre-apply backup: ${backup_dir}"
 
-  apply_flows_from_sql_file \
+  local want_flows want_ops
+  want_flows="$(awk -F= '/^flows_count=/{print $2; exit}' "${snap}/MANIFEST" 2>/dev/null || true)"
+  want_ops="$(awk -F= '/^operations_count=/{print $2; exit}' "${snap}/MANIFEST" 2>/dev/null || true)"
+
+  if ! apply_flows_from_sql_file \
     "${snap}/directus_flows_operations.sql" \
     "$export_schema" \
     "$dest_url" \
-    "$dest_schema"
+    "$dest_schema" \
+    "$want_flows" \
+    "$want_ops"
+  then
+    echo "ERROR: apply failed — dest may be unchanged. Backup at: ${backup_dir}" >&2
+    echo "Restore if needed: ./scripts/sync.sh restore $(basename "$backup_dir")" >&2
+    return 1
+  fi
 
   echo
   echo "=== Post-apply verify ==="
   local verify_rc=0
   FLOWS_COMPARE_CONTEXT=post-apply cmd_compare || verify_rc=$?
   if [[ "$verify_rc" -ne 0 ]]; then
-    echo "WARNING: post-apply compare still reports differences." >&2
+    echo "ERROR: post-apply compare still reports differences (apply did not fully sync)." >&2
     echo "Restore with: ./scripts/sync.sh restore $(basename "$backup_dir")" >&2
     return 1
   fi
