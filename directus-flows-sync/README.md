@@ -29,6 +29,7 @@ git pull
 # prefer: "pg": { "useDocker": false } + dest URL @127.0.0.1:5432
 # if Docker client: loopback is rewritten to host.docker.internal automatically
 ./scripts/sync.sh compare         # needs dest only
+./scripts/sync.sh check-deps      # scan snapshot for collections/folders/URLs/… (optional dest probe)
 ./scripts/sync.sh apply           # type yes, or --approve
 ./scripts/sync.sh restore <stamp>
 ```
