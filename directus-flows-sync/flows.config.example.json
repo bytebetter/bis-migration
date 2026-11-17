@@ -13,6 +13,7 @@
   "pg": {
     "useDocker": false,
     "clientImage": "postgres:17-alpine",
-    "dumpMinMajor": 17
+    "dumpMinMajor": 17,
+    "dockerHost": "host.docker.internal"
   }
 }

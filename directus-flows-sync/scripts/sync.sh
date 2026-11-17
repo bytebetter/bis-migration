@@ -61,6 +61,7 @@ JSON config (see flows.config.example.json):
   exportSchema                         — schema written into snapshot SQL (default: public)
   dest.databaseUrl, dest.schema        — prod server (local Postgres)
   snapshotDir, contentOnly, pg.*       — optional
+  pg.useDocker / pg.dockerHost / pg.dockerNetwork — Docker client ↔ host Postgres
 
 Git hygiene:
   • Commit:   exports/ , flows.config.example.json
