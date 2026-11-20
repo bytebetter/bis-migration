@@ -1,7 +1,7 @@
-exported_at=20261117_194436
+exported_at=20261120_165333
 source_schema=bis_dev
 export_schema=public
-flows_count=99
-operations_count=890
+flows_count=100
+operations_count=910
 content_only=true
 sql_file=directus_flows_operations.sql
