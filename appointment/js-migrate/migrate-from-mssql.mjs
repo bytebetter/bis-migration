@@ -38,6 +38,10 @@ import {
 } from "./appointmentMapping.mjs";
 import { deleteOrphanMigrationKPatients } from "../../shared/js-migrate/scheduleKPatient.mjs";
 import {
+  describeMigratedBxNurseWorkResult,
+  syncMigratedBxNurseWork,
+} from "../../shared/js-migrate/migratedBxNurseWork.mjs";
+import {
   createUiState,
   endProgress,
   formatSec,
@@ -1058,6 +1062,8 @@ END $$;
     );
   }
   const requestBxFilled = await fillAppointmentRequestBxFromInventional(pgClient);
+  // นัด BX ที่ย้ายมา → nurse_work (เสร็จสิ้น / bx_status 0) + ผูก exam ที่มีแล้ว (exam ของนัดใหม่ผูกท้าย job examination)
+  const bxNurseWork = await syncMigratedBxNurseWork(pgClient);
   // ชื่อเต็มของ LoginName — อ่าน dbo.USER ไม่ได้ (เช่น ไม่มีสิทธิ์) ไม่ให้ทั้ง job ล้ม รอบหน้าค่อยเติม
   let loginNameFullFilled = null;
   let loginNameFullError = null;
@@ -1129,6 +1135,7 @@ END $$;
     totalRowsRead: total,
     ...kTotals,
     requestBxFilled,
+    bxNurseWork,
     loginNameFullFilled,
     loginNameFullError,
     fieldIssueLogPath: fieldIssueLogWritten,
@@ -1163,6 +1170,10 @@ END $$;
     console.error(
       `>>> [${key}] หมายเหตุ: นัดเดิมที่ inventional = 1 แต่ request ว่าง → เติม "bx" ${requestBxFilled} แถว`,
     );
+  }
+  const bxNurseWorkMsg = describeMigratedBxNurseWorkResult(bxNurseWork);
+  if (bxNurseWorkMsg != null) {
+    console.error(`>>> [${key}] หมายเหตุ: ${bxNurseWorkMsg}`);
   }
   if (loginNameFullError != null) {
     console.error(

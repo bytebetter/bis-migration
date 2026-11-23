@@ -99,3 +99,10 @@ node appointment/js-migrate/migrate-from-mssql.mjs --config ./migration.config.l
 - ท้าย job appointment ทุกรอบ (รวมเก็บตก): `old_login_name` → ชื่อเต็มจาก `dbo.USER` ต้นทาง — `UserName` → `old_login_name_full_th`, `EngUserName` → `old_login_name_full_en` (เทียบ `LoginName` ไม่สนตัวพิมพ์ / ช่องว่างหัวท้าย; ค่าเก็บตามต้นทาง รวมคำนำหน้า เช่น `พญ.` และรหัสในวงเล็บ)
   - ทับเมื่อชื่อต่างจากต้นทาง (ต้นทางแก้ชื่อ user → รอบถัดไปตาม) — รอบแรกเติมทั้งตาราง, รอบต่อไปแตะแค่นัดใหม่/ชื่อที่เปลี่ยน; login ที่ไม่มีใน `dbo.USER` ไม่แตะ
   - ปลายทางยังไม่มี 2 คอลัมน์นี้ → ข้าม (ไม่ล้ม); อ่าน `dbo.USER` ไม่ได้ → คำเตือน + `loginNameFullError` ใน `logs/migrate-*.json` แต่ job ไม่ล้ม; จำนวนที่เติมอยู่ใน `loginNameFullFilled`
+- ท้าย job appointment และ examination ทุกรอบ (รวมเก็บตก): นัด BX ที่ย้ายมา (`old_db_id` ไม่ว่าง + `inventional = 1` หรือ `request = bx`) → สร้าง `nurse_work` แบบ flow `[id-78]` ของระบบใหม่ (`shared/js-migrate/migratedBxNurseWork.mjs`) — ตกลง 2026-11-23
+  - `nurse_work.appointment` = นัด, `status` = `2` (เสร็จสิ้น), `bx_status` = `0` (สร้างนัดหมาย BX สำเร็จ), `appointment_datetime` = เวลานัด, `appointed_dept` = `nurse`; `appointment.appointment_status` ไม่แตะ
+  - `appointment.department_bx` = `nurse` (DB เก่าไม่มีแผนก — fix ไปก่อน) เติมพร้อมสร้าง nurse_work เฉพาะที่ยังว่าง
+  - ไม่ขึ้นคิวงาน "สร้างนัดหมาย" ของพยาบาล (ต้องมี `date_created` และ status เสร็จสิ้นต้องสร้างวันนี้) — ขึ้นแท็บ "นัดทำหัตถการ" ตามวันนัด
+  - นัดละ 1 แถว — นัดที่มี `nurse_work` แล้วข้าม (ค่าที่แก้ในระบบใหม่ไม่ถูกทับ); นัดระบบใหม่ (`old_db_id` ว่าง) ไม่แตะ
+  - ผูก exam 2 ทาง (`nurse_work.examination` + `examination.nurse_work`) กับ exam ที่ migrate มาของนัดนั้นตัวล่าสุด เฉพาะช่องที่ยังว่าง — exam ของนัดใหม่มาตอน step examination จึงผูกท้าย job นั้น
+  - เวลานัดที่ migrate เปลี่ยน → sync `nurse_work.appointment_datetime` ตาม; สรุปอยู่ใน `bxNurseWork` ของ `logs/migrate-*.json`

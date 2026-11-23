@@ -44,6 +44,10 @@ import {
 } from "./examinationMapping.mjs";
 import { deleteOrphanMigrationKPatients } from "../../shared/js-migrate/scheduleKPatient.mjs";
 import {
+  describeMigratedBxNurseWorkResult,
+  syncMigratedBxNurseWork,
+} from "../../shared/js-migrate/migratedBxNurseWork.mjs";
+import {
   createUiState,
   endProgress,
   formatSec,
@@ -1506,6 +1510,7 @@ LIMIT 200;
   }
 
   let appointmentsCompleted = 0;
+  let bxNurseWork = null;
   if (isExaminationBuiltin) {
     await syncExaminationIdSequenceOnce(pgClient);
     // แถวที่ migrate ไปก่อนมีฟิลด์นี้ (หรือก่อน mobile_location มีแถวนั้น) — เติมให้ครบ
@@ -1524,6 +1529,12 @@ LIMIT 200;
       console.error(
         `>>> [${key}] หมายเหตุ: นัดที่ยังไม่ถึงเวลานัด/ยังไม่มา แต่มี exam แล้ว → เสร็จสิ้น ${appointmentsCompleted} แถว`,
       );
+    }
+    // exam ของนัด BX ที่เพิ่งย้ายมา (step appointment รันก่อน exam จะมี) → ผูก nurse_work 2 ทาง
+    bxNurseWork = await syncMigratedBxNurseWork(pgClient, { linkExamOnly: true });
+    const bxNurseWorkMsg = describeMigratedBxNurseWorkResult(bxNurseWork);
+    if (bxNurseWorkMsg != null) {
+      console.error(`>>> [${key}] หมายเหตุ: ${bxNurseWorkMsg}`);
     }
   }
 
@@ -1610,6 +1621,7 @@ ORDER BY reason;
     relinkedFromK,
     kPatientsDeleted,
     appointmentsCompleted,
+    bxNurseWork,
     fieldIssueLogPath: fieldIssueLogWritten,
     missingByReason: missingByReason.rows,
     checkpointPath: checkpointEnabled ? checkpointPath : null,
