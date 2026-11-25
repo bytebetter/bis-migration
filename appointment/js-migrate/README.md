@@ -106,3 +106,9 @@ node appointment/js-migrate/migrate-from-mssql.mjs --config ./migration.config.l
   - นัดละ 1 แถว — นัดที่มี `nurse_work` แล้วข้าม (ค่าที่แก้ในระบบใหม่ไม่ถูกทับ); นัดระบบใหม่ (`old_db_id` ว่าง) ไม่แตะ
   - ผูก exam 2 ทาง (`nurse_work.examination` + `examination.nurse_work`) กับ exam ที่ migrate มาของนัดนั้นตัวล่าสุด เฉพาะช่องที่ยังว่าง — exam ของนัดใหม่มาตอน step examination จึงผูกท้าย job นั้น
   - เวลานัดที่ migrate เปลี่ยน → sync `nurse_work.appointment_datetime` ตาม; สรุปอยู่ใน `bxNurseWork` ของ `logs/migrate-*.json`
+  - ท้าย job examination: nurse_work ที่ migrate สร้างแล้วยังผูก exam ไม่ได้ (DB เก่าไม่มี exam ของนัด) → สร้าง exam แบบ flow `[id-87]` ให้ทุกตัว รวมนัดในอดีต — ตกลง 2026-11-25
+    - exam ใหม่: `nurse_work`, `appointment`, `patient` = คนไข้ของนัด, `exam_date` = เวลานัด; `status` ไม่ตั้ง (flow ก็ไม่ตั้ง)
+    - คนไข้มี exam ก่อนหน้า (`exam_date` ไม่เกินเวลานัด) → คัดลอกฟิลด์ประวัติตาม flow (`FLOW_ID87_COPY_FIELDS`) + `exam_reason_type` = `Special Procedure`
+    - แยกจาก exam จริงด้วย `old_exam_id` / `date_created` / `user_created` ว่าง; `patient` / `exam_date` sync ตามนัดทุกรอบ (ทั้ง 2 job ก่อนลบคนไข้ K)
+    - รอบถัดไป DB เก่ามี exam ของนัดนั้น → ลบ exam ที่สร้างแล้วผูก exam จริงแทน เฉพาะตัวที่ยังไม่ถูกแตะในระบบใหม่ (`date_updated` / `user_updated` ว่าง และไม่มีตารางอื่นอ้างถึง) — ถูกแตะแล้วคงไว้ exam จริงไม่ผูก
+    - จำนวนแถวใน `public.examination` จะมากกว่าต้นทางเท่ากับ exam ที่สร้าง (`examCreated` ใน `bxNurseWork`)

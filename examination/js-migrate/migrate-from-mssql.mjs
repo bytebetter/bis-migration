@@ -1499,6 +1499,17 @@ LIMIT 200;
     );
   }
 
+  // exam ของนัด BX ที่เพิ่งย้ายมา (step appointment รันก่อน exam จะมี) → ผูก nurse_work 2 ทาง
+  // ที่ยังไม่มี exam → สร้างแบบ flow [id-87]; ทำก่อนลบ K เพราะ exam ที่สร้างตามคนไข้ของนัด (K → คนจริง)
+  let bxNurseWork = null;
+  if (isExaminationBuiltin) {
+    await syncExaminationIdSequenceOnce(pgClient); // INSERT exam ใช้ sequence
+    bxNurseWork = await syncMigratedBxNurseWork(pgClient, {
+      linkExamOnly: true,
+      createMissingExam: true,
+    });
+  }
+
   let kPatientsDeleted = 0;
   if (kCandidateIds.size > 0) {
     kPatientsDeleted = await deleteOrphanMigrationKPatients(pgClient, kCandidateIds);
@@ -1510,7 +1521,6 @@ LIMIT 200;
   }
 
   let appointmentsCompleted = 0;
-  let bxNurseWork = null;
   if (isExaminationBuiltin) {
     await syncExaminationIdSequenceOnce(pgClient);
     // แถวที่ migrate ไปก่อนมีฟิลด์นี้ (หรือก่อน mobile_location มีแถวนั้น) — เติมให้ครบ
@@ -1530,8 +1540,6 @@ LIMIT 200;
         `>>> [${key}] หมายเหตุ: นัดที่ยังไม่ถึงเวลานัด/ยังไม่มา แต่มี exam แล้ว → เสร็จสิ้น ${appointmentsCompleted} แถว`,
       );
     }
-    // exam ของนัด BX ที่เพิ่งย้ายมา (step appointment รันก่อน exam จะมี) → ผูก nurse_work 2 ทาง
-    bxNurseWork = await syncMigratedBxNurseWork(pgClient, { linkExamOnly: true });
     const bxNurseWorkMsg = describeMigratedBxNurseWorkResult(bxNurseWork);
     if (bxNurseWorkMsg != null) {
       console.error(`>>> [${key}] หมายเหตุ: ${bxNurseWorkMsg}`);

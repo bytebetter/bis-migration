@@ -1055,15 +1055,16 @@ END $$;
   const byName = await relinkKAppointmentsByName(pgClient);
   kTotals.relinkedFromKByName = byName.relinked;
   for (const id of byName.kIds) kCandidateIds.add(id);
+  const requestBxFilled = await fillAppointmentRequestBxFromInventional(pgClient);
+  // นัด BX ที่ย้ายมา → nurse_work (เสร็จสิ้น / bx_status 0) + ผูก exam ที่มีแล้ว
+  // (exam ของนัดใหม่ผูก/สร้างท้าย job examination) — ก่อนลบ K: exam ที่สร้างตามคนไข้ของนัดที่เพิ่งย้ายจาก K
+  const bxNurseWork = await syncMigratedBxNurseWork(pgClient);
   if (kCandidateIds.size > 0) {
     kTotals.kPatientsDeleted = await deleteOrphanMigrationKPatients(
       pgClient,
       kCandidateIds,
     );
   }
-  const requestBxFilled = await fillAppointmentRequestBxFromInventional(pgClient);
-  // นัด BX ที่ย้ายมา → nurse_work (เสร็จสิ้น / bx_status 0) + ผูก exam ที่มีแล้ว (exam ของนัดใหม่ผูกท้าย job examination)
-  const bxNurseWork = await syncMigratedBxNurseWork(pgClient);
   // ชื่อเต็มของ LoginName — อ่าน dbo.USER ไม่ได้ (เช่น ไม่มีสิทธิ์) ไม่ให้ทั้ง job ล้ม รอบหน้าค่อยเติม
   let loginNameFullFilled = null;
   let loginNameFullError = null;
