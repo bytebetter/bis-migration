@@ -44,6 +44,10 @@ import {
 } from "./examinationMapping.mjs";
 import { deleteOrphanMigrationKPatients } from "../../shared/js-migrate/scheduleKPatient.mjs";
 import {
+  describeMigratedBxNurseWorkResult,
+  syncMigratedBxNurseWork,
+} from "../../shared/js-migrate/migratedBxNurseWork.mjs";
+import {
   createUiState,
   endProgress,
   formatSec,
@@ -1495,6 +1499,17 @@ LIMIT 200;
     );
   }
 
+  // exam ของนัด BX ที่เพิ่งย้ายมา (step appointment รันก่อน exam จะมี) → ผูก nurse_work 2 ทาง
+  // ที่ยังไม่มี exam → สร้างแบบ flow [id-87]; ทำก่อนลบ K เพราะ exam ที่สร้างตามคนไข้ของนัด (K → คนจริง)
+  let bxNurseWork = null;
+  if (isExaminationBuiltin) {
+    await syncExaminationIdSequenceOnce(pgClient); // INSERT exam ใช้ sequence
+    bxNurseWork = await syncMigratedBxNurseWork(pgClient, {
+      linkExamOnly: true,
+      createMissingExam: true,
+    });
+  }
+
   let kPatientsDeleted = 0;
   if (kCandidateIds.size > 0) {
     kPatientsDeleted = await deleteOrphanMigrationKPatients(pgClient, kCandidateIds);
@@ -1524,6 +1539,10 @@ LIMIT 200;
       console.error(
         `>>> [${key}] หมายเหตุ: นัดที่ยังไม่ถึงเวลานัด/ยังไม่มา แต่มี exam แล้ว → เสร็จสิ้น ${appointmentsCompleted} แถว`,
       );
+    }
+    const bxNurseWorkMsg = describeMigratedBxNurseWorkResult(bxNurseWork);
+    if (bxNurseWorkMsg != null) {
+      console.error(`>>> [${key}] หมายเหตุ: ${bxNurseWorkMsg}`);
     }
   }
 
@@ -1610,6 +1629,7 @@ ORDER BY reason;
     relinkedFromK,
     kPatientsDeleted,
     appointmentsCompleted,
+    bxNurseWork,
     fieldIssueLogPath: fieldIssueLogWritten,
     missingByReason: missingByReason.rows,
     checkpointPath: checkpointEnabled ? checkpointPath : null,
