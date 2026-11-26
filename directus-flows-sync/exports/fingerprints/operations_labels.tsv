@@ -400,6 +400,7 @@
 6e5af4a9-da57-4c4c-ad7c-656d547c447e	เช็คว่าเป็นเคสเปลี่ยนแพทย์ไหม
 6e7db230-f050-478a-8825-d792086e59ae	return ค่าวัน-เวลาของตอนนี้
 6ea1cabe-973f-489c-abe7-d106b2e002ef	เช็คว่าสถานะเกี่ยวข้องกับการส่งไปหาแพทย์หรือไม่
+6efd3654-a5d4-4fbe-870d-adc681d53b6f	เช็คเงื่อนไข bx_status
 6f0c124f-40f2-4f4d-adb1-531485414b89	อัพเดทสถานะ doctor_work ของหมอคนนั้นเป็น "ส่ง us แล้ว"
 6f4ab2f4-6af1-49be-9a14-7ed34a754e7b	อัพเดตข้อมูลใน nurse_work
 6f530150-558b-45da-a8ad-77af9e4a9511	เข้า Trigger Flow Progress Created
@@ -687,6 +688,7 @@ bfae4a69-b183-45cd-89dc-984e350e0d81	เข้า Trigger Flow Read environment 
 bfbe4e79-6ee7-4fac-b40b-7e0af7366e98	อ่านข้อมูล Ultrasound_Work
 bfc3dd87-a97d-41b4-a2b1-0fce6637f8b0	สร้าง Coordinate แบบ "รอหมอรับเคส"
 c011e6a9-74c7-420b-bf93-9c07e689e094	เช็ค bx status ว่าเป็นยกเลิกหรือไม่
+c0187f8b-7e91-4757-9152-4ecb623ee1d4	อัพเดท doctor_work
 c01ea2d0-ac85-430e-aa19-0a0e848f4371	เก็บค่าเวลา ณ ปัจจุบัน
 c05a5cb8-1abf-4249-8371-6e3990328e49	Trigger Flow
 c0764b84-82c6-477f-a75a-09ab8e72e766	อ่านข้อมูล queue ทั้งหมดที่เป็นสถานะ รอเรียกคิว, เรียกคิวแล้ว
@@ -853,7 +855,7 @@ f0224a21-ca59-42cb-9a49-9f12c52ff130	อ่าน examination ทั้งหม
 f02e6194-90b6-41b7-9d05-b1b0c56c7a73	อ่าน ultrasound_work
 f03903c7-9451-4c4e-bd71-d6b0870f6500	เข้า Trigger Flow Postpone the appointment
 f0b5cbf3-18c5-4990-afd6-56bbe1e029e7	สร้างข้อมูล Coordinate
-f100f991-e1e1-4da3-a149-ee5902d40e54	ถ้า request ไม่ใช่ bx ให้สร้าง exam
+f100f991-e1e1-4da3-a149-ee5902d40e54	ถ้า request เป็น bx หรือไม่
 f118e0ab-f4ae-4864-be5c-d0871cd38a64	อัพเดทข้อมูล Billing
 f12acf50-5b99-46ff-9fdf-26502dbfa19a	เช็คว่าเป็น create หรือ update
 f17200a1-843c-41ad-9e79-64b8f0ac125a	current_time
